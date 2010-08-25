@@ -1,0 +1,1027 @@
+; PETTIL 
+; Personal Electronics Transactor Threaded Interpreted Language
+;
+; (A Forth-like language for my venerable Commodore PET 2001)
+;
+;" ven-er-a-ble (adj.)
+;" 3 a : calling forth respect through age, character and attainments
+;"   <a venerable jazz musician>; broadly : conveying an impression of
+;"   aged goodness and benevolence <encouraged by the venerable doctor's
+;"   head-nodding>
+;
+; chitselb 2010
+;" http://chitselb.com
+; this code is in the public domain
+;
+; Dedicated to those heroes of mine I share a first name with
+;
+; Charles Henry Hitselberger - my dad, for teaching me to play chess
+; Charles Allan Williams - my grandfather, for showing me how to tinker
+; Charles Henry Hitselberger - my son, for tolerating me
+; Michael Andrew Hitselberger - my son, even though he isn't a Charles, for
+;     being as jazzed as I was when we turned on the PET after 25 years.
+; Chuck Peddle - creator of the 6502 and the Commodore PET
+; Charles Moore - creator of Forth
+; Charles M. Schultz - creator of Peanuts
+; Charlie Brown - for teaching me how to read
+;
+;pettil.a65
+;
+#include cbm.def
+
+;constants
+bit7	= $80		; marks either end of name field
+bit6	= $40		; immediate (nfa len)
+
+;zero page
+*=$18					; bnextend-bnextbegin
+tos = *			: *=*+2
+n = *			: *=*+8
+up = *			: *=*+2
+stash = *		: *=*+1
+ireg = *		: *=*+4
+stackl = *		: * = *+((time-*)/2)
+stackh = *				; and from here to time for stackh
+bos = stackh-stackl			; bos+stack(l|h) = bottom of stack
+
+basic	= $0400
+		.word basic+1		; PET BASIC storage starts here
+*		= basic+1
+		.word basend
+		.word 10
+		.byt $9e
+		.asc "(1040)",0		; sys $0410
+basend		.word 0
+
+		.dsb basic+$10-*,$ea
+		jmp cold
+		jmp warm
+
+		; user area initialization data
+		; this gets copied to the cassette buffer
+		; and is pointed to by the UP (user pointer)
+userup		.word tape2buf				; 6..7
+usersp0		.word bos				; 8..9
+userrp0		.word $01ff				; 10..11
+userwidth	.word 31				; 12..13
+userwarning	.word -1				; 14..15
+userfence	.word $2f25				; 16..17
+uservoclink	.word $650b				; 18..19
+userviewquery	.word $36a2				; 20..21
+userblk		.word 2					; 22..23
+usertoin	.word $1908				; 24..25
+userbase	.word 10				; 26..27
+usercontext	.word 0					; 28..29 ~
+usercsp		.word 0					; 30..31
+
+		;dictionary hash link table
+lastl		.dsb 16,0
+lasth		.dsb 16,0
+
+;--------------------------------------------------------------
+; Inner Interpreter words  NEXT ENTER EXIT EXECUTE
+;
+;" Here is the classic way of implementing a direct-threaded inner
+;" interpreter:
+;" (source: http://www.forthfreak.net/index.cgi?DirectThreadedCodePseudoCode)
+;"
+;" NEXT:
+;"    [IP+] -> W
+;"    W+    -> PC       \ W is incremented by the instruction length at W.
+;"                      \ A subroutine call is sometimes used, pulling the  
+;"                      \ return address into W has the desired effect.
+;" 
+;" NEST:
+;"    IP    -> [-RP]
+;"    W     -> IP
+;"    NEXT
+;" 
+;" UNNEST:
+;"    [RP+] -> IP
+;"    NEXT
+
+;--------------------------------------------------------------
+;
+;	NEXT
+;
+; PETTIL takes a few left turns from the classic model, but it's fast.
+; Props to Anton Ertl on comp.lang.forth for the design idea.
+;
+; NEXT is the heart and soul of a Forth interpreter.  It executes
+; more often, than any other routine, so it's the best place to 
+; optimize.
+;
+; pseudocode for a typical indirect-threaded NEXT is
+; [IP+] -> W
+; JMP [W]
+; 
+; PETTIL's NEXT is unorthodox because it pre-increments IP and 
+; uses a direct-threaded model, which drops one level of indirection.
+; It's self-modifying code that lives on the zero page.  By 
+; dispensing with W register, we get it down to 17 cycles!
+;
+; JMP [+IP]
+;
+; Since the 6502 can't pull this off in one neat little instruction,
+; our NEXT has tons of entry points, described in the code comments.
+; "next1" and "nexty" appear to be redundant, but it is that way so
+; NEXT will return the expected results whether entered at the top,
+; or from the bottom (nexto/nexty/nextx have no IP increment)
+;
+; PETTIL primitives can expect Y = 1, C = clear on exit from NEXT
+;
+bnextbegin
+ip				= $0f	; dummy value $CAFE
+putya				= $0000	; YA to the TOS register
+		sty tos+1
+puta				= $0002	; your mom
+		sta tos
+next1				= $0004 ; enter here to reset Y = 1
+		ldy #1
+next				= $0006	; entry point for most purposes
+		tya			;[2]
+nexta				= $0007 ; adds an arbitrary amount to IP
+		sec			;[2]
+		adc ip			;[3]
+		sta ip			;[3]
+		bcs nextp +bnextbegin	;[2]
+nexto				= $000e	; outtie!  doesn't alter IP, Y or C
+		jmp ($cafe)		;[5] total 17 cycles
+nextp				= $0011	; next page
+		inc ip+1
+nexty				= $0013	; like nexto, also fixes CLC & Y
+		ldy #1
+nextx				= $0015	; just fix CLC, then nexto
+		clc
+		bcc nexto +bnextbegin	; bra
+bnextend			; $0018
+
+;--------------------------------------------------------------
+;
+;	ENTER
+;
+; IP -> [-RP]
+; [IP] -> W
+; W+3 -> IP
+; NEXT
+enter		lda ip+1
+		pha
+		lda ip
+		pha			; IP -> [-RP]
+		lda (ip),y
+		sta w1+1
+		dey
+		lda (ip),y
+		sta w1			; [IP] -> W
+		ldy w1+1
+		lda w1
+		adc #3
+		bcc l001
+		iny
+l001		sty ip+1
+		sta ip			; W+3 -> IP
+		jmp nexty
+
+;--------------------------------------------------------------
+;
+;	EXIT
+;
+; [RP+] -> IP
+; NEXT
+exitlfa		.word 0		; base of dictionary marker
+		.byt (exit-*-1)|bit7
+		.asc "EXI","T"|bit7
+; NEXT
+exit		pla
+		sta ip
+		pla
+		sta ip+1	; [RP+] -> IP
+		jmp next	; NEXT
+
+;--------------------------------------------------------------
+;
+;	EXECUTE
+;
+; Executes the definition found at addr.
+;
+;"	: execute ( cfa ---   )
+;"	    jmp cfa ;
+;
+; [SP+] -> [W1]
+; IP -> [W1+4]
+; W1 -> IP
+; NEXTO
+executelfa	.word 0			; <-- link field address
+					; a pointer to previous LFA
+					; 0 = bottom of dictionary
+		.byt (execute-*-1)|bit7	; <-- name field address
+		.asc "EXECUT","E"|bit7	; length and final byte are OR $80
+execute		lda tos			; <-- code field address
+		sta w1			; in direct-threaded models, this
+		lda tos+1		; contains code instead of a pointer
+		sta w1+1	; [SP] -> [W1]
+		lda stackh,x
+		sta tos+1
+		lda stackl,x
+		sta tos
+		inx		; SP+
+		lda #<ip
+		sta w1+4
+		lda #>ip
+		sta w1+5	; IP -> [W1+4]
+		lda #<w1
+		sta ip
+		lda #>w1
+		sta ip+1	; W1 -> IP
+		jmp nexto
+
+; These three words are used by EXECUTE as a 'fragment secondary'
+; (for those occasions when you just need a W register)
+; also used by ENTER
+w1				; dummy value $DEAD, we wind up at $BEEF
+		.word $dead
+		.word branch
+		.word $beef
+
+;--------------------------------------------------------------
+;
+;	(LIT)
+;
+; push the word of memory following (IP)
+;
+lfa000		.word 0			
+		.byt (plit-*-1)|bit7
+		.asc "(LIT",")"|bit7
+plit		iny			; (IP),0 (IP),1 = address of plit
+		lda (ip),y		; (IP),2 = low byte of literal
+		sta n
+		iny
+		lda (ip),y		; (IP),3 = high byte of literal
+		sta n+1
+
+		lda #2
+		adc ip
+		sta ip
+		bcc pushn
+		inc ip+1
+
+pushn		ldy n+1			; pushn entry - pushes n
+		lda n			; n -> YA
+
+push		sta stash		; push entry - pushes YA
+		dex			; copy TOS to the real stack
+		lda tos
+		sta stackl,x
+		lda tos+1
+		sta stackh,x
+		lda stash
+		jmp putya
+
+;--------------------------------------------------------------
+;
+;	CLIT
+;
+; takes the byte of memory following and pushes it to the data stack
+;
+;"	: clit ( -- c )
+;"	  ip c@  1 ip +! ;
+;
+lfa001		.word lfa000
+		.byt (clit-*-1)|bit7
+		.asc "CLI","T"|bit7
+clit		iny			; Y = 2
+		lda (ip),y		; (IP),2 = low byte
+		ldy #0			; high byte always zero
+		inc ip
+		bne push
+		inc ip+1
+		bcc push
+
+;
+;	BRANCH
+;
+; Compiles an unconditional branch operation.
+;" When used in the form:  COMPILE BRANCH
+; an  unconditional branch operation is compiled.
+; A one-byte branch offset must immediately follow
+; this compilation address.  The branch address 
+; is typically generated  by following BRANCH
+; with <RESOLVE or >MARK .
+;
+;"	: branch ( -- )
+;
+branchlfa	.word $adde
+		.byt (branch-*-1)|bit7
+		.asc "BRANC","H"|bit7
+; IP = address of 'branch' (you are here)
+; IP+2 = absolute address of the target
+; Y = 1
+branch		iny		; [2]
+		lda (ip),y	; [5+]
+		sta stash	; [3]
+		iny		; [2]
+		lda (ip),y	; [5+]
+		sta ip+1	; [3]
+		lda stash	; [3]
+		sta ip		; [3] (IP+2) -> IP
+		jmp nexty	; [3] in through the out door (leaves IP alone)
+				; [29/30 cycles] (runs in constant time)
+;?branch
+qbranchlfa	.word $adde
+		.byt (qbranch-*-1)|bit7
+		.asc "?BRANC","H"|bit7
+qbranch		bit tos
+		bne branch
+		lda #4
+		jmp nexta
+
+;(loop)
+;(+loop)
+;(do)
+
+pdolfa		.word $adde
+		.byt (pdo-*-1)|bit7
+		.asc "(DO",")"|bit7
+pdo		lda stackh,x
+		pha
+		lda stackl,x
+		pha
+		lda tos+1
+		pha
+		lda tos
+		pha
+poptwo		inx
+pop		lda stackh,x
+		ldy stackl,x
+		inx
+		jmp putya
+
+;test - moved it here to avoid jmp ($xxFF) bug 
+testlfa		.word $adde
+		.byt (test-*-1)|bit7
+		.asc "TES","T"|bit7
+test		jmp enter
+		.word foo
+		.word exit
+
+foolfa		.word $adde
+		.byt (foo-*-1)|bit7
+		.asc "FO","O"|bit7
+foo		jmp enter
+		.word bar
+		.word bar
+		.word exit
+
+barlfa		.word $adde
+		.byt (bar-*-1)|bit7
+		.asc "BA","R"|bit7
+bar		jmp enter
+		.word plit
+		.word $dead
+		.word exit
+
+; (?do)
+; i
+; j
+; (leave)
+; (?leave)
+; digit
+; (find)
+; skip
+; scan
+; emit
+; key
+; ?terminal
+; cr
+; cmove
+; cmove>
+; fill
+; um*
+; um/mod
+; and
+; or
+; xor
+; not
+; sp@
+; sp!
+; rp!
+; exit
+; >r
+; r>
+; r@
+; 0=
+zeroeqlfa	.word $adde
+		.byt (zeroeq-*-1)|bit7
+		.asc "0","="|bit7
+zeroeq		lda tos
+		ora tos+1
+		beq true
+		bne false
+
+; 0<
+zeroltlfa	.word $adde
+		.byt (zerolt-*-1)|bit7
+		.asc "0","<"|bit7
+zerolt		bit tos+1
+		bmi true
+		bpl false
+
+; 0>
+; <>
+; 0<>
+znelfa		.word $adde
+		.byt (zne-*-1)|bit7
+		.asc "0<",">"|bit7
+zne		lda tos
+		ora tos+1
+		bne true
+		beq false
+
+;--------------------------------------------------------------
+;
+;	ON
+;
+onlfa		.word $adde
+		.byt (on-*-1)|bit7
+		.asc "O","N"|bit7
+on		lda #$ff
+on1		sta (tos),y
+		dey
+		sta (tos),y
+		jmp next
+
+;--------------------------------------------------------------
+;
+;	OFF
+;
+offlfa		.word $adde
+		.byt (off-*-1)|bit7
+		.asc "OF","F"|bit7
+off		lda #$00
+		beq on1
+
+;--------------------------------------------------------------
+;
+;	+
+;
+pluslfa		.word $adde
+		.byt (plus-*-1)|bit7
+		.asc "+"|bit7
+plus		lda tos
+		adc stackl,x
+		sta stackl,x
+		lda tos+1
+		adc stackh,x
+		sta stackh,x
+		jmp pop
+
+; d+
+; d<
+;--------------------------------------------------------------
+;
+;	NEGATE
+;
+negatelfa	.word $adde
+		.byt (negate-*-1)|bit7
+		.asc "NEGAT","E"|bit7
+negate		sec
+		dey
+neg2		tya
+		sbc tos
+		sta tos
+		tya
+		sbc tos+1
+		sta tos+1
+		jmp next
+
+;--------------------------------------------------------------
+;
+;	DNEGATE
+;
+dnegatelfa	.word $adde
+		.byt (dnegate-*-1)|bit7
+		.asc "DNEGAT","E"|bit7
+dnegate		sec
+		dey
+		tya
+		sbc stackl,x
+		sta stackl,x
+		tya
+		sbc stackh,x
+		sta stackh,x
+		jmp neg2
+
+;--------------------------------------------------------------
+;
+;	OVER
+;
+overlfa		.word $adde
+		.byt (over-*-1)|bit7
+		.asc "OVE","R"|bit7
+over		ldy stackh,x
+		lda stackl,x
+		jmp push
+
+;--------------------------------------------------------------
+;
+;	DROP
+;
+droplfa		.word $adde
+		.byt (drop-*-1)|bit7
+		.asc "DRO","P"|bit7
+drop		jmp pop
+
+;--------------------------------------------------------------
+;
+;	SWAP
+;
+swaplfa		.word $adde
+		.byt (swap-*-1)|bit7
+		.asc "SWA","P"|bit7
+swap		ldy tos+1
+		lda stackh,x
+		sta tos+1
+		sty stackh,x
+		ldy tos
+		lda stackl,x
+		sta tos
+		sty stackl,x
+		jmp next
+
+; dup
+; +!
+; toggle
+;--------------------------------------------------------------
+;
+;	@
+;
+fetchlfa	.word $adde
+		.byt (fetch-*-1)|bit7
+		.asc "@"|bit7
+fetch		lda (tos),y
+		sta stash
+		dey
+		lda (tos),y
+		sta tos
+		lda stash
+		sta tos+1
+		jmp next
+
+;--------------------------------------------------------------
+;
+;	C@
+;
+cfetchlfa	.word $adde
+		.byt (cfetch-*-1)|bit7
+		.asc "C","@"|bit7
+cfetch		lda (tos),y
+		sta tos
+		dey
+		sty tos+1
+		jmp next
+
+;--------------------------------------------------------------
+;
+;	!
+;
+storelfa	.word $adde
+		.byt (store-*-1)|bit7
+		.asc "!"|bit7
+store		lda stackh,x
+		sta (tos),y
+		lda stackl,x
+		dey
+		sta (tos),y
+		jmp poptwo
+
+;--------------------------------------------------------------
+;
+;	C!
+;
+cstorelfa	.word $adde
+		.byt (cstore-*-1)|bit7
+		.asc "C","!"|bit7
+cstore		lda stackl,x
+		dey
+		sta (tos),y
+		jmp poptwo
+
+; \colon
+; ;
+; constant
+; variable
+
+;--------------------------------------------------------------
+;
+;	USER
+;
+userlfa		.word $adde
+		.byt (user-*-1)|bit7
+		.asc "USE","R"|bit7
+user		.word enter
+		.word constant
+		.word psemicode
+uservar		ldy #3
+		lda (ip),y		; byte offset into user area
+		ldy up+1
+		adc up
+		bcc l008
+		iny
+l008		jmp push
+
+;--------------------------------------------------------------
+;
+;	0
+;
+zerolfa		.word $adde
+		.byt (zero-*-1)|bit7
+		.asc "0"|bit7
+zero		dey
+		tya
+		jmp push
+
+;--------------------------------------------------------------
+;
+;	1
+;
+onelfa		.word $adde
+		.byt (one-*-1)|bit7
+		.asc "1"|bit7
+one		tya
+		dey
+		jmp push
+
+; 2
+; 3
+; bl
+; c/l
+; first
+; limit
+; #buf
+; #bcq
+; b/buf
+; b/scr
+; tib
+;--------------------------------------------------------------
+;
+;	TRUE
+;
+truelfa		.word $adde
+		.byt (true-*-1)|bit7
+		.asc "TRU","E"|bit7
+true		ldy #$FF
+		bmi false+1	; bra
+
+;--------------------------------------------------------------
+;
+;	FALSE
+;
+falselfa	.word $adde
+		.byt (false-*-1)|bit7
+		.asc "FALS","E"|bit7
+false		dey
+		tya
+		jmp push
+
+; +origin
+; sp0
+; rp0
+; width
+; warning
+; fence
+; dp
+; voc-link
+; view?
+; blk
+; >in
+; #out
+; scr
+; offset
+; context
+; current
+; state
+; base
+; dpl
+; span
+; csp
+; r#
+; hld
+; done?
+; #tib
+; #line
+; 1+
+; 1-
+; 2+
+; 2-
+; 2/
+; 2*
+; here
+; allot
+; ,
+; c,
+; -
+; =
+; u<
+; <
+; >
+; rot
+; space
+; ?dup
+; traverse
+; latest
+; forth-83
+; >body
+; >name
+; >link
+; body>
+; name>
+; link>
+; n>link
+; l>name
+; !csp
+; where
+; (abort")
+; ,$
+; abort"
+; ?comp
+; ?find
+; ?pairs
+; ?csp
+; ?char
+; compile
+; [
+; ]
+; smudge
+; hex
+; decimal
+; (;code)
+; does>
+; count
+; type
+; -trailing
+; (.")
+; ."
+; .(
+; expect
+; query
+;
+; quit?
+; erase
+; blank
+; hold
+; pad
+; 'stream
+; word
+; >lower
+; (punct?)
+; punct?
+; convert
+; number
+; find
+; exists?
+; id.
+; create
+; [compile]
+; literal
+; dliteral
+; ?stack
+; interpret
+; immediate
+; vocabulary
+; forth
+; definitions
+; (
+; run
+; quit
+; abort
+; startup
+
+;--------------------------------------------------------------
+;
+;	QUIT
+;
+; PETTIL's outer interpreter infinite loop
+;
+quitlfa		.word $adde
+		.byt (quit-*-1)|bit7
+		.asc "QUI","T"|bit7
+quit		.word enter
+		.word zero
+		.word blk
+		.word store
+		.word lbrace
+l007		.word rpstore
+		.word cr
+		.word query
+		.word interpret
+		.word state
+		.word fetch
+		.word zeq
+		.word qbranch
+		.word l006
+		.word pdotquote
+		.byt (l006-*-1)
+		.asc "OK"
+l006		.word branch
+		.word l007
+
+; cold
+;Cold start
+;print a welcome message
+;reset top of the dictionary
+;reset data and return stack
+coldlfa		.word $adde
+		.byt (cold-*-1)|bit7
+		.asc "COL","D"|bit7
+cold		sei
+		cld
+		ldx #$f8
+		txs
+		jsr CLRCHN
+		jsr CLALL
+		cli
+
+		ldy #bnextend-bnextbegin+1
+l1		lda bnextbegin-1,y
+		sta putya-1,y
+		dey
+		bne l1
+		iny			; Y = 1 to make primitives happy
+
+		; initialize the data stack pointer
+		ldx #bos
+		; turn over control to the secondary stored at TOS (from boottos)
+		jmp execute
+
+		ldy #0
+l002		lda message,y
+		beq l003
+		jsr $ffd2
+		iny
+		bne l002
+l003		rts
+
+message		.byt $93,"HELLO, PET!",0
+
+
+/*
+cold2		ldx #bos
+		lda #>foo
+		sta tos+1
+		lda #<foo
+		sta tos
+
+		lda #>bletch
+		sta ip+1
+		lda #<bletch
+		sta ip
+
+		clc
+		ldy #1
+		jmp execute
+
+*/
+
+
+;Warm start
+warm		rts
+
+; s>d
+; abs
+; dabs
+; min
+; max
+; m*
+; m/
+; *
+; /mod
+; /
+; mod
+; */mod
+; */
+; m/mod
+; <bcq
+; bcq>
+; >bcq
+; latest?
+; absent?
+; update
+; dr0
+; dr1
+; discard
+; missing
+; buffer
+; block
+; empty-buffers
+; save-buffers
+; flush
+; load
+; >disc
+; (r/w)
+; r/w
+; t&s
+; (open)
+; close
+; (cmdin)
+; (cmdout)
+; cmdoff
+; status
+; (?disc)
+; ioerr
+; .derr
+; mount
+; ?disc
+; '
+; [']
+; ?>mark
+; ?<mark
+; ?>resolve
+; ?<resolve
+; add>mark
+; begin
+; then
+; do
+; ?do
+; loop
+; +loop
+; leave
+; ?leave
+; until
+; again
+; repeat
+; if
+; else
+; while
+; spaces
+; <#
+; #>
+; sign
+; #
+; #s
+; (u.)
+; u.
+; u.r
+; (.)
+; .
+; .r
+; (ud.)
+; ud.
+; ud.r
+; (d.)
+; d.
+; d.r
+; ?
+; pick
+; roll
+; depth
+; 2drop
+; 2dup
+; 2over
+; 2rot
+; 2swap
+; 2!
+; 2@
+; 2constant
+; 2variable
+; d-
+; d0=
+; d=
+; du<
+; d2/
+; d2*
+; d>
+; dmin
+; dmax
+; configure
+; freeze
+; (bsave)
+; save-forth
+; forget
+; thru
+
+		; pops up to 4 words from the split stack to the N area
+		; A = how many words to pop
+popnwords	asl
+		tay
+		lda tos
+		sta n-2,y
+		lda tos+1
+		sta n-1,y
+l004		dey
+		dey
+		beq l005
+		lda stackl,x
+		sta n-2,y
+		lda stackh,x
+		sta n-1,y
+		inx
+		bne l004		; bra
+l005		lda stackl,x
+		sta tos
+		lda stackh,x
+		sta tos+1
+		inx
+		rts
+
+dict
+
