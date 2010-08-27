@@ -132,7 +132,7 @@ latesth		.dsb 16,0
 ; PETTIL primitives can expect Y = 1, C = clear on exit from NEXT
 ;
 bnextbegin
-ip				= nexto+1 ; dummy value $CAFE
+ip				= $000f	; dummy value $CAFE
 putya				= $0000	; YA to the TOS register
 		sty tos+1
 puta				= $0002	; your mom
@@ -641,8 +641,31 @@ cstore		lda stackl,x
 ;" :
 ;--------------------------------------------------------------
 ; ;
+
 ;--------------------------------------------------------------
-; constant
+;
+;	CONSTANT   ( -- n )
+;
+constantlfa	.word $adde
+		.byt (constant-*-1)|bit7
+		.asc "CONSTAN","T"|bit7
+constant	jmp enter
+		.word create
+		.word comma
+		.word psemi
+doconst		lda (ip),y
+		sta n+3
+		dey
+		lda (ip),y
+		sta n+2
+		ldy #3
+		lda (n+2),y
+		sta n
+		iny
+		lda (n),y
+		sta n+1
+		jmp pushn
+
 ;--------------------------------------------------------------
 ; variable
 
@@ -666,7 +689,7 @@ l008		jmp push
 
 ;--------------------------------------------------------------
 ;
-;	0
+;	0   ( -- 0 )
 ;
 zerolfa		.word $adde
 		.byt (zero-*-1)|bit7
@@ -677,7 +700,7 @@ zero		dey
 
 ;--------------------------------------------------------------
 ;
-;	1
+;	1   ( -- 1 )
 ;
 onelfa		.word $adde
 		.byt (one-*-1)|bit7
@@ -687,9 +710,25 @@ one		tya
 		jmp push
 
 ;--------------------------------------------------------------
-; 2
+;
+;	2   ( -- 2 )
+;
+twolfa		.word $adde
+		.byt (two-*-1)|bit7
+		.asc "2"|bit7
+two		jmp doconst
+		.word 2
+
 ;--------------------------------------------------------------
-; 3
+;
+;	3   ( -- 3 )
+;
+threelfa	.word $adde
+		.byt (three-*-1)|bit7
+		.asc "3"|bit7
+three		jmp doconst
+		.word 3
+
 ;--------------------------------------------------------------
 ; bl
 ;--------------------------------------------------------------
@@ -840,13 +879,75 @@ zne		lda tos
 ;--------------------------------------------------------------
 ; -
 ;--------------------------------------------------------------
-; =
+;
+;	=   ( n1 n2 -- flag )
+;
+eqlfa		.word $adde
+		.byt (eq-*-1)|bit7
+		.asc "="|bit7
+eq		dey
+		lda tos
+		cmp stackl,x
+		bne cmpout
+		lda tos+1
+		cmp stackh,x
+		bne cmpout
+		dey
+cmpout		tya
+		inx
+		jmp put
+
 ;--------------------------------------------------------------
-; u<
+;
+;	u<
+;
+ultlfa		.word $adde
+		.byt (ult-*-1)|bit7
+		.asc "U","<"|bit7
+ult		dey
+		sec
+		lda stackl,x
+		sbc tos
+		lda stackh,x
+		sbc tos+1
+		bcs cmpout
+		dey
+		bmi cmpout
+
 ;--------------------------------------------------------------
-; <
+;
+;	<   ( n1 n2 -- flag )
+;
+ltlfa		.word $adde
+		.byt (lt-*-1)|bit7
+		.asc "<"|bit7
+lt		dey
+		sec
+		lda stackl,x
+		sbc tos
+		lda stackh,x
+		sbc tos+1
+sgntst		bvc l012
+		eor #bit7
+l012		bpl cmpout
+		dey
+		bmi cmpout
+
 ;--------------------------------------------------------------
-; >
+;
+;	>   ( n1 n2 -- flag )
+;
+gtlfa		.word $adde
+		.byt (gt-*-1)|bit7
+		.asc "<"|bit7
+gt		dey
+		sec
+		lda tos
+		sbc stackl,x
+		lda tos+1
+		sbc stackh,x
+		jmp sgntst
+
 ;--------------------------------------------------------------
 ; rot
 ;--------------------------------------------------------------
@@ -1018,8 +1119,85 @@ tolink		jmp enter
 ; exists?
 ;--------------------------------------------------------------
 ; id.
+
 ;--------------------------------------------------------------
-; create
+;
+;	CREATE
+;
+; ~ this 'CREATE' from Blazin' is um... kinda "busy."  Refactor
+;" : create <bcq here width @ 2+ 2+ view?
+;"  @ + + u< (abort") dictionary full exists?
+;"  over (lit) 6017 = (abort") name required
+;"  warning @ and ?branch 41 >name cr
+;"  clit 18 emit id. clit 146 emit (.") already exists
+;"  branch 4 drop here dup c@
+;"  over 2+ view? @ + dup >r swap 1+ cmove>
+;"  r> dup c@ width @ min 1+ 2dup + clit 255
+;"  and clit 255 = ?branch 25 2dup swap
+;"  dup 1+ rot cmove> clit 234 c, swap 1+
+;"  swap 2+ view? @ + allot dup clit 128 toggle
+;"  here 1- clit 128 toggle latest over
+;"  2- ! view? @ ?branch 14 blk @ over 2-
+;"  2- ! 2 allot current @ ! (;code)
+;".C:1b0b   18         CLC
+;".C:1b0c   A5 87      LDA $87
+;".C:1b0e   69 02      ADC #$02
+;".C:1b10   48         PHA
+;".C:1b11   98         TYA
+;".C:1b12   65 88      ADC $88
+;".C:1b14   4C 4A 08   JMP $084A
+createlfa	.word $adde
+		.byt (create-*-1)|bit7
+		.asc "CREAT","E"|bit7
+create		jmp enter
+		.word frombcq
+		.word here
+		.word width
+		.word fetch
+		.word twoplus
+		.word twoplus
+		.word viewq
+		.word fetch
+		.word plus
+		.word plus
+		.word ult
+		.word pabortq
+		.byt (l013-*-1)
+		.asc "DICTIONARY FULL"
+l013		.word existsq
+		.word over
+		.word plit
+		.word 1781
+		.word eq
+		.word pabortq
+		.byt (l014-*-1)
+		.asc "NAME REQUIRED"
+l014		.word warning
+		.word fetch
+		.word andx
+		.word qbranch
+		.word 29
+		.word toname
+		.word cr
+		.word clit
+		.byt 12
+		.word emit
+		.word iddot
+		.word clit
+		.byt 92
+		.word emit
+		.word pdotq
+		.byt (l015-*-1)
+		.asc "ALREADY EXISTS"
+l015		.word branch
+		.word l016
+		.word drop
+		.word here
+l016		.word dup
+		.word cfetch
+
+		
+
 ;--------------------------------------------------------------
 ; [compile]
 ;--------------------------------------------------------------
