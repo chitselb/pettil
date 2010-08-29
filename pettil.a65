@@ -81,8 +81,7 @@ latesth		.dsb 16,0
 ;--------------------------------------------------------------
 ; Inner Interpreter words  NEXT ENTER EXIT EXECUTE
 ;
-;" Here is the classic way of implementing a direct-threaded inner
-;" interpreter:
+;" The classic way of implementing a direct-threaded inner interpreter:
 ;" (source: http://www.forthfreak.net/index.cgi?DirectThreadedCodePseudoCode)
 ;"
 ;" NEXT:
@@ -137,9 +136,9 @@ putya				= $0000	; YA to the TOS register
 		sty tos+1
 puta				= $0002	; your mom
 		sta tos
-next1				= $0004 ; enter here to reset Y = 1
+next1				= $0004 ; entry to reset Y = 1
 		ldy #1
-next				= $0006	; entry point for most purposes
+next				= $0006	; entry for most purposes
 		tya			;[2]
 nexta				= $0007 ; adds an arbitrary amount to IP
 		sec			;[2]
@@ -165,6 +164,8 @@ bnextend			; $0018
 ; [IP] -> W
 ; W+3 -> IP
 ; NEXT
+;
+; ENTER is headerless
 enter		lda ip+1
 		pha
 		lda ip
@@ -189,7 +190,7 @@ l001		sty ip+1
 ;
 ; [RP+] -> IP
 ; NEXT
-exitlfa		.word 0		; base of dictionary marker
+exitlfa		.word 0			; 0 LFA marks base of dictionary
 		.byt (exit-*-1)|bit7
 		.asc "EXI","T"|bit7
 ; NEXT
@@ -212,9 +213,7 @@ exit		pla
 ; IP -> [W1+4]
 ; W1 -> IP
 ; NEXTO
-executelfa	.word 0			; <-- link field address
-					; a pointer to previous LFA
-					; 0 = end of dictionary
+executelfa	.word $adde
 		.byt (execute-*-1)|bit7	; <-- name field address
 		.asc "EXECUT","E"|bit7	; length and final byte are OR $80
 execute		lda tos			; <-- code field address
@@ -250,7 +249,7 @@ w1				; dummy value $DEAD, we wind up at $BEEF
 ;
 ; push the word of memory following (IP)
 ;
-lfa000		.word 0			
+plitlfa		.word $adde
 		.byt (plit-*-1)|bit7
 		.asc "(LIT",")"|bit7
 plit		iny			; (IP),0 (IP),1 = address of plit
@@ -287,7 +286,7 @@ push		sta stash		; push entry - pushes YA
 ;"	: clit ( -- c )
 ;"	  ip c@  1 ip +! ;
 ;
-lfa001		.word lfa000
+clitlfa		.word $adde
 		.byt (clit-*-1)|bit7
 		.asc "CLI","T"|bit7
 clit		iny			; Y = 2
@@ -385,33 +384,6 @@ pop		lda stackh,x
 		ldy stackl,x
 		inx
 		jmp putya
-
-;--------------------------------------------------------------
-;test - moved it here to avoid jmp ($xxFF) bug 
-testlfa		.word $adde
-		.byt (test-*-1)|bit7
-		.asc "TES","T"|bit7
-test		jmp enter
-		.word foo
-		.word exit
-
-;--------------------------------------------------------------
-foolfa		.word $adde
-		.byt (foo-*-1)|bit7
-		.asc "FO","O"|bit7
-foo		jmp enter
-		.word bar
-		.word bar
-		.word exit
-
-;--------------------------------------------------------------
-barlfa		.word $adde
-		.byt (bar-*-1)|bit7
-		.asc "BA","R"|bit7
-bar		jmp enter
-		.word plit
-		.word $dead
-		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -716,11 +688,12 @@ pluslfa		.word $adde
 		.asc "+"|bit7
 plus		lda tos
 		adc stackl,x
-		sta stackl,x
+		sta tos
 		lda tos+1
 		adc stackh,x
-		sta stackh,x
-		jmp pop
+		sta tos+1
+		inx
+		jmp next
 
 ;--------------------------------------------------------------
 ; d+
@@ -913,6 +886,14 @@ doconst		lda (ip),y
 
 ;--------------------------------------------------------------
 ; variable
+variablelfa	.word $adde
+		.byt (variable-*-1)|bit7
+		.asc "VARIABL","E"|bit7
+variable	jmp enter
+		.word create
+		.word two
+		.word allot
+		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -1285,12 +1266,16 @@ dpl		jmp enter
 
 ;--------------------------------------------------------------
 ;
-;	SPAN
+;	SPAN   ( -- addr )
 ;
-spanlfa		.word $adde
-		.byt (span-*-1)|bit7
-		.asc "SPA","N"|bit7
-span		jmp enter
+; Returns  the  address of the user variable that
+; contains the count of characters  received  and
+; stored by the most recent execution of EXPECT .
+; The  address    of the user variable containing
+; the count of characters actually  received  and
+; stored by the last execution of EXPECT .
+span		jmp uservar
+		.byt 42
 
 ;--------------------------------------------------------------
 ;
@@ -1841,12 +1826,23 @@ does		jmp enter
 
 ;--------------------------------------------------------------
 ;
-;	COUNT
+;	COUNT   ( addr1 -- addr2 n+ )
 ;
+; Leaves  the address,  addr2 and the character
+; count +n of text  beginning at addr1.
+; addr2 is addr1+1 and n1 is the  length  of  the
+; counted string at addr1.  The byte at addr1 con-
+; tains  the  byte  count  +n.    Range  of +n is
+; {0...255}.
 countlfa	.word $adde
 		.byt (count-*-1)|bit7
 		.asc "COUN","T"|bit7
-count		jmp enter
+count		dey
+		lda (tos),y
+		inc tos
+		bne l020
+		inc tos+1
+l020		jmp push
 
 ;--------------------------------------------------------------
 ;
@@ -1895,8 +1891,22 @@ dotp		jmp enter
 
 ;--------------------------------------------------------------
 ;
-;	EXPECT
+;	EXPECT   ( addr +n -- )
 ;
+; Stores up to +n characters into  memory  begin-
+; ning at addr.
+; Receive  characters and store each into memory.
+; The transfer begins at addr proceeding  towards
+; higher  addresses  one byte per character until
+; either "return" is received or until +n charac-
+; ters have been transfered.   No  more  than  +n
+; characters will be stored.  The "return" is not
+; stored into memory.  No characters are received
+; or  transfered  if +n is zero.   All characters
+; actually received and stored into  memory  will
+; be displayed, with the "return" displaying as a
+; space.
+
 expectlfa	.word $adde
 		.byt (expect-*-1)|bit7
 		.asc "EXPEC","T"|bit7
@@ -1910,6 +1920,18 @@ querylfa	.word $adde
 		.byt (query-*-1)|bit7
 		.asc "QUER","Y"|bit7
 query		jmp enter
+
+;--------------------------------------------------------------
+;
+;	" "
+;
+spacenplfa	.word $adde
+		.byt (spacenp-*-1)|bit7|bit6
+		.asc " "|bit7
+spacenp		.word enter
+		.word doneq
+		.word on
+		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -2089,41 +2111,118 @@ create		jmp enter
 		.word plus
 		.word ult
 		.word pabortq
-		.byt (l013-*-1)
+		.byt l013-*-1
 		.asc "DICTIONARY FULL"
 l013		.word existsq
 		.word over
 		.word plit
-		.word 1781
+		.word spacenp
 		.word eq
 		.word pabortq
-		.byt (l014-*-1)
+		.byt l014-*-1
 		.asc "NAME REQUIRED"
 l014		.word warning
 		.word fetch
 		.word andx
 		.word qbranch
-		.word 29
+		.word l016
 		.word toname
 		.word cr
 		.word clit
-		.byt 12
+		.byt $12	; rvs
 		.word emit
 		.word iddot
 		.word clit
-		.byt 92
+		.byt $92	; off
 		.word emit
 		.word pdotq
-		.byt (l015-*-1)
-		.asc "ALREADY EXISTS"
+		.byt l015-*-1
+		.asc " ALREADY EXISTS "
 l015		.word branch
-		.word l016
-		.word drop
-		.word here
-l016		.word dup
+		.word l017
+l016		.word drop
+l017		.word here
+		.word dup
 		.word cfetch
-
-		
+		.word over
+		.word twoplus
+		.word viewq
+		.word fetch
+		.word plus
+		.word dup
+		.word tor
+		.word swap
+		.word oneplus
+		.word cmovegt
+		.word rfrom
+		.word dup
+		.word cfetch
+		.word width
+		.word fetch
+		.word min
+		.word oneplus
+		.word twodup
+		.word plus
+		.word clit
+		.byt $ff
+		.word andx
+		.word clit
+		.byt $ff
+		.word eq
+		.word qbranch
+		.word l018
+		.word twodup
+		.word swap
+		.word dup
+		.word oneplus
+		.word rot
+		.word cmovegt
+		.word clit
+		.byt $ea
+		.word ccomma
+		.word swap
+		.word oneplus
+		.word swap
+l018		.word twoplus
+		.word viewq
+		.word fetch
+		.word plus
+		.word allot
+		.word dup
+		.word clit
+		.byt $80
+		.word toggle
+		.word here
+		.word oneminus
+		.word clit
+		.byt $80
+		.word toggle
+		.word latest
+		.word over
+		.word twominus
+		.word store
+		.word viewq
+		.word fetch
+		.word qbranch
+		.word l019
+		.word blk
+		.word fetch
+		.word over
+		.word twominus
+		.word twominus
+		.word store
+l019		.word two
+		.word allot
+		.word current
+		.word fetch
+		.word store
+		.word psemi
+docreate	lda w1
+		adc #3
+		tay
+		lda #0
+		adc w1+1
+		jmp push
 
 ;--------------------------------------------------------------
 ;
@@ -2240,8 +2339,54 @@ abort		jmp enter
 startuplfa	.word $adde
 		.byt (startup-*-1)|bit7
 		.asc "STARTU","P"|bit7
-startup		jmp enter
+startup		jmp docreate
+		.word abort
 
+;--------------------------------------------------------------
+;
+;	COLD
+;
+;cold
+;Cold start
+;print a welcome message
+;reset top of the dictionary
+;reset data and return stack
+coldlfa		.word $adde
+		.byt (cold-*-1)|bit7
+		.asc "COL","D"|bit7
+cold		sei
+		cld
+		ldx #$f8
+		txs
+		jsr CLRCHN
+		jsr CLALL
+		cli
+
+		ldy #bnextend-bnextbegin+1
+l011		lda bnextbegin-1,y
+		sta putya-1,y
+		dey
+		bne l011
+		iny			; Y = 1 to make primitives happy
+
+		; initialize the data stack pointer
+		ldx #bos
+		; move up to high-level
+xpetp		lda #>cold2
+		sta ip+1
+		lda #<cold2
+		sta ip
+		jmp nexty
+cold2		.word rethread
+		.word startup
+		.word fetch
+		.word execute
+
+;Warm start
+;--------------------------------------------------------------
+;
+;	WARM
+warm		rts
 
 ;--------------------------------------------------------------
 ;
@@ -2271,74 +2416,6 @@ l007		.word rpstore
 		.asc "OK"
 l006		.word branch
 		.word l007
-
-;--------------------------------------------------------------
-;
-;	COLD
-;
-;cold
-;Cold start
-;print a welcome message
-;reset top of the dictionary
-;reset data and return stack
-coldlfa		.word $adde
-		.byt (cold-*-1)|bit7
-		.asc "COL","D"|bit7
-cold		sei
-		cld
-		ldx #$f8
-		txs
-		jsr CLRCHN
-		jsr CLALL
-		cli
-
-		ldy #bnextend-bnextbegin+1
-l1		lda bnextbegin-1,y
-		sta putya-1,y
-		dey
-		bne l1
-		iny			; Y = 1 to make primitives happy
-
-		; initialize the data stack pointer
-		ldx #bos
-		; turn over control to the secondary stored at TOS (from boottos)
-		jmp execute
-
-		ldy #0
-l002		lda message,y
-		beq l003
-		jsr $ffd2
-		iny
-		bne l002
-l003		rts
-
-message		.byt $93,"HELLO, PET!",0
-
-
-/*
-cold2		ldx #bos
-		lda #>foo
-		sta tos+1
-		lda #<foo
-		sta tos
-
-		lda #>bletch
-		sta ip+1
-		lda #<bletch
-		sta ip
-
-		clc
-		ldy #1
-		jmp execute
-
-*/
-
-
-;Warm start
-;--------------------------------------------------------------
-;
-;	WARM
-warm		rts
 
 ;--------------------------------------------------------------
 ;
@@ -2641,6 +2718,15 @@ rslashw		jmp enter
 ;
 ;	T&S
 ;
+;1541 Track Number Sectors
+;1-17 0-20
+;18-24 0-18
+;25-30 0-17
+;31-35 0-16
+;track 18 = DIR/BAM
+;
+;1581 80 tracks, 40 sectors, tracks 40-41 = DIR/BAM
+;
 tnslfa		.word $adde
 		.byt (tns-*-1)|bit7
 		.asc "T&","S"|bit7
@@ -2717,6 +2803,71 @@ ioerrlfa	.word $adde
 		.byt (ioerr-*-1)|bit7
 		.asc "IOER","R"|bit7
 ioerr		jmp enter
+		.word qdup
+		.word qbranch
+		.word s028
+		.word dup
+		.word one
+		.word eq
+		.word pabortq
+		.byt s020-*-1
+		.asc "TOO MANY OPEN FILES"
+s020		.word dup
+		.word two
+		.word eq
+		.word pabortq
+		.byt s021-*-1
+		.asc "FILE ALREADY OPEN"
+s021		.word dup
+		.word three
+		.word eq
+		.word pabortq
+		.byt s022-*-1
+		.asc "FILE NOT OPEN"
+s022		.word dup
+		.word clit
+		.byt 4
+		.word eq
+		.word pabortq
+		.byt s023-*-1
+		.asc "FILE NOT FOUND"
+s023		.word dup
+		.word clit
+		.byt 5
+		.word eq
+		.word pabortq
+		.byt s024-*-1
+		.asc "DEVICE NOT PRESENT"
+s024		.word dup
+		.word clit
+		.byt 6
+		.word eq
+		.word pabortq
+		.byt s025-*-1
+		.asc "NOT INPUT FILE"
+s025		.word dup
+		.word clit
+		.byt 7
+		.word eq
+		.word pabortq
+		.byt s026-*-1
+		.asc "NOT OUTPUT FILE"
+s026		.word dup
+		.word clit
+		.byt 8
+		.word eq
+		.word pabortq
+		.byt s027-*-1
+		.asc "MISSING FILE NAME"
+s027		.word dup
+		.word clit
+		.byt 9
+		.word eq
+		.word pabortq
+		.byt s028-*-1
+		.asc "ILLEGAL DEVICE NUMBER"
+s028		.word exit
+
 
 ;--------------------------------------------------------------
 ;
@@ -3381,11 +3532,10 @@ dhashlfa	.word $adde
 		.asc "DHAS","H"|bit7
 dhash		dey
 		lda (tos),y		; get the length
-		pha
 		and #$1f		; mask off flag bits
 		tay
-		pla			; include the unmodified length byte
-l009		eor (tos),y		; xor the string together
+		lda #0
+l009		eor (tos),y		; xor the string together, ignore length
 		dey
 		bne l009
 		sty tos+1		; 0 -> msb
@@ -3395,10 +3545,9 @@ l009		eor (tos),y		; xor the string together
 		lsr
 		lsr			; get the high nybble
 		eor tos			; mix it with the low nybble
-		and #$0f		; ignore the high nybble
+		and #$0f		; mask off the high nybble
 		sta tos			; hash value in the range 0..f
 		jmp next1
-
 
 ;--------------------------------------------------------------
 ;
@@ -3450,17 +3599,10 @@ dhashstore	lda #2
 
 ;--------------------------------------------------------------
 ;
-;	THREADING?   ( -- flag )
+;	RETHREAD   ( flag -- )
 ;
-; If we're going to be fiddling with the LFA chains, it might
-; be handy to have a word to figure out what the current scheme
-; is.
-;
-; return values	-1 = hashed
-;		 0 = dead
-;		 1 = single
-;
-; how does it know?
+; TRUE - builds a hashed LFA structure
+; FALSE - resets all LFAs to DE AD
 ;
 ; dead - 
 ; scanning forward sequentially, we find sequences of 
@@ -3487,28 +3629,20 @@ dhashstore	lda #2
 ;
 ;"	: THREADING?  ( -- flag )
 ;"	    LATEST
-threadingqlfa	.word $adde
-		.byt (threadingq-*-1)|bit7
-		.asc "THREAD","?"|bit7
-threadingq	jmp enter
+;
+;	tells us whether we're threaded (true) or unthreaded (false)
+;
+rethreadlfa	.word $adde
+		.byt (rethread-*-1)|bit7
+		.asc "RETHREA","D"|bit7
+rethread
 		.word latest
 		.word fetch
 		.word zeq
 		.word qbranch
 
-;--------------------------------------------------------------
-;
-;	1THREAD   ( -- )
-;
-; assumption -- All LFAs are DE AD
-;
+unthread
 
-;--------------------------------------------------------------
-;
-;	HASHTHREAD   ( -- )
-;
-; assumption -- All LFAs are DE AD
-;
 
 ;--------------------------------------------------------------
 ;
@@ -3553,5 +3687,4 @@ l005		lda stackl,x
 		sta tos+1
 		inx
 		rts
-
 
