@@ -580,42 +580,253 @@ You'll also need to enter your username for signing your edits: &lt;&lt;option t
 [[Execute]]
 </pre>
 </div>
-<div title="InnerInterpreter" creator="YourName" modifier="chitselb" created="201008262049" modified="201008270015" changecount="4">
-<pre> 
-Primitive Example: ''negate''
+<div title="InnerInterpreter" creator="YourName" modifier="chitselb" created="201008262049" modified="201008311450" changecount="235">
+<pre>''NEXT ENTER EXIT EXECUTE''
+
+Here are the classical implementation of both the direct-threaded and indirect-threaded inner interpreter. (source: http://www.forthfreak.net)
 {{{
-57 06       LFA   .word plus
-86          NFA   .byt 6 | $80
-4e 45 48          .byt &quot;negat&quot;,&quot;e&quot; | $80
-41 54 c5
-            CFA
-          negate  lda $00,x
-                  eor #$ff
-                  clc
-                  adc #1
-                  sta $00,x
-                  lda $01,x
-                  eor #$ff
-                  adc #0
-                  sta $01,x
-                  jmp next
-            PFA
-                  (empty)
+Direct                         Indirect
+NEXT:                          NEXT:
+    [IP]+ -&gt; W                     [IP+] -&gt; W
+    W+    -&gt; PC                    [W]+  -&gt; PC
+
+NEST:                          NEST:
+    IP    -&gt; -[RP]                 IP    -&gt; -[RP]
+    W     -&gt; IP                    W     -&gt; IP
+    NEXT                           NEXT
+
+UNNEST:                        UNNEST:
+    [RP]+ -&gt; IP                    [RP]+ -&gt; IP
+    NEXT                           NEXT
+}}}
+PETTIL takes a few left turns from the classic model, but it's fast. Props to M. Anton Ertl on comp.lang.forth for the design idea and to others on the Forth board at http://forum.6502.org/ for tweaks.  After reading Brad Rodriguez' &quot;Moving Forth&quot; paper, I chose the direct-threaded model for PETTIL, due to its greater efficiency and novelty.
+
+NEXT is the heart and soul of a Forth interpreter.  It executes more than any other routine, so let's optimize.
+{{{
+classic                        pettil
+NEXT:                          NEXT:
+    [IP]+ -&gt; W                     +IP
+    W+    -&gt; PC                    [IP]   -&gt; PC
+
+NEXT        INC IP
+NEXT1       INC IP
+IP = *+1
+NEXTO       JMP ($CAFE)
+}}}
+15 cycles.  Not bad.  You might have some questions.
+
+''Q'' Where did &quot;W&quot; go?  
+''A'' Obama was elected, so he retired and moved back to Texas.  In this implementation of NEXT, the W exists only in a fleeting and transient way during the indirect JMP.  But W can be created if a word needs it.  
+
+I'd like to have a word about word.  Word is a seriously overloaded word in Forth.  It can mean a complete subroutine (e.g. &quot;CMOVE is a word that copies memory&quot;) or 16 bits of data (e.g. &quot;Push a word on the data stack&quot;) or a blank delimited sequences of characters (e.g. &quot;The word WORD parses a word from the input stream&quot;).  I'm really very sorry about that.  If you can't make out which meaning of word from context, try rereading that passage several times.  Word!
+
+''Q'' What about paging?
+''A'' Don't worry, we'll do &quot;paging by hand&quot; where the compiler will insert a call to the paging primitive toward the end of each page.  This will cost a few clock cycles, but only when moving IP forward from one 256-byte region of memory into the one following.  
+
+The [[elephant in the room|http://en.wikipedia.org/wiki/Elephant_in_the_room]] is the [[JMP ($xxFF) bug|http://en.wikipedia.org/wiki/MOS_Technology_6502#Bugs_and_quirks]]
+
+To get around this, we'll do these things.
+''1) have a very short, very fast NEXT that only works within a page''
+{{{
+NEXT        INC IP
+NEXT1       INC IP
+IP = *+1
+NEXTO       JMP ($CAFE)
+}}}
+''2) set up primitives for IP to cross page boundaries (&quot;paging by hand&quot; strategy)''
+{{{
+PAGE2   INC IP+1
+        JMP NEXT
+
+PAGE3   INC IP
+        BNE PAGE2
 }}}
 
-Secondary Example: ''-'' (minus)   : -  ( a b -- a-b )   negate + ;
+''3) Fix the compiler to ensure a word (16-bit flavor here) inside a colon definition never splits at a page boundary''
 {{{
-57 06       LFA   .word negate
-81          NFA   .byt 6 | $80
-ad                .byt &quot;-&quot; | $80
-            CFA
-          minus   jmp enter
-            PFA
-                  .word negate
-                  .word plus
-                  .word exit
+: pagealign
+    here $00ff and $00fe = if ' page2 , then
+    here $00ff and $00fd = if ' page3 , $ea c, then
+
+old  : [COMPILE]   ( -- )   ' , ; IMMEDIATE 
+new  : [COMPILE]   ( -- )    pagealign    ' , ; IMMEDIATE
 }}}
-</pre>
+In other words (English words), when the compiler is about to compile a word (16-bit) into the dictionary, it checks to see if it's got exactly two or three bytes remaining on the current page.  If so, now would be a good time time to call that routine that magically transports us over onto the following page.  Right here in the middle of a secondary definition, no matter what else is going on.  What could possibly go wrong?  Be afraid.
+
+Let's use this word (Forth definition) to illustrate some border crossing scenarios
+ : FOO ( n -- n*2+42 ) DUP 42 + OVER + ;
+1) Here's what would happen if we didn't try to fix this.
+{{{
+  f6  f7  f8  f9  fa  fb  fc  fd  fe  ff| 00  01  02  03  04  05  06  07  08  09
++---+---+---+---+---+---+---+---+---+---|---+---+---+---+---+---+---+---+---+---+
+| 3 |   FOO     | jmp enter | dup   | cl|it | 42| plus  | over  | plus  | exit  |
+|&lt;----NFA------&gt;|&lt;---CFA---&gt;|&lt;----------|------PFA-----------------------------&gt;+
+                                        ^ yikes!
+}}}
+2) Here's what we would want the compiler to do for case 1)
+{{{
+  f6  f7  f8  f9  fa  fb  fc  fd  fe  ff| 00  01  02  03  04  05  06  07  08  09  0a  0b  0c
++---+---+---+---+---+---+---+---+---+---|---+---+---+---+---+---+---+---+---+---+---+---+---+
+| 3 |   FOO     | jmp enter | page3 |nop|  dup  | clit  | 42| plus  | over  | plus  | exit  |
+|&lt;----NFA------&gt;|&lt;---CFA---&gt;|&lt;----------|----------PFA-------------------------------------&gt;+
+}}}
+3) Here's what it looks like when the word (16-bit) alignment naturally lines up, leaving exactly two bytes so we can use the page2 primitive to cross the border.
+{{{
+  f5  f6  f7  f8  f9  fa  fb  fc  fd  fe  ff| 00  01  02  03  04  05  06  07  08  09  0a
++---+---+---+---+---+---+---+---+---+---+---|---+---+---+---+---+---+---+---+---+---+---+
+| 3 |   FOO     | jmp enter |  dup  | page2 | clit  | 42| plus  | over  | plus  | exit  |
+|&lt;----NFA------&gt;|&lt;---CFA---&gt;|&lt;--------------|-------PFA--------------------------------&gt;+
+}}}
+That seems simple enough.  But what if an NFA crosses the page?  That's not a problem at all.  In fact, eventually all the name fields will be extracted out of the dictionary and build downward in memory from below the block buffers at the top of RAM.  This will result in extremely compact binaries when the dictionary gets saved with just a STARTUP word (Forth routine) to kick off a standalone application.  It will also reduce further the likelihood of having to cross a page boundary by fitting more code in a page.
+
+Let's take a look at what happens when the CFA splits across two pages.
+{{{
+  fa  fb  fc  fd  fe  ff| 00  01  02  03  04  05  06  07  08  09  0a  0b  0c  0d
++---+---+---+---+---+---|---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+| 3 |   FOO     | jmp en|ter|  dup  | clit  | 42| plus  | over  | plus  | exit  |
+|&lt;----NFA------&gt;|&lt;-CFA--|--&gt;|&lt;---------------------PFA-------------------------&gt;+
+                        ^ oh teh noez!
+}}}
+For this one, and for the case where there is exactly one byte available at the end of the page after the CFA, we'll use a new entry point to ENTER, labeling it ENTERP (enter-page).  The runtime behavior of ENTERP is to position the IP to the beginning of the PFA and JMP NEXTO.  Modifications to ':' will figure out just what to compile.
+
+We use ENTERP when the CFA begins at $xxFF, $xxFE, $xxFD, or $xxFC
+{{{
+  fa  fb  fc  fd  fe  ff| 00  01  02  03  04  05  06  07  08  09  0a  0b  0c  0d
++---+---+---+---+---+---|---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+| 3 |   FOO     | jmp enterp|  dup  | clit  | 42| plus  | over  | plus  | exit  |
+|&lt;----NFA------&gt;|&lt;-CFA--|--&gt;|&lt;---------------------PFA-------------------------&gt;+
+}}}
+When the CFA begins at $xxFC, the compiler inserts a NOP after the JMP ENTERP to pad out the page.
+{{{
+  f8  f9  fa  fb  fc  fd  fe  ff| 00  01  02  03  04  05  06  07  08  09  0a  0b  0c
++---+---+---+---+---+---+---+---|---+---+---+---+---+---+---+---+---+---+---+---+---+
+| 3 |   FOO     | jmp enterp|nop|  dup  | clit  | 42| plus  | over  | plus  | exit  |
+|&lt;----NFA------&gt;|&lt;-CFA---------&gt;|&lt;---------------------PFA-------------------------&gt;+
+}}}
+This leads us to the grand finale.  As one of my colleagues was fond of saying, &quot;The ugly has to go somewhere.&quot;  And here it is.  What happens with words (Forth routines) that compile a pointer to their CFA followed by one or more bytes of data in the dictionary?  Some examples would be ''.&quot; LITERAL ABORT&quot; $&quot;''
+
+''LITERAL'' is a fun one, because it already has two different compile-time behaviors.  If the value on the stack will fit in one byte, LITERAL compiles a pointer to CLIT followed by the one-byte value.  For bigger numbers, LITERAL compiles a pointer to PLIT followed by the two-byte value.
+{{{
+  f4  f5  f6  f7  f8  f9  fa  fb  fc  fd  fe  ff| 00  01  02  03  04  05  06  07
++---+---+---+---+---+---+---+---+---+---+---+---|---+---+---+---+---+---+---+---+
+| 3 |   FOO     | jmp enter |  dup  | clit  | 42| plus  | over  | plus  | exit  |
+|&lt;----NFA------&gt;|&lt;-CFA-----&gt;|&lt;------------------|--PFA-------------------------&gt;+
+}}}
+Where do we insert the ''page2'' or ''page3'' call here?  Guess we don't have to.  That's because we're making up the new rule that:
+''Words which are followed by arguments are responsible for fixing IP when they exit''
+So what if there's only one byte left on the page after the &quot;42&quot;?  That would split plus in half.  Not good.  Instead we'll enclose a wasted byte, and ''LITERAL'' will have to put it there just like ''CLIT'' will have to remember that it's there at runtime.
+{{{
+  f3  f4  f5  f6  f7  f8  f9  fa  fb  fc  fd  fe  ff| 00  01  02  03  04  05  06  07
++---+---+---+---+---+---+---+---+---+---+---+---+---|---+---+---+---+---+---+---+---+
+| 3 |   FOO     | jmp enter |  dup  | clit  | 42| 00| plus  | over  | plus  | exit  |
+|&lt;----NFA------&gt;|&lt;-CFA-----&gt;|&lt;----------------------|--PFA-------------------------&gt;+
+}}}
+Here's a similar case using wide literals
+{{{
+  f2  f3  f4  f5  f6  f7  f8  f9  fa  fb  fc  fd  fe  ff| 00  01  02  03  04  05  06  07
++---+---+---+---+---+---+---+---+---+---+---+---+---+---|---+---+---+---+---+---+---+---+
+| 3 |   FOO     | jmp enter |  dup  | clit  |  420  | 00| plus  | over  | plus  | exit  |
+|&lt;----NFA------&gt;|&lt;-CFA-----&gt;|&lt;--------------------PFA---|------------------------------&gt;+
+}}}
+Here's another example with a string this time.
+ : BAZ   .&quot; PETTIL!&quot; CR ;
+{{{
+  f3  f4  f5  f6  f7  f8  f9  fa  fb  fc  fd  fe  ff| 00  01  02  03  04  05  06  07
++---+---+---+---+---+---+---+---+---+---+---+---+---|---+---+---+---+---+---+---+---+
+| 3 |   BAZ     | jmp enter | (.&quot;)  | 7 |'P'|'E'|'T'|'T'|'I'|'L'|'!'|   cr  | exit  |
+|&lt;----NFA------&gt;|&lt;-CFA-----&gt;|&lt;--------------PFA-----|------------------------------&gt;+
+}}}
+No problem here.   What if there is exactly one byte on the page after the counted string?  We'll pad it with a null and ''(.&quot;)'' will still leave IP at the 0th byte of the following page.
+{{{
+  ee  ef  f0  f1  f2  f3  f4  f5  f6  f7  f8  f9  fa  fb  fc  fd  fe  ff| 00  01  02  03
++---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|---+---+---+---+
+| 3 |   BAZ     | jmp enter | (.&quot;)  | 7 |'P'|'E'|'T'|'T'|'I'|'L'|'!'| 0 |   cr  | exit  |
+|&lt;----NFA------&gt;|&lt;-CFA-----&gt;|&lt;-------------------------PFA--------------|--------------&gt;+
+}}}
+It's time to code the ENTER and EXIT and a few necessary primitives.
+{{{
+classic                        pettil
+ENTER:                         ENTER:
+    IP    -&gt; -[RP]                 IP            -&gt; -[RP]
+    W     -&gt; IP                    [IP]+CFA.size -&gt; IP
+    NEXT                           NEXTO
+
+ENTER       LDY #0     ;[2]
+            CLC        ;[2]
+            BCC L1     ;[3]
+ENTERP      LDY #0
+            LDA #$FC         ; we don't check, but if (IP)&lt;$FC then we should have used ENTER
+            CMP (IP),Y       ; C = true when (IP)=$FC, to skip the wasted byte at $xxFF, false otherwise
+L1          LDA IP+1   ;[3]
+            PHA        ;[3]
+            LDA IP     ;[3]
+            PHA        ;[3]
+            LDA (IP),Y ;[5]
+            ADC #3     ;[2]
+            PHA        ;[3]
+            INY        ;[2]
+            LDA (IP),Y ;[5]
+            ADC #0     ;[2]
+            STA IP+1   ;[3]
+            PLA        ;[4]
+            STA IP     ;[3]
+            JMP NEXTO  ;[3]
+}}}
+51 clocks + 5 more for NEXTO. Ridiculous!
+{{{
+EXIT:
+    [RP]+   -&gt; IP
+    NEXT
+
+EXIT        PLA        ;[4]
+            STA IP     ;[3]
+            PLA        ;[4]
+            STA IP+1   ;[3]
+            JMP NEXT   ;[3]
+}}}
+CLIT
+{{{
+CLIT        LDY #2     ;[2]
+            LDA (IP),Y ;[5]
+            PHA        ;[3]
+            LDA #$FC   ;[2]
+            CMP IP     ;[3]
+            BNE L1     ;[3]
+            INC IP
+            CLC
+L1          BCS L2     ;[3]
+            INC IP+1
+L2          INC IP     ;[5]
+            LDY #0     ;[2]
+            PLA        ;[4]
+            JMP PUSH   ;[3]
+}}}
+Ugh.  35 clocks for CLIT
+
+PLIT
+{{{
+PLIT        LDY #3     ;[2]
+            LDA (IP),Y ;[5]
+            PHA        ;[3]
+            DEY        ;[2]
+            LDA (IP),Y ;[5]
+            PHA        ;[3]
+            LDA #$FB   ;[2]
+            CMP IP     ;[3]
+            BNE L1     ;[3]
+            INC IP
+            CLC
+L1          BCS L2     ;[3]
+            INC IP+1
+L2          INC IP     ;[5]
+            INC IP     ;[5]
+            PLA        ;[4]
+            TAY        ;[2]
+            PLA        ;[4]
+            JMP PUSH   ;[3]
+}}}
+(.&quot;)
+(ABORT&quot;)</pre>
 </div>
 <div title="Internals" creator="chitselb" modifier="chitselb" created="201008262144" modified="201008262211" changecount="28">
 <pre>''6502 Register Usage''
