@@ -69,7 +69,7 @@ warmvec         jmp warm
 		; user area initialization data
 		; this gets copied to the cassette buffer
 		; and is pointed to by the UP (user pointer)
-userup          .word cas2buf				; 6..7
+userarea	.word cas2buf				; 6..7
 usersp0         .word bos				; 8..9
 userrp0         .word $01ff				; 10..11
 userwidth       .word 31				; 12..13
@@ -286,21 +286,20 @@ qbranchlfa      .word $adde
 		.asc "?BRANC","H"|bit7
 qbranch         lda tos
 		ora tos+1
-		php
-		lda stackl,x
-		sta tos
-		lda stackh,x
-		sta tos+1
+		ldy stackl,x
+		sty tos
+		ldy stackh,x
+		sty tos+1
 		inx             ; drop
-		plp
+		tay		; to set the Z flag
 		bne branch
 		lda #4
-nexta           clc
-		adc ip
-		sta ip
-		bcc l023
-		inc ip+1
-l023            jmp nexto
+nexta           clc		;[2]
+		adc ip		;[3]
+		sta ip		;[3]
+		bcc l023	;[2]
+		inc ip+1	;[5]
+l023            jmp nexto	;[3]
 
 ;--------------------------------------------------------------
 ;
@@ -478,12 +477,25 @@ cmovegt		jsr enter
 
 ;--------------------------------------------------------------
 ;
-;	FILL
+;	FILL   ( from howmany value -- )
 ;
 filllfa		.word $adde
 		.byt (fill-*-1)|bit7
 		.asc "FIL","L"|bit7
-fill		jsr enter
+fill		lda #3
+		jsr popnwords
+		ldy #0
+		lda n+2
+		ora n+3
+		beq l026
+		lda n+4
+		ldy n+2
+l025		dey
+		sta (n),y
+		bne l025
+		dec n+3
+		bpl l025
+l026		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -573,7 +585,9 @@ not		lda tos
 spfetchlfa	.word $adde
 		.byt (spfetch-*-1)|bit7
 		.asc "SP","@"|bit7
-spfetch		jsr enter
+spfetch		txa
+		ldy #0
+		jmp push
 
 ;--------------------------------------------------------------
 ;
@@ -595,67 +609,102 @@ rpstore		jsr enter
 
 ;--------------------------------------------------------------
 ;
-;	>R
+;	>R   ( n -- )
 ;
 torlfa		.word $adde
 		.byt (tor-*-1)|bit7
 		.asc ">","R"|bit7
-tor		jsr enter
+tor		lda tos+1
+		pha
+		lda tos
+		pha
+		jmp pop
 
 ;--------------------------------------------------------------
 ;
-;	R>
+;	R>   ( -- n )
 ;
 rfromlfa	.word $adde
 		.byt (rfrom-*-1)|bit7
 		.asc "R",">"|bit7
-rfrom		jsr enter
+rfrom		dex
+		lda tos
+		sta stackl,x
+		lda tos+1
+		sta stackh,x
+		pla
+		sta tos
+		pla
+		sta tos+1
+		jmp next
 
 ;--------------------------------------------------------------
 ;
-;	R@
+;	R@   ( -- n )
 ;
 rfetchlfa	.word $adde
 		.byt (rfetch-*-1)|bit7
 		.asc "R","@"|bit7
-rfetch		jsr enter
+rfetch		stx n
+		tsx
+		ldy $0101,x
+		lda $0100,x
+		ldx n
+		jmp push
 
 ;--------------------------------------------------------------
 ;
-;	0>
+;	0>   ( n -- flag )
 ;
 zgtlfa		.word $adde
 		.byt (zgt-*-1)|bit7
 		.asc "0",">"|bit7
-zgt		jsr enter
+zgt		ldy #$ff
+		bit tos+1
+		bpl l022
+		iny
+l022		tya
+		jmp put
 
 ;--------------------------------------------------------------
 ;
-;	<>
+;	<>   ( n1 n2 -- flag )
 ;
 nelfa	.word $adde
 		.byt (ne-*-1)|bit7
 		.asc "<",">"|bit7
-ne		jsr enter
-
+ne		ldy #$ff
+		lda tos
+		eor stackl,x
+		bne l021
+		lda tos+1
+		eor stackh,x
+		bne l021
+		iny
+l021		tya
+		inx
+		jmp put
 
 ;--------------------------------------------------------------
 ;
-;	ON
+;	ON   ( addr -- )
 ;
+; store -1 at ADDR
 onlfa		.word $adde
 		.byt (on-*-1)|bit7
 		.asc "O","N"|bit7
 on		lda #$ff
-on1		sta (tos),y
-		dey
+on1		ldy #0
 		sta (tos),y
-		jmp next
+		iny
+		sta (tos),y
+		jmp pop
 
 ;--------------------------------------------------------------
 ;
 ;	OFF
 ;
+; store 0 at ADDR
 offlfa		.word $adde
 		.byt (off-*-1)|bit7
 		.asc "OF","F"|bit7
@@ -691,15 +740,16 @@ plus		clc
 negatelfa	.word $adde
 		.byt (negate-*-1)|bit7
 		.asc "NEGAT","E"|bit7
-negate		sec
-		dey
-neg2		tya
+negate		jsr donegate
+		jmp next
+donegate	sec
+neg2		lda #0
 		sbc tos
 		sta tos
-		tya
+		lda #0
 		sbc tos+1
 		sta tos+1
-		jmp next
+		rts
 
 ;--------------------------------------------------------------
 ;
@@ -768,12 +818,22 @@ dup		lda tos
 
 ;--------------------------------------------------------------
 ;
-;	+!
+;	+!   ( n addr -- )
 ;
+; add N to the cell at ADDR
 plusstorelfa	.word $adde
 		.byt (plusstore-*-1)|bit7
 		.asc "+","!"|bit7
-plusstore	jmp poptwo
+plusstore	ldy #0
+		clc
+		lda stackl,x
+		adc (tos),y
+		sta (tos),y
+		iny
+		lda stackh,x
+		adc (tos),y
+		sta (tos),y
+		jmp poptwo
 
 ;--------------------------------------------------------------
 ;
@@ -786,57 +846,58 @@ toggle		jmp pop
 
 ;--------------------------------------------------------------
 ;
-;	@
+;	@   ( addr -- n )
 ;
 fetchlfa	.word $adde
 		.byt (fetch-*-1)|bit7
 		.asc "@"|bit7
-fetch		ldy #1
+fetch		ldy #0
 		lda (tos),y
 		sta n
-		dey
+		iny
 		lda (tos),y
-		sta tos
-		lda n
 		sta tos+1
+		lda n
+		sta tos
 		jmp next
 
 ;--------------------------------------------------------------
 ;
-;	C@
+;	C@   ( addr -- b )
 ;
 cfetchlfa	.word $adde
 		.byt (cfetch-*-1)|bit7
 		.asc "C","@"|bit7
-cfetch		lda (tos),y
+cfetch		ldy #0
+		lda (tos),y
 		sta tos
-		dey
 		sty tos+1
 		jmp next
 
 ;--------------------------------------------------------------
 ;
-;	!
+;	!   ( n addr -- )
 ;
 storelfa	.word $adde
 		.byt (store-*-1)|bit7
 		.asc "!"|bit7
-store		lda stackh,x
-		sta (tos),y
+store		ldy #0
 		lda stackl,x
-		dey
+		sta (tos),y
+		iny
+		lda stackh,x
 		sta (tos),y
 		jmp poptwo
 
 ;--------------------------------------------------------------
 ;
-;	C!
+;	C!   ( b addr -- )
 ;
 cstorelfa	.word $adde
 		.byt (cstore-*-1)|bit7
 		.asc "C","!"|bit7
-cstore		lda stackl,x
-		dey
+cstore		ldy #0
+		lda stackl,x
 		sta (tos),y
 		jmp poptwo
 
@@ -856,16 +917,11 @@ constant	jsr enter
 		.word create
 		.word comma
 		.word psemi
-doconst		lda (ip),y
-		sta n+3
-		dey
+doconst		ldy #0
 		lda (ip),y
-		sta n+2
-		ldy #3
-		lda (n+2),y
 		sta n
 		iny
-		lda (n),y
+		lda (ip),y
 		sta n+1
 		jmp pushn
 
@@ -890,38 +946,23 @@ userlfa		.word $adde
 user		.word enter
 		.word constant
 		.word psemi
-uservar         ldy #0
-		lda (ip),y
-		sta n+6
+uservar         pla
+		tay
+		pla
+		sta n+1
 		iny
-		lda (ip),y
-		sta n+7
-		ldy #3
-		lda (n+6),y             ; byte offset into user area
-		ldy up+1
-		adc up
-		bcc l008
+		bne l008
+		inc n+1
+l008		sty n
+		ldy #0
+		lda (n),y
+		tay
+		lda (up),y
+		sta n
 		iny
-l008            jmp push
-
-
-
-;		.word nfa062
-;nfa063		.byt 4|bit7
-;		.asc "USE","R"|bit7
-;user		.word enter
-;		.word constant
-;		.word psemicode
-;uservar		ldy #2
-;		clc
-;		lda (w),y
-;		adc up
-;		pha
-;		lda #0
-;		adc up+1
-;		jmp push
-
-
+		lda (up),y
+		sta n+1
+		jmp pushn
 
 ;--------------------------------------------------------------
 ;
@@ -930,8 +971,8 @@ l008            jmp push
 zerolfa		.word $adde
 		.byt (zero-*-1)|bit7
 		.asc "0"|bit7
-zero		dey
-		tya
+zero		lda #0
+		tay
 		jmp push
 
 ;--------------------------------------------------------------
@@ -941,9 +982,8 @@ zero		dey
 onelfa		.word $adde
 		.byt (one-*-1)|bit7
 		.asc "1"|bit7
-one		tya
-		dey
-		jmp push
+one		jsr doconst
+		.word 1
 
 ;--------------------------------------------------------------
 ;
@@ -969,10 +1009,11 @@ three		jmp doconst
 ;
 ;	BL
 ;
-bllfa	.word $adde
+bllfa		.word $adde
 		.byt (bl-*-1)|bit7
 		.asc "B","L"|bit7
-bl		jsr enter
+bl		jsr doconst
+		.word $20
 
 ;--------------------------------------------------------------
 ;
@@ -981,25 +1022,30 @@ bl		jsr enter
 cperllfa	.word $adde
 		.byt (cperl-*-1)|bit7
 		.asc "C/","L"|bit7
-cperl		jsr enter
+cperl		jsr doconst
+		.word 64
 
 ;--------------------------------------------------------------
 ;
 ;	FIRST
 ;
+;~ fix this to read actual top of memory
 firstlfa	.word $adde
 		.byt (first-*-1)|bit7
 		.asc "FIRS","T"|bit7
-first		jsr enter
+first		jsr doconst
+		.word $7000
 
 ;--------------------------------------------------------------
 ;
 ;	LIMIT
 ;
+;~ fix this to read actual top of memory
 limitlfa	.word $adde
 		.byt (limit-*-1)|bit7
 		.asc "LIMI","T"|bit7
-limit		jsr enter
+limit		jsr doconst
+		.word $8000
 
 ;--------------------------------------------------------------
 ;
@@ -1008,16 +1054,19 @@ limit		jsr enter
 numbuflfa	.word $adde
 		.byt (numbuf-*-1)|bit7
 		.asc "#BU","F"|bit7
-numbuf		jsr enter
+numbuf		jsr doconst
+		.word 4
 
 ;--------------------------------------------------------------
 ;
 ;	#BCQ
 ;
+;~ a BFORTH-ism
 numbcqlfa	.word $adde
 		.byt (numbcq-*-1)|bit7
 		.asc "#BC","Q"|bit7
-numbcq		jsr enter
+numbcq		jsr doconst
+		.word 32
 
 ;--------------------------------------------------------------
 ;
@@ -1026,7 +1075,8 @@ numbcq		jsr enter
 bperbuflfa	.word $adde
 		.byt (bperbuf-*-1)|bit7
 		.asc "B/BU","F"|bit7
-bperbuf		jsr enter
+bperbuf		jsr doconst
+		.word 1024
 
 ;--------------------------------------------------------------
 ;
@@ -1035,7 +1085,8 @@ bperbuf		jsr enter
 bperscrlfa	.word $adde
 		.byt (bperscr-*-1)|bit7
 		.asc "B/SC","R"|bit7
-bperscr		jsr enter
+bperscr		jsr doconst
+		.word 4
 
 ;--------------------------------------------------------------
 ;
@@ -1044,8 +1095,8 @@ bperscr		jsr enter
 tiblfa		.word $adde
 		.byt (tib-*-1)|bit7
 		.asc "TI","B"|bit7
-tib		jsr enter
-
+tib		jsr doconst
+		.word $0100
 
 ;--------------------------------------------------------------
 ;
@@ -1054,8 +1105,9 @@ tib		jsr enter
 truelfa		.word $adde
 		.byt (true-*-1)|bit7
 		.asc "TRU","E"|bit7
-true		ldy #$FF
-		bmi false+1	; bra
+true		lda #$ff
+		tay
+		jmp push
 
 ;--------------------------------------------------------------
 ;
@@ -1064,8 +1116,8 @@ true		ldy #$FF
 falselfa	.word $adde
 		.byt (false-*-1)|bit7
 		.asc "FALS","E"|bit7
-false		dey
-		tya
+false		lda #0
+		tay
 		jmp push
 
 ;--------------------------------------------------------------
@@ -1077,8 +1129,10 @@ zeqlfa		.word $adde
 		.asc "0","="|bit7
 zeq		lda tos
 		ora tos+1
-		beq true
-		bne false
+		beq l031
+		lda #$ff
+l031		tay
+		jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -1087,9 +1141,12 @@ zeq		lda tos
 zltlfa		.word $adde
 		.byt (zlt-*-1)|bit7
 		.asc "0","<"|bit7
-zlt		bit tos+1
-		bmi true
-		bpl false
+zlt		ldy #0
+		bit tos+1
+		bpl l032
+		dey
+l032		tya
+		jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -1100,8 +1157,10 @@ znelfa		.word $adde
 		.asc "0<",">"|bit7
 zne		lda tos
 		ora tos+1
-		bne true
-		beq false
+		beq l033
+		lda #$ff
+l033		tay
+		jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -1111,24 +1170,30 @@ plusoriginlfa	.word $adde
 		.byt (plusorigin-*-1)|bit7
 		.asc "+ORIGI","N"|bit7
 plusorigin	jsr enter
+		.word plit
+		.word userarea
+		.word plus
+		.word exit
 
 ;--------------------------------------------------------------
 ;
 ;	SP0
 ;
 spzlfa		.word $adde
-		.byt (spz-*-1)|bit7
+		.byt (sp0-*-1)|bit7
 		.asc "SP","0"|bit7
-spz		jsr enter
+sp0		jsr uservar
+		.byt 6
 
 ;--------------------------------------------------------------
 ;
 ;	RP0
 ;
 rpzlfa		.word $adde
-		.byt (rpz-*-1)|bit7
+		.byt (rp0-*-1)|bit7
 		.asc "RP","0"|bit7
-rpz		jsr enter
+rp0		jsr uservar
+		.byt 8
 
 ;--------------------------------------------------------------
 ;
@@ -1137,7 +1202,8 @@ rpz		jsr enter
 widthlfa	.word $adde
 		.byt (width-*-1)|bit7
 		.asc "WIDT","H"|bit7
-width		jsr enter
+width		jsr uservar
+		.byt 10
 
 ;--------------------------------------------------------------
 ;
@@ -1146,7 +1212,8 @@ width		jsr enter
 warninglfa	.word $adde
 		.byt (warning-*-1)|bit7
 		.asc "WARNIN","G"|bit7
-warning		jsr enter
+warning		jsr uservar
+		.byt 12
 
 ;--------------------------------------------------------------
 ;
@@ -1155,7 +1222,8 @@ warning		jsr enter
 fencelfa	.word $adde
 		.byt (fence-*-1)|bit7
 		.asc "FENC","E"|bit7
-fence		jsr enter
+fence		jsr uservar
+		.byt 14
 
 ;--------------------------------------------------------------
 ;
@@ -1164,7 +1232,7 @@ fence		jsr enter
 dplfa		.word $adde
 		.byt (dp-*-1)|bit7
 		.asc "D","P"|bit7
-dp		jmp uservar
+dp		jsr uservar
 		.byt 16
 
 ;--------------------------------------------------------------
@@ -1174,7 +1242,8 @@ dp		jmp uservar
 voclinklfa	.word $adde
 		.byt (voclink-*-1)|bit7
 		.asc "VOC-LIN","K"|bit7
-voclink		jsr enter
+voclink		jsr uservar
+		.byt 18
 
 ;--------------------------------------------------------------
 ;
@@ -1183,7 +1252,8 @@ voclink		jsr enter
 viewqlfa	.word $adde
 		.byt (viewq-*-1)|bit7
 		.asc "VIEW","?"|bit7
-viewq		jsr enter
+viewq		jsr uservar
+		.byt 20
 
 ;--------------------------------------------------------------
 ;
@@ -1192,7 +1262,8 @@ viewq		jsr enter
 blklfa		.word $adde
 		.byt (blk-*-1)|bit7
 		.asc "BL","K"|bit7
-blk		jsr enter
+blk		jsr uservar
+		.byt 22
 
 ;--------------------------------------------------------------
 ;
@@ -1201,7 +1272,8 @@ blk		jsr enter
 toinlfa		.word $adde
 		.byt (toin-*-1)|bit7
 		.asc ">I","N"|bit7
-toin		jsr enter
+toin		jsr uservar
+		.byt 24
 
 ;--------------------------------------------------------------
 ;
@@ -1210,7 +1282,8 @@ toin		jsr enter
 numoutlfa	.word $adde
 		.byt (numout-*-1)|bit7
 		.asc "#OU","T"|bit7
-numout		jsr enter
+numout		jsr uservar
+		.byt 26
 
 ;--------------------------------------------------------------
 ;
@@ -1219,7 +1292,8 @@ numout		jsr enter
 scrlfa		.word $adde
 		.byt (scr-*-1)|bit7
 		.asc "SC","R"|bit7
-scr		jsr enter
+scr		jsr uservar
+		.byt 28
 
 ;--------------------------------------------------------------
 ;
@@ -1228,7 +1302,8 @@ scr		jsr enter
 offsetlfa	.word $adde
 		.byt (offset-*-1)|bit7
 		.asc "OFFSE","T"|bit7
-offset		jsr enter
+offset		jsr uservar
+		.byt 30
 
 ;--------------------------------------------------------------
 ;
@@ -1237,7 +1312,8 @@ offset		jsr enter
 contextlfa	.word $adde
 		.byt (context-*-1)|bit7
 		.asc "CONTEX","T"|bit7
-context		jsr enter
+context		jsr uservar
+		.byt 32
 
 ;--------------------------------------------------------------
 ;
@@ -1246,7 +1322,8 @@ context		jsr enter
 currentlfa	.word $adde
 		.byt (current-*-1)|bit7
 		.asc "CURREN","T"|bit7
-current		jsr enter
+current		jsr uservar
+		.byt 34
 
 ;--------------------------------------------------------------
 ;
@@ -1255,7 +1332,8 @@ current		jsr enter
 statelfa	.word $adde
 		.byt (state-*-1)|bit7
 		.asc "STAT","E"|bit7
-state		jsr enter
+state		jsr uservar
+		.byt 36
 
 ;--------------------------------------------------------------
 ;
@@ -1264,7 +1342,8 @@ state		jsr enter
 baselfa		.word $adde
 		.byt (base-*-1)|bit7
 		.asc "BAS","E"|bit7
-base		jsr enter
+base		jsr uservar
+		.byt 38
 
 ;--------------------------------------------------------------
 ;
@@ -1273,7 +1352,8 @@ base		jsr enter
 dpllfa		.word $adde
 		.byt (dpl-*-1)|bit7
 		.asc "DP","L"|bit7
-dpl		jsr enter
+dpl		jsr uservar
+		.byt 40
 
 ;--------------------------------------------------------------
 ;
@@ -1295,7 +1375,8 @@ span		jmp uservar
 csplfa		.word $adde
 		.byt (csp-*-1)|bit7
 		.asc "CS","P"|bit7
-csp		jsr enter
+csp		jsr uservar
+		.byt 44
 
 ;--------------------------------------------------------------
 ;
@@ -1304,7 +1385,8 @@ csp		jsr enter
 rsharplfa	.word $adde
 		.byt (rsharp-*-1)|bit7
 		.asc "R","#"|bit7
-rsharp		jsr enter
+rsharp		jsr uservar
+		.byt 46
 
 ;--------------------------------------------------------------
 ;
@@ -1313,7 +1395,8 @@ rsharp		jsr enter
 hldlfa		.word $adde
 		.byt (hld-*-1)|bit7
 		.asc "HL","D"|bit7
-hld		jsr enter
+hld		jsr uservar
+		.byt 48
 
 ;--------------------------------------------------------------
 ;
@@ -1322,7 +1405,8 @@ hld		jsr enter
 doneqlfa	.word $adde
 		.byt (doneq-*-1)|bit7
 		.asc "DONE","?"|bit7
-doneq		jsr enter
+doneq		jsr uservar
+		.byt 50
 
 ;--------------------------------------------------------------
 ;
@@ -1331,7 +1415,8 @@ doneq		jsr enter
 numtiblfa	.word $adde
 		.byt (numtib-*-1)|bit7
 		.asc "#TI","B"|bit7
-numtib		jsr enter
+numtib		jsr uservar
+		.byt 52
 
 ;--------------------------------------------------------------
 ;
@@ -1340,7 +1425,8 @@ numtib		jsr enter
 numlinelfa	.word $adde
 		.byt (numline-*-1)|bit7
 		.asc "#LIN","E"|bit7
-numline		jsr enter
+numline		jsr uservar
+		.byt 54
 
 ;--------------------------------------------------------------
 ;
@@ -1349,7 +1435,10 @@ numline		jsr enter
 onepluslfa	.word $adde
 		.byt (oneplus-*-1)|bit7
 		.asc "1","+"|bit7
-oneplus		jsr enter
+oneplus		inc tos
+		bne l027
+		inc tos+1
+l027		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -1358,7 +1447,11 @@ oneplus		jsr enter
 oneminuslfa	.word $adde
 		.byt (oneminus-*-1)|bit7
 		.asc "1","-"|bit7
-oneminus	jsr enter
+oneminus	bit tos
+		bne l028
+		dec tos+1
+l028		dec tos
+		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -1367,7 +1460,13 @@ oneminus	jsr enter
 twopluslfa	.word $adde
 		.byt (twoplus-*-1)|bit7
 		.asc "2","+"|bit7
-twoplus		jsr enter
+twoplus		clc
+		lda tos
+		adc #2
+		sta tos
+		bcc l029
+		inc tos+1
+l029		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -1376,7 +1475,13 @@ twoplus		jsr enter
 twominuslfa	.word $adde
 		.byt (twominus-*-1)|bit7
 		.asc "2","-"|bit7
-twominus	jsr enter
+twominus	sec
+		lda tos
+		sbc #2
+		sta tos
+		bcs l030
+		dec tos+1
+l030		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -1385,7 +1490,9 @@ twominus	jsr enter
 twoslashlfa	.word $adde
 		.byt (twoslash-*-1)|bit7
 		.asc "2","/"|bit7
-twoslash	jsr enter
+twoslash	lsr tos+1
+		ror tos
+		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -1394,7 +1501,9 @@ twoslash	jsr enter
 twostarlfa	.word $adde
 		.byt (twostar-*-1)|bit7
 		.asc "2","*"|bit7
-twostar		jsr enter
+twostar		asl tos
+		rol tos+1
+		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -1416,6 +1525,9 @@ allotlfa	.word $adde
 		.byt (allot-*-1)|bit7
 		.asc "ALLO","T"|bit7
 allot		jsr enter
+		.word dp
+		.word plusstore
+		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -1425,6 +1537,11 @@ commalfa	.word $adde
 		.byt (comma-*-1)|bit7
 		.asc ","|bit7
 comma		jsr enter
+		.word here
+		.word store
+		.word two
+		.word allot
+		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -1434,6 +1551,11 @@ ccommalfa	.word $adde
 		.byt (ccomma-*-1)|bit7
 		.asc "C",","|bit7
 ccomma		jsr enter
+		.word here
+		.word cstore
+		.word one
+		.word allot
+		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -1442,7 +1564,8 @@ ccomma		jsr enter
 minuslfa	.word $adde
 		.byt (minus-*-1)|bit7
 		.asc "-"|bit7
-minus		jsr enter
+minus		jsr donegate
+		jmp plus
 
 ;--------------------------------------------------------------
 ;
