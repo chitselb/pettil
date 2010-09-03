@@ -37,7 +37,7 @@ bit5	= $20		; smudge
 
 ; zero page usage
 stackl	= $00		; stackl = $00..$3b (60 bytes)
-stackh	= $3c		; stackh = $3c..$79 (60 bytes)
+stackh	= $30		; stackh = $3c..$79 (60 bytes)
 bos	= stackh-1	; $3b
 n	= $7a
 w	= $80		; w overlaps 8-byte n scratch area
@@ -58,7 +58,7 @@ outputted	= cas1buf+26		; #out
 inputted	= cas1buf+42		; span
 linesout	= cas1buf+54		; #line
 
-basic	= $0400
+	basic	= $0400
 		.word basic+1		; PET BASIC storage starts here
 *	= basic+1
 		.word basend
@@ -68,29 +68,34 @@ basic	= $0400
 basend		.word 0
 
 		.dsb basic+$10-*,$ea
-		jmp cold
-warmvec         jmp warm
+coldvector	jmp cold
+warmvector	jmp warm
 
 		; user area initialization data
 		; this gets copied to the cassette buffer
 		; and is pointed to by the UP (user pointer)
-userarea	.word cas2buf				; 6..7
-usersp0         .word bos				; 8..9
-userrp0         .word $01ff				; 10..11
-userwidth       .word 31				; 12..13
-userwarning     .word -1				; 14..15
-userfence       .word $2f25				; 16..17
-uservoclink     .word $650b				; 18..19
-userviewquery   .word $36a2				; 20..21
-userblk         .word 2					; 22..23
-usertoin        .word $1908				; 24..25
-userbase        .word 10				; 26..27
-usercontext     .word 0					; 28..29 ~
-usercsp         .word 0					; 30..31
+userarea
+
+userntop	.word ntop				; 4..5
+userup		.word cas2buf				; 6..7
+usersp0		.word bos				; 8..9
+userrp0		.word $01ff				; 10..11
+userwidth	.word 31				; 12..13
+userwarning	.word -1				; 14..15
+
+userwarm
+
+userfence	.word forgetfence			; 16..17
+userdp		.word endofile				; 18..19
+uservoclink	.word $36a2				; 20..21
+userviewquery	.word 2					; 22..23
+userblk		.word $1908				; 24..25
+
+usercold
 
 		;dictionary hash link table used by rechaining words
-latestl         .dsb 16,0
-latesth         .dsb 16,0
+latestl		.dsb 16,0
+latesth		.dsb 16,0
 
 ;--------------------------------------------------------------
 ;
@@ -126,7 +131,7 @@ zzpnext
 ; IP -> [W1+4]
 ; W1 -> IP
 ; NEXTO
-executelfa      .word $adde
+executelfa      .word 0			; <-- last word in dictionary
 		.byt (execute-*-1)|bit7	; <-- name field address
 		.asc "EXECUT","E"|bit7	; length and final byte are OR $80
 execute         lda tos			; <-- code field address
@@ -150,8 +155,8 @@ execute         lda tos			; <-- code field address
 
 ; These three words are used by EXECUTE as a 'fragment secondary'
 ; (for those occasions when you just need a W register)
-w1				; dummy value $DEAD, we wind up at $BEEF
-		.word $dead
+				; dummy value $DEAD, we wind up at $BEEF
+w1		.word $dead
 		.word branch
 		.word $beef
 
@@ -301,8 +306,8 @@ pdo		lda stackh,x
 		lda tos
 		pha
 poptwo		inx
-pop		lda stackh,x
-		ldy stackl,x
+pop		ldy stackh,x
+		lda stackl,x
 		inx
 		jmp put
 
@@ -845,7 +850,7 @@ spfetch		txa
 spstorelfa	.word $adde
 		.byt (spstore-*-1)|bit7
 		.asc "SP","!"|bit7
-spstore		ldy #6
+spstore		ldy #usersp0-userarea
 		lda (up),y
 		tax
 		jmp next
@@ -858,7 +863,7 @@ rpstorelfa	.word $adde
 		.byt (rpstore-*-1)|bit7
 		.asc "RP","!"|bit7
 rpstore		stx n
-		ldy #8
+		ldy #userrp0-userarea
 		lda (up),y
 		tax
 		txs
@@ -871,7 +876,7 @@ rpstore		stx n
 ;
 ;           [RP+] -> IP
 ;           NEXT
-exitlfa         .word 0		; 0 LFA marks base of dictionary
+exitlfa         .word $adde
 		.byt (exit-*-1)|bit7
 		.asc "EXI","T"|bit7
 exit            pla
@@ -916,8 +921,8 @@ rfetchlfa	.word $adde
 		.asc "R","@"|bit7
 rfetch		stx n
 		tsx
-		ldy $0101,x
-		lda $0100,x
+		ldy $0102,x
+		lda $0101,x
 		ldx n
 		jmp push
 
@@ -1547,7 +1552,7 @@ spzlfa		.word $adde
 		.byt (sp0-*-1)|bit7
 		.asc "SP","0"|bit7
 sp0		jsr uservar
-		.byt 6
+		.byt usersp0-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -1557,7 +1562,7 @@ rpzlfa		.word $adde
 		.byt (rp0-*-1)|bit7
 		.asc "RP","0"|bit7
 rp0		jsr uservar
-		.byt 8
+		.byt userrp0-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -1567,7 +1572,7 @@ widthlfa	.word $adde
 		.byt (width-*-1)|bit7
 		.asc "WIDT","H"|bit7
 width		jsr uservar
-		.byt 10
+		.byt userwidth-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -1577,7 +1582,7 @@ warninglfa	.word $adde
 		.byt (warning-*-1)|bit7
 		.asc "WARNIN","G"|bit7
 warning		jsr uservar
-		.byt 12
+		.byt userwarning-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -1587,7 +1592,7 @@ fencelfa	.word $adde
 		.byt (fence-*-1)|bit7
 		.asc "FENC","E"|bit7
 fence		jsr uservar
-		.byt 14
+		.byt userfence-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -1597,7 +1602,7 @@ dplfa		.word $adde
 		.byt (dp-*-1)|bit7
 		.asc "D","P"|bit7
 dp		jsr uservar
-		.byt 16
+		.byt userdp-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -1607,7 +1612,7 @@ voclinklfa	.word $adde
 		.byt (voclink-*-1)|bit7
 		.asc "VOC-LIN","K"|bit7
 voclink		jsr uservar
-		.byt 18
+		.byt uservoclink-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -1631,8 +1636,13 @@ blk		jsr uservar
 
 ;--------------------------------------------------------------
 ;
-;	>IN
+;	>IN   ( -- addr )
 ;
+; Leaves the address of the user variable >IN which contains the
+; number of bytes from the beginning of the input stream at any
+; particular moment during interpretation.
+; The  address of a user variable which contains the present
+; character offset within  the  input stream.  See: WORD
 toinlfa		.word $adde
 		.byt (toin-*-1)|bit7
 		.asc ">I","N"|bit7
@@ -2625,16 +2635,16 @@ type		clc
 		sta outputted+1
 		lda #2
 		jsr popnwords
-l71		cpy n
+l71		cpy n+2
 		bne l70
-		dec n+1
+		dec n+3
 		bpl l70
 		jmp next
-l70		lda (n+2),y
+l70		lda (n),y
 		jsr CHROUT
 		iny
 		bne l71
-		inc n+3
+		inc n+1
 		bne l71
 
 ;--------------------------------------------------------------
@@ -2670,6 +2680,7 @@ pdotqlfa	.word $adde
 		.asc "(.",'"',")"|bit7
 pdotq		jsr enter
 		.word rfetch
+		.word twoplus		; because we pre-increment?
 		.word count
 		.word dup
 		.word oneplus
@@ -3376,6 +3387,25 @@ vocabularylfa	.word $adde
 		.byt (vocabulary-*-1)|bit7
 		.asc "VOCABULAR","Y"|bit7
 vocabulary	jsr enter
+		.word create
+		.word current
+		.word fetch
+		.word twoplus
+		.word comma
+		.word plit
+		.word $a081		; ~ what is it?
+		.word comma
+		.word here
+		.word voclink
+		.word fetch
+		.word comma
+		.word voclink
+		.word store
+		.word psemi
+vocabdoes	jmp dodoes
+		.word context
+		.word store
+		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -3384,7 +3414,10 @@ vocabulary	jsr enter
 forthlfa	.word $adde
 		.byt (forth-*-1)|bit7
 		.asc "FORT","H"|bit7
-forth		jsr enter
+forth		jmp vocabdoes
+		.word ntop		; top nfa in this vocabulary
+		.word 0			; last link in this vocabulary
+		.word $a081		; some magic number?
 
 ;--------------------------------------------------------------
 ;
@@ -3394,6 +3427,11 @@ definitionslfa	.word $adde
 		.byt (definitions-*-1)|bit7
 		.asc "DEFINITION","S"|bit7
 definitions	jsr enter
+		.word context
+		.word fetch
+		.word current
+		.word store
+		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -3403,6 +3441,11 @@ lparenlfa	.word $adde
 		.byt (lparen-*-1)|bit7
 		.asc "("|bit7
 lparen		jsr enter
+		.word clit
+		.asc ')'
+		.word qchar
+		.word twodrop
+		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -3421,6 +3464,9 @@ abortlfa	.word $adde
 		.byt (abort-*-1)|bit7
 		.asc "ABOR","T"|bit7
 abort		jsr enter
+		.word spstore
+		.word quit
+		.word exit	; make the decompiler happy
 
 ;--------------------------------------------------------------
 ;
@@ -3445,82 +3491,102 @@ coldlfa		.word $adde
 		.byt (cold-*-1)|bit7
 		.asc "COL","D"|bit7
 cold		sei
-		cld
-		ldx #$f8
-		txs
-		jsr CLRCHN
-		jsr CLALL
-		cli
 
+		lda #<warmvector
+		sta errlnk
+		lda #>warmvector
+		sta errlnk+1
+
+		lda userntop
+		sta forth+3
+		lda userntop+1
+		sta forth+4
+;
 		ldy #zzpnext-azpnext+1
 l011		lda azpnext-1,y
 		sta next-1,y
 		dey
 		bne l011
 
-		; initialize the data stack pointer
-		ldx #bos
-		; move up to high-level
-		lda #>(cold2-2)
+		lda #>cold2
+		sta w1+1
+		lda #<cold2
+		sta w1
+
+		ldy #usercold-userarea-1
+		bne l036
+
+warm		lda #>warm2
+		sta w1+1
+		lda #<warm2
+		sta w1
+
+		ldy #userwarm-userarea-1
+
+l036		lda userup
+		sta up
+		lda userup+1
+		sta up+1
+l037		lda userarea,y
+		sta (up),y
+		dey
+		bpl l037
+		cld
+		cli
+		jsr CLRCHN
+		jsr CLALL
+
+		lda #>(w1-2)
 		sta ip+1
-		lda #<(cold2-2)
+		lda #<(w1-2)
 		sta ip
 
-xpetp   ;       lda #<bar
-	;	sta w1
-	;	lda #>bar
-	;	sta w1+1
-		lda #<bar
-		sta tos
-		lda #>bar
-		sta tos+1
-		jmp execute
+xpetp		jmp rpstore		; and we're off
 
-cold2		.word rethread
-		.word startup
+cold2		jsr enter
+;		.word bar
+		.word spstore
+		.word pdotq
+		.byt s015-*-1
+		.byt CLRSCR
+.byt 236,239,17,157,157,234,32,41,17,157,157,157,234,247,17,157,157,252
+.byt 32,32,145,145,145
+.byt 236,239,251,17,157,157,157,234,17,157,234,247,17,157,157
+.byt 252,247,254,145,145,145
+.byt 236,239,239,251,17,157,157,157,234,17,157,234,17,157,252,32,32
+.byt 145,145,145
+.byt 236,239,239,251,17,157,157,157,234,17,157,234,17,157,252,32,32
+.byt 145,145,145
+.byt 239,239,17,157,157,234,17,157,234,17,157
+.byt 247,247,145,145,145
+.byt 236,17,157,234,17,157,234,17,157,252,247,247,254
+.byt 145,145,145
+		.asc "6502 FORTH FOR THE"
+.byt 17,17,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157
+		.asc "COMMODORE PET 2001"
+.byt 17,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157
+		.asc "......... ... ...."
+
+		.byt $0d,$0d
+		.asc "HTTP:"
+		.byt 47,47
+		.asc "CHITSELB.COM"
+		.byt $0d,$0d
+s015		.word rethread
+
+warm2		.word emptybuffers
+		.word decimal
+		.word forth
+		.word definitions
+		.word pdotq
+		.byt s016-*-1
+		.asc "WELCOME TO FORTH!"
+s016		.word startup
 		.word fetch
 		.word execute
+		.word exit
 
-;blazin' forth cold
-;		sei
-;		;jsr clall
-;		;jsr ramtas
-;		jsr forthinit
-;		lda userarea+4
-;		sta forth+2
-;		lda userarea+5
-;		sta forth+3
-;		ldy #$15
-;		jsr userinit
-;		lda #$1d
-;		sta ip+1
-;		lda #$7b
-;		sta ip
-;		lda #$6c	; jmp (indirect)
-;		sta w-1
-;		cld
-;		cli
-;		ldx #bos
-;		jmp rpstore+2
-;forthinit       lda #<warmvec
-;		sta errlnk
-;		lda #>warmvec
-;		sta errlnk+1
-;		jsr clrchn
-warminit	lda #$93		; clear screen
-		jsr CHROUT
-		rts
-;userinit	lda userarea+6
-;		sta up
-;		lda userarea+7
-;		sta up+1
-;l104		lda userarea+2,y
-;		sta (up),y
-;		dey
-;		bpl l104
-;		rts
-
-
+; test stuff
 bar             jsr enter
 		.word foo
 		.word twodrop
@@ -3536,45 +3602,6 @@ foo		jsr enter
 		.word over	; ( 500 542 500 )
 		.word plus	; ( 500 1042 )
 		.word exit
-
-;Warm start
-;--------------------------------------------------------------
-;
-;	WARM
-warm		jsr warminit
-		ldy #$0d
-;		jsr userinit
-		lda #>warmhigh
-		sta ip+1
-		lda #<warmhigh
-		sta ip
-		jmp rpstore+2
-warmhigh	.word decimal
-		.word pdotq
-		.byt s014-*-1
-		.asc "<WARM START>"
-s014		.word startup
-		.word fetch
-		.word execute
-;		.word dr0
-		.word emptybuffers
-		.word decimal
-		.word forth
-		.word definitions
-		.word pdotq
-		.byt s015-*-1
-		.asc "        BLAZIN' FORTH FOR CBM-64"
-		.byt $0d,$0d
-		.asc "COPYRIGHT (C) 1985 BY SCOTT BALLANTYNE"
-		.byt $0d
-		.asc "OK TO COPY, BUT NOT TO SELL!"
-		.byt $0d,$0d
-s015		.word pdotq
-		.byt s016-*-1
-		.asc "WELCOME TO FORTH!"
-s016		.word startup
-		.word fetch
-		.word execute
 
 ;--------------------------------------------------------------
 ;
@@ -3751,7 +3778,7 @@ bcqfrom		jsr enter
 
 ;--------------------------------------------------------------
 ;
-;	>bcq
+;	>BCQ
 ;
 tobcqlfa	.word $adde
 		.byt (tobcq-*-1)|bit7
@@ -4678,11 +4705,22 @@ forgetlfa	.word $adde
 		.asc "FORGE","T"|bit7
 forget		jsr enter
 
+
+
+
+
+forgetfence
+
+
+
 ;--------------------------------------------------------------
 ;
 ;	THRU
 ;
 thrulfa		.word $adde
+
+lastword
+
 		.byt (thru-*-1)|bit7
 		.asc "THR","U"|bit7
 thru		jsr enter
@@ -4791,9 +4829,9 @@ dhashstore	lda #2
 ;
 ; links all LFAs
 rethreadlfa	.word $adde
-		.byt (rethread-*-1)|bit7
+ntop		.byt (rethread-*-1)|bit7
 		.asc "RETHREA","D"|bit7
-rethread
+rethread	jsr enter
 		.word here
 		.word plit
 		.word 1024
@@ -4877,7 +4915,6 @@ l024            .word plit
 ;
 ;	tells us whether we're threaded (true) or unthreaded (false)
 ;
-unthread
 
 
 ;--------------------------------------------------------------
@@ -4923,4 +4960,4 @@ l005		lda stackl,x
 		sta tos+1
 		inx
 		rts
-
+endofile
