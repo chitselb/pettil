@@ -39,6 +39,7 @@ bit5	= $20		; smudge
 stackl	= $00		; stackl = $00..$3b (60 bytes)
 stackh	= $30		; stackh = $3c..$79 (60 bytes)
 bos	= stackh-1	; $3b
+zi	= $76		; innermost DO LOOP counter/limit
 n	= $7a
 w	= $80		; w overlaps 8-byte n scratch area
 tos	= $82
@@ -189,10 +190,10 @@ pushn           ldy n+1
 
 push            sta n
                 dex
-                lda tos
-                sta stackl,x
                 lda tos+1
                 sta stackh,x
+                lda tos
+                sta stackl,x
                 lda n
 put             sty tos+1
                 sta tos
@@ -264,7 +265,7 @@ qbranch         lda tos
 		inx             ; drop
 		tay		; to set the Z flag
 		bne branch
-		lda #4
+nobranch	lda #4
 nexta           clc		;[2]
 		adc ip		;[3]
 		sta ip		;[3]
@@ -283,28 +284,58 @@ ploop           jsr enter
 
 ;--------------------------------------------------------------
 ;
-;       (+LOOP)
+;       (+LOOP)   ( n -- )
 ;
+; add n to current loop index.  If loop index exceeds loop limit,
+; then iterate to the (do), otherwise skip past the branch and
+; proceed
 pplooplfa       .word $adde
 		.byt (pploop-*-1)|bit7
 		.asc "(+LOOP",")"|bit7
-pploop          jsr enter
+pploop		clc
+		lda tos
+		adc zi
+		sta zi
+		lda tos+1
+		php
+		adc zi+1
+		sta zi+1
+		lda zi+2
+		cmp zi
+		lda zi+3
+		sbc zi+1
+		bcc l043
+		plp
+		bpl branch
+		bmi nobranch
+l043		plp
+		bmi branch
+		bpl nobranch
 
 ;--------------------------------------------------------------
 ;
-;	(DO)
+;	(DO)   ( end begin -- )
 ;
+; loops from 'begin' to 'end'
 pdolfa		.word $adde
 		.byt (pdo-*-1)|bit7
 		.asc "(DO",")"|bit7
-pdo		lda stackh,x
+pdo		lda zi+3
 		pha
+		lda zi+2
+		pha
+		lda zi+1
+		pha
+		lda zi
+		pha
+		lda stackh,x
+		sta zi+3
 		lda stackl,x
-		pha
+		sta zi+2
 		lda tos+1
-		pha
+		sta zi+1
 		lda tos
-		pha
+		sta zi
 poptwo		inx
 pop		ldy stackh,x
 		lda stackl,x
@@ -327,7 +358,9 @@ pqdo		jsr enter
 ilfa		.word $adde
 		.byt (i-*-1)|bit7
 		.asc "I"|bit7
-i		jsr enter
+i		lda zi
+		ldy zi+1
+		jmp push
 
 ;--------------------------------------------------------------
 ;
@@ -435,6 +468,36 @@ l8		sec
 		lda #0		;false
 		pha
 		jmp push
+
+;--------------------------------------------------------------
+		; pops up to 4 words from the split stack to the N area
+		; A = how many words to pop (valid range 1-4)
+		;
+		; returns
+		; TOS -> N0, 2OS -> N1, 3OS -> N2, 4OS -> N3
+		;      1          2          3          4
+popnwords	ldy tos
+		sty n
+		ldy tos+1
+		sty n+1
+		sta tos			; temporarily use TOS as loop counter
+		ldy #0
+l004		dec tos
+		beq l005
+		iny
+		iny
+		lda stackl,x
+		sta n,y
+		lda stackh,x
+		sta n+1,y
+		inx
+		bne l004		; bra
+l005		lda stackl,x
+		sta tos
+		lda stackh,x
+		sta tos+1
+		inx
+		rts
 
 ;--------------------------------------------------------------
 ;
@@ -661,17 +724,6 @@ l025		dey
 		bpl l025
 l026		jmp next
 
-
-
-
-	stack = 69		; ~ this line merely gets the code to assemble
-				; it has nothing to do with PETTIL's stack
-				; so rewrite the code that references this and
-				; remove it
-
-
-
-
 ;--------------------------------------------------------------
 ;
 ;	UM*
@@ -687,87 +739,137 @@ umstar		jsr multiply
 				; ! model we're using in PETTIL
 				; I seem to recall a faster general 
 				; purpose multiply on 6502.org using LSR?
-multiply	lda stack+2,x
-		sta n
-		sty stack+2,x
-		lda stack+3,x
-		sta n+1
-l150		sty stack+3,x
-		ldy #$10
-l30		asl stack+2,x
-		rol stack+3,x
-		rol stack,x
-		rol stack+1,x
-		bcc l29
-		clc
-		lda n
-		adc stack+2,x
-		sta stack+2,x
-		lda n+1
-		adc stack+3,x
-		sta stack+3,x
-		bcc l29
-		inc stack,x
-		bne l29
-		inc stack+1,x
-l29		dey
-		bne l30
-		rts
+multiply	rts
+;		lda stack+2,x
+;		sta n
+;		sty stack+2,x
+;		lda stack+3,x
+;		sta n+1
+;l150		sty stack+3,x
+;		ldy #$10
+;l30		asl stack+2,x
+;		rol stack+3,x
+;		rol stack,x
+;		rol stack+1,x
+;		bcc l29
+;		clc
+;		lda n
+;		adc stack+2,x
+;		sta stack+2,x
+;		lda n+1
+;		adc stack+3,x
+;		sta stack+3,x
+;		bcc l29
+;		inc stack,x
+;		bne l29
+;		inc stack+1,x
+;l29		dey
+;		bne l30
+;		rts
 
 ;--------------------------------------------------------------
 ;
-;	UM/MOD
+;	UM/MOD   ( ud u -- rem quot )
 ;
+;"	http://6502.org/source/integers/ummodfix/ummodfix.htm
 umslashmodlfa	.word $adde
 		.byt (umslashmod-*-1)|bit7
 		.asc "UM/MO","D"|bit7
-umslashmod	jsr modulo
-		jmp next
-				; ~ this is straight out of blazin'
-				; ! but seriously ! It won't work !
-				; ! get the bugfix version from 6502.org
-				; ! and make it work with the split stack + TOS
-				; ! model we're using in PETTIL
-modulo		sty n+1
-		lda stack+4,x
-		ldy stack+2,x
-		sty stack+4,x
-		asl
-		sta stack+2,x
-		lda stack+5,x
-		ldy stack+3,x
-		sty stack+5,x
-		rol
-		sta stack+3,x
-		lda #$10
-l31		sta n
-l34		rol stack+4,x
-		rol stack+5,x
-		rol n+1
+umslashmod	lda #6
+		jsr popnwords
 		sec
-		lda stack+4,x
-		sbc stack,x
+		lda n+2		; Subtract hi cell of dividend by
+		sbc n		; divisor to see if there's an overflow condition.
+		lda n+3
+		sbc n+1
+		bcs l039	; Branch if /0 or overflow.
+;        SEC
+;        LDA     2,X     ; Subtract hi cell of dividend by
+;        SBC     0,X     ; divisor to see if there's an overflow condition.
+;        LDA     3,X
+;        SBC     1,X
+;        BCS     oflo$   ; Branch if /0 or overflow.
+
+		;clc
+		txa
+		pha		; preserve data stack pointer
+		ldx #16		; loop 16x
+l038		rol n+4		; Rotate dividend lo cell left one bit.
+		rol n+5
+		dex		; loop counter
+		bmi l040
+		rol n+2
+		rol n+3
+		lda #0
+		sta n+6
+		rol n+6
+
+;        LDA     #11H    ; Loop 17x.
+;        STA     N       ; Use N for loop counter.
+; loop   ROL     4,X     ; Rotate dividend lo cell left one bit.
+;        ROL     5,X
+;        DEC     N       ; Decrement loop counter.
+;        BEQ     end$    ; If we're done, then branch to end.
+;        ROL     2,X     ; Otherwise rotate dividend hi cell left one bit.
+;        ROL     3,X
+;        STZ     N+1
+;        ROL     N+1     ; Rotate the bit carried out of above into N+1.
+
+		sec
+		lda n+2
+		sbc n
+		sta n+7
+		lda n+3
+		sbc n+1
 		tay
-		lda stack+5,x
-		sbc stack+1,x
-		pha
-		lda n+1
+		lda n+6
 		sbc #0
-		bcc l32
-		sta n+1
-		sty stack+4,x
-		pla
-		sta stack+5,x
-		bcs l33
-l32		pla
-l33		rol stack+2,x
-		rol stack+3,x
-		dec n
-		bne l34
-		inx
-		inx
-		ldy #0
-		rts
+		bcc l038
+
+;        SEC
+;        LDA     2,X     ; Subtract dividend hi cell minus divisor.
+;        SBC     0,X
+;        STA     N+2     ; Put result temporarily in N+2 (lo byte)
+;        LDA     3,X
+;        SBC     1,X
+;        TAY             ; and Y (hi byte).
+;        LDA     N+1     ; Remember now to bring in the bit carried out above.
+;        SBC     #0
+;        BCC     loop
+
+		lda n+7
+		sta n+2
+		sty n+3
+		bcs l038	; bra
+
+;        LDA     N+2     ; If that didn't cause a borrow,
+;        STA     2,X     ; make the result from above to
+;        STY     3,X     ; be the new dividend hi cell
+;        BRA     loop    ; and then brach up.  (NMOS 6502 can use BCS here.)
+
+l039		lda #$ff
+		sta n+2
+		sta n+3
+		sta n+4
+		sta n+5
+
+; oflo$  LDA     #FFH    ; If overflow or /0 condition found,
+;        STA     2,X     ; just put FFFF in both the remainder
+;        STA     3,X
+;        STA     4,X     ; and the quotient.
+;        STA     5,X
+
+l040		pla
+		tax
+		jmp swap	; more to do here... put stuff back on the stack
+
+; end$   INX             ; When you're done, show one less cell on data stack,
+;        INX             ; (INX INX is exactly what the Forth word DROP does) 
+;        JMP     SWAP    ; and swap the two top cells to put quotient on top.
+                        ; (Actually you'll jump to the beginning of SWAP's
+                        ; executable code.  Assembler label "SWAP" is at SWAP's
+                        ; PFA, not the CFA that ' SWAP would give you in Forth.
+;-------------------
 
 ;--------------------------------------------------------------
 ;
@@ -947,14 +1049,14 @@ l022		tya
 nelfa	.word $adde
 		.byt (ne-*-1)|bit7
 		.asc "<",">"|bit7
-ne		ldy #$ff
+ne		ldy #$ff		; assume inequality
 		lda tos
 		eor stackl,x
 		bne l021
 		lda tos+1
 		eor stackh,x
 		bne l021
-		iny
+		iny			; they're equal
 l021		tya
 		inx
 		jmp put
@@ -2621,7 +2723,7 @@ l020		jmp push
 
 ;--------------------------------------------------------------
 ;
-;	TYPE
+;	TYPE   ( addr count -- )
 ;
 typelfa		.word $adde
 		.byt (type-*-1)|bit7
@@ -2635,17 +2737,18 @@ type		clc
 		sta outputted+1
 		lda #2
 		jsr popnwords
-l71		cpy n+2
-		bne l70
-		dec n+3
-		bpl l70
+		ldy #0
+l041		cpy n
+		bne l042
+		dec n+1
+		bpl l042
 		jmp next
-l70		lda (n),y
+l042		lda (n+2),y
 		jsr CHROUT
 		iny
-		bne l71
-		inc n+1
-		bne l71
+		bne l041
+		inc n+3
+		bne l041
 
 ;--------------------------------------------------------------
 ;
@@ -3544,7 +3647,6 @@ l037		lda userarea,y
 xpetp		jmp rpstore		; and we're off
 
 cold2		jsr enter
-;		.word bar
 		.word spstore
 		.word pdotq
 		.byt s015-*-1
@@ -4830,18 +4932,77 @@ dhashstore	lda #2
 		sta (n+2),y		; LFAlatest -> [LFAnew]
 		jmp next
 
+; TRUE - builds a hashed LFA structure
+; FALSE - resets all LFAs to DE AD
+;
+; dead - 
+; scanning forward sequentially, we find sequences of 
+;	len | $80	(A)
+;	byte 1
+;	byte 2
+;	byte 3
+;	...
+;	byte len | $80	(B)
+;	$DE
+;	$AD
+; where points (A) and (B) are len bytes apart
+; LATEST returns 0
+;
+; hashed - 
+; the dhash array has any nonzero value in it
+; LATEST returns nonzero
+; following the LFA chain from LATEST leads to 00
+;
+; single - 
+; the dhash array is filled with all zeroes
+; LATEST returns nonzero
+; following the LFA chain from LATEST leads to 00
+;
+;"	: THREADING?  ( -- flag )
+;"		LATEST
+;
+;	tells us whether we're threaded (true) or unthreaded (false)
+;
+
+
+;--------------------------------------------------------------
+;
+;	DEADTHREAD   ( -- )
+;
+; assumption -- dictionary is configured in one of the three
+;		available schemes
+;
+;": DEADTHREAD 
+;"    THREADING? ?DUP 0=  ( dead )
+;"    IF  ." YOU CAN'T KILL ME!  I'M ALREADY DEAD." CR  
+;"    ELSE  0<
+;"        IF  ." KILLING SINGLE THREADED LINKS" CR  1KILL  THEN
+;"        ELSE  ." KILLING HASH THREADED LINKS" CR  HASHKILL  THEN
+;"    THEN ;
+
 ;--------------------------------------------------------------
 ;
 ;	RETHREAD   ( -- )
 ;
+; When the system is first loaded, all LFAs contain $DE $AD.
+; The reason for this is twofold.  PETTIL uses a hash-threaded
+; dictionary, and calculating the hash values and link fields
+; by hand would be an extremely cumbersome activity for the programmer.
+; More importantly, FORGET might wipe away words that are linked in
+; this fashion and break the link chains.  So when FORGET is invoked,
+; first it performs UNTHREAD (to mark all LFAs as DEAD) then it moves
+; the dictionary pointer (DP) to where it belongs, then it does RETHREAD
+;
+; This word builds the LFA field in every word up to this point.  
+; It also marks the last word in the core dictionary.
 ; links all LFAs
 rethreadlfa	.word $adde
 ntop		.byt (rethread-*-1)|bit7
 		.asc "RETHREA","D"|bit7
 rethread	jsr enter
 		.word here
-		.word plit
-		.word 1024
+		.word zero
+		.word plusorigin
 		.word pdo
 		.word i
 		.word cfetch
@@ -4891,80 +5052,4 @@ l024            .word plit
 		.word pploop
 		.word exit
 
-; TRUE - builds a hashed LFA structure
-; FALSE - resets all LFAs to DE AD
-;
-; dead - 
-; scanning forward sequentially, we find sequences of 
-;	len | $80	(A)
-;	byte 1
-;	byte 2
-;	byte 3
-;	...
-;	byte len | $80	(B)
-;	$DE
-;	$AD
-; where points (A) and (B) are len bytes apart
-; LATEST returns 0
-;
-; hashed - 
-; the dhash array has any nonzero value in it
-; LATEST returns nonzero
-; following the LFA chain from LATEST leads to 00
-;
-; single - 
-; the dhash array is filled with all zeroes
-; LATEST returns nonzero
-; following the LFA chain from LATEST leads to 00
-;
-;"	: THREADING?  ( -- flag )
-;"		LATEST
-;
-;	tells us whether we're threaded (true) or unthreaded (false)
-;
-
-
-;--------------------------------------------------------------
-;
-;	DEADTHREAD   ( -- )
-;
-; assumption -- dictionary is configured in one of the three
-;		available schemes
-;
-;": DEADTHREAD 
-;"    THREADING? ?DUP 0=  ( dead )
-;"    IF  ." YOU CAN'T KILL ME!  I'M ALREADY DEAD." CR  
-;"    ELSE  0<
-;"        IF  ." KILLING SINGLE THREADED LINKS" CR  1KILL  THEN
-;"        ELSE  ." KILLING HASH THREADED LINKS" CR  HASHKILL  THEN
-;"    THEN ;
-
-
-
-		; pops up to 4 words from the split stack to the N area
-		; A = how many words to pop (valid range 1-4)
-		;
-		; returns
-		; TOS -> N0, 2OS -> N1, 3OS -> N2, 4OS -> N3
-popnwords	asl
-		tay
-		lda tos
-		sta n-2,y
-		lda tos+1
-		sta n-1,y
-l004		dey
-		dey
-		beq l005
-		lda stackl,x
-		sta n-2,y
-		lda stackh,x
-		sta n-1,y
-		inx
-		bne l004		; bra
-l005		lda stackl,x
-		sta tos
-		lda stackh,x
-		sta tos+1
-		inx
-		rts
 endofile
