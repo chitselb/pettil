@@ -59,9 +59,9 @@ outputted	= cas1buf+26		; #out
 inputted	= cas1buf+42		; span
 linesout	= cas1buf+54		; #line
 
-	basic	= $0400
+basic		= $0400
 		.word basic+1		; PET BASIC storage starts here
-*	= basic+1
+*		= basic+1
 		.word basend
 		.word 10
 		.byt $9e
@@ -634,7 +634,7 @@ cmovelfa	.word $adde
 		.byt (cmove-*-1)|bit7
 		.asc "CMOV","E"|bit7
 cmove		lda #3
-		jsr popnwords		; maybe PETTIL should make one CMOVE
+		jsr popnwords		; ~ maybe PETTIL should make one CMOVE
 					; that is smart enough to not poop
 					; on overlapping source/target?
 					; or would this break compatibility
@@ -661,6 +661,40 @@ l20		lda (n+4),y
 		bne l20
 l19		ldx n+6
 		jmp next
+
+;"http://6502.org/source/general/memory_move.html
+; Move memory down
+;
+; FROM = source start address
+;   TO = destination start address
+; SIZE = number of bytes to move
+;~ 
+FROM = 0
+TO = 2
+SIZE = 4
+
+MOVEDOWN LDY #0
+         LDX SIZE+1
+         BEQ MD2
+MD1      LDA (FROM),Y ; move a page at a time
+         STA (TO),Y
+         INY
+         BNE MD1
+         INC FROM+1
+         INC TO+1
+         DEX
+         BNE MD1
+MD2      LDX SIZE
+         BEQ MD4
+MD3      LDA (FROM),Y ; move the remaining bytes
+         STA (TO),Y
+         INY
+         DEX
+         BNE MD3
+MD4      RTS
+
+
+
 
 ;--------------------------------------------------------------
 ;
@@ -724,6 +758,7 @@ l025		dey
 		bpl l025
 l026		jmp next
 
+;" check http://6502.org/source/ for multiply and divide and stuff
 ;--------------------------------------------------------------
 ;
 ;	UM*
@@ -1433,7 +1468,16 @@ uservar         pla
 		bne l008
 		inc n+1
 l008		sty n
-		jmp pushn
+		ldy #0
+		clc
+		lda up
+		adc (n),y
+		sta n
+		lda up+1
+		adc #0
+		tay
+		lda n
+		jmp push
 
 ;--------------------------------------------------------------
 ;
@@ -2050,7 +2094,7 @@ minus		jsr donegate
 eqlfa		.word $adde
 		.byt (eq-*-1)|bit7
 		.asc "="|bit7
-eq		dey
+eq		ldy #0
 		lda tos
 		cmp stackl,x
 		bne cmpout
@@ -2086,10 +2130,9 @@ ult		dey
 ltlfa		.word $adde
 		.byt (lt-*-1)|bit7
 		.asc "<"|bit7
-lt		dey
-		sec
+lt		ldy #0
 		lda stackl,x
-		sbc tos
+		cmp tos
 		lda stackh,x
 		sbc tos+1
 sgntst		bvc l012
@@ -2102,13 +2145,13 @@ l012		bpl cmpout
 ;
 ;	>   ( n1 n2 -- flag )
 ;
+; V is the exclusive or of the carrys out of bits 6 and 7 - Bogax
 gtlfa		.word $adde
 		.byt (gt-*-1)|bit7
-		.asc "<"|bit7
-gt		dey
-		sec
+		.asc ">"|bit7
+gt		ldy #0
 		lda tos
-		sbc stackl,x
+		cmp stackl,x
 		lda tos+1
 		sbc stackh,x
 		jmp sgntst
@@ -3644,7 +3687,7 @@ l037		lda userarea,y
 		lda #<(w1-2)
 		sta ip
 
-xpetp		jmp rpstore		; and we're off
+		jmp rpstore		; and we're off
 
 cold2		jsr enter
 		.word spstore
@@ -3692,13 +3735,75 @@ s016		.word startup
 
 
 ; test stuff
-bar		ldy #0
+bar
+xpetp		jsr enter
+		.word plit
+		.word 100
+		.word plit
+		.word -37
+		.word twodup
+		.word gt
+		.word drop
+		.word twodup
+		.word lt
+		.word drop
+		.word twodup
+		.word eq
+		.word drop
+
+		.word drop
+		.word plit
+		.word 100
+		.word twodup
+		.word gt
+		.word drop
+		.word twodup
+		.word lt
+		.word drop
+		.word twodup
+		.word eq
+		.word drop
+		.word twodrop
+
+		.word plit
+		.word -200
+		.word plit
+		.word -400
+		.word twodup
+		.word gt
+		.word drop
+		.word twodup
+		.word lt
+		.word drop
+		.word twodup
+		.word eq
+		.word drop
+		.word twodrop
+
+		.word plit
+		.word -200
+		.word plit
+		.word 4000
+		.word twodup
+		.word gt
+		.word drop
+		.word twodup
+		.word lt
+		.word drop
+		.word twodup
+		.word eq
+		.word drop
+		.word twodrop
+
+		.word exit
+
+
+		ldy #0
 		sty n
 chill		dec n
 		bne chill
 		dey
 		bne chill
-		brk
 		jmp next
 
 foo		jsr enter
@@ -4618,16 +4723,19 @@ twodrop		jmp poptwo
 
 ;--------------------------------------------------------------
 ;
-;	2DUP
+;	2DUP   ( n1 n2 -- n1 n2 n1 n2 )
 ;
 twoduplfa	.word $adde
 		.byt (twodup-*-1)|bit7
 		.asc "2DU","P"|bit7
 twodup		jsr enter
+		.word over
+		.word over
+		.word exit
 
 ;--------------------------------------------------------------
 ;
-;	2OVER
+;	2OVER   ( n1 n2 n3 n4 -- n1 n2 n3 n4 n1 n2 )
 ;
 twooverlfa	.word $adde
 		.byt (twoover-*-1)|bit7
@@ -4999,10 +5107,11 @@ dhashstore	lda #2
 rethreadlfa	.word $adde
 ntop		.byt (rethread-*-1)|bit7
 		.asc "RETHREA","D"|bit7
-rethread	jsr enter
-		.word here
+rethread
+		jsr enter
 		.word zero
 		.word plusorigin
+		.word here
 		.word pdo
 		.word i
 		.word cfetch
