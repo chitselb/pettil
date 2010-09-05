@@ -221,6 +221,30 @@ clit            ldy #2
 
 ;--------------------------------------------------------------
 ;
+;       ?BRANCH   ( flag -- )
+;
+qbranchlfa      .word $adde
+		.byt (qbranch-*-1)|bit7
+		.asc "?BRANC","H"|bit7
+qbranch         lda tos
+		ora tos+1
+		ldy stackl,x
+		sty tos
+		ldy stackh,x
+		sty tos+1
+		inx             ; drop
+		tay		; to set the Z flag
+		beq branch
+bump		lda #4
+nexta           clc		;[2]
+		adc ip		;[3]
+		sta ip		;[3]
+		bcc l023	;[2]
+		inc ip+1	;[5]
+l023            jmp nexto	;[3]
+
+;--------------------------------------------------------------
+;
 ;       BRANCH
 ;
 ; Compiles an unconditional branch operation.
@@ -251,36 +275,27 @@ branch          ldy #2          ; [2]
 				; [29/30 cycles] (runs in constant time)
 ;--------------------------------------------------------------
 ;
-;       ?BRANCH   ( flag -- )
-;
-qbranchlfa      .word $adde
-		.byt (qbranch-*-1)|bit7
-		.asc "?BRANC","H"|bit7
-qbranch         lda tos
-		ora tos+1
-		ldy stackl,x
-		sty tos
-		ldy stackh,x
-		sty tos+1
-		inx             ; drop
-		tay		; to set the Z flag
-		bne branch
-nobranch	lda #4
-nexta           clc		;[2]
-		adc ip		;[3]
-		sta ip		;[3]
-		bcc l023	;[2]
-		inc ip+1	;[5]
-l023            jmp nexto	;[3]
-
-;--------------------------------------------------------------
-;
 ;       (LOOP)
 ;
 plooplfa        .word $adde
 		.byt (ploop-*-1)|bit7
 		.asc "(LOOP",")"|bit7
-ploop           jsr enter
+ploop           inc zi
+		bne pl1
+		inc zi+1
+pl1		lda zi+2
+		cmp zi
+		lda zi+3
+		sbc zi+1
+pl2		bmi branch
+		pla
+		sta zi
+		pla
+		sta zi+1
+		pla
+		sta zi+2
+		pla
+		sta zi+3
 
 ;--------------------------------------------------------------
 ;
@@ -297,7 +312,7 @@ pploop		clc
 		adc zi
 		sta zi
 		lda tos+1
-		php
+		php		; save the N flag
 		adc zi+1
 		sta zi+1
 		lda zi+2
@@ -307,10 +322,35 @@ pploop		clc
 		bcc l043
 		plp
 		bpl branch
-		bmi nobranch
+		bmi bump
 l043		plp
 		bmi branch
-		bpl nobranch
+		bpl bump
+;PPLOO
+;          INX
+;          INX
+;          STX XSAVE
+;          LDA $FF,X
+;          PHA
+;          PHA
+;          LDA $FE,X
+;          TSX
+;          INX
+;          INX
+;          CLC
+;          ADC $101,X
+;          STA $101,X
+;          PLA
+;          ADC $102,X
+;          STA $102,X
+;          PLA
+;          BPL PL1
+;          CLC
+;          LDA $101,X
+;          SBC $103,X
+;          LDA $102,X
+;          SBC $104,X
+;          JMP PL2
 
 ;--------------------------------------------------------------
 ;
@@ -2746,6 +2786,49 @@ dodoes		lda ip+1	; we get here by JSR
 
 ;--------------------------------------------------------------
 ;
+;	-TRAILING
+;
+dashtrailinglfa	.word $adde
+		.byt (dashtrailing-*-1)|bit7
+		.asc "-TRAILIN","G"|bit7
+dashtrailing	jsr enter
+		.word dup
+		.word zero
+		.word pdo
+l72		.word twodup
+		.word plus
+		.word oneminus
+		.word cfetch
+		.word bl
+		.word ne
+		.word pqleave
+		.word l73
+		.word oneminus
+		.word ploop
+		.word l72
+l73		.word exit
+
+;--------------------------------------------------------------
+;
+;	(.")
+;
+pdotqlfa	.word $adde
+		.byt (pdotq-*-1)|bit7
+		.asc "(.",'"',")"|bit7
+pdotq		jsr enter
+		.word rfetch
+		.word twoplus		; because we pre-increment?
+		.word count
+		.word dup
+		.word oneplus
+		.word rfrom
+		.word plus
+		.word tor
+		.word type
+		.word exit
+
+;--------------------------------------------------------------
+;
 ;	COUNT   ( addr1 -- addr2 n+ )
 ;
 ; Leaves  the address,  addr2 and the character
@@ -2792,49 +2875,6 @@ l042		lda (n+2),y
 		bne l041
 		inc n+3
 		bne l041
-
-;--------------------------------------------------------------
-;
-;	-TRAILING
-;
-dashtrailinglfa	.word $adde
-		.byt (dashtrailing-*-1)|bit7
-		.asc "-TRAILIN","G"|bit7
-dashtrailing	jsr enter
-		.word dup
-		.word zero
-		.word pdo
-l72		.word twodup
-		.word plus
-		.word oneminus
-		.word cfetch
-		.word bl
-		.word ne
-		.word pqleave
-		.word l73
-		.word oneminus
-		.word ploop
-		.word l72
-l73		.word exit
-
-;--------------------------------------------------------------
-;
-;	(.")
-;
-pdotqlfa	.word $adde
-		.byt (pdotq-*-1)|bit7
-		.asc "(.",'"',")"|bit7
-pdotq		jsr enter
-		.word rfetch
-		.word twoplus		; because we pre-increment?
-		.word count
-		.word dup
-		.word oneplus
-		.word rfrom
-		.word plus
-		.word tor
-		.word type
-		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -3717,7 +3757,7 @@ cold2		jsr enter
 		.byt 47,47
 		.asc "CHITSELB.COM"
 		.byt $0d,$0d
-s015		.word bar
+s015	;	.word bar
 		.word rethread
 
 warm2		.word emptybuffers
@@ -3735,8 +3775,7 @@ s016		.word startup
 
 
 ; test stuff
-bar
-xpetp		jsr enter
+bar		jsr enter
 		.word plit
 		.word 100
 		.word plit
@@ -5108,26 +5147,18 @@ rethreadlfa	.word $adde
 ntop		.byt (rethread-*-1)|bit7
 		.asc "RETHREA","D"|bit7
 rethread
-		jsr enter
+xpetp		jsr enter
 		.word zero
 		.word plusorigin
 		.word here
 		.word pdo
-		.word i
-		.word cfetch
-		.word clit
-		.byt $ad
+l044		.word i
+		.word fetch
+		.word plit
+		.word $dead
 		.word eq
-		.word i
-		.word oneplus
-		.word cfetch
-		.word clit
-		.byt $de
-		.word eq
-		.word andx
 		.word i
 		.word oneminus
-		.word dup
 		.word cfetch
 		.word clit
 		.byt $80
@@ -5159,6 +5190,7 @@ rethread
 l024            .word plit
 		.word -1
 		.word pploop
+		.word l044
 		.word exit
 
 endofile
