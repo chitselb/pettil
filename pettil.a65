@@ -38,12 +38,12 @@ bit5	= $20		; smudge
 ; zero page usage
 stackl	= $00		; stackl = $00..$3b (60 bytes)
 stackh	= $30		; stackh = $3c..$79 (60 bytes)
-bos	= stackh-1	; $3b
-zi	= $76		; innermost DO LOOP counter/limit
-n	= $7a
-w	= $80		; w overlaps 8-byte n scratch area
-tos	= $82
-up	= $84
+bos	= stackh-stackl	; includes TOS
+up	= $76		; user area pointer
+n	= $78		; scratch space
+w	= $7e		; w overlaps n
+tos	= $80		; top of stack
+zi	= $82		; innermost DO LOOP counter/limit
 
 next	= $86
 ;0086 next	inc ip
@@ -273,6 +273,40 @@ branch          ldy #2          ; [2]
 		sta ip          ; [3] (IP+2) -> IP
 		jmp nexto       ; [3]
 				; [29/30 cycles] (runs in constant time)
+
+;--------------------------------------------------------------
+;
+;       (+LOOP)   ( n -- )
+;
+; add n to current loop index.  If loop index exceeds loop limit,
+; then iterate to the (do), otherwise skip past the branch and
+; proceed
+pplooplfa       .word $adde
+		.byt (pploop-*-1)|bit7
+		.asc "(+LOOP",")"|bit7
+pploop		clc
+		lda tos
+		adc zi
+		sta zi
+		lda tos+1
+		adc zi+1
+		sta zi+1
+		lda zi+2
+		cmp zi
+		lda zi+3
+		sbc zi+1
+		ldy tos+1
+		lda stackh,x
+		sta tos+1
+		lda stackl,x
+		sta tos
+		inx
+		tay
+		bcc l043
+		eor #$80
+l043		bmi branch
+		bpl bump
+
 ;--------------------------------------------------------------
 ;
 ;       (LOOP)
@@ -296,61 +330,6 @@ pl2		bmi branch
 		sta zi+2
 		pla
 		sta zi+3
-
-;--------------------------------------------------------------
-;
-;       (+LOOP)   ( n -- )
-;
-; add n to current loop index.  If loop index exceeds loop limit,
-; then iterate to the (do), otherwise skip past the branch and
-; proceed
-pplooplfa       .word $adde
-		.byt (pploop-*-1)|bit7
-		.asc "(+LOOP",")"|bit7
-pploop		clc
-		lda tos
-		adc zi
-		sta zi
-		lda tos+1
-		php		; save the N flag
-		adc zi+1
-		sta zi+1
-		lda zi+2
-		cmp zi
-		lda zi+3
-		sbc zi+1
-		bcc l043
-		plp
-		bpl branch
-		bmi bump
-l043		plp
-		bmi branch
-		bpl bump
-;PPLOO
-;          INX
-;          INX
-;          STX XSAVE
-;          LDA $FF,X
-;          PHA
-;          PHA
-;          LDA $FE,X
-;          TSX
-;          INX
-;          INX
-;          CLC
-;          ADC $101,X
-;          STA $101,X
-;          PLA
-;          ADC $102,X
-;          STA $102,X
-;          PLA
-;          BPL PL1
-;          CLC
-;          LDA $101,X
-;          SBC $103,X
-;          LDA $102,X
-;          SBC $104,X
-;          JMP PL2
 
 ;--------------------------------------------------------------
 ;
@@ -709,29 +688,29 @@ l19		ldx n+6
 ;   TO = destination start address
 ; SIZE = number of bytes to move
 ;~ 
-FROM = 0
-TO = 2
-SIZE = 4
+;FROM = 0
+;TO = 2
+;SIZE = 4
 
-MOVEDOWN LDY #0
-         LDX SIZE+1
-         BEQ MD2
-MD1      LDA (FROM),Y ; move a page at a time
-         STA (TO),Y
-         INY
-         BNE MD1
-         INC FROM+1
-         INC TO+1
-         DEX
-         BNE MD1
-MD2      LDX SIZE
-         BEQ MD4
-MD3      LDA (FROM),Y ; move the remaining bytes
-         STA (TO),Y
-         INY
-         DEX
-         BNE MD3
-MD4      RTS
+;MOVEDOWN LDY #0
+;         LDX SIZE+1
+;         BEQ MD2
+;MD1      LDA (FROM),Y ; move a page at a time
+;         STA (TO),Y
+;         INY
+;         BNE MD1
+;         INC FROM+1
+;         INC TO+1
+;         DEX
+;         BNE MD1
+;MD2      LDX SIZE
+;         BEQ MD4
+;MD3      LDA (FROM),Y ; move the remaining bytes
+;         STA (TO),Y
+;         INY
+;         DEX
+;         BNE MD3
+;MD4      RTS
 
 
 
@@ -2198,7 +2177,7 @@ gt		ldy #0
 
 ;--------------------------------------------------------------
 ;
-;	ROT
+;	ROT   ( a b c -- b c a )
 ;
 rotlfa		.word $adde
 		.byt (rot-*-1)|bit7
@@ -2215,6 +2194,27 @@ rot		ldy stackh+1,x
 		lda tos
 		sta stackl,x
 		sty tos
+		jmp next
+
+;--------------------------------------------------------------
+;
+;	LROT   ( a b c -- c a b )
+;
+lrotlfa		.word $adde
+		.byt (lrot-*-1)|bit7
+		.asc "LRO","T"|bit7
+lrot		ldy tos+1	; c
+		lda stackh,x
+		sta tos+1	; b -> tos
+		lda stackh+1,x
+		sta stackh,x	; a -> 2os
+		sty stackh+1,x	; c -> 3os
+		ldy tos
+		lda stackl,x
+		sta tos
+		lda stackl+1,x
+		sta stackl,x
+		sty stackl+1,x
 		jmp next
 
 ;--------------------------------------------------------------
@@ -3676,6 +3676,39 @@ coldlfa		.word $adde
 		.byt (cold-*-1)|bit7
 		.asc "COL","D"|bit7
 cold		sei
+;~debug - leave patterns to make things easier in the debugger
+	ldy #<next
+	lda #$3e
+d000	sta $FFFF,y
+	dey
+	bne d000
+
+	ldy #bos-1
+d001	lda #$bb
+	sta stackl,y
+	lda #$aa
+	sta stackh,y
+	dey
+	bpl d001
+
+	lda #$cc
+	ldy #$07
+d002	sta n,y
+	dey
+	bpl d002
+
+	lda #$dd
+	ldy #$03
+d003	sta zi,y
+	dey
+	bpl d003
+
+	lda #$ba
+	sta tos+1
+	lda #$ab
+	sta tos
+;~debug
+
 
 		lda #<warmvector
 		sta errlnk
@@ -3769,90 +3802,6 @@ _warm2		.word _emptybuffers
 s016		.word startup
 		.word fetch
 		.word execute
-		.word exit
-
-
-
-; test stuff
-_bar		jsr enter
-		.word plit
-		.word 100
-		.word plit
-		.word -37
-		.word _twodup
-		.word gt
-		.word drop
-		.word _twodup
-		.word lt
-		.word drop
-		.word _twodup
-		.word eq
-		.word drop
-
-		.word drop
-		.word plit
-		.word 100
-		.word _twodup
-		.word gt
-		.word drop
-		.word _twodup
-		.word lt
-		.word drop
-		.word _twodup
-		.word eq
-		.word drop
-		.word twodrop
-
-		.word plit
-		.word -200
-		.word plit
-		.word -400
-		.word _twodup
-		.word gt
-		.word drop
-		.word _twodup
-		.word lt
-		.word drop
-		.word _twodup
-		.word eq
-		.word drop
-		.word twodrop
-
-		.word plit
-		.word -200
-		.word plit
-		.word 4000
-		.word _twodup
-		.word gt
-		.word drop
-		.word _twodup
-		.word lt
-		.word drop
-		.word _twodup
-		.word eq
-		.word drop
-		.word twodrop
-
-		.word exit
-
-
-		ldy #0
-		sty n
-chill		dec n
-		bne chill
-		dey
-		bne chill
-		jmp next
-
-_foo		jsr enter
-		.word plit
-		.word 500	; ( 500 )
-		.word dup	; ( 500 500 )
-		.word clit	; ( 500 500 42 )
-		.byt 42
-		.word plus	; ( 500 542 )
-		.word over	; ( 500 542 500 )
-		.word plus	; ( 500 1042 )
 		.word exit
 
 ;--------------------------------------------------------------
@@ -4979,6 +4928,125 @@ _thru		jsr enter
 
 ;==============================================================
 
+;--------------------------------------------------------------
+;
+;	DEADLFA?   ( addr -- flag )
+;
+; true if addr points to { $DEAD len "wordnam","e"|bit7 }
+deadlfaqlfa	.word $adde
+		.byt (_deadlfaq-*-1)|bit7
+		.asc "DEADLFA","?"|bit7
+_deadlfaq	jsr enter	; ( addr )
+		.word dup	; ( addr addr )
+		.word fetch	; ( addr word )
+		.word plit
+		.word $adde	; ( addr word $dead )
+		.word eq	; ( addr f1 )
+		.word qbranch	; ( addr )
+		.word l046
+		.word dup	; ( addr addr )
+		.word twoplus	; ( addr a+2 )
+		.word dup	; ( addr a+2 a+2 )
+		.word cfetch	; ( addr a+2 len80 )
+		.word dup	; ( addr a+2 len80 len80 )
+		.word clit
+		.byt $80	; ( addr a+2 len80 len80 $80 )
+		.word gt	; ( addr a+2 len80 f2 )
+		.word lrot	; ( addr f2 a+2 len80 )
+		.word clit
+		.byt $3f	; ( addr f2 a+2 len80 $3f )
+		.word andx	; ( addr f2 a+2 len )
+		.word plus	; ( addr f2 a+2+len )
+		.word cfetch	; ( addr f2 last80 )
+		.word clit
+		.byt $80	; ( addr f2 last80 $80 )
+		.word gt	; ( addr f2 f3 )
+		.word andx	; ( addr flag )
+		.word swap	; ( flag addr )
+l046		.word drop	; ( flag )
+		.word exit
+
+
+;--------------------------------------------------------------
+;
+;	DHASH!   ( LFAnew hashkey -- )
+;
+; links the current LFA onto the top of this hash' thread
+;
+; When we're done, the word whose LFAnew is on the stack will become
+; the new top of this hash thread, and the new word's LFA will link
+; to the previous top of the chain.
+;
+dhashstorelfa	.word $adde
+		.byt (dhashstore-*-1)|bit7
+		.asc "DHASH","!"|bit7
+dhashstore	lda #2
+		jsr popnwords		; N0 = hashkey, N1 = LFAnew
+		ldy n			; get hashkey
+		lda latestl,y
+		sta n+4
+		lda latesth,y
+		sta n+5			; LFAlatest -> N2
+		bne l045
+		lda #<executelfa
+		sta n+4
+		lda #>executelfa
+		sta n+5
+l045		lda n+2
+		sta latestl,y
+		lda n+3
+		sta latesth,y		; LFAnew -> hashtable(key)
+		ldy #0
+		lda n+4
+		sta (n+2),y
+		iny
+		lda n+5
+		sta (n+2),y		; LFAlatest -> [LFAnew]
+		jmp next
+
+;--------------------------------------------------------------
+;
+;	RETHREAD   ( -- )
+;
+; When the system is first loaded, all LFAs contain $DE $AD.
+; The reason for this is twofold.  PETTIL uses a hash-threaded
+; dictionary, and calculating the hash values and link fields
+; by hand would be an extremely cumbersome activity for the programmer.
+; More importantly, FORGET might wipe away words that are linked in
+; this fashion and break the link chains.  So when FORGET is invoked,
+; first it performs UNTHREAD (to mark all LFAs as DEAD) then it moves
+; the dictionary pointer (DP) to where it belongs, then it does RETHREAD
+;
+; This word builds the LFA field in every word up to this point.  
+; It also marks the last word in the core dictionary.
+; links all LFAs
+rethreadlfa	.word $adde
+ntop		.byt (_rethread-*-1)|bit7
+		.asc "RETHREA","D"|bit7
+xpetp
+_rethread	jsr enter
+		.word zero
+		.word _plusorigin
+		.word _here
+		.word pdo
+
+l044		.word i
+		.word _deadlfaq
+		.word qbranch
+		.word l024
+		.word i
+		.word dup
+		.word twoplus
+		.word dhash
+		.word dhashstore
+
+l024            .word plit
+		.word -1
+		.word pploop
+		.word l044
+		.word mon
+		.word exit
+
 ; hash-threaded dictionary search
 ; These won't remain in the final core (LOAD "*") version
 ; but it will be useful during development to automatically generate
@@ -4999,23 +5067,25 @@ _thru		jsr enter
 ;
 ;--------------------------------------------------------------
 ;
-;	DHASH	( addr -- hash )
+;	DHASH	( nfa -- hash )
 ;
-; input is a counted string at "addr"
+; input is NFA or counted string. Output is one of 16 values in
+; the range $00 to $0f.  Used to break the dictionary into smaller
+; pieces for (FIND)
 ;
-; output "hash" is a value 0..15 that points to the latest LFA
-; in this word's dictionary chain
+; The hash is calculated by XORing all the nybbles of the string
+; together.
 dhashlfa	.word $adde
 		.byt (dhash-*-1)|bit7
 		.asc "DHAS","H"|bit7
-dhash		dey
+dhash		ldy #0
 		lda (tos),y		; get the length
 		and #$1f		; mask off flag bits
 		tay
 		lda #0
 l009		eor (tos),y		; xor the string together, ignore length
 		dey
-		bne l009
+		bne l009		; skip the length byte
 		sty tos+1		; 0 -> msb
 		sta tos			; temporarily store the result byte
 		lsr
@@ -5043,150 +5113,30 @@ dhashfetch	ldy tos
 		sta tos+1
 		jmp next
 
-;--------------------------------------------------------------
-;
-;	DHASH!   ( LFAnew hashkey -- )
-;
-; links the current LFA onto the top of this hash' thread
-;
-; When we're done, the word whose LFAnew is on the stack will become
-; the new top of this hash thread, and the new word's LFA will link
-; to the previous top of the chain.
-;
-dhashstorelfa	.word $adde
-		.byt (dhashstore-*-1)|bit7
-		.asc "DHASH","!"|bit7
-dhashstore	lda #2
-		jsr popnwords		; N0 = hashkey, N1 = LFAnew
-		ldy n			; get hashkey
-		lda latestl,y
-		sta n+4
-		lda latesth,y
-		sta n+5			; LFAlatest -> N2
-		lda n+2
-		sta latestl,y
-		lda n+3
-		sta latesth,y		; LFAnew -> hashtable(key)
-		ldy #0
-		lda n+4
-		sta (n+2),y
-		iny
-		lda n+5
-		sta (n+2),y		; LFAlatest -> [LFAnew]
+
+
+monlfa		.word $adde
+		.byt (mon-*-1)|bit7
+		.asc "MO","N"|bit7
+mon		brk
 		jmp next
 
-; TRUE - builds a hashed LFA structure
-; FALSE - resets all LFAs to DE AD
-;
-; dead - 
-; scanning forward sequentially, we find sequences of 
-;	len | $80	(A)
-;	byte 1
-;	byte 2
-;	byte 3
-;	...
-;	byte len | $80	(B)
-;	$DE
-;	$AD
-; where points (A) and (B) are len bytes apart
-; LATEST returns 0
-;
-; hashed - 
-; the dhash array has any nonzero value in it
-; LATEST returns nonzero
-; following the LFA chain from LATEST leads to 00
-;
-; single - 
-; the dhash array is filled with all zeroes
-; LATEST returns nonzero
-; following the LFA chain from LATEST leads to 00
-;
-;"	: THREADING?  ( -- flag )
-;"		LATEST
-;
-;	tells us whether we're threaded (true) or unthreaded (false)
-;
 
 
-;--------------------------------------------------------------
-;
-;	DEADTHREAD   ( -- )
-;
-; assumption -- dictionary is configured in one of the three
-;		available schemes
-;
-;": DEADTHREAD 
-;"    THREADING? ?DUP 0=  ( dead )
-;"    IF  ." YOU CAN'T KILL ME!  I'M ALREADY DEAD." CR  
-;"    ELSE  0<
-;"        IF  ." KILLING SINGLE THREADED LINKS" CR  1KILL  THEN
-;"        ELSE  ." KILLING HASH THREADED LINKS" CR  HASHKILL  THEN
-;"    THEN ;
 
-;--------------------------------------------------------------
-;
-;	RETHREAD   ( -- )
-;
-; When the system is first loaded, all LFAs contain $DE $AD.
-; The reason for this is twofold.  PETTIL uses a hash-threaded
-; dictionary, and calculating the hash values and link fields
-; by hand would be an extremely cumbersome activity for the programmer.
-; More importantly, FORGET might wipe away words that are linked in
-; this fashion and break the link chains.  So when FORGET is invoked,
-; first it performs UNTHREAD (to mark all LFAs as DEAD) then it moves
-; the dictionary pointer (DP) to where it belongs, then it does RETHREAD
-;
-; This word builds the LFA field in every word up to this point.  
-; It also marks the last word in the core dictionary.
-; links all LFAs
-rethreadlfa	.word $adde
-ntop		.byt (_rethread-*-1)|bit7
-		.asc "RETHREA","D"|bit7
-xpetp
-_rethread	jsr enter
-		.word zero
-		.word _plusorigin
-		.word _here
-		.word pdo
-l044		.word i
-		.word fetch
-		.word plit
-		.word $dead
-		.word eq
-		.word i
-		.word oneminus
-		.word cfetch
-		.word clit
-		.byt $80
-		.word gt
-		.word andx
-		.word qbranch
-		.word l024
-		.word i
-		.word oneminus
-		.word plit
-		.word -1
-		.word _traverse
-		.word dup
-		.word cfetch
-		.word clit
-		.byt $3f
-		.word andx
-		.word over
-		.word plus
-		.word i
-		.word oneminus
-		.word eq
-		.word qbranch
-		.word l024
-		.word dhash
-		.word i
-		.word swap
-		.word dhashstore
-l024            .word plit
-		.word -1
-		.word pploop
-		.word l044
+
+
+
+foolfa		.word $adde
+		.byt (_foo-*-1)|bit7
+		.asc "FO","O"|bit7
+_foo		jsr enter
+		.word exit
+
+barlfa		.word $adde
+		.byt (_bar-*-1)|bit7
+		.asc "BA","R"|bit7
+_bar		jsr enter
 		.word exit
 
 endofile
