@@ -3787,10 +3787,13 @@ _cold2		jsr enter
 		.byt $0d,$0d
 		.asc "HTTP:"
 		.byt 47,47
-		.asc "CHITSELB.COM"
+		.asc "CHITSELB.COM 2010"
 		.byt $0d,$0d
 s015	;	.word bar
 		.word _rethread
+		.word _words
+		.word mon
+	;	.word _unthread
 
 _warm2		.word _emptybuffers
 		.word _decimal
@@ -3798,7 +3801,7 @@ _warm2		.word _emptybuffers
 		.word _definitions
 		.word _pdotq
 		.byt s016-*-1
-		.asc "WELCOME TO FORTH!"
+		.asc "WELCOME TO PETTIL!"
 s016		.word startup
 		.word fetch
 		.word execute
@@ -4943,28 +4946,29 @@ _deadlfaq	jsr enter	; ( addr )
 		.word $adde	; ( addr word $dead )
 		.word eq	; ( addr f1 )
 		.word qbranch	; ( addr )
-		.word l046
-		.word dup	; ( addr addr )
-		.word twoplus	; ( addr a+2 )
-		.word dup	; ( addr a+2 a+2 )
-		.word cfetch	; ( addr a+2 len80 )
-		.word dup	; ( addr a+2 len80 len80 )
+		.word l047
+		.word twoplus	; ( a+2 )
+		.word dup	; ( a+2 a+2 )
+		.word cfetch	; ( a+2 len80 )
+		.word dup	; ( a+2 len80 len80 )
 		.word clit
-		.byt $80	; ( addr a+2 len80 len80 $80 )
-		.word gt	; ( addr a+2 len80 f2 )
-		.word lrot	; ( addr f2 a+2 len80 )
+		.byt $80	; ( a+2 len80 len80 $80 )
+		.word gt	; ( a+2 len80 f2 )
+		.word lrot	; ( f2 a+2 len80 )
 		.word clit
-		.byt $3f	; ( addr f2 a+2 len80 $3f )
-		.word andx	; ( addr f2 a+2 len )
-		.word plus	; ( addr f2 a+2+len )
-		.word cfetch	; ( addr f2 last80 )
+		.byt $3f	; ( f2 a+2 len80 $3f )
+		.word andx	; ( f2 a+2 len )
+		.word plus	; ( f2 a+2+len )
+		.word cfetch	; ( f2 last80 )
 		.word clit
-		.byt $80	; ( addr f2 last80 $80 )
-		.word gt	; ( addr f2 f3 )
-		.word andx	; ( addr flag )
-		.word swap	; ( flag addr )
-l046		.word drop	; ( flag )
-		.word exit
+		.byt $80	; ( f2 last80 $80 )
+		.word gt	; ( f2 f3 )
+		.word andx	; ( flag )
+		.word branch
+		.word l048
+l047		.word drop	; ( )
+		.word false	; ( 0 )
+l048		.word exit
 
 
 ;--------------------------------------------------------------
@@ -5006,6 +5010,48 @@ l045		lda n+2
 
 ;--------------------------------------------------------------
 ;
+;	WORDS   ( -- )
+;
+; dumps the dictionary
+;
+;" : words 16 0 do
+;	i dhashfetch
+;	begin
+;		dup 2+ id. space
+;		@
+;	until
+;    loop ;
+;
+wordslfa	.word $adde
+		.byt (_words-*-1)|bit7
+		.asc "WORD","S"|bit7
+_words		jsr enter
+		.word clit
+		.byt 16
+		.word zero
+		.word pdo
+
+;--------------------------------------------------------------
+;
+;	UNTHREAD   ( -- )
+;
+; iterate through all LFAs and reset them to $DEAD
+unthreadlfa	.word $adde
+		.byt (_unthread-*-1)|bit7
+		.asc "UNTHREA","D"|bit7
+_unthread	jsr enter
+		.word clit
+		.byt 16
+		.word zero
+		.word pdo
+l046		.word i
+		.word dhashfetch	; ( lfa -- )
+		
+		.word mon
+		.word exit
+
+;--------------------------------------------------------------
+;
 ;	RETHREAD   ( -- )
 ;
 ; When the system is first loaded, all LFAs contain $DE $AD.
@@ -5023,13 +5069,11 @@ l045		lda n+2
 rethreadlfa	.word $adde
 ntop		.byt (_rethread-*-1)|bit7
 		.asc "RETHREA","D"|bit7
-xpetp
 _rethread	jsr enter
 		.word zero
 		.word _plusorigin
 		.word _here
 		.word pdo
-
 l044		.word i
 		.word _deadlfaq
 		.word qbranch
@@ -5039,12 +5083,11 @@ l044		.word i
 		.word twoplus
 		.word dhash
 		.word dhashstore
-
 l024            .word plit
 		.word -1
 		.word pploop
 		.word l044
-		.word mon
+		.word _bar
 		.word exit
 
 ; hash-threaded dictionary search
@@ -5095,6 +5138,15 @@ l009		eor (tos),y		; xor the string together, ignore length
 		eor tos			; mix it with the low nybble
 		and #$0f		; mask off the high nybble
 		sta tos			; hash value in the range 0..f
+;~debug
+	stx n
+	sed	
+	cmp	#10
+	adc	#'0'
+	cld
+	jsr CHROUT
+	ldx n
+;~debug
 		jmp next
 
 ;--------------------------------------------------------------
@@ -5136,6 +5188,7 @@ _foo		jsr enter
 barlfa		.word $adde
 		.byt (_bar-*-1)|bit7
 		.asc "BA","R"|bit7
+xpetp
 _bar		jsr enter
 		.word exit
 
