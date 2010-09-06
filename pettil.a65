@@ -88,11 +88,13 @@ userwarm
 
 userfence	.word forgetfence			; 16..17
 userdp		.word endofile				; 18..19
-uservoclink	.word $36a2				; 20..21
+uservoclink	.word lastvoc				; 20..21
 userviewquery	.word 2					; 22..23
 userblk		.word $1908				; 24..25
 
 usercold
+
+
 
 		;dictionary hash link table used by rechaining words
 latestl		.dsb 16,0
@@ -292,7 +294,7 @@ branch          ldy #2          ; [2]
 ;
 ; * inner interpreter control headerless
 ;
-; add n to current loop index.  If loop index exceeds loop limit,
+; add n to inner loop index.  If loop index exceeds loop limit,
 ; then iterate to the (do), otherwise skip past the branch and
 ; proceed
 ;pplooplfa	.word $adde
@@ -3699,9 +3701,9 @@ forthlfa	.word $adde
 		.byt (forth-*-1)|bit7
 		.asc "FORT","H"|bit7
 forth		jmp vocabdoes
-		.word ntop		; top nfa in this vocabulary
-		.word 0			; last link in this vocabulary
+		.word ntop		; last nfa in this vocabulary
 		.word $a081		; some magic number?
+lastvoc		.word 0			; link to next vocabulary, 0 for last
 
 ;--------------------------------------------------------------
 ;
@@ -5002,239 +5004,6 @@ _saveforth	jsr enter
 
 ;--------------------------------------------------------------
 ;
-;	FORGET
-;
-forgetlfa	.word $adde
-		.byt (_forget-*-1)|bit7
-		.asc "FORGE","T"|bit7
-_forget		jsr enter
-
-
-
-
-
-forgetfence
-
-
-
-;--------------------------------------------------------------
-;
-;	THRU
-;
-thrulfa		.word $adde
-		.byt (_thru-*-1)|bit7
-		.asc "THR","U"|bit7
-_thru		jsr enter
-
-;==============================================================
-
-;--------------------------------------------------------------
-;
-;	DEADLFA?   ( addr -- flag )
-;
-; true if addr points to { $DEAD len "wordnam","e"|bit7 }
-deadlfaqlfa	.word $adde
-		.byt (_deadlfaq-*-1)|bit7
-		.asc "DEADLFA","?"|bit7
-_deadlfaq	jsr enter	; ( addr )
-		.word dup	; ( addr addr )
-		.word fetch	; ( addr word )
-		.word plit
-		.word $adde	; ( addr word $dead )
-		.word eq	; ( addr f1 )
-		.word qbranch	; ( addr )
-		.word l047
-		.word twoplus	; ( a+2 )
-		.word dup	; ( a+2 a+2 )
-		.word cfetch	; ( a+2 len80 )
-		.word dup	; ( a+2 len80 len80 )
-		.word clit
-		.byt $80	; ( a+2 len80 len80 $80 )
-		.word gt	; ( a+2 len80 f2 )
-		.word lrot	; ( f2 a+2 len80 )
-		.word clit
-		.byt $3f	; ( f2 a+2 len80 $3f )
-		.word andx	; ( f2 a+2 len )
-		.word plus	; ( f2 a+2+len )
-		.word cfetch	; ( f2 last80 )
-		.word clit
-		.byt $80	; ( f2 last80 $80 )
-		.word gt	; ( f2 f3 )
-		.word andx	; ( flag )
-		.word branch
-		.word l048
-l047		.word drop	; ( )
-		.word false	; ( 0 )
-l048		.word exit
-
-
-;--------------------------------------------------------------
-;
-;	DHASH!   ( LFAnew hashkey -- )
-;
-; links the current LFA onto the top of this hash' thread
-;
-; When we're done, the word whose LFAnew is on the stack will become
-; the new top of this hash thread, and the new word's LFA will link
-; to the previous top of the chain.
-;
-dhashstorelfa	.word $adde
-		.byt (dhashstore-*-1)|bit7
-		.asc "DHASH","!"|bit7
-dhashstore	lda #2
-		jsr popnwords		; N0 = hashkey, N1 = LFAnew
-		ldy n			; get link from hashkey table -> N2
-		lda latestl,y
-		sta n+4
-		lda latesth,y
-		sta n+5			; LFAlatest -> N2
-		bne l045
-		lda #<executelfa
-		sta n+4
-		lda #>executelfa
-		sta n+5
-l045		lda n+2
-		sta latestl,y
-		lda n+3
-		sta latesth,y		; LFAnew -> hashtable(key)
-		ldy #0
-		lda n+4
-		sta (n+2),y
-		iny
-		lda n+5
-		sta (n+2),y		; LFAlatest -> [LFAnew]
-		jmp next
-
-;--------------------------------------------------------------
-;
-;	WORDS   ( -- )
-;
-; dumps the dictionary
-;
-;" : words 16 0
-;	do	i dhashfetch
-;		begin	dup 2+ id. space
-;			@
-;			?dup 0=
-;		until
-;	loop ;
-;
-wordslfa	.word $adde
-		.byt (_words-*-1)|bit7
-		.asc "WORD","S"|bit7
-_words		jsr enter
-		.word clit
-		.byt 16
-		.word zero
-		.word pdo
-l049		.word i
-		.word dhashfetch
-l050		.word dup
-		.word twoplus
-		.word _iddot
-		.word _space
-		.word fetch
-		.word qdup
-		.word zeq
-		.word qbranch
-		.word l050
-		.word ploop
-		.word l049
-		.word exit
-
-;--------------------------------------------------------------
-;
-;	UNTHREAD   ( -- )
-;
-; iterate through all LFAs and reset them to $DEAD
-;
-;" : unthread
-;	16 0 do				( )
-;		i dhash@		( lfa1 )
-;		begin
-;			dup		( lfa1 lfa1 )
-;			@		( lfa1 lfa2 )
-;			?dup		( lfa1 lfa2 true | lfa1 false )
-;		while			( lfa1 lfa2 )
-;			$dead		( lfa1 lfa2 $dead )
-;			rot		( lfa2 $dead lfa1 )
-;			!		( lfa2 )
-;		repeat
-;					( lfa )
-;		drop			( )
-;	loop
-;  ;
-unthreadlfa	.word $adde
-		.byt (_unthread-*-1)|bit7
-		.asc "UNTHREA","D"|bit7
-_unthread	jsr enter
-		.word clit
-		.byt 16
-		.word zero
-		.word pdo
-l051		.word i
-		.word dhashfetch
-l052		.word dup
-		.word fetch
-		.word qdup
-		.word qbranch
-		.word l053
-		.word plit
-		.word $adde
-		.word rot
-		.word store
-		.word branch
-		.word l052
-l053		.word drop
-		.word zero
-		.word i
-		.word dhashstore
-		.word ploop
-		.word l051
-		.word exit
-
-;--------------------------------------------------------------
-;
-;	RETHREAD   ( -- )
-;
-; When the system is first loaded, all LFAs contain $DE $AD.
-; The reason for this is twofold.  PETTIL uses a hash-threaded
-; dictionary, and calculating the hash values and link fields
-; by hand would be an extremely cumbersome activity for the programmer.
-; More importantly, FORGET might wipe away words that are linked in
-; this fashion and break the link chains.  So when FORGET is invoked,
-; first it performs UNTHREAD (to mark all LFAs as DEAD) then it moves
-; the dictionary pointer (DP) to where it belongs, then it does RETHREAD
-;
-; This word builds the LFA field in every word up to this point.  
-; It also marks the last word in the core dictionary.
-; links all LFAs
-rethreadlfa	.word $adde
-ntop		.byt (_rethread-*-1)|bit7
-		.asc "RETHREA","D"|bit7
-_rethread	jsr enter
-		.word _pdotq
-		.byt (s007-*-1)
-		.asc "HASHING DICTIONARY "
-s007		.word _here
-		.word zero
-		.word _plusorigin
-		.word pdo
-l044		.word i
-		.word _deadlfaq
-		.word qbranch
-		.word l024
-		.word i
-		.word dup
-		.word twoplus
-		.word dhash
-		.word dhashstore
-l024		.word ploop
-		.word l044
-		.word exit
-
-;--------------------------------------------------------------
-;
 ;	DHASH	( nfa -- hash )
 ;
 ; input is NFA or counted string. Output is one of 16 values in
@@ -5290,11 +5059,210 @@ dhashfetch	ldy tos
 		sta tos+1
 		jmp next
 
+;--------------------------------------------------------------
+;
+;	DHASH!   ( LFAnew hashkey -- )
+;
+; links the current LFA onto the top of this hash' thread
+;
+; When we're done, the word whose LFAnew is on the stack will become
+; the new top of this hash thread, and the new word's LFA will link
+; to the previous top of the chain.
+;
+dhashstorelfa	.word $adde
+		.byt (dhashstore-*-1)|bit7
+		.asc "DHASH","!"|bit7
+dhashstore	lda #2
+		jsr popnwords		; N0 = hashkey, N1 = LFAnew
+		ldy n			; get link from hashkey table -> N2
+		lda latestl,y
+		sta n+4
+		lda latesth,y
+		sta n+5			; LFAlatest -> N2
+		bne l045
+		lda #<executelfa
+		sta n+4
+		lda #>executelfa
+		sta n+5
+l045		lda n+2
+		sta latestl,y
+		lda n+3
+		sta latesth,y		; LFAnew -> hashtable(key)
+		ldy #0
+		lda n+4
+		sta (n+2),y
+		iny
+		lda n+5
+		sta (n+2),y		; LFAlatest -> [LFAnew]
+		jmp next
+
+;--------------------------------------------------------------
+;
+;	DEADLFA?   ( addr -- flag )
+;
+; true if addr points to { $DEAD len "wordnam","e"|bit7 }
+deadlfaqlfa	.word $adde
+		.byt (_deadlfaq-*-1)|bit7
+		.asc "DEADLFA","?"|bit7
+_deadlfaq	jsr enter	; ( addr )
+		.word dup	; ( addr addr )
+		.word fetch	; ( addr word )
+		.word plit
+		.word $adde	; ( addr word $dead )
+		.word eq	; ( addr f1 )
+		.word qbranch	; ( addr )
+		.word l047
+		.word twoplus	; ( a+2 )
+		.word dup	; ( a+2 a+2 )
+		.word cfetch	; ( a+2 len80 )
+		.word dup	; ( a+2 len80 len80 )
+		.word clit
+		.byt $80	; ( a+2 len80 len80 $80 )
+		.word gt	; ( a+2 len80 f2 )
+		.word lrot	; ( f2 a+2 len80 )
+		.word clit
+		.byt $3f	; ( f2 a+2 len80 $3f )
+		.word andx	; ( f2 a+2 len )
+		.word plus	; ( f2 a+2+len )
+		.word cfetch	; ( f2 last80 )
+		.word clit
+		.byt $80	; ( f2 last80 $80 )
+		.word gt	; ( f2 f3 )
+		.word andx	; ( flag )
+		.word branch
+		.word l048
+l047		.word drop	; ( )
+		.word false	; ( 0 )
+l048		.word exit
+
+;--------------------------------------------------------------
+;
+;	UNTHREAD   ( -- )
+;
+; iterate through all LFAs and reset them to $DEAD
+;
+;" : unthread
+;	16 0 do				( )
+;		i dhash@		( lfa1 )
+;		begin
+;			dup		( lfa1 lfa1 )
+;			@		( lfa1 lfa2 )
+;			?dup		( lfa1 lfa2 true | lfa1 false )
+;		while			( lfa1 lfa2 )
+;			$dead		( lfa1 lfa2 $dead )
+;			rot		( lfa2 $dead lfa1 )
+;			!		( lfa2 )
+;		repeat
+;					( lfa )
+;		drop			( )
+;	loop
+;  ;
+unthreadlfa	.word $adde
+		.byt (_unthread-*-1)|bit7
+		.asc "UNTHREA","D"|bit7
+_unthread	jsr enter
+		.word clit
+		.byt 16
+		.word zero
+		.word pdo
+l051		.word i
+		.word dhashfetch
+l052		.word dup
+		.word fetch
+		.word qdup
+		.word qbranch
+		.word l053
+		.word plit
+		.word $adde
+		.word page3
+		nop
+		.word rot
+		.word store
+		.word branch
+		.word l052
+l053		.word drop
+		.word zero
+		.word i
+		.word dhashstore
+		.word ploop
+		.word l051
+		.word exit
+
+;--------------------------------------------------------------
+;
+;	RETHREAD   ( -- )
+;
+; When the system is first loaded, all LFAs contain $DE $AD.
+; The reason for this is twofold.  PETTIL uses a hash-threaded
+; dictionary, and calculating the hash values and link fields
+; by hand would be an extremely cumbersome activity for the programmer.
+; More importantly, FORGET might wipe away words that are linked in
+; this fashion and break the link chains.  So when FORGET is invoked,
+; first it performs UNTHREAD (to mark all LFAs as DEAD) then it moves
+; the dictionary pointer (DP) to where it belongs, then it does RETHREAD
+;
+; This word builds the LFA field in every word up to this point.  
+; It also marks the last word in the core dictionary.
+; links all LFAs
+rethreadlfa	.word $adde
+		.byt (_rethread-*-1)|bit7
+		.asc "RETHREA","D"|bit7
+xpetp
+_rethread	jsr enter
+		.word _pdotq
+		.byt (s007-*-1)
+		.asc "HASHING DICTIONARY "
+s007		.word _here
+		.word zero
+		.word _plusorigin
+		.word pdo
+l044		.word i
+		.word _deadlfaq
+		.word qbranch
+		.word l024
+		.word i
+		.word dup
+		.word twoplus
+		.word dhash
+		.word dhashstore
+l024		.word ploop
+		.word l044
+		.word exit
+
+;--------------------------------------------------------------
+;
+;	MON   ( -- )
+;
+; perform a BRK instruction to get to the TIM machine language monitor
 monlfa		.word $adde
 		.byt (mon-*-1)|bit7
 		.asc "MO","N"|bit7
 mon		brk
 		jmp next
+
+;--------------------------------------------------------------
+;
+;	FORGET
+;
+; unthread, move DP, then rethread
+; don't forget to rechain vocabularies!
+forgetlfa	.word $adde
+ntop		.byt (_forget-*-1)|bit7
+		.asc "FORGE","T"|bit7
+_forget		jsr enter
+
+forgetfence
+
+;==============================================================
+
+;--------------------------------------------------------------
+;
+;	THRU
+;
+thrulfa		.word $adde
+		.byt (_thru-*-1)|bit7
+		.asc "THR","U"|bit7
+_thru		jsr enter
 
 foolfa		.word $adde
 		.byt (_foo-*-1)|bit7
@@ -5305,8 +5273,16 @@ _foo		jsr enter
 barlfa		.word $adde
 		.byt (_bar-*-1)|bit7
 		.asc "BA","R"|bit7
-xpetp
 _bar		jsr enter
 		.word exit
 
 endofile
+
+; words that use psemi
+;"	:		jsr	enter
+;	constant	jmp	doconst
+;	user		jsr	uservar
+;	does>			dodoes
+;	create			docreate
+;	vocabulary		vocabdoes
+
