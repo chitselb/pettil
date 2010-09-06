@@ -102,9 +102,11 @@ latesth		.dsb 16,0
 ;
 ;	NEXT
 ;
+; * inner interpreter headerless
+;
 ;		+IP
 ;		[IP] -> PC
-
+;
 ; this NEXT routine gets copied to $0086 by COLD.  See project
 ; tiddlywiki for the rationale behind this minimalist design
 ;
@@ -122,6 +124,8 @@ zzpnext
 ;--------------------------------------------------------------
 ;
 ;	EXECUTE
+;
+; * compiler
 ;
 ; Executes the definition found at addr.
 ;
@@ -165,6 +169,7 @@ w1		.word $dead
 ;
 ;	(LIT)
 ;
+; * 
 ; push the word of memory following (IP)
 ;
 plitlfa		.word $adde
@@ -318,10 +323,11 @@ ploop           inc zi
 		bne pl1
 		inc zi+1
 pl1		lda zi+2
-		cmp zi
+		eor zi
+		bne branch
 		lda zi+3
-		sbc zi+1
-pl2		bmi branch
+		eor zi+1
+		bne branch
 		pla
 		sta zi
 		pla
@@ -330,6 +336,7 @@ pl2		bmi branch
 		sta zi+2
 		pla
 		sta zi+3
+		jmp bump
 
 ;--------------------------------------------------------------
 ;
@@ -1350,7 +1357,10 @@ fetch		ldy #0
 
 ;--------------------------------------------------------------
 ;
-;	C@   ( addr -- b )
+;	C@   ( addr -- 8b )
+;
+; "c-fetch" 
+; 8b is the contents of the byte at addr.
 ;
 cfetchlfa	.word $adde
 		.byt (cfetch-*-1)|bit7
@@ -1363,7 +1373,10 @@ cfetch		ldy #0
 
 ;--------------------------------------------------------------
 ;
-;	!   ( n addr -- )
+;	!   ( 16b addr -- )
+;
+; "store" 
+; 16b is stored at addr.
 ;
 storelfa	.word $adde
 		.byt (store-*-1)|bit7
@@ -1378,7 +1391,11 @@ store		ldy #0
 
 ;--------------------------------------------------------------
 ;
-;	C!   ( b addr -- )
+;	C!   ( 16b addr -- )
+;
+; "c-store"
+; The least-significant 8 bits of 16b are stored into the byte
+; at addr.
 ;
 cstorelfa	.word $adde
 		.byt (cstore-*-1)|bit7
@@ -1390,8 +1407,27 @@ cstore		lda stackl,x
 
 ;--------------------------------------------------------------
 ;
-;"      :   ( -- )
+;"      :   ( -- sys )
 ;	
+; "colon"
+;" A defining word executed in the form: 
+;" : <name> ... ;                
+; Create a word definition for <name> in the compilation
+; vocabulary and set compilation state.  The search order is
+; changed so that the first vocabulary in the search order is
+; changed so that the first vocabulary in the search order is
+; replaced by the compilation vocabulary.  The compilation
+; vocabulary is unchanged.  The text from the input stream is
+; subsequently compiled.  <name> is called a "colon
+; definition".  The newly created word definition for <name>
+; cannot be found in the dictionary until the corresponding ;
+; or ;CODE is successfully processed.   
+;
+; An error condition exists if a word is not found and cannot
+; be converted to a number or if, during compilation from mass
+; storage, the input stream is exhausted before encountering ;
+; or ;CODE .  sys is balanced with its corresponding ; .  
+;
 		.word _storecsp
 		.word current
 		.word fetch
@@ -1661,11 +1697,12 @@ false		lda #0
 zeqlfa		.word $adde
 		.byt (zeq-*-1)|bit7
 		.asc "0","="|bit7
-zeq		lda tos
+zeq		ldy #$ff
+		lda tos
 		ora tos+1
 		beq l031
-		lda #$ff
-l031		tay
+		iny
+l031		tya
 		jmp put
 
 ;--------------------------------------------------------------
@@ -2248,6 +2285,8 @@ l034		jmp next
 ;--------------------------------------------------------------
 ;
 ;	TRAVERSE   ( addr n -- addr )
+;
+; * dictionary
 ;
 ; scan forward (1) or backward (-1) for the next negative byte
 ; returns the address of the opposite side of this name field
@@ -3286,7 +3325,16 @@ l86		.word exit
 
 ;--------------------------------------------------------------
 ;
-;	FIND
+;	FIND   ( addr1 -- addr2 n )
+;
+; addr1 is the address of a counted string.  The string
+; contains a word name to be located in the currently active
+; search order.  If the word is not found, addr2 is the string
+; address addr1, and n is zero.  If the word is found, addr2
+; is the compilation address and n is set to one of two non-
+; zero values.  If the word found has the immediate attribute,
+; n is set to one.  If the word is non-immediate, n is set to
+; minus one (true).
 ;
 findlfa		.word $adde
 		.byt (_find-*-1)|bit7
@@ -3789,11 +3837,9 @@ _cold2		jsr enter
 		.byt 47,47
 		.asc "CHITSELB.COM 2010"
 		.byt $0d,$0d
-s015	;	.word bar
-		.word _rethread
-		.word _words
-		.word mon
-	;	.word _unthread
+s015		.word _rethread
+		.word _bar
+		.word _unthread
 
 _warm2		.word _emptybuffers
 		.word _decimal
@@ -4986,7 +5032,7 @@ dhashstorelfa	.word $adde
 		.asc "DHASH","!"|bit7
 dhashstore	lda #2
 		jsr popnwords		; N0 = hashkey, N1 = LFAnew
-		ldy n			; get hashkey
+		ldy n			; get link from hashkey table -> N2
 		lda latestl,y
 		sta n+4
 		lda latesth,y
@@ -5050,6 +5096,23 @@ l050		.word dup
 ;	UNTHREAD   ( -- )
 ;
 ; iterate through all LFAs and reset them to $DEAD
+;
+;" : unthread
+;	16 0 do				( )
+;		i dhash@		( lfa1 )
+;		begin
+;			dup		( lfa1 lfa1 )
+;			@		( lfa1 lfa2 )
+;			?dup		( lfa1 lfa2 true | lfa1 false )
+;		while			( lfa1 lfa2 )
+;			$dead		( lfa1 lfa2 $dead )
+;			rot		( lfa2 $dead lfa1 )
+;			!		( lfa2 )
+;		repeat
+;					( lfa )
+;		drop			( )
+;	loop
+;  ;
 unthreadlfa	.word $adde
 		.byt (_unthread-*-1)|bit7
 		.asc "UNTHREA","D"|bit7
@@ -5058,10 +5121,22 @@ _unthread	jsr enter
 		.byt 16
 		.word zero
 		.word pdo
-l046		.word i
-		.word dhashfetch	; ( lfa -- )
-		
-		.word mon
+l051		.word i
+		.word dhashfetch
+l052		.word dup
+		.word fetch
+		.word qdup
+		.word qbranch
+		.word l053
+		.word plit
+		.word $adde
+		.word rot
+		.word store
+		.word branch
+		.word l052
+l053		.word drop
+		.word ploop
+		.word l051
 		.word exit
 
 ;--------------------------------------------------------------
@@ -5084,14 +5159,12 @@ rethreadlfa	.word $adde
 ntop		.byt (_rethread-*-1)|bit7
 		.asc "RETHREA","D"|bit7
 _rethread	jsr enter
-		.word _bar
 		.word _pdotq
 		.byt (s007-*-1)
 		.asc "HASHING DICTIONARY "
-s007		.word zero
+s007		.word _here
+		.word zero
 		.word _plusorigin
-		.word _here
-		.word _bar
 		.word pdo
 l044		.word i
 		.word _deadlfaq
@@ -5102,11 +5175,8 @@ l044		.word i
 		.word twoplus
 		.word dhash
 		.word dhashstore
-l024            .word plit
-		.word -1
-		.word pploop
+l024		.word ploop
 		.word l044
-		.word _bar
 		.word exit
 
 ;--------------------------------------------------------------
