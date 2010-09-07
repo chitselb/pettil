@@ -112,16 +112,19 @@ latesth		.dsb 16,0
 ; this NEXT routine gets copied to $0086 by COLD.  See project
 ; tiddlywiki for the rationale behind this minimalist design
 ;
-page3		inc ip
-page2		inc ip+1
-		jmp next
-
 azpnext
 	inc ip
 	inc ip
 	jmp ($cafe)
 zzpnext
 
+; Page boundary crossing within a secondary is handled by the compiler inserting
+; 'page' when the DP gets to $xxFD or $xxFE.  DP having a value of $xxFF is
+; not supposed to happen, and indicates an error in the compiler.
+page		lda #0
+		sta ip
+		inc ip+1
+		jmp nexto
 
 ;--------------------------------------------------------------
 ;
@@ -392,7 +395,8 @@ pop		ldy stackh,x
 ;pqdolfa	.word $adde
 ;		.byt (_pqdo-*-1)|bit7
 ;		.asc "(?DO",")"|bit7
-_pqdo		jsr enter
+_pqdo
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -414,7 +418,8 @@ i		lda zi
 jlfa		.word $adde
 		.byt (_j-*-1)|bit7
 		.asc "J"|bit7
-_j		jsr enter
+_j
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -425,7 +430,8 @@ _j		jsr enter
 ;pleavelfa	.word $adde
 ;		.byt (_pleave-*-1)|bit7
 ;		.asc "(LEAVE",")"|bit7
-_pleave		jsr enter
+_pleave
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -436,7 +442,8 @@ _pleave		jsr enter
 ;pqleavelfa	.word $adde
 ;		.byt (_pqleave-*-1)|bit7
 ;		.asc "(?LEAVE",")"|bit7
-_pqleave	jsr enter
+_pqleave
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -445,25 +452,34 @@ _pqleave	jsr enter
 digitlfa	.word $adde
 		.byt (_digit-*-1)|bit7
 		.asc "DIGI","T"|bit7
-_digit		jsr enter
+_digit
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
-;	(FIND)
+;	(FIND)   ( addr1 addr2 -- addr flag )
 ;
 ; * outer interpreter headerless
+;
+; first search the context dictionary, which may be unhashed
+; then hash the word and search only that thread in the main dictionary
 ;
 ;pfindlfa	.word $adde
 ;		.byt (pfind-*-1)|bit7
 ;		.asc "(FIND",")"|bit7
-pfind		lda #2			; ~ mostly straight Blazin'
-		jsr popnwords		; this one's going to take some work
-		stx n+4			; happy golfing!  It needs to run fast.
-		iny
+pfind		lda tos
+		sta n
+		lda tos+1
+		sta n+1
+		lda stackl,x
+		sta n+2
+		lda stackh,x
+		sta n+3
+		ldy #1
 l9		dey		; ~ ewww
 		lda (n),y
 		eor (n+2),y
-		and #$3f
+		and #($100-bit7-bit6)
 		bne l8
 l6		iny
 		lda (n),y
@@ -471,7 +487,6 @@ l6		iny
 		asl
 		bne l8
 		bcc l6
-		ldx n+4
 		dex
 		dex
 		iny
@@ -486,13 +501,14 @@ l6		iny
 		sty tos+1
 		lda (n),y
 		asl
-		bpl l7
-		lda #1
+		bpl l7		; branch if non-immediate
+		lda #1		; immediate
 		sta tos
 		jmp next
 l7		lda #$ff	;true
-		pha
+		tya
 		jmp put
+
 l8		sec
 		lda n		; traverse the LFAs?
 		sbc #2
@@ -591,7 +607,8 @@ l10		dex
 scanlfa		.word $adde
 		.byt (_scan-*-1)|bit7
 		.asc "SCA","N"|bit7
-_scan		jsr enter		; ~ straight Blazin'
+_scan
+#include enter.a65
 		lda #3
 		jsr popnwords
 l16		lda n+2
@@ -1507,7 +1524,8 @@ semi		.word _qcsp
 constantlfa	.word $adde
 		.byt (_constant-*-1)|bit7
 		.asc "CONSTAN","T"|bit7
-_constant	jsr enter
+_constant
+#include enter.a65
 		.word _create
 		.word _comma
 		.word _psemi
@@ -1526,7 +1544,8 @@ doconst		ldy #4
 variablelfa	.word $adde
 		.byt (_variable-*-1)|bit7
 		.asc "VARIABL","E"|bit7
-_variable	jsr enter
+_variable
+#include enter.a65
 		.word _create
 		.word two
 		.word _allot
@@ -1767,7 +1786,7 @@ zne		lda tos
 		beq l033
 		lda #$ff
 l033		tay
-		jmp put
+			jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -1776,7 +1795,8 @@ l033		tay
 plusoriginlfa	.word $adde
 		.byt (_plusorigin-*-1)|bit7
 		.asc "+ORIGI","N"|bit7
-_plusorigin	jsr enter
+_plusorigin	
+#include enter.a65
 		.word plit
 		.word userarea
 		.word plus
@@ -2134,7 +2154,8 @@ twostar		asl tos
 herelfa		.word $adde
 		.byt (_here-*-1)|bit7
 		.asc "HER","E"|bit7
-_here		jsr enter
+_here
+#include enter.a65
 		.word dp
 		.word fetch
 		.word exit
@@ -2146,7 +2167,8 @@ _here		jsr enter
 allotlfa	.word $adde
 		.byt (_allot-*-1)|bit7
 		.asc "ALLO","T"|bit7
-_allot		jsr enter
+_allot
+#include enter.a65
 		.word dp
 		.word plusstore
 		.word exit
@@ -2158,7 +2180,8 @@ _allot		jsr enter
 commalfa	.word $adde
 		.byt (_comma-*-1)|bit7
 		.asc ","|bit7
-_comma		jsr enter
+_comma
+#include enter.a65
 		.word _here
 		.word store
 		.word two
@@ -2172,7 +2195,8 @@ _comma		jsr enter
 ccommalfa	.word $adde
 		.byt (_ccomma-*-1)|bit7
 		.asc "C",","|bit7
-_ccomma		jsr enter
+_ccomma
+#include enter.a65
 		.word _here
 		.word cstore
 		.word one
@@ -2307,7 +2331,8 @@ lrot		ldy tos+1	; c
 spacelfa	.word $adde
 		.byt (_space-*-1)|bit7
 		.asc "SPAC","E"|bit7
-_space		jsr enter
+_space
+#include enter.a65
 		.word bl
 		.word emit
 		.word exit
@@ -2346,7 +2371,8 @@ l034		jmp next
 traverselfa	.word $adde
 		.byt (_traverse-*-1)|bit7
 		.asc "TRAVERS","E"|bit7
-_traverse	jsr enter
+_traverse
+#include enter.a65
 		.word swap
 l010		.word over
 		.word plus
@@ -2370,7 +2396,8 @@ l010		.word over
 latestlfa	.word $adde
 		.byt (_latest-*-1)|bit7
 		.asc "LATES","T"|bit7
-_latest		jsr enter
+_latest
+#include enter.a65
 		.word current
 		.word fetch
 		.word fetch
@@ -2395,7 +2422,8 @@ _latest		jsr enter
 tobodylfa	.word $adde
 		.byt (_tobody-*-1)|bit7
 		.asc ">BOD","Y"|bit7
-_tobody		jsr enter
+_tobody
+#include enter.a65
 		.word twoplus
 		.word exit
 
@@ -2408,7 +2436,8 @@ _tobody		jsr enter
 tonamelfa	.word $adde
 		.byt (_toname-*-1)|bit7
 		.asc ">NAM","E"|bit7
-_toname		jsr enter
+_toname
+#include enter.a65
 		.word oneminus
 		.word true
 		.word _traverse
@@ -2423,7 +2452,8 @@ _toname		jsr enter
 tolinklfa	.word $adde
 		.byt (_tolink-*-1)|bit7
 		.asc ">LIN","K"|bit7
-_tolink		jsr enter
+_tolink
+#include enter.a65
 		.word _toname
 		.word twominus
 		.word exit
@@ -2435,7 +2465,8 @@ _tolink		jsr enter
 bodyfromlfa	.word $adde			; ~ Blazin
 		.byt (_bodyfrom-*-1)|bit7
 		.asc "BODY",">"|bit7
-_bodyfrom	jsr enter
+_bodyfrom
+#include enter.a65
 		.word twominus
 		.word exit
 
@@ -2446,7 +2477,8 @@ _bodyfrom	jsr enter
 namefromlfa	.word $adde
 		.byt (_namefrom-*-1)|bit7
 		.asc "NAME",">"|bit7
-_namefrom	jsr enter
+_namefrom
+#include enter.a65
 		.word one
 		.word _traverse
 		.word oneplus
@@ -2459,7 +2491,8 @@ _namefrom	jsr enter
 linkfromlfa	.word $adde
 		.byt (_linkfrom-*-1)|bit7
 		.asc "LINK",">"|bit7
-_linkfrom	jsr enter
+_linkfrom
+#include enter.a65
 		.word twoplus
 		.word _namefrom
 		.word exit
@@ -2471,7 +2504,8 @@ _linkfrom	jsr enter
 ntolinklfa	.word $adde
 		.byt (_ntolink-*-1)|bit7
 		.asc "N>LIN","K"|bit7
-_ntolink	jsr enter
+_ntolink
+#include enter.a65
 		.word twominus
 		.word exit
 
@@ -2482,7 +2516,8 @@ _ntolink	jsr enter
 linktonamelfa	.word $adde
 		.byt (_linktoname-*-1)|bit7
 		.asc "L>NAM","E"|bit7
-_linktoname	jsr enter
+_linktoname
+#include enter.a65
 		.word twoplus
 		.word exit
 
@@ -2493,7 +2528,8 @@ _linktoname	jsr enter
 storecsplfa	.word $adde
 		.byt (_storecsp-*-1)|bit7
 		.asc "!CS","P"|bit7
-_storecsp	jsr enter
+_storecsp
+#include enter.a65
 		.word spfetch
 		.word csp
 		.word store
@@ -2506,7 +2542,8 @@ _storecsp	jsr enter
 wherelfa	.word $adde
 		.byt (_where-*-1)|bit7
 		.asc "WHER","E"|bit7
-_where		jsr enter
+_where
+#include enter.a65
 		.word blk
 		.word fetch
 		.word qbranch
@@ -2583,7 +2620,8 @@ l60		.word clit
 ;pabortqlfa	.word $adde
 ;		.byt (_pabortq-*-1)|bit7
 ;		.asc "(ABORT",'"',")"|bit7
-_pabortq	jsr enter
+_pabortq
+#include enter.a65
 		.word qbranch
 		.word l61
 		.word _cmdoff
@@ -2612,7 +2650,8 @@ l62		.word exit
 commadollarlfa	.word $adde
 		.byt (_commadollar-*-1)|bit7
 		.asc ",","$"|bit7
-_commadollar	jsr enter
+_commadollar
+#include enter.a65
 		.word swap
 		.word over
 		.word _here
@@ -2632,7 +2671,8 @@ _commadollar	jsr enter
 abortqlfa	.word $adde
 		.byt (_abortq-*-1)|bit7
 		.asc "ABORT",'"'|bit7
-_abortq		jsr enter
+_abortq
+#include enter.a65
 		.word _compile
 		.word _pabortq
 		.word clit
@@ -2648,7 +2688,8 @@ _abortq		jsr enter
 qcomplfa	.word $adde
 		.byt (_qcomp-*-1)|bit7
 		.asc "?COM","P"|bit7
-_qcomp		jsr enter
+_qcomp
+#include enter.a65
 		.word state
 		.word fetch
 		.word zeq
@@ -2664,7 +2705,8 @@ s003		.word exit
 qfindlfa	.word $adde
 		.byt (_qfind-*-1)|bit7
 		.asc "?FIN","D"|bit7
-_qfind		jsr enter
+_qfind
+#include enter.a65
 		.word _pabortq
 		.byt s004-*-1
 		.asc "NOT IN CURRENT SEARCH ORDER"
@@ -2677,7 +2719,8 @@ s004		.word exit
 qpairslfa	.word $adde
 		.byt (_qpairs-*-1)|bit7
 		.asc "?PAIR","S"|bit7
-_qpairs		jsr enter
+_qpairs
+#include enter.a65
 		.word minus
 		.word _pabortq
 		.byt s005-*-1
@@ -2691,7 +2734,8 @@ s005		.word exit
 qcsplfa		.word $adde
 		.byt (_qcsp-*-1)|bit7
 		.asc "?CS","P"|bit7
-_qcsp		jsr enter
+_qcsp
+#include enter.a65
 		.word spfetch
 		.word csp
 		.word fetch
@@ -2708,7 +2752,8 @@ s006		.word exit
 qcharlfa	.word $adde
 		.byt (_qchar-*-1)|bit7
 		.asc "?CHA","R"|bit7
-_qchar		jsr enter
+_qchar
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -2717,7 +2762,8 @@ _qchar		jsr enter
 compilelfa	.word $adde
 		.byt (_compile-*-1)|bit7
 		.asc "COMPIL","E"|bit7
-_compile	jsr enter
+_compile
+#include enter.a65
 		.word _qcomp
 		.word rfrom
 		.word dup
@@ -2734,7 +2780,8 @@ _compile	jsr enter
 lbracketlfa	.word $adde
 		.byt (_lbracket-*-1)|bit7
 		.asc "["|bit7
-_lbracket	jsr enter
+_lbracket
+#include enter.a65
 		.word state
 		.word off
 		.word exit
@@ -2746,7 +2793,8 @@ _lbracket	jsr enter
 rbracketlfa	.word $adde
 		.byt (_rbracket-*-1)|bit7
 		.asc "]"|bit7
-_rbracket	jsr enter
+_rbracket
+#include enter.a65
 		.word state
 		.word on
 l68		.word _qstack
@@ -2788,7 +2836,8 @@ l66		.word true
 smudgelfa	.word $adde
 		.byt (_smudge-*-1)|bit7
 		.asc "SMUDG","E"|bit7
-_smudge		jsr enter
+_smudge
+#include enter.a65
 		.word _latest
 		.word clit
 		.byt bit5	; $20
@@ -2802,7 +2851,8 @@ _smudge		jsr enter
 hexlfa	.word $adde
 		.byt (_hex-*-1)|bit7
 		.asc "HE","X"|bit7
-_hex		jsr enter
+_hex
+#include enter.a65
 		.word clit
 		.byt 16
 		.word base
@@ -2816,7 +2866,8 @@ _hex		jsr enter
 decimallfa	.word $adde
 		.byt (_decimal-*-1)|bit7
 		.asc "DECIMA","L"|bit7
-_decimal	jsr enter
+_decimal
+#include enter.a65
 		.word clit
 		.byt 10
 		.word base
@@ -2830,7 +2881,8 @@ _decimal	jsr enter
 psemilfa	.word $adde
 		.byt (_psemi-*-1)|bit7
 		.asc "(;CODE",")"|bit7
-_psemi		jsr enter
+_psemi
+#include enter.a65
 		.word rfrom
 		.word _latest
 		.word _namefrom
@@ -2844,7 +2896,8 @@ _psemi		jsr enter
 doeslfa		.word $adde
 		.byt (_does-*-1)|bit7
 		.asc "DOES",">"|bit7
-_does		jsr enter
+_does
+#include enter.a65
 		.word _qcsp
 		.word _compile
 		.word _psemi
@@ -2881,7 +2934,8 @@ dodoes		lda ip+1	; we get here by JSR
 dashtrailinglfa	.word $adde
 		.byt (_dashtrailing-*-1)|bit7
 		.asc "-TRAILIN","G"|bit7
-_dashtrailing	jsr enter
+_dashtrailing
+#include enter.a65
 		.word dup
 		.word zero
 		.word pdo
@@ -2907,7 +2961,8 @@ l73		.word exit
 ;pdotqlfa	.word $adde
 ;		.byt (_pdotq-*-1)|bit7
 ;		.asc "(.",'"',")"|bit7
-_pdotq		jsr enter
+_pdotq
+#include enter.a65
 		.word rfetch
 		.word twoplus		; because we pre-increment?
 		.word count
@@ -2975,7 +3030,8 @@ l042		lda (n+2),y
 dotqlfa		.word $adde
 		.byt (_dotq-*-1)|bit7
 		.asc ".",'"'|bit7
-_dotq		jsr enter
+_dotq
+#include enter.a65
 		.word _compile
 		.word _pdotq
 		.word clit
@@ -2991,7 +3047,8 @@ _dotq		jsr enter
 dotplfa		.word $adde
 		.byt (_dotp-*-1)|bit7
 		.asc ".","("|bit7
-_dotp		jsr enter
+_dotp
+#include enter.a65
 		.word clit
 		.asc ')'
 		.word _qchar
@@ -3045,7 +3102,8 @@ l75		sty inputted		; ~ probably should do a USER dereference
 querylfa	.word $adde
 		.byt (_query-*-1)|bit7
 		.asc "QUER","Y"|bit7
-_query		jsr enter
+_query
+#include enter.a65
 		.word tib
 		.word clit
 		.byt 80
@@ -3067,7 +3125,8 @@ _query		jsr enter
 spacenplfa	.word $adde
 		.byt (_spacenp-*-1)|bit7|bit6
 		.asc " "|bit7
-_spacenp	jsr enter
+_spacenp
+#include enter.a65
 		.word doneq
 		.word on
 		.word exit
@@ -3079,7 +3138,8 @@ _spacenp	jsr enter
 quitqlfa	.word $adde
 		.byt (_quitq-*-1)|bit7
 		.asc "QUIT","?"|bit7
-_quitq		jsr enter
+_quitq
+#include enter.a65
 		.word state
 		.word fetch
 		.word ne
@@ -3097,7 +3157,8 @@ _quitq		jsr enter
 eraselfa	.word $adde
 		.byt (_erase-*-1)|bit7
 		.asc "ERAS","E"|bit7
-_erase		jsr enter
+_erase
+#include enter.a65
 		.word zero
 		.word fill
 		.word exit
@@ -3109,7 +3170,8 @@ _erase		jsr enter
 blanklfa	.word $adde
 		.byt (_blank-*-1)|bit7
 		.asc "BLAN","K"|bit7
-_blank		jsr enter
+_blank
+#include enter.a65
 		.word bl
 		.word fill
 		.word exit
@@ -3121,7 +3183,8 @@ _blank		jsr enter
 holdlfa		.word $adde
 		.byt (_hold-*-1)|bit7
 		.asc "HOL","D"|bit7
-_hold		jsr enter
+_hold
+#include enter.a65
 		.word true
 		.word hld
 		.word plusstore
@@ -3137,7 +3200,8 @@ _hold		jsr enter
 padlfa		.word $adde
 		.byt (_pad-*-1)|bit7
 		.asc "PA","D"|bit7
-_pad		jsr enter
+_pad
+#include enter.a65
 		.word _here
 		.word clit
 		.byt 80
@@ -3151,7 +3215,8 @@ _pad		jsr enter
 tickstreamlfa	.word $adde
 		.byt (_tickstream-*-1)|bit7
 		.asc "'STREA","M"|bit7
-_tickstream	jsr enter
+_tickstream
+#include enter.a65
 		.word blk
 		.word fetch
 		.word qdup
@@ -3184,7 +3249,8 @@ l77		.word toin
 wordlfa		.word $adde
 		.byt (_word-*-1)|bit7
 		.asc "WOR","D"|bit7
-_word		jsr enter
+_word
+#include enter.a65
 		.word tor
 		.word _tickstream
 		.word over
@@ -3253,7 +3319,8 @@ l78		lda (n+2),y
 ppunctqlfa	.word $adde
 		.byt (_ppunctq-*-1)|bit7
 		.asc "(PUNCT?",")"|bit7
-_ppunctq	jsr enter
+_ppunctq
+#include enter.a65
 		.word clit
 		.byt '.'
 		.word eq
@@ -3266,7 +3333,8 @@ _ppunctq	jsr enter
 punctqlfa	.word $adde
 		.byt (_punctq-*-1)|bit7
 		.asc "PUNCT","?"|bit7
-_punctq		jsr enter
+_punctq
+#include enter.a65
 		.word _ppunctq
 		.word exit
 
@@ -3278,7 +3346,8 @@ _punctq		jsr enter
 convertlfa	.word $adde
 		.byt (_convert-*-1)|bit7
 		.asc "CONVER","T"|bit7
-_convert	jsr enter
+_convert
+#include enter.a65
 l81		.word oneplus
 		.word dup
 		.word tor
@@ -3319,7 +3388,8 @@ l80		.word rfrom
 numberlfa	.word $adde
 		.byt (_number-*-1)|bit7
 		.asc "NUMBE","R"|bit7
-_number		jsr enter
+_number
+#include enter.a65
 		.word true
 		.word over
 		.word count
@@ -3392,7 +3462,8 @@ l86		.word exit
 findlfa		.word $adde
 		.byt (_find-*-1)|bit7
 		.asc "FIN","D"|bit7
-_find		jsr enter
+_find
+#include enter.a65
 		.word context
 		.word fetch
 		.word fetch
@@ -3413,7 +3484,8 @@ l89		.word exit
 existsqlfa	.word $adde
 		.byt (_existsq-*-1)|bit7
 		.asc "EXISTS","?"|bit7
-_existsq	jsr enter
+_existsq
+#include enter.a65
 		.word bl
 		.word _word
 		.word dup
@@ -3429,7 +3501,8 @@ _existsq	jsr enter
 iddotlfa	.word $adde
 		.byt (_iddot-*-1)|bit7
 		.asc "ID","."|bit7
-_iddot		jsr enter
+_iddot
+#include enter.a65
 		.word _pad
 		.word clit
 		.byt 32
@@ -3482,7 +3555,8 @@ _iddot		jsr enter
 createlfa	.word $adde
 		.byt (_create-*-1)|bit7
 		.asc "CREAT","E"|bit7
-_create		jsr enter
+_create
+#include enter.a65
 		.word _frombcq
 		.word _here
 		.word width
@@ -3618,7 +3692,8 @@ l035		sty n
 bcompilelfa	.word $adde
 		.byt (_bcompile-*-1)|bit7
 		.asc "[COMPILE","]"|bit7
-_bcompile	jsr enter
+_bcompile
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3627,7 +3702,8 @@ _bcompile	jsr enter
 literallfa	.word $adde
 		.byt (_literal-*-1)|bit7
 		.asc "LITERA","L"|bit7
-_literal	jsr enter
+_literal
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3636,7 +3712,8 @@ _literal	jsr enter
 dliterallfa	.word $adde
 		.byt (_dliteral-*-1)|bit7
 		.asc "DLITERA","L"|bit7
-_dliteral	jsr enter
+_dliteral
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3645,7 +3722,8 @@ _dliteral	jsr enter
 qstacklfa	.word $adde
 		.byt (_qstack-*-1)|bit7
 		.asc "?STAC","K"|bit7
-_qstack		jsr enter
+_qstack
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3654,7 +3732,8 @@ _qstack		jsr enter
 interpretlfa	.word $adde
 		.byt (_interpret-*-1)|bit7
 		.asc "INTERPRE","T"|bit7
-_interpret	jsr enter
+_interpret
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3663,7 +3742,8 @@ _interpret	jsr enter
 immediatelfa	.word $adde
 		.byt (_immediate-*-1)|bit7
 		.asc "IMMEDIAT","E"|bit7
-_immediate	jsr enter
+_immediate
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3672,7 +3752,8 @@ _immediate	jsr enter
 vocabularylfa	.word $adde
 		.byt (_vocabulary-*-1)|bit7
 		.asc "VOCABULAR","Y"|bit7
-_vocabulary	jsr enter
+_vocabulary
+#include enter.a65
 		.word _create
 		.word current
 		.word fetch
@@ -3712,7 +3793,8 @@ lastvoc		.word 0			; link to next vocabulary, 0 for last
 definitionslfa	.word $adde
 		.byt (_definitions-*-1)|bit7
 		.asc "DEFINITION","S"|bit7
-_definitions	jsr enter
+_definitions
+#include enter.a65
 		.word context
 		.word fetch
 		.word current
@@ -3726,7 +3808,8 @@ _definitions	jsr enter
 lparenlfa	.word $adde
 		.byt (_lparen-*-1)|bit7
 		.asc "("|bit7
-_lparen		jsr enter
+_lparen
+#include enter.a65
 		.word clit
 		.asc ')'
 		.word _qchar
@@ -3740,7 +3823,8 @@ _lparen		jsr enter
 runlfa		.word $adde
 		.byt (_run-*-1)|bit7
 		.asc "RU","N"|bit7
-_run		jsr enter
+_run
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3749,7 +3833,8 @@ _run		jsr enter
 abortlfa	.word $adde
 		.byt (_abort-*-1)|bit7
 		.asc "ABOR","T"|bit7
-_abort		jsr enter
+_abort
+#include enter.a65
 		.word spstore
 		.word _quit
 		.word exit	; make the decompiler happy
@@ -3862,7 +3947,8 @@ l037		lda userarea,y
 
 		jmp rpstore		; and we're off
 
-_cold2		jsr enter
+_cold2
+#include enter.a65
 		.word spstore
 		.word _pdotq
 		.byt s015-*-1
@@ -3910,15 +3996,15 @@ s016		.word startup
 ;
 ;	QUIT
 ;
-; PETTIL's outer interpreter infinite loop
+; * outer interpreter infinite loop
 ;
 quitlfa		.word $adde
 		.byt (_quit-*-1)|bit7
 		.asc "QUI","T"|bit7
-_quit		jsr enter
-		.word zero
+_quit
+#include enter.a65
 		.word blk
-		.word store
+		.word off
 		.word _lbracket
 l007		.word rpstore
 		.word cr
@@ -3942,7 +4028,8 @@ l006		.word branch
 stodlfa		.word $adde
 		.byt (_stod-*-1)|bit7
 		.asc "S>","D"|bit7
-_stod		jsr enter
+_stod
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3951,7 +4038,8 @@ _stod		jsr enter
 abslfa		.word $adde
 		.byt (_abs-*-1)|bit7
 		.asc "AB","S"|bit7
-_abs		jsr enter
+_abs
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3960,7 +4048,8 @@ _abs		jsr enter
 dabslfa		.word $adde
 		.byt (_dabs-*-1)|bit7
 		.asc "DAB","S"|bit7
-_dabs		jsr enter
+_dabs
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3969,7 +4058,8 @@ _dabs		jsr enter
 minlfa		.word $adde
 		.byt (_min-*-1)|bit7
 		.asc "MI","N"|bit7
-_min		jsr enter
+_min
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3978,7 +4068,8 @@ _min		jsr enter
 maxlfa	.word $adde
 		.byt (_max-*-1)|bit7
 		.asc "MA","X"|bit7
-_max		jsr enter
+_max
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3987,7 +4078,8 @@ _max		jsr enter
 mstarlfa	.word $adde
 		.byt (_mstar-*-1)|bit7
 		.asc "M","*"|bit7
-_mstar		jsr enter
+_mstar
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -3996,7 +4088,8 @@ _mstar		jsr enter
 mslashlfa	.word $adde
 		.byt (_mslash-*-1)|bit7
 		.asc "M","/"|bit7
-_mslash		jsr enter
+_mslash
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4005,7 +4098,8 @@ _mslash		jsr enter
 starlfa		.word $adde
 		.byt (_star-*-1)|bit7
 		.asc "*"|bit7
-_star		jsr enter
+_star
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4023,7 +4117,8 @@ _slashmod	jsr enter
 slashlfa	.word $adde
 		.byt (_slash-*-1)|bit7
 		.asc "/"|bit7
-_slash		jsr enter
+_slash
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4032,7 +4127,8 @@ _slash		jsr enter
 modlfa		.word $adde
 		.byt (_mod-*-1)|bit7
 		.asc "MO","D"|bit7
-_mod		jsr enter
+_mod
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4086,7 +4182,8 @@ _bcqfrom	jsr enter
 tobcqlfa	.word $adde
 		.byt (_tobcq-*-1)|bit7
 		.asc ">BC","Q"|bit7
-_tobcq		jsr enter
+_tobcq
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4113,7 +4210,8 @@ _absentq	jsr enter
 updatelfa	.word $adde
 		.byt (_update-*-1)|bit7
 		.asc "UPDAT","E"|bit7
-_update		jsr enter
+_update
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4122,7 +4220,8 @@ _update		jsr enter
 drzerolfa	.word $adde
 		.byt (_drzero-*-1)|bit7
 		.asc "DR","0"|bit7
-_drzero		jsr enter
+_drzero
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4131,7 +4230,8 @@ _drzero		jsr enter
 dronelfa	.word $adde
 		.byt (_drone-*-1)|bit7
 		.asc "DR","1"|bit7
-_drone		jsr enter
+_drone
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4158,7 +4258,8 @@ _missing	jsr enter
 bufferlfa	.word $adde
 		.byt (_buffer-*-1)|bit7
 		.asc "BUFFE","R"|bit7
-_buffer		jsr enter
+_buffer
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4167,7 +4268,8 @@ _buffer		jsr enter
 blocklfa	.word $adde
 		.byt (_block-*-1)|bit7
 		.asc "BLOC","K"|bit7
-_block		jsr enter
+_block
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4194,7 +4296,8 @@ _savebuffers	jsr enter
 flushlfa	.word $adde
 		.byt (_flush-*-1)|bit7
 		.asc "FLUS","H"|bit7
-_flush		jsr enter
+_flush
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4203,7 +4306,8 @@ _flush		jsr enter
 loadlfa		.word $adde
 		.byt (_load-*-1)|bit7
 		.asc "LOA","D"|bit7
-_load		jsr enter
+_load
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4212,7 +4316,8 @@ _load		jsr enter
 todisclfa	.word $adde
 		.byt (_todisc-*-1)|bit7
 		.asc ">DIS","C"|bit7
-_todisc		jsr enter
+_todisc
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4248,7 +4353,8 @@ _rslashw	jsr enter
 tnslfa		.word $adde
 		.byt (_tns-*-1)|bit7
 		.asc "T&","S"|bit7
-_tns		jsr enter
+_tns
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4257,7 +4363,8 @@ _tns		jsr enter
 popenlfa	.word $adde
 		.byt (_popen-*-1)|bit7
 		.asc "(OPEN",")"|bit7
-_popen		jsr enter
+_popen
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4266,7 +4373,8 @@ _popen		jsr enter
 closelfa	.word $adde
 		.byt (_close-*-1)|bit7
 		.asc "CLOS","E"|bit7
-_close		jsr enter
+_close
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4275,7 +4383,8 @@ _close		jsr enter
 pcmdinlfa	.word $adde
 		.byt (_pcmdin-*-1)|bit7
 		.asc "(CMDIN",")"|bit7
-_pcmdin		jsr enter
+_pcmdin
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4293,7 +4402,8 @@ _pcmdout	jsr enter
 cmdofflfa	.word $adde
 		.byt (_cmdoff-*-1)|bit7
 		.asc "CMDOF","F"|bit7
-_cmdoff		jsr enter
+_cmdoff
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4302,7 +4412,8 @@ _cmdoff		jsr enter
 statuslfa	.word $adde
 		.byt (_status-*-1)|bit7
 		.asc "STATU","S"|bit7
-_status		jsr enter
+_status
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4311,7 +4422,8 @@ _status		jsr enter
 pqdisclfa	.word $adde
 		.byt (_pqdisc-*-1)|bit7
 		.asc "(?DISC",")"|bit7
-_pqdisc		jsr enter
+_pqdisc
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4320,7 +4432,8 @@ _pqdisc		jsr enter
 ioerrlfa	.word $adde
 		.byt (_ioerr-*-1)|bit7
 		.asc "IOER","R"|bit7
-_ioerr		jsr enter
+_ioerr
+#include enter.a65
 		.word qdup
 		.word qbranch
 		.word s028
@@ -4403,7 +4516,8 @@ _dotderr	jsr enter
 mountlfa	.word $adde
 		.byt (_mount-*-1)|bit7
 		.asc "MOUN","T"|bit7
-_mount		jsr enter
+_mount
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4412,7 +4526,8 @@ _mount		jsr enter
 qdisclfa	.word $adde
 		.byt (_qdisc-*-1)|bit7
 		.asc "?DIS","C"|bit7
-_qdisc		jsr enter
+_qdisc
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4421,7 +4536,8 @@ _qdisc		jsr enter
 ticklfa		.word $adde
 		.byt (_tick-*-1)|bit7
 		.asc "'"|bit7
-_tick		jsr enter
+_tick
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4430,7 +4546,8 @@ _tick		jsr enter
 brticklfa	.word $adde
 		.byt (_brtick-*-1)|bit7
 		.asc "['","]"|bit7
-_brtick		jsr enter
+_brtick
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4484,7 +4601,8 @@ _addtomark	jsr enter
 beginlfa	.word $adde
 		.byt (_begin-*-1)|bit7
 		.asc "BEGI","N"|bit7
-_begin		jsr enter
+_begin
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4493,7 +4611,8 @@ _begin		jsr enter
 thenlfa		.word $adde
 		.byt (_then-*-1)|bit7
 		.asc "THE","N"|bit7
-_then		jsr enter
+_then
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4502,7 +4621,8 @@ _then		jsr enter
 dolfa		.word $adde
 		.byt (_do-*-1)|bit7
 		.asc "D","O"|bit7
-_do		jsr enter
+_do
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4511,7 +4631,8 @@ _do		jsr enter
 qdolfa		.word $adde
 		.byt (_qdo-*-1)|bit7
 		.asc "?D","O"|bit7
-_qdo		jsr enter
+_qdo
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4520,7 +4641,8 @@ _qdo		jsr enter
 looplfa		.word $adde
 		.byt (_loop-*-1)|bit7
 		.asc "LOO","P"|bit7
-_loop		jsr enter
+_loop
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4538,7 +4660,8 @@ _plusloop	jsr enter
 leavelfa	.word $adde
 		.byt (_leave-*-1)|bit7
 		.asc "LEAV","E"|bit7
-_leave		jsr enter
+_leave
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4547,7 +4670,8 @@ _leave		jsr enter
 qleavelfa	.word $adde
 		.byt (_qleave-*-1)|bit7
 		.asc "?LEAV","E"|bit7
-_qleave		jsr enter
+_qleave
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4556,7 +4680,8 @@ _qleave		jsr enter
 untillfa	.word $adde
 		.byt (_until-*-1)|bit7
 		.asc "UNTI","L"|bit7
-_until		jsr enter
+_until
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4565,7 +4690,8 @@ _until		jsr enter
 againlfa	.word $adde
 		.byt (_again-*-1)|bit7
 		.asc "AGAI","N"|bit7
-_again		jsr enter
+_again
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4574,7 +4700,8 @@ _again		jsr enter
 repeatlfa	.word $adde
 		.byt (_repeat-*-1)|bit7
 		.asc "REPEA","T"|bit7
-_repeat		jsr enter
+_repeat
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4583,7 +4710,8 @@ _repeat		jsr enter
 iflfa		.word $adde
 		.byt (_if-*-1)|bit7
 		.asc "I","F"|bit7
-_if		jsr enter
+_if
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4592,7 +4720,8 @@ _if		jsr enter
 elselfa		.word $adde
 		.byt (_else-*-1)|bit7
 		.asc "ELS","E"|bit7
-_else		jsr enter
+_else
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4601,7 +4730,8 @@ _else		jsr enter
 whilelfa	.word $adde
 		.byt (_while-*-1)|bit7
 		.asc "WHIL","E"|bit7
-_while		jsr enter
+_while
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4610,7 +4740,8 @@ _while		jsr enter
 spaceslfa	.word $adde
 		.byt (_spaces-*-1)|bit7
 		.asc "SPACE","S"|bit7
-_spaces		jsr enter
+_spaces
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4637,7 +4768,8 @@ _sharpgt	jsr enter
 signlfa		.word $adde
 		.byt (_sign-*-1)|bit7
 		.asc "SIG","N"|bit7
-_sign		jsr enter
+_sign
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4646,7 +4778,8 @@ _sign		jsr enter
 sharplfa	.word $adde
 		.byt (_sharp-*-1)|bit7
 		.asc "#"|bit7
-_sharp		jsr enter
+_sharp
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4655,7 +4788,8 @@ _sharp		jsr enter
 sharpslfa	.word $adde
 		.byt (_sharps-*-1)|bit7
 		.asc "#","S"|bit7
-_sharps		jsr enter
+_sharps
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4664,7 +4798,8 @@ _sharps		jsr enter
 pudotlfa	.word $adde
 		.byt (_pudot-*-1)|bit7
 		.asc "(U.",")"|bit7
-_pudot		jsr enter
+_pudot
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4673,7 +4808,8 @@ _pudot		jsr enter
 udotlfa		.word $adde
 		.byt (_udot-*-1)|bit7
 		.asc "U","."|bit7
-_udot		jsr enter
+_udot
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4682,7 +4818,8 @@ _udot		jsr enter
 udotrlfa	.word $adde
 		.byt (_udotr-*-1)|bit7
 		.asc "U.","R"|bit7
-_udotr		jsr enter
+_udotr
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4691,7 +4828,8 @@ _udotr		jsr enter
 pdotlfa		.word $adde
 		.byt (_pdot-*-1)|bit7
 		.asc "(.",")"|bit7
-_pdot		jsr enter
+_pdot
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4700,7 +4838,8 @@ _pdot		jsr enter
 dotlfa		.word $adde
 		.byt (_dot-*-1)|bit7
 		.asc "."|bit7
-_dot		jsr enter
+_dot
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4709,7 +4848,8 @@ _dot		jsr enter
 dotrlfa		.word $adde
 		.byt (_dotr-*-1)|bit7
 		.asc ".","R"|bit7
-_dotr		jsr enter
+_dotr
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4718,7 +4858,8 @@ _dotr		jsr enter
 puddotlfa	.word $adde
 		.byt (_puddot-*-1)|bit7
 		.asc "(UD.",")"|bit7
-_puddot		jsr enter
+_puddot
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4727,7 +4868,8 @@ _puddot		jsr enter
 uddotlfa	.word $adde
 		.byt (_uddot-*-1)|bit7
 		.asc "UD","."|bit7
-_uddot		jsr enter
+_uddot
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4736,7 +4878,8 @@ _uddot		jsr enter
 uddotrlfa	.word $adde
 		.byt (_uddotr-*-1)|bit7
 		.asc "UD.","R"|bit7
-_uddotr		jsr enter
+_uddotr
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4745,7 +4888,8 @@ _uddotr		jsr enter
 pdddotlfa	.word $adde
 		.byt (_pddot-*-1)|bit7
 		.asc "(D.",")"|bit7
-_pddot		jsr enter
+_pddot
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4754,7 +4898,8 @@ _pddot		jsr enter
 ddotlfa		.word $adde
 		.byt (_ddot-*-1)|bit7
 		.asc "D","."|bit7
-_ddot		jsr enter
+_ddot
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4763,7 +4908,8 @@ _ddot		jsr enter
 ddotrlfa	.word $adde
 		.byt (_ddotr-*-1)|bit7
 		.asc "D.","R"|bit7
-_ddotr		jsr enter
+_ddotr
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4781,7 +4927,8 @@ _question	jsr enter
 picklfa		.word $adde
 		.byt (_pick-*-1)|bit7
 		.asc "PIC","K"|bit7
-_pick		jsr enter
+_pick
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4790,7 +4937,8 @@ _pick		jsr enter
 rolllfa		.word $adde
 		.byt (_roll-*-1)|bit7
 		.asc "ROL","L"|bit7
-_roll		jsr enter
+_roll
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4799,7 +4947,8 @@ _roll		jsr enter
 depthlfa	.word $adde
 		.byt (_depth-*-1)|bit7
 		.asc "DEPT","H"|bit7
-_depth		jsr enter
+_depth
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4817,7 +4966,8 @@ twodrop		jmp poptwo
 twoduplfa	.word $adde
 		.byt (_twodup-*-1)|bit7
 		.asc "2DU","P"|bit7
-_twodup		jsr enter
+_twodup
+#include enter.a65
 		.word over
 		.word over
 		.word exit
@@ -4838,7 +4988,8 @@ _twoover	jsr enter
 tworotlfa	.word $adde
 		.byt (_tworot-*-1)|bit7
 		.asc "2RO","T"|bit7
-_tworot		jsr enter
+_tworot
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4892,7 +5043,8 @@ _twovariable	jsr enter
 dminuslfa	.word $adde
 		.byt (_dminus-*-1)|bit7
 		.asc "D","-"|bit7
-_dminus		jsr enter
+_dminus
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4901,7 +5053,8 @@ _dminus		jsr enter
 dzeqlfa		.word $adde
 		.byt (_dzeq-*-1)|bit7
 		.asc "D0","="|bit7
-_dzeq		jsr enter
+_dzeq
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4910,7 +5063,8 @@ _dzeq		jsr enter
 deqlfa		.word $adde
 		.byt (_deq-*-1)|bit7
 		.asc "D","="|bit7
-_deq		jsr enter
+_deq
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4919,7 +5073,8 @@ _deq		jsr enter
 dultlfa		.word $adde
 		.byt (_dult-*-1)|bit7
 		.asc "DU","<"|bit7
-_dult		jsr enter
+_dult
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4946,7 +5101,8 @@ _dtwostar	jsr enter
 dgtlfa		.word $adde
 		.byt (_dgt-*-1)|bit7
 		.asc "D",">"|bit7
-_dgt		jsr enter
+_dgt
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4955,7 +5111,8 @@ _dgt		jsr enter
 dminlfa		.word $adde
 		.byt (_dmin-*-1)|bit7
 		.asc "DMI","N"|bit7
-_dmin		jsr enter
+_dmin
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4964,7 +5121,8 @@ _dmin		jsr enter
 dmaxlfa		.word $adde
 		.byt (_dmax-*-1)|bit7
 		.asc "DMA","X"|bit7
-_dmax		jsr enter
+_dmax
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4982,7 +5140,8 @@ _configure	jsr enter
 freezelfa	.word $adde
 		.byt (_freeze-*-1)|bit7
 		.asc "FREEZ","E"|bit7
-_freeze		jsr enter
+_freeze
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -4991,7 +5150,8 @@ _freeze		jsr enter
 pbsavelfa	.word $adde
 		.byt (_pbsave-*-1)|bit7
 		.asc "(BSAVE",")"|bit7
-_pbsave		jsr enter
+_pbsave
+#include enter.a65
 
 ;--------------------------------------------------------------
 ;
@@ -5016,20 +5176,20 @@ dhashlfa	.word $adde
 		.byt (dhash-*-1)|bit7
 		.asc "DHAS","H"|bit7
 dhash		ldy #0
-		lda (tos),y		; get the length
-		and #$1f		; mask off flag bits
+		lda (tos),y
+		and #$1f		; turn off flag bits, just keep the length
 		tay
-		lda #0
-l009		eor (tos),y		; xor the string together, ignore length
+l009		eor (tos),y		; xor the string together
+		and #$7f		; gets rid of bit7 of the last byte
 		dey
-		bne l009		; skip the length byte
-		sty tos+1		; 0 -> msb
-		sta tos			; temporarily store the result byte
+		bne l009
+l049		sty tos+1		; 0 -> msb
+		sta tos
 		lsr
 		lsr
 		lsr
-		lsr			; get the high nybble
-		eor tos			; mix it with the low nybble
+		lsr
+		eor tos			; squish both nybbles together
 		and #$0f		; mask off the high nybble
 		sta tos			; hash value in the range 0..f
 ;~debug
@@ -5174,8 +5334,6 @@ l052		.word dup
 		.word l053
 		.word plit
 		.word $adde
-		.word page3
-		nop
 		.word rot
 		.word store
 		.word branch
@@ -5249,7 +5407,8 @@ mon		brk
 forgetlfa	.word $adde
 ntop		.byt (_forget-*-1)|bit7
 		.asc "FORGE","T"|bit7
-_forget		jsr enter
+_forget
+#include enter.a65
 
 forgetfence
 
@@ -5262,18 +5421,21 @@ forgetfence
 thrulfa		.word $adde
 		.byt (_thru-*-1)|bit7
 		.asc "THR","U"|bit7
-_thru		jsr enter
+_thru
+#include enter.a65
 
 foolfa		.word $adde
 		.byt (_foo-*-1)|bit7
 		.asc "FO","O"|bit7
-_foo		jsr enter
+_foo
+#include enter.a65
 		.word exit
 
 barlfa		.word $adde
 		.byt (_bar-*-1)|bit7
 		.asc "BA","R"|bit7
-_bar		jsr enter
+_bar
+#include enter.a65
 		.word exit
 
 endofile
