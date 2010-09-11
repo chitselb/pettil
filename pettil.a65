@@ -98,11 +98,13 @@ userblk		.word $1908				; 24..25
 
 usercold
 
-
-
 		;dictionary hash link table used by rechaining words
-latestl		.dsb 16,0
-latesth		.dsb 16,0
+latestl		.dsb 16,$dd
+latesth		.dsb 16,$ee
+bloom		.dsb 64,$aa	; bloom filter for Forth vocabulary
+power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
+nybroll		.byt $00,$02,$04,$06,$08,$0a,$0c,$0e
+		.byt $01,$03,$05,$07,$09,$0b,$0d,$0f
 
 ;--------------------------------------------------------------
 ;
@@ -221,9 +223,6 @@ put		sty tos+1
 ; * inner interpreter headerless
 ;
 ; takes the byte of memory following and pushes it to the data stack
-;
-;"      : clit ( -- c )
-;"         ip c@  1 ip +! ;
 ;
 ;clitlfa	.word $adde
 ;		.byt (clit-*-1)|bit7
@@ -854,7 +853,7 @@ l23		ldx n+6
 
 ;--------------------------------------------------------------
 ;
-;	FILL   ( from howmany value -- )
+;	FILL   ( addr howmany value -- )
 ;
 filllfa		.word $adde
 		.byt (fill-*-1)|bit7
@@ -864,11 +863,11 @@ fill		lda #3
 		ldy #0
 		lda n+2
 		ora n+3
-		beq l026
-		lda n+4
+		beq l026	; leave if howmany = 0
+		lda n
 		ldy n+2
 l025		dey
-		sta (n),y
+		sta (n+4),y
 		bne l025
 		dec n+3
 		bpl l025
@@ -1858,7 +1857,7 @@ _plusorigin
 #include "enter.i65"
 		.word plit
 		.word userarea
-#include "litpad.i65"
+#include "pad.i65"
 		.word plus
 		.word exit
 
@@ -2450,7 +2449,7 @@ l010		.word over
 #include "page.i65"
 		.word clit
 		.byt $7f
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word over
 #include "page.i65"
 		.word cfetch
@@ -2758,7 +2757,7 @@ l59		.word cr
 #include "page.i65"
 l60		.word clit
 		.asc '^'
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word emit
 #include "page.i65"		; ~
 		.word ploop
@@ -2858,7 +2857,7 @@ _abortq
 #include "page.i65"
 		.word clit
 		.asc '"'
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word _qchar
 #include "page.i65"
 		.word _commadollar
@@ -3141,7 +3140,7 @@ _smudge
 #include "page.i65"
 		.word clit
 		.byt bit5	; $20
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word toggle
 		.word exit
 
@@ -3156,7 +3155,7 @@ _hex
 #include "enter.i65"
 		.word clit
 		.byt 16
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word base
 #include "page.i65"
 		.word store
@@ -3173,7 +3172,7 @@ _decimal
 #include "enter.i65"
 		.word clit
 		.byt 10
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word base
 #include "page.i65"
 		.word store
@@ -3213,7 +3212,7 @@ _does
 #include "page.i65"
 		.word clit
 		.byt $20	; jsr instruction
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word _ccomma
 #include "page.i65"
 		.word _compile	; ~ analyze paging here
@@ -3368,7 +3367,7 @@ _dotq
 #include "page.i65"		; ~
 		.word clit
 		.asc '"'
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word _qchar
 #include "page.i65"
 		.word _commadollar
@@ -3385,7 +3384,7 @@ _dotp
 #include "enter.i65"
 		.word clit
 		.asc ')'
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word _qchar
 #include "page.i65"
 		.word type 
@@ -3444,7 +3443,7 @@ _query
 #include "page.i65"
 		.word clit
 		.byt 80
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word expect
 #include "page.i65"
 		.word span
@@ -3567,7 +3566,7 @@ _pad
 #include "page.i65"
 		.word clit
 		.byt 80
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word plus
 		.word exit
 
@@ -3741,7 +3740,7 @@ _ppunctq
 #include "enter.i65"
 		.word clit
 		.byt '.'
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word eq
 		.word exit
 
@@ -3890,7 +3889,7 @@ l83		.word _qfind
 #include "page.i65"
 		.word clit
 		.byt '-'
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word eq
 #include "page.i65"
 		.word dup
@@ -4012,10 +4011,10 @@ _iddot
 #include "page.i65"
 		.word clit
 		.byt 32
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word clit
 		.asc '*'
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word fill
 #include "page.i65"
 		.word dup
@@ -4038,7 +4037,7 @@ _iddot
 #include "page.i65"
 		.word clit
 		.byt $1f
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word andx
 #include "page.i65"
 		.word _twodup
@@ -4116,7 +4115,7 @@ l013
 #include "page.i65"
 		.word plit
 		.word _spacenp
-#include "litpad.i65"
+#include "pad.i65"
 		.word eq
 #include "page.i65"
 #if ((* & $ff) = 253-13)
@@ -4143,14 +4142,14 @@ l014
 #include "page.i65"
 		.word clit
 		.byt $12	; rvs
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word emit
 #include "page.i65"
 		.word _iddot
 #include "page.i65"
 		.word clit
 		.byt $92	; off
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word emit
 #include "page.i65"
 #if ((* & $ff) = 253-15)
@@ -4213,12 +4212,12 @@ l017		.word _here
 #include "page.i65"
 		.word clit
 		.byt $ff
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word andx
 #include "page.i65"
 		.word clit
 		.byt $ff
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word eq
 #include "page.i65"
 		.word qbranch
@@ -4238,7 +4237,7 @@ l017		.word _here
 #include "page.i65"
 		.word clit
 		.byt $ea
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word _ccomma
 #include "page.i65"
 		.word swap
@@ -4261,7 +4260,7 @@ l018		.word twoplus
 #include "page.i65"
 		.word clit
 		.byt $80
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word toggle
 #include "page.i65"
 		.word _here
@@ -4270,7 +4269,7 @@ l018		.word twoplus
 #include "page.i65"
 		.word clit
 		.byt $80
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word toggle
 #include "page.i65"
 		.word _latest
@@ -4349,7 +4348,7 @@ _literal
 #include "page.i65"
 		.word plit
 		.word 256
-#include "litpad.i65"
+#include "pad.i65"
 		.word ult
 #include "page.i65"
 		.word qbranch
@@ -4398,7 +4397,7 @@ _qstack
 #include "page.i65"
 		.word clit
 		.byt <bos	; ~ usersp0
-#include "litpad.i65"
+#include "pad.i65"
 		.word swap
 #include "page.i65"
 		.word ult
@@ -4413,7 +4412,7 @@ s011		.word spfetch
 #include "page.i65"
 		.word clit
 		.byt $20
-#include "litpad.i65"
+#include "pad.i65"
 		.word ult
 #if ((* & $ff) = 253-15)
 	.word next
@@ -4482,7 +4481,7 @@ _immediate
 #include "page.i65"
 		.word clit
 		.byt $40
-#include "litpad.i65"
+#include "pad.i65"
 		.word toggle
 		.word exit
 
@@ -4509,7 +4508,7 @@ _vocabulary
 #include "page.i65"
 		.word plit
 		.word $a081		; ~ what is it?
-#include "litpad.i65"
+#include "pad.i65"
 		.word _comma
 #include "page.i65"
 		.word _here
@@ -4572,7 +4571,7 @@ _lparen
 #include "enter.i65"
 		.word clit
 		.asc ')'
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word _qchar
 #include "page.i65"
 		.word twodrop
@@ -5201,6 +5200,7 @@ _tobcq
 #include "enter.i65"
 		.word clit
 		.byt 6
+#include "pad.i65"
 		.word star
 		.word _frombcq
 		.word plus
@@ -5266,13 +5266,14 @@ l123		.word _twodup
 		.word _frombcq
 		.word clit
 		.byt 6
+#include "pad.i65"
 		.word cmove
 		.word dup
 		.word _frombcq
 		.word dup
 		.word clit
-
 		.byt 6
+#include "pad.i65"
 		.word plus
 		.word rot
 		.word _frombcq
@@ -5289,6 +5290,7 @@ l123		.word _twodup
 		.word l122
 l121		.word clit
 		.byt 6
+#include "pad.i65"
 		.word plus
 		.word ploop
 		.word l123
@@ -5339,6 +5341,7 @@ _drone
 #include "enter.i65"
 		.word plit
 		.word 166
+#include "pad.i65"
 		.word offset
 		.word store
 		.word exit
@@ -5381,6 +5384,7 @@ _missing
 		.word swap
 		.word clit
 		.byt 6
+#include "pad.i65"
 		.word minus
 		.word fetch
 		.word zero
@@ -5403,10 +5407,12 @@ l124		.word _bcqto
 		.word dup
 		.word clit
 		.byt 6
+#include "pad.i65"
 		.word plus
 		.word numbuf
 		.word clit
 		.byt 6
+#include "pad.i65"
 		.word star
 		.word cmovegt
 		.word exit
@@ -5479,6 +5485,7 @@ _emptybuffers
 		.word oneplus
 		.word clit
 		.byt 6
+#include "pad.i65"
 		.word star
 		.word _erase
 		.word first
@@ -5488,8 +5495,8 @@ _emptybuffers
 		.word zero
 		.word pdo
 l105		.word plit
-
 		.word -1
+#include "pad.i65"
 		.word over
 		.word store
 		.word twoplus
@@ -5544,6 +5551,7 @@ l129		.word dup
 		.word off
 l128		.word clit
 		.byt 6
+#include "pad.i65"
 		.word plus
 l127		.word ploop
 		.word l129
@@ -5759,14 +5767,17 @@ _prslashw
 		.word _tns
 		.word clit
 		.byt 4
+#include "pad.i65"
 		.word zero
 		.word pdo
 l141		.word clit
 		.byt 5
+#include "pad.i65"
 		.word zero
 		.word pdo
 l142		.word clit
 		.byt 4
+#include "pad.i65"
 		.word pick
 		.word ploop
 		.word l142
@@ -5780,6 +5791,7 @@ l143		.word tor
 		.word tor
 		.word plit
 		.word $0100	; rstack
+#include "pad.i65"
 		.word plus
 		.word rfrom
 		.word twoplus
@@ -5830,6 +5842,7 @@ _tns
 		.word tor
 		.word plit
 		.word 332	 ;~	max disc size
+#include "pad.i65"
 		.word over
 		.word ult
 		.word _pabortq
@@ -5837,16 +5850,19 @@ _tns
 		.asc "SCREEN DOES NOT EXIST "
 s018		.word clit
 		.byt 166
+#include "pad.i65"
 		.word slashmod
 		.word tor
 		.word dup
 		.word clit
 		.byt 88
+#include "pad.i65"
 		.word lt
 		.word qbranch
 		.word l154
 		.word clit
 		.byt 21
+#include "pad.i65"
 		.word one
 		.word tor
 		.word branch
@@ -5854,12 +5870,14 @@ s018		.word clit
 l154		.word dup
 		.word clit
 		.byt 92
+#include "pad.i65"
 		.word lt
 		.word qbranch
 		.word l2525
 		.word twoplus
 		.word clit
 		.byt 21
+#include "pad.i65"
 		.word one
 		.word tor
 		.word branch
@@ -5867,42 +5885,53 @@ l154		.word dup
 l2525		.word dup
 		.word clit
 		.byt 120
+#include "pad.i65"
 		.word lt
 		.word qbranch
 		.word l2541
 		.word clit
 		.byt 92
+#include "pad.i65"
 		.word minus
 		.word clit
 		.byt 19
+#include "pad.i65"
 		.word clit
 		.byt 19
+#include "pad.i65"
 		.word tor
 		.word branch
 		.word l256a
 l2541		.word dup
 		.word clit
 		.byt 146
+#include "pad.i65"
 		.word lt
 		.word qbranch
 		.word l255d
 		.word clit
 		.byt 120
+#include "pad.i65"
 		.word minus
 		.word clit
 		.byt 18
+#include "pad.i65"
 		.word clit
 		.byt 25
+#include "pad.i65"
 		.word tor
 		.word branch
 		.word l256a
 l255d		.word clit
 		.byt 146
+#include "pad.i65"
 		.word minus
 		.word clit
 		.byt 17
+#include "pad.i65"
 		.word clit
 		.byt 31
+#include "pad.i65"
 		.word tor
 l256a		.word rot
 		.word rot
@@ -6107,7 +6136,7 @@ s022
 #include "page.i65"
 		.word clit
 		.byt 4
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word eq
 #include "page.i65"
 #if ((* & $ff) = 253-14)
@@ -6123,7 +6152,7 @@ s023
 #include "page.i65"
 		.word clit
 		.byt 5
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word eq
 #include "page.i65"
 #if ((* & $ff) = 253-18)
@@ -6139,7 +6168,7 @@ s024
 #include "page.i65"
 		.word clit
 		.byt 6
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word eq
 #include "page.i65"
 #if ((* & $ff) = 253-14)
@@ -6155,7 +6184,7 @@ s025
 #include "page.i65"
 		.word clit
 		.byt 7
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word eq
 #include "page.i65"
 #if ((* & $ff) = 253-15)
@@ -6171,7 +6200,7 @@ s026
 #include "page.i65"
 		.word clit
 		.byt 8
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word eq
 #include "page.i65"
 #if ((* & $ff) = 253-17)
@@ -6187,7 +6216,7 @@ s027
 #include "page.i65"
 		.word clit
 		.byt 9
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word eq
 #include "page.i65"
 #if ((* & $ff) = 253-21)
@@ -6215,7 +6244,7 @@ _dotderr
 		.asc "DISK ERROR: "
 s033		.word plit
 		.word inbuf
-#include "page.i65"
+#include "pad.i65"
 		.word count
 #include "page.i65"
 		.word type
@@ -6232,16 +6261,20 @@ _mount
 #include "enter.i65"
 		.word clit
 		.byt 13
+#include "pad.i65"
 		.word close
 #include "page.i65"
 		.word clit
 		.byt 15
+#include "pad.i65"
 		.word close
 #include "page.i65"
 		.word clit
 		.byt 15
+#include "pad.i65"
 		.word clit
 		.byt 8
+#include "pad.i65"
 		.word over
 #include "page.i65"
 		.word zero
@@ -6254,6 +6287,7 @@ _mount
 #include "page.i65"
 		.word clit
 		.byt 15
+#include "pad.i65"
 		.word pcmdout
 #include "page.i65"
 		.word _ioerr
@@ -6264,6 +6298,7 @@ s031		.word cmdoff
 #include "page.i65"
 		.word clit
 		.byt 15
+#include "pad.i65"
 		.word pcmdout
 #include "page.i65"
 		.word _ioerr
@@ -6274,12 +6309,15 @@ s032		.word cmdoff
 #include "page.i65"
 		.word clit
 		.byt 13
+#include "pad.i65"
 		.word clit
 		.byt 8
+#include "pad.i65"
 		.word over
 #include "page.i65"
 		.word plit
 		.word 10253	; ~
+#include "pad.i65"
 		.word one
 #include "page.i65"
 		.word popen
@@ -6706,6 +6744,7 @@ _else
 #include "page.i65"
 		.word plit
 		.word -2
+#include "pad.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6800,6 +6839,7 @@ _sign
 		.word *+7
 		.word clit
 		.byt '-'
+#include "pad.i65"
 		.word _hold
 		.word exit
 
@@ -6822,6 +6862,7 @@ _sharp
 #include "page.i65"
 		.word clit
 		.byt 9
+#include "pad.i65"
 		.word over
 #include "page.i65"
 		.word lt
@@ -6830,10 +6871,12 @@ _sharp
 		.word *+7
 		.word clit
 		.byt 7
+#include "pad.i65"
 		.word plus
 #include "page.i65"
 		.word clit
 		.byt '0'
+#include "pad.i65"
 		.word plus
 #include "page.i65"
 		.word _hold
@@ -7124,6 +7167,8 @@ _question
 ;
 ;	PICK
 ;
+; 0 pick = same as dup
+; 1 pick = same as over
 picklfa		.word $adde
 		.byt (pick-*-1)|bit7
 		.asc "PIC","K"|bit7
@@ -7142,35 +7187,36 @@ pick	;	inc stack,x
 
 ;--------------------------------------------------------------
 ;
-;	ROLL
+;	ROLL   ( an ... a3 a2 a1 n -- an-1 ... a3 a2 a1 an )
+;
+; remove the nth stack element (excluding n itself) to TOS, dropping n
+;
+; 2 roll = rot
+; 1 roll = swap
+; 0 roll has no effect
 ;
 rolllfa		.word $adde
 		.byt (roll-*-1)|bit7
 		.asc "ROL","L"|bit7
 roll		stx n
-	;	lda stack,x
-		asl
-		tay
+		txa
 		clc
-		adc n
+		adc tos
 		tax
-		inx
-		inx
-	;	lda stack,x
-		pha
-	;	lda stack+1,x
-		pha
-		dey
-		bmi *+9
-	;	lda stack+255,x
-	;	sta stack+1,x
+		lda stackh,x
+		sta tos+1
+		lda stackl,x
+		sta tos
+l056		cpx n
+		beq l057
+		lda stackh+$ff,x
+		sta stackh,x
+		lda stackl+$ff,x	; ~ probably not work!
+		sta stackl,x
 		dex
-		bne *-8
-		pla
-		ldx n
-		inx
-		inx
-		jmp put
+		bne l056
+l057		inx
+		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -7202,19 +7248,17 @@ twodrop		jmp poptwo
 twoduplfa	.word $adde
 		.byt (_twodup-*-1)|bit7
 		.asc "2DU","P"|bit7
-_twodup
-#include "enter.i65"
-		.word over
-#include "page.i65"
-		.word over
-		.word exit
-	;	dex
-	;	dex
-	;	lda stack+4,x
-	;	sta stack,x
-	;	lda stack+5,x
-	;	sta stack+1,x
-	;	jmp over+2
+_twodup		dex
+		dex
+		lda tos+1
+		sta stackh+1,x
+		lda tos
+		sta stackl+1,x
+		lda stackh+2,x
+		sta stackh,x
+		lda stackl+2,x
+		sta stackl,x
+		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -7225,106 +7269,119 @@ twooverlfa	.word $adde
 		.asc "2OVE","R"|bit7
 twoover		dex
 		dex
-	;	lda stack+8,x
-	;	sta stack,x
-	;	lda stack+9,x
-	;	sta stack+1,x
-	;	lda stack+6,x
-		pha
-	;	lda stack+7,x
-		jmp push
-
-
-;--------------------------------------------------------------
-;
-;	2ROT
-;
-tworotlfa	.word $adde
-		.byt (tworot-*-1)|bit7
-		.asc "2RO","T"|bit7
-tworot	;	stx storex
-		ldy #4
-	;	lda stack+8,x
-		pha
-		inx
-		dey
-		bne *-5
-	;	ldx storex
-		ldy #8
-	;	lda stack+7,x
-	;	sta stack+11,x
-		dex
-		dey
-		bne *-6
-	;	ldx storex
-		ldy #4
-		pla
-	;	sta stack+3,x
-		dex
-		dey
-		bne *-5
-	;	ldx storex
+		lda tos+1
+		sta stackh+2,x
+		lda tos
+		sta stackl+2,x
+		lda stackh+4,x
+		sta stackh+1,x
+		lda stackl+4,x
+		sta stackl+1,x
+		lda stackh+3,x
+		sta tos+1
+		lda stackl+3,x
+		sta tos
 		jmp next
 
 ;--------------------------------------------------------------
 ;
-;	2SWAP
+;	2ROT   ( lo3 hi3 lo2 hi2 lo1 hi1 -- lo2 hi2 lo1 hi1 lo3 hi3 )
+;
+; hi1 is stored in TOS, the rest in stackl/stackh ... stack+4
+tworotlfa	.word $adde
+		.byt (tworot-*-1)|bit7
+		.asc "2RO","T"|bit7
+tworot		ldy stackh+4,x
+		lda stackh+2,x
+		sta stackh+4,x
+		lda stackh,x
+		sta stackh+2,x
+		sty stackh,x
+		ldy stackl+4,x
+		lda stackl+2,x
+		sta stackl+4,x
+		lda stackl,x
+		sta stackl+2,x
+		sty stackl,x		; done moving lo words
+		ldy stackh+3,x
+		lda stackh+1,x
+		sta stackh+3,x
+		lda tos+1
+		sta stackh+1,x
+		sty tos+1
+		ldy stackl+3,x
+		lda stackl+1,x
+		sta stackl+3,x
+		lda tos
+		sta stackl+1,x
+		sty tos			; done moving hi words
+		jmp next
+
+;--------------------------------------------------------------
+;
+;	2SWAP   ( hi2 lo2 hi1 lo1 -- hi1 lo1 hi2 lo2 )
 ;
 twoswaplfa	.word $adde
 		.byt (twoswap-*-1)|bit7
 		.asc "2SWA","P"|bit7
-twoswap	;	lda stack+4,x
-		pha
-	;	lda stack+5,x
-		pha
-	;	lda stack,x
-	;	sta stack+4,x
-	;	lda stack+1,x
-	;	sta stack+5,x
-	;	lda stack+2,x
-	;	ldy stack+6,x
-	;	sta stack+6,x
-	;	sty stack+2,x
-	;	lda stack+3,x
-	;	ldy stack+7,x
-	;	sta stack+7,x
-	;	sty stack+3,x
-		pla
-		jmp put
+twoswap		ldy tos+1
+		lda stackh+1,x
+		sta tos+1
+		sty stackh+1,x
+		ldy tos
+		lda stackl+1,x
+		sta tos
+		sty stackl+1,x
+		ldy stackh,x
+		lda stackh+2,x
+		sta stackh,x
+		sty stackh+2,x
+		ldy stackl,x
+		lda stackl+2,x
+		sta stackl,x
+		sty stackl+2,x
+		jmp next
 
 ;--------------------------------------------------------------
 ;
-;	2!
+;	2!   ( hi lo addr -- )
 ;
 twostorelfa	.word $adde
 		.byt (twostore-*-1)|bit7
 		.asc "2","!"|bit7
-twostore	lda #1
-		jsr popnwords
-	;	lda stack,x
-		sta (n),y
-		inx
+twostore	ldy #0
+l055		lda stackh,x
+		sta (tos),y
 		iny
+		lda stackl,x
+		sta (tos),y
+		iny
+		inx
 		cpy #4
-		bne *-8
-		jmp next
+		bne l055
+		jmp pop
 
 ;--------------------------------------------------------------
 ;
-;	2@
+;	2@   ( addr -- hi lo )
 ;
 twofetchlfa	.word $adde
 		.byt (twofetch-*-1)|bit7
 		.asc "2","@"|bit7
-twofetch	lda #1
-		jsr popnwords
-		ldy #3
+twofetch	ldy #3
 		dex
-		lda (n),y
-	;	sta stack,x
+		lda (tos),y
+		sta stackh,x
 		dey
-		bpl *-6
-		jmp next
+		lda (tos),y
+		sta stackl,x
+		dey
+		lda (tos),y
+		sta n
+		dey
+		lda (tos),y
+		ldy n
+		jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -7361,7 +7418,7 @@ _twovariable
 #include "page.i65"
 		.word clit
 		.byt 4
-#include "litpad.i65"
+#include "pad.i65"
 		.word _allot
 		.word exit
 
@@ -7377,46 +7434,50 @@ dminus	;	jsr dnegate
 
 ;--------------------------------------------------------------
 ;
-;	D0=
+;	D0=   ( hi lo -- flag )
 ;
 dzeqlfa		.word $adde
 		.byt (dzeq-*-1)|bit7
 		.asc "D0","="|bit7
-dzeq	;	lda stack,x
-	;	ora stack+1,x
-	;	ora stack+2,x
-	;	ora stack+3,x
+dzeq		ldy #0
+		lda tos
+		ora tos+1
+		ora stackl,x
+		ora stackh,x
 		bne *+3
 		dey
-	;	sty stack+2,x
-	;	sty stack+3,x
-		jmp pop
+		inx
+		sty tos
+		sty tos+1
+		jmp next
 
 ;--------------------------------------------------------------
 ;
-;	D=
+;	D=    ( hi2 lo2 hi1 lo1 -- flag )
 ;
 deqlfa		.word $adde
 		.byt (deq-*-1)|bit7
 		.asc "D","="|bit7
-deq	;	lda stack,x
-	;	cmp stack+4,x
-		bne *+21
-	;	lda stack+1,x
-	;	cmp stack+5,x
-		bne *+15
-	;	lda stack+2,x
-	;	cmp stack+6,x
-		bne *+9
-	;	lda stack+3,x
-	;	cmp stack+7,x
-		bne *+3
+deq		ldy #0
+		lda tos
+		eor stackl+1,x
+		bne l054
+		lda tos+1
+		eor stackh+1,x
+		bne l054
+		lda stackl,x
+		eor stackl+2,x
+		bne l054
+		lda stackh,x
+		eor stackh+2,x
+		bne l054
 		dey
-	;	sty stack+6,x
-	;	sty stack+7,x
+l054		sty tos
+		sty tos+1
 		inx
 		inx
-		jmp poptwo
+		inx
+		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -7436,28 +7497,28 @@ dult		jsr dcmp
 
 ;--------------------------------------------------------------
 ;
-;	D2/
+;	D2/   ( hi lo -- hi/2 lo/2 )
 ;
 dtwoslashlfa	.word $adde
 		.byt (dtwoslash-*-1)|bit7
 		.asc "D2","/"|bit7
-dtwoslash;	lsr stack+1,x
-	;	ror stack,x
-	;	ror stack+3,x
-	;	ror stack+2,x
+dtwoslash	lsr stackh,x
+		ror stackl,x
+		ror tos+1
+		ror tos
 		jmp next
 
 ;--------------------------------------------------------------
 ;
-;	D2*
+;	D2*   ( hi lo -- hi*2 lo*2 )
 ;
 dtwostarlfa	.word $adde
 		.byt (dtwostar-*-1)|bit7
 		.asc "D2","*"|bit7
-dtwostar;	asl stack+2,x
-	;	rol stack+3,x
-	;	rol stack,x
-	;	rol stack+1,x
+dtwostar	asl stackl,x
+		rol stackh,x
+		rol tos
+		rol tos+1
 		jmp next
 
 ;--------------------------------------------------------------
@@ -7514,6 +7575,7 @@ _dmax
 #include "page.i65"
 		.word qbranch
 		.word *+4
+#include "pad.i65"
 		.word twoswap
 #include "page.i65"
 		.word twodrop
@@ -7540,6 +7602,7 @@ _configure
 #include "page.i65"
 		.word plit
 		.word $fee		; ~
+#include "pad.i65"
 		.word store
 #include "page.i65"
 		.word numbuf
@@ -7548,12 +7611,14 @@ _configure
 #include "page.i65"
 		.word clit
 		.byt 6
+#include "pad.i65"
 		.word star
 #include "page.i65"
 		.word twoplus
 #include "page.i65"
 		.word plit
 		.word $1010		; ~
+#include "pad.i65"
 		.word store
 		.word cold
 
@@ -7568,10 +7633,12 @@ _freeze
 #include "enter.i65"
 		.word plit
 		.word forth+2
+#include "pad.i65"
 		.word fetch
 #include "page.i65"
 		.word clit
 		.byt 4
+#include "pad.i65"
 		.word _plusorigin
 #include "page.i65"
 		.word store
@@ -7580,10 +7647,12 @@ _freeze
 #include "page.i65"
 		.word clit
 		.byt 12
+#include "pad.i65"
 		.word _plusorigin
 #include "page.i65"
 		.word clit
 		.byt 12
+#include "pad.i65"
 		.word cmove
 		.word exit
 
@@ -7611,7 +7680,6 @@ pbsave		lda #4
 		jsr SAVE
 		ldx tos
 		jmp next
-
 
 ;--------------------------------------------------------------
 ;
@@ -7642,6 +7710,7 @@ s030		.word _pad
 #include "page.i65"
 		.word clit
 		.byt 18
+#include "pad.i65"
 		.word expect
 #include "page.i65"
 		.word span
@@ -7654,9 +7723,10 @@ s030		.word _pad
 #include "page.i65"
 		.word clit
 		.byt 15
-#include "page.i65"
+#include "pad.i65"
 		.word clit
 		.byt 8
+#include "pad.i65"
 		.word over
 #include "page.i65"
 		.word zero
@@ -7669,6 +7739,7 @@ s030		.word _pad
 #include "page.i65"
 		.word plit
 		.word basic+1
+#include "pad.i65"
 		.word _here
 #include "page.i65"
 		.word oneplus
@@ -7683,50 +7754,141 @@ s030		.word _pad
 #include "page.i65"
 		.word clit
 		.byt 15
+#include "pad.i65"
 		.word close
 		.word exit
 
 ;--------------------------------------------------------------
 ;
-;	DHASH	( nfa -- hash )
+;	DHASH	( nfa -- hash3 hash2 hash1 )
 ;
-; input is NFA or counted string. Output is one of 16 values in
-; the range $00 to $0f.  Used to break the dictionary into smaller
-; pieces for (FIND)
+; input is NFA or counted string. Output is a trio of hashcodes,
+; each generated by a different algorithm but all in the range 
+; $00 to $0f.  Used to break the FORTH vocabulary into smaller
+; chains for (FIND) and to implement a Bloom filter for speed.
 ;
-; The hash is calculated by XORing all the nybbles of the string
-; together.
+; if input is the counted string we're looking for, it should already
+; have the bit7 set in the final byte (like dictionary NFAs)
+;
+; dictionary headers look like this
+; [LFAlo][LFAhi] [flag bits / length byte] [T] [E] [X] [T|bit7] [CFA & PFA...]
+; the flag bits are bit7 = always on, bit6 = immediate, bit5 = smudge
+;
+; hash1 is a 4-bit number
+; hash2 & hash3 are 5-bit numbers
+; the objective is an even distribution
 dhashlfa	.word $adde
 		.byt (dhash-*-1)|bit7
 		.asc "DHAS","H"|bit7
-dhash		ldy #0
+dhash	;	brk
+		stx n+7
+		ldy #0
 		lda (tos),y
-		and #$1f		; turn off flag bits, just keep the length
+		and #$3f		; turn off 7 and 6, not 5 (smudge)
 		tay
-l009		eor (tos),y		; xor the string together
-		and #$7f		; gets rid of bit7 of the last byte
+		sty n
+		sty n+1
+		sty n+2
+		sty n+3
+		sec			; set to a known state
+l009		lda (tos),y		; xor the string together
+		eor n			; just XOR everything
+		sta n			; hash1
+
+		lda (tos),y		; effectively a 6-bit value
+		and #$0f
+		tax
+		lda nybroll,x
+		eor n+1
+		sta n+1
+		rol n+1
+		rol n+2
+
+		lda (tos),y
+		lsr
+		lsr
+		lsr
+		lsr
+		tax
+		lda nybroll,x
+		eor n+1
+		sta n+1
+		rol n+1
+		rol n+2			; hash2
+
+		lda (tos),y
+		sbc $e081,y
+		eor n+3
+		sta n+3			; hash3
+
+
 		dey
 		bne l009
-l049		sty tos+1		; 0 -> msb
-		sta tos
-		lsr
-		lsr
-		lsr
-		lsr
-		eor tos			; squish both nybbles together
-		and #$0f		; mask off the high nybble
-		sta tos			; hash value in the range 0..f
-;~debug
-;	stx n
-;	sed	
-;	cmp	#10
-;	adc	#'0'
-;	cld
-;	jsr CHROUT
-;	ldx n
-;~debug
-		jmp next
+; 
+;		lda (tos),y
+;		adc $e081,y		; add the ghost of !TFOSORCIM
+;		ror			; and rotate
+;		sta n+1			; hash2 
+;
+;		lda (tos),y
+;		rol			; do something else.
+;		rol
+;		eor #$a5
+;		rol
+;		sbc n
 
+		lda n			; smoosh 8 bits into 4
+		lsr
+		lsr
+		lsr
+		lsr			;   - - - [ C 7 6 5 4 ]
+		eor n			; C 7 6 5 [ 4 3 2 1 0 ]
+		and #$0f		;   - - - [ 4-bit hash]
+		sta n
+
+
+		lda n+1			; smoosh 16 bits into 5
+		ldx #2
+		ldy #5
+l049		lsr n+2
+		ror n+1
+		dey
+		bne l049
+		ldy #5
+		eor n+1
+		dex
+		bne l049
+		and #$1f
+		sta n+1
+
+		lda n		;~debug
+		and #$0f	;~debug
+		jsr debug	;~debug
+		ldx n+7
+		dex
+		lda n+1
+		sta stackl,x
+		jsr debug	;~debug
+		lda n+3
+		and #$1f
+		sta stackh,x
+		jsr debug	;~debug
+		lda n
+		and #$0f
+		iny
+		jmp put
+;~debug
+debug	php
+	sty n+6
+	stx n+5
+	tay
+	lda xlat32,y
+	jsr CHROUT
+	ldy n+6
+	ldx n+5
+	plp
+	rts
+xlat32	.asc '0123456789ABCDEFGHIJKLMNOPQRSTUV'
 ;--------------------------------------------------------------
 ;
 ;	DHASH@   ( hashkey -- LFA )
@@ -7745,9 +7907,11 @@ dhashfetch	ldy tos
 
 ;--------------------------------------------------------------
 ;
-;	DHASH!   ( LFAnew hashkey -- )
+;	DHASH!   ( LFAnew hash3 hash2 hash1 -- )
 ;
 ; links the current LFA onto the top of this hash' thread
+;
+; ~ todo - order them by length
 ;
 ; When we're done, the word whose LFAnew is on the stack will become
 ; the new top of this hash thread, and the new word's LFA will link
@@ -7756,28 +7920,65 @@ dhashfetch	ldy tos
 dhashstorelfa	.word $adde
 		.byt (dhashstore-*-1)|bit7
 		.asc "DHASH","!"|bit7
-dhashstore	lda #2
-		jsr popnwords		; N0 = hashkey, N1 = LFAnew
+dhashstore	lda #3
+		jsr popnwords		; N,N+2,N+3 = hashes, N+4 = LFAnew
+		lda n
+		asl
+		asl			; 0..15 -> 0..60 (*4)
+		sta n+1			; pointer to the bloom filter
+
+		lda n+2
+		and #7			; how many bits in a byte? 0..7
+		tay
+		lda power2,y
+		sta n+6
+		lda n+2
+		lsr
+		lsr
+		lsr
+		clc
+		adc n+1
+		tay
+		lda n+6
+		ora bloom,y
+		sta bloom,y
+
+		lda n+3
+		and #7			; how many bits in a byte? 0..7
+		tay
+		lda power2,y
+		sta n+6
+		lda n+3
+		lsr
+		lsr
+		lsr
+		clc
+		adc n+1
+		tay
+		lda n+6
+		ora bloom,y
+		sta bloom,y
+
 		ldy n			; get link from hashkey table -> N2
 		lda latestl,y
-		sta n+4
+		sta n+2
 		lda latesth,y
-		sta n+5			; LFAlatest -> N2
+		sta n+3			; LFAlatest -> N2
 		bne l045
 		lda #<executelfa
-		sta n+4
+		sta n+2
 		lda #>executelfa
-		sta n+5
-l045		lda n+2
+		sta n+3
+l045		lda n+6
 		sta latestl,y
-		lda n+3
+		lda n+7
 		sta latesth,y		; LFAnew -> hashtable(key)
 		ldy #0
-		lda n+4
-		sta (n+2),y
+		lda n+2
+		sta (n+4),y
 		iny
-		lda n+5
-		sta (n+2),y		; LFAlatest -> [LFAnew]
+		lda n+3
+		sta (n+4),y		; LFAlatest -> [LFAnew]
 		jmp next
 
 ;--------------------------------------------------------------
@@ -7796,7 +7997,7 @@ _deadlfaq
 #include "page.i65"
 		.word plit
 		.word $adde	; ( addr word $dead )
-#include "litpad.i65"
+#include "pad.i65"
 		.word eq	; ( addr f1 )
 #include "page.i65"
 		.word qbranch	; ( addr )
@@ -7812,14 +8013,14 @@ _deadlfaq
 #include "page.i65"
 		.word clit
 		.byt $80	; ( a+2 len80 len80 $80 )
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word gt	; ( a+2 len80 f2 )
 #include "page.i65"
 		.word lrot	; ( f2 a+2 len80 )
 #include "page.i65"
 		.word clit
 		.byt $3f	; ( f2 a+2 len80 $3f )
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word andx	; ( f2 a+2 len )
 #include "page.i65"
 		.word plus	; ( f2 a+2+len )
@@ -7828,7 +8029,7 @@ _deadlfaq
 #include "page.i65"
 		.word clit
 		.byt $80	; ( f2 last80 $80 )
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word gt	; ( f2 f3 )
 #include "page.i65"
 		.word andx	; ( flag )
@@ -7870,7 +8071,7 @@ _unthread
 #include "enter.i65"
 		.word clit
 		.byt 16
-#include "litpad.i65"		; adds a byte if the literal ends at $xxFF
+#include "pad.i65"
 		.word zero
 #include "page.i65"
 		.word pdo
@@ -7888,7 +8089,7 @@ l052		.word dup
 #include "page.i65"
 		.word plit
 		.word $adde
-#include "litpad.i65"
+#include "pad.i65"
 		.word rot
 #include "page.i65"
 		.word store
@@ -7930,14 +8131,13 @@ rethreadlfa	.word $adde
 		.asc "RETHREA","D"|bit7
 _rethread
 #include "enterx.i65"
-#if ((* & $ff) = 253-19)
-	.word next
-#endif
-		.word _pdotq
-		.byt (s007-*-1)
-		.asc "HASHING DICTIONARY "
-		     ;123456789.123456789
-s007
+		.word plit
+		.word latestl
+#include "pad.i65"
+		.word clit
+		.byt <(power2-latestl)	; all list heads and bloom filters
+#include "pad.i65"
+		.word _erase
 #include "page.i65"
 		.word _here
 #include "page.i65"
@@ -7966,6 +8166,7 @@ l044		.word i
 #include "page.i65"		; ~
 l024		.word ploop
 		.word l044
+#include "pad.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -8053,7 +8254,7 @@ l164		.word _ntolink
 #include "page.i65"
 		.word qbranch
 		.word l164
-#include "page.i65"
+#include "pad.i65"
 		.word over
 #include "page.i65"
 		.word twominus
@@ -8070,7 +8271,7 @@ l164		.word _ntolink
 #include "page.i65"
 		.word qbranch
 		.word l165
-#include "page.i65"
+#include "pad.i65"
 		.word rfrom
 #include "page.i65"
 		.word dp
@@ -8109,9 +8310,10 @@ l160		.word i
 #include "page.i65"
 		.word pqleave
 		.word l161
-#include "page.i65"
+#include "pad.i65"
 		.word ploop
 		.word l160
+#include "pad.i65"
 l161		.word exit
 
 foolfa		.word $adde
