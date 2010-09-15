@@ -99,10 +99,8 @@ userblk		.word $1908				; 24..25
 usercold
 
 		;dictionary hash link table used by rechaining words
-latestl		.dsb 16,0
-latesth		.dsb 16,0
+lfalist		.dsb 32,0
 bloom2		.dsb 32,0	; Forth vocabulary bloom filter for hash2
-bloom3		.dsb 32,0	; Forth vocabulary bloom filter for hash3
 power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
 nybroll		.byt $00,$02,$04,$06,$08,$0a,$0c,$0e
 		.byt $01,$03,$05,$07,$09,$0b,$0d,$0f
@@ -536,7 +534,7 @@ pfind		lda tos
 		lda stackh,x
 		sta n+3
 		ldy #1
-l9		dey		; ~ ewww
+l9		dey
 		lda (n),y
 		eor (n+2),y
 		and #($100-bit7-bit6)
@@ -659,7 +657,6 @@ l10		dex
 		lda n+3
 		jmp push
 
-
 ;--------------------------------------------------------------
 ;
 ;	SCAN
@@ -756,17 +753,12 @@ l133		jmp next
 ;
 ;	CMOVE
 ;
+;"~ see http://6502.org/source/general/memory_move.html
 cmovelfa	.word $adde
 		.byt (cmove-*-1)|bit7
 		.asc "CMOV","E"|bit7
 cmove		lda #3
-		jsr popnwords		; ~ maybe PETTIL should make one CMOVE
-					; that is smart enough to not poop
-					; on overlapping source/target?
-					; or would this break compatibility
-					; for FORTH-83 (or ANS or whatever)
-					; code that relies on this "feature"
-					; of having two CMOVEs?
+		jsr popnwords
 		stx n+6
 		ldx n+1
 		beq l17
@@ -788,37 +780,6 @@ l20		lda (n+4),y
 l19		ldx n+6
 		jmp next
 
-;"http://6502.org/source/general/memory_move.html
-; Move memory down
-;
-; FROM = source start address
-;   TO = destination start address
-; SIZE = number of bytes to move
-;~ 
-;FROM = 0
-;TO = 2
-;SIZE = 4
-
-;MOVEDOWN LDY #0
-;         LDX SIZE+1
-;         BEQ MD2
-;MD1      LDA (FROM),Y ; move a page at a time
-;         STA (TO),Y
-;         INY
-;         BNE MD1
-;         INC FROM+1
-;         INC TO+1
-;         DEX
-;         BNE MD1
-;MD2      LDX SIZE
-;         BEQ MD4
-;MD3      LDA (FROM),Y ; move the remaining bytes
-;         STA (TO),Y
-;         INY
-;         DEX
-;         BNE MD3
-;MD4      RTS
-
 ;--------------------------------------------------------------
 ;
 ;	CMOVE>
@@ -826,7 +787,7 @@ l19		ldx n+6
 cmovegtlfa	.word $adde
 		.byt (cmovegt-*-1)|bit7
 		.asc "CMOVE",">"|bit7
-cmovegt		lda #3			; ~ straight from Blazin'
+cmovegt		lda #3
 		jsr popnwords
 		stx n+6
 		lda n+1
@@ -881,7 +842,7 @@ l025		dey
 		bpl l025
 l026		jmp next
 
-;" check http://6502.org/source/ for multiply and divide and stuff
+;"~ check http://6502.org/source/ for multiply and divide and stuff
 ;--------------------------------------------------------------
 ;
 ;	UM*
@@ -2496,10 +2457,10 @@ _latest
 ;
 ; ~ make sure it's really Forth-83 compliant before making this word available
 ;
-;forth83lfa	.word $adde
-;		.byt (forth83-*-1)|bit7
-;		.asc "FORTH-8","3"|bit7
-;forth83		jmp next
+forth83lfa	.word $adde
+		.byt (forth83-*-1)|bit7
+		.asc "FORTH-8","3"|bit7
+forth83		jmp next
 
 ; ~ better to follow ANS-Forth standard for this group?
 ;--------------------------------------------------------------
@@ -2767,9 +2728,10 @@ l60		.word clit
 		.asc '^'
 #include "pad.i65"
 		.word emit
-#include "page.i65"		; ~
+#include "page.i65"
 		.word ploop
 		.word l60
+#include "pad.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -2854,7 +2816,7 @@ _commadollar
 ;
 ;	ABORT"
 ;
-; ~ add code to pad after the quote with a NOP if necessary
+; ~ handle page boundary crossings
 abortqlfa	.word $adde
 		.byt (_abortq-*-1)|bit7
 		.asc "ABORT",'"'|bit7
@@ -3088,22 +3050,22 @@ l68		.word _qstack
 #include "page.i65"
 		.word qbranch
 		.word l64
-#include "page.i65"
+#include "pad.i65"
 		.word zlt
 #include "page.i65"
 		.word qbranch
 		.word l65
-#include "page.i65"
+#include "pad.i65"
 		.word _comma
 #include "page.i65"
 		.word branch
 		.word l66
-#include "page.i65"
+#include "pad.i65"
 l65		.word execute
 #include "page.i65"
 		.word branch
 		.word l66
-#include "page.i65"
+#include "pad.i65"
 l64		.word drop
 #include "page.i65"
 		.word _number
@@ -3116,12 +3078,12 @@ l64		.word drop
 #include "page.i65"
 		.word qbranch
 		.word l67
-#include "page.i65"
+#include "pad.i65"
 		.word _dliteral
 #include "page.i65"
 		.word branch
 		.word l66
-#include "page.i65"
+#include "pad.i65"
 l67		.word drop
 #include "page.i65"
 		.word _literal
@@ -3132,7 +3094,7 @@ l66		.word true
 #include "page.i65"
 		.word qbranch
 		.word l68
-	; #include "page.i65" ~ better do something pagey here
+#include "pad.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -3217,14 +3179,15 @@ _does
 #include "page.i65"
 		.word _compile
 		.word _psemi
-#include "page.i65"
+#include "pad.i65"
 		.word clit
 		.byt $20	; jsr instruction
 #include "pad.i65"
 		.word _ccomma
 #include "page.i65"
-		.word _compile	; ~ analyze paging here
+		.word _compile	; ~ fix paging here
 		.word dodoes
+#include "pad.i65"
 		.word exit
 dodoes		lda ip+1	; we get here by JSR
 		pha
@@ -3369,10 +3332,10 @@ dotqlfa		.word $adde
 		.byt (_dotq-*-1)|bit7
 		.asc ".",'"'|bit7
 _dotq
-#include "enter.i65"		; ~
+#include "enter.i65"
 		.word _compile
 		.word _pdotq
-#include "page.i65"		; ~
+#include "pad.i65"
 		.word clit
 		.asc '"'
 #include "pad.i65"
@@ -3432,7 +3395,7 @@ l74		iny
 		beq l75
 		sta (n+2),y
 		bne l74
-l75		sty inputted		; ~ probably should do a USER dereference
+l75		sty inputted		; ~ direct uarea ref breaks multitasking
 		lda #0
 		sta inputted+1
 		ldx n+4
@@ -4473,7 +4436,7 @@ l98		.word false
 #include "page.i65"
 		.word qbranch
 		.word l99
-; ~ need something here?
+#include "pad.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -4515,7 +4478,7 @@ _vocabulary
 		.word _comma
 #include "page.i65"
 		.word plit
-		.word $a081		; ~ what is it?
+		.word $a081
 #include "pad.i65"
 		.word _comma
 #include "page.i65"
@@ -5847,59 +5810,82 @@ tnslfa		.word $adde
 _tns
 #include "enter.i65"
 		.word tor
+#include "page.i65"
 		.word plit
 		.word 332	 ;~	max disc size
 #include "pad.i65"
 		.word over
+#include "page.i65"
 		.word ult
+#include "page.i65"
 		.word _pabortq
 		.byt s018-*-1
 		.asc "SCREEN DOES NOT EXIST "
+#include "pad.i65"
 s018		.word clit
 		.byt 166
 #include "pad.i65"
 		.word slashmod
+#include "page.i65"
 		.word tor
+#include "page.i65"
 		.word dup
+#include "page.i65"
 		.word clit
 		.byt 88
 #include "pad.i65"
 		.word lt
+#include "page.i65"
 		.word qbranch
 		.word l154
+#include "pad.i65"
 		.word clit
 		.byt 21
 #include "pad.i65"
 		.word one
+#include "page.i65"
 		.word tor
+#include "page.i65"
 		.word branch
 		.word l256a
+#include "pad.i65"
 l154		.word dup
+#include "page.i65"
 		.word clit
 		.byt 92
 #include "pad.i65"
 		.word lt
+#include "page.i65"
 		.word qbranch
 		.word l2525
+#include "pad.i65"
 		.word twoplus
+#include "page.i65"
 		.word clit
 		.byt 21
 #include "pad.i65"
 		.word one
+#include "page.i65"
 		.word tor
+#include "page.i65"
 		.word branch
 		.word l256a
+#include "pad.i65"
 l2525		.word dup
+#include "page.i65"
 		.word clit
 		.byt 120
 #include "pad.i65"
 		.word lt
+#include "page.i65"
 		.word qbranch
 		.word l2541
+#include "pad.i65"
 		.word clit
 		.byt 92
 #include "pad.i65"
 		.word minus
+#include "page.i65"
 		.word clit
 		.byt 19
 #include "pad.i65"
@@ -5907,19 +5893,25 @@ l2525		.word dup
 		.byt 19
 #include "pad.i65"
 		.word tor
+#include "page.i65"
 		.word branch
 		.word l256a
+#include "pad.i65"
 l2541		.word dup
+#include "page.i65"
 		.word clit
 		.byt 146
 #include "pad.i65"
 		.word lt
+#include "page.i65"
 		.word qbranch
 		.word l255d
+#include "pad.i65"
 		.word clit
 		.byt 120
 #include "pad.i65"
 		.word minus
+#include "page.i65"
 		.word clit
 		.byt 18
 #include "pad.i65"
@@ -5927,12 +5919,15 @@ l2541		.word dup
 		.byt 25
 #include "pad.i65"
 		.word tor
+#include "page.i65"
 		.word branch
 		.word l256a
+#include "pad.i65"
 l255d		.word clit
 		.byt 146
 #include "pad.i65"
 		.word minus
+#include "page.i65"
 		.word clit
 		.byt 17
 #include "pad.i65"
@@ -5940,23 +5935,41 @@ l255d		.word clit
 		.byt 31
 #include "pad.i65"
 		.word tor
+#include "page.i65"
 l256a		.word rot
+#include "page.i65"
 		.word rot
+#include "page.i65"
 		.word dup
+#include "page.i65"
 		.word two
+#include "page.i65"
 		.word mod
+#include "page.i65"
 		.word swap
+#include "page.i65"
 		.word over
+#include "page.i65"
 		.word minus
+#include "page.i65"
 		.word twostar
+#include "page.i65"
 		.word twostar
+#include "page.i65"
 		.word plus
+#include "page.i65"
 		.word two
+#include "page.i65"
 		.word pick
+#include "page.i65"
 		.word slashmod
+#include "page.i65"
 		.word rfrom
+#include "page.i65"
 		.word plus
+#include "page.i65"
 		.word rfrom
+#include "page.i65"
 		.word rfrom
 		.word exit
 
@@ -6011,7 +6024,6 @@ close		stx n
 		jsr close
 		ldx n
 		jmp pop
-#include "enter.i65"
 
 ;--------------------------------------------------------------
 ;
@@ -6246,9 +6258,14 @@ dotderrlfa	.word $adde
 _dotderr
 #include "enter.i65"
 		.word cmdoff
+#include "page.i65"
+#if ((* & $ff) = 253-12)
+	.word next
+#endif
 		.word _pdotq
 		.byt s033-*-1
 		.asc "DISK ERROR: "
+		     ;123456789.12
 s033		.word plit
 		.word inbuf
 #include "pad.i65"
@@ -7767,7 +7784,86 @@ s030		.word _pad
 
 ;--------------------------------------------------------------
 ;
-;	DHASH	( nfa -- hash2,3 hash1 )
+;	BRINGOUTYERDEAD   ( addr -- deadlfa|0 )
+;
+; scans forward in memory returning the address of the next $DE $AD
+; in memory that is followed by a name
+;" http://www.youtube.com/watch?v=grbSQ6O6kbs
+;
+boydlfa		.word $adde
+		.byt (boyd-*-1)|bit7
+		.asc "BRINGOUTYERDEA","D"|bit7
+boyd		ldy #userdp-userarea
+		lda (up),y
+		sta n+2
+		iny
+		lda (up),y
+		sta n+3		; here
+		ldy #0
+		lda (n+2),y
+		sta n+5
+		lda #$DE
+		sta (n+2),y	; come to a DE AD stop when we get to HERE
+		iny
+		lda (n+2),y
+		sta n+4
+		lda #$AD
+		sta (n+2),y
+l061		lda #$DE	; it seems easy to remove these two instructions,
+l049		cmp (tos),y
+		beq l050	; maybe... let's see
+		iny
+		bne l049
+		inc tos+1	; move to the next page
+		bpl l049
+		brk		; we're not supposed to ever get here
+l050		clc
+		tya
+		adc tos
+		sta tos		; TOS points to where DE AD was found
+		bcc l058
+		inc tos+1
+l058		ldy #1
+		lda #$AD
+		cmp (tos),y	; is it really DE AD?
+		bne l061
+		lda tos
+		cmp n+2
+		bne l062
+		lda tos+1
+		cmp n+3
+		beq l063	; are we here yet?
+l062		iny
+		lda (tos),y	; get the length byte
+		bpl l061	; length should have bit7 set
+		and #$1f
+		clc
+		adc #2		; LFA to NFA offset
+		tay
+		lda (tos),y	; last character should have bit7 set
+		bpl l061
+l059		dey		; intervening characters should be < $80
+		cpy #2
+		beq l060
+		lda (tos),y
+		bpl l059
+		bmi l061
+l063		lda #0
+		sta tos
+		sta tos+1
+l060		ldy #1		; put things back at HERE
+
+
+		lda n+5
+		sta (n+2),y
+		dey
+		lda n+4
+		sta (n+2),y
+		jmp next
+
+;--------------------------------------------------------------
+;
+;	DHASH	( nfa -- hash1 hash2,3)
 ;
 ; input is NFA or counted string. Output is a trio of hashcodes,
 ; each generated by a different algorithm but all in the range 
@@ -7782,94 +7878,135 @@ s030		.word _pad
 ; the flag bits are bit7 = always on, bit6 = immediate, bit5 = smudge
 ;
 ; hash1 is a 4-bit number
-; hash2 & hash3 are 5-bit numbers
-; the objective is an even distribution
+; hash2 & hash3 are 8-bit numbers
+; the objective is a normal distribution for hash1, 
+; and a bernoulli distribution for hash2
+; hash3 is unused
 dhashlfa	.word $adde
 		.byt (dhash-*-1)|bit7
 		.asc "DHAS","H"|bit7
-dhash		ldy #0
+dhash		stx n+3
+		ldy #0
 		lda (tos),y
 		and #$3f		; turn off 7 and 6, not 5 (smudge)
 		sta n
+		sty n+1			; hash2 = 0
 		tay
-		sec
-l009		lda (tos),y		; xor the string together
-		eor n			; just XOR everything
-		sta n			; hash1
-		rol n
-		dey
-		bne l009
-
-		lda n
-		sta n+1			; hash2 is pretty easy
-
-		lsr
-		lsr
-		lsr
-		lsr			;   - - - [ C 7 6 5 4 ]
-		eor n			; C 7 6 5 [ 4 3 2 1 0 ]
-		and #$0f		;   - - - [ 4-bit hash]
-		sta n			; here's hash1 0..f
-
 		iny
-		lda (tos),y		; get 1st character
-		sec
-		sbc #' '		; normalize so printables are 0..63
-		and #$3f		; mask off low 6-bits
-		sta n+2
-		lda n
-		lsr
-		ror
-		ror
-		;and #$c0
-		ora n+2
-		sta n+2			; hash3
+			;      hash2   hash1
+l009		dey			;[2]
+		beq l047		;[2]
+		lda (tos),y		;[5]	; xor the string together
+		tax		;[2]
+		eor n			;[3]	; just XOR everything
+		sta n			;[3]	; hash1
 
-		dex
+		txa		;[2]
+		and #$7f	;[2]
+		clc		;[2]
+		adc #$FF-'9'	;[2]
+		adc #'9'-'0'+1	;[2]
+		bcc l009		;[3]   [12] [18]
+		adc n+1			; 0> -1 0 1 2 3 0= 0< 0<> sp0 rp0
+		sta n+1			; 1+ 1- 2+ 2- 2/ 2* forth-83 dr0 dr1 
+		jmp l009		; 2drop 2dup 2over 2rot 2swap 2! 2@
+					; 2constant 2variable d0= d2/ d2* 
+l047		lda n+2		; sum of all digits 0..9
+		sta tos
 		lda n+1
-		sta stackl,x
-		lda n+2
-		sta stackh,x
-		lda n
-		;jsr debug	;~debug
-		lda n
-		dey
-		jmp put
-;~debug
-debug	sty n+6
-	stx n+5
-	sed
+		sta tos+1
+		lsr
+		lsr
+		lsr			;   - - - 7 [ 6 5 4 3 ]
+		eor n			;   7 6 5 4 [ 3 2 1 0 ]
+		and #$0f		;   - - - - [4bit hash]
+		ldx n+3
+		dex
+		sta stackl,x		; here's hash1 0..f
+		sty stackh,x
+		jmp next
+
+;~debug hex dump the byte in A
+debug	stx n+7
+	pha
+	pha
+	and #$0f
+	jsr print
+	pla
+	lsr
+	lsr
+	lsr
+	lsr
+	jsr print
+	pla
+dbout	ldx n+7
+	rts
+print	sed
 	cmp #10
 	adc #'0'
 	cld
-	jsr CHROUT
-	ldy n+6
-	ldx n+5
-	rts
+	jmp CHROUT
 
 ;--------------------------------------------------------------
 ;
 ;	DHASH@   ( hashkey -- LFA )
 ;
-; retrieves the LFA of the latest word in this hash thread
+; retrieve the head of this hash thread
 ;
 dhashfetchlfa	.word $adde
 		.byt (dhashfetch-*-1)|bit7
 		.asc "DHASH","@"|bit7
-dhashfetch	ldy tos
-		lda latestl,y
+dhashfetch	lda tos
+		asl
+		tay
+		lda lfalist,y
 		sta tos
-		lda latesth,y
+		lda lfalist+1,y
 		sta tos+1
 		jmp next
 
+test1lfa	.word $adde
+		.byt (test1-*-1)|bit7
+		.asc "BLOOM","!"|bit7
+test1		.byt 0
+test2lfa	.word $adde
+		.byt (test2-*-1)|bit7
+		.asc "BLOOM","!"|bit7
+test2		.byt 0
+test3lfa	.word $adde
+		.byt (test3-*-1)|bit7
+		.asc "BLOOM","!"|bit7
+test3		.byt 0
 ;--------------------------------------------------------------
 ;
-;	DHASH!   ( LFAnew hash2,3 hash1 -- )
+;	BLOOM!   ( hash -- )
+;
+; set the bit in the dictionary's bloom filter
+;
+; hash is an 8-bit hash code indexing a 256-bit bitfield
+bloomstorelfa	.word $adde
+		.byt (bloomstore-*-1)|bit7
+		.asc "BLOOM","!"|bit7
+bloomstore	lda tos			; set bloom filter bit for hash2
+		and #7
+		tay
+		lda power2,y
+		sta n
+		lda tos
+		lsr
+		lsr
+		lsr
+		tay
+		lda n
+		ora bloom2,y
+		sta bloom2,y
+		jmp pop
+
+;--------------------------------------------------------------
+;
+;	DHASH!   ( LFAnew hash1 -- )
 ;
 ; links the current LFA onto the top of this hash' thread
-;
-; ~ todo - order them by length
 ;
 ; When we're done, the word whose LFAnew is on the stack will become
 ; the new top of this hash thread, and the new word's LFA will link
@@ -7878,169 +8015,85 @@ dhashfetch	ldy tos
 dhashstorelfa	.word $adde
 		.byt (dhashstore-*-1)|bit7
 		.asc "DHASH","!"|bit7
-dhashstore	lda #3
-		jsr popnwords		; N,N+2,N+3 = hashes, N+4 = LFAnew
-		lda n+2			; set bloom filter bit for hash2
-		and #7
+dhashstore	lda stackh,x
+		sta n+3
+		lda stackl,x
+		sta n+2			; LFAnew -> N1
+		lda #0
+		sta n
+		sta n+1			; 0 -> N0
+		lda tos			; hash1
+		asl
 		tay
-		lda power2,y
-		sta n+6
-		lda n+2
-		lsr
-		lsr
-		lsr
-		tay
-		lda n+6
-		ora bloom2,y
-		sta bloom2,y
-
-		lda n+3			; set bloom filter bit for hash3
-		and #7
-		tay
-		lda power2,y
-		sta n+6
-		lda n+3
-		lsr
-		lsr
-		lsr
-		tay
-		lda n+6
-		ora bloom3,y
-		sta bloom3,y
-		; n+2 & n+3 are now available for reuse
-xpetp
-		ldy n			; get head from hashed link table -> N2
-		lda latesth,y
-		bne l045		; check for empty list
-		lda #<rootlfa
-		sta latestl,y
+		lda lfalist+1,y
+		bne notempty
+		lda #<rootlfa		; make a new list
+		sta lfalist,y
 		lda #>rootlfa
-		sta latesth,y		; start up a new list
-l045		sta n+3
-		lda latestl,y
-		sta n+2			; LFAlatest -> N2
-		; n+2,3 is the head of the list we're inserting into
-		; n+4,5 is the LFA to insert
-		; compare the lengths
+		sta lfalist+1,y
+notempty	sta n+5
+		lda lfalist,y
+		sta n+4			; head -> N2
 		ldy #2
-		lda (n+4),y
-		and #$1f
-		sta n+1			; length of the new word we're inserting
 		lda (n+2),y
 		and #$1f
-		cmp n+1
-		; if new word is shorter, it's the new head and we're done
-		bcc walker
-		; new word is shortest!  n+2,3 contains the list head
-		ldy n
-		lda n+5			;new word is shortest, make it the head
-		sta latesth,y
-		lda n+4
-		sta latestl,y		; LFAnew -> hashtable(key)
-		ldy #0
-		lda n+2
-		sta (n+4),y		; LFAlatest -> [LFAnew]
-		iny
-		lda n+3
-		sta (n+4),y
-		bne outtie		; bra
-walker
-		; otherwise, walk the chain until we find a longer word (or 0)
-		; if we find a 0, new word is the new tail
-		; otherwise, insert it before the longer word
-		lda n+3
-		sta n+7
-		lda n+2
-		sta n+6
-		ldy #1
-		lda (n+2),y
-		beq foundzero		; we should never find 0!
-		pha
+		sta n+7			; new.len -> n+7
+loop		lda (n+4),y
+		and #$1f
+		sta n+6			; curr.len -> n+6
+		lda n+7
+		cmp n+6			; compare lengths
+		bcc insert
+		bne hop
+		;sec
+		adc #1
+		tay			; last character
+strcmp		lda (n+2),y
+		cmp (n+4),y
+		bne hop
 		dey
-		lda (n+2),y
-		sta n+2
-		pla
-		sta n+3			; hop
-		ldy #2
-		lda (n+2),y
-		and #$1f
-		cmp n+1
-		bcc walker
-linkbetween	ldy #0
+		cpy #2
+		bne strcmp
+		dey
+		lda #$AD
+		sta (n+4),y
+		dey
+		lda #$DE
+		sta (n+4),y		; mark earlier definition DEAD
+hop		lda n+5			; put current on the left
+		sta n+1
 		lda n+4
-		sta (n+6),y
-		lda n+2
-		sta (n+4),y
+		sta n
+		ldy #0			; hop
+		lda (n+4),y
+		pha
 		iny
-		lda n+5
-		sta (n+6),y
+		lda (n+4),y
+		sta n+5
+		pla
+		sta n+4
+		iny
+		bne loop		; bra
+insert		bit n+1
+		bne linkin
+head		lda tos			; C=0		new word is shortest
+		asl
+		adc #<lfalist
+		sta n
+		lda #>lfalist
+		adc #0
+		sta n+1
+linkin		ldy #0
+		lda n+2
+		sta (n),y
+		lda n+4
+		sta (n+2),y
+		iny
 		lda n+3
-		sta (n+4),y
-outtie		jmp next
-
-foundzero	brk		; that means the new word is the longest one
-				; link it in at the tail
-
-;--------------------------------------------------------------
-;
-;	DEADLFA?   ( addr -- flag )
-;
-; true if addr points to { $DEAD len "wordnam","e"|bit7 }
-deadlfaqlfa	.word $adde
-		.byt (_deadlfaq-*-1)|bit7
-		.asc "DEADLFA","?"|bit7
-_deadlfaq
-#include "enter.i65"
-		.word dup	; ( addr addr )
-#include "page.i65"
-		.word fetch	; ( addr word )
-#include "page.i65"
-		.word plit
-		.word $adde	; ( addr word $dead )
-#include "pad.i65"
-		.word eq	; ( addr f1 )
-#include "page.i65"
-		.word qbranch	; ( addr )
-		.word l047
-#include "page.i65"
-		.word twoplus	; ( a+2 )
-#include "page.i65"
-		.word dup	; ( a+2 a+2 )
-#include "page.i65"
-		.word cfetch	; ( a+2 len80 )
-#include "page.i65"
-		.word dup	; ( a+2 len80 len80 )
-#include "page.i65"
-		.word clit
-		.byt $80	; ( a+2 len80 len80 $80 )
-#include "pad.i65"
-		.word gt	; ( a+2 len80 f2 )
-#include "page.i65"
-		.word lrot	; ( f2 a+2 len80 )
-#include "page.i65"
-		.word clit
-		.byt $3f	; ( f2 a+2 len80 $3f )
-#include "pad.i65"
-		.word andx	; ( f2 a+2 len )
-#include "page.i65"
-		.word plus	; ( f2 a+2+len )
-#include "page.i65"
-		.word cfetch	; ( f2 last80 )
-#include "page.i65"
-		.word clit
-		.byt $80	; ( f2 last80 $80 )
-#include "pad.i65"
-		.word gt	; ( f2 f3 )
-#include "page.i65"
-		.word andx	; ( flag )
-#include "page.i65"
-		.word branch
-		.word l048
-#include "page.i65"
-l047		.word drop	; ( )
-#include "page.i65"
-		.word false	; ( 0 )
-l048		.word exit
+		sta (n),y
+		lda n+5
+		sta (n+2),y
+outtie		jmp poptwo
 
 ;--------------------------------------------------------------
 ;
@@ -8058,6 +8111,7 @@ l048		.word exit
 ;		while			( lfa1 lfa2 )
 ;			$dead		( lfa1 lfa2 $dead )
 ;			rot		( lfa2 $dead lfa1 )
+;~ dup 2- ( nfa ) dup c@ ( nfa len ) $80 or ( nfa len ) swap c! ( ) 
 ;			!		( lfa2 )
 ;		repeat
 ;					( lfa )
@@ -8086,7 +8140,7 @@ l052		.word dup
 #include "page.i65"
 		.word qbranch
 		.word l053
-#include "page.i65"
+#include "pad.i65"
 		.word plit
 		.word $adde
 #include "pad.i65"
@@ -8126,48 +8180,48 @@ l053		.word drop
 ; This word builds the LFA field in every word up to this point.  
 ; It also marks the last word in the core dictionary.
 ; links all LFAs
+; ~ make it turn off bit7 on redefinitions
 rethreadlfa	.word $adde
 		.byt (_rethread-*-1)|bit7
 		.asc "RETHREA","D"|bit7
+xpetp
 _rethread
 #include "enterx.i65"
 		.word plit
-		.word latestl
+		.word lfalist
 #include "pad.i65"
 		.word clit
-		.byt <(power2-latestl)	; all list heads and bloom filters
+		.byt <(power2-lfalist)	; all list heads and bloom filters
 #include "pad.i65"
 		.word _erase
-#include "page.i65"
-		.word _here
 #include "page.i65"
 		.word zero
 #include "page.i65"
 		.word _plusorigin
 #include "page.i65"
-		.word pdo
+l044		.word boyd		; begin boyd ?dup while ... repeat
 #include "page.i65"
-l044		.word i
+		.word qdup
 #include "page.i65"
-		.word _deadlfaq
-#include "page.i65"		; ~
 		.word qbranch
 		.word l024
 #include "page.i65"
-		.word i
+		.word dup		; ( lfa lfa )
 #include "page.i65"
-		.word dup
+		.word dup		; ( lfa lfa lfa )
 #include "page.i65"
-		.word twoplus
+		.word twoplus		; ( lfa lfa nfa )
 #include "page.i65"
-		.word dhash
+		.word dhash		; ( lfa lfa hash1 hash23 )
 #include "page.i65"
-		.word dhashstore
-#include "page.i65"		; ~
-l024		.word ploop
+		.word bloomstore	; ( lfa lfa hash1 )
+#include "page.i65"
+		.word dhashstore	; ( lfa )
+#include "page.i65"
+		.word branch
 		.word l044
 #include "pad.i65"
-		.word exit
+l024		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -8339,4 +8393,11 @@ endofile
 ;	does>			dodoes
 ;	create			docreate
 ;	vocabulary		vocabdoes
+;
+; words that might page
+; 	page
+;	plit
+;	clit
+;	branch
+;	pdotq
 
