@@ -512,8 +512,9 @@ Also see [[AdvancedOptions]]</pre>
 </div>
 <!--POST-SHADOWAREA-->
 <div id="storeArea">
-<div title="DefaultTiddlers" creator="YourName" modifier="chitselb" created="201008262055" modified="201009102102" changecount="4">
-<pre>[[Welcome]]
+<div title="DefaultTiddlers" creator="YourName" modifier="chitselb" created="201008262055" modified="201009152026" changecount="5">
+<pre>[[Dictionary]]
+[[Welcome]]
 [[Why]]</pre>
 </div>
 <div title="DesignChoices" creator="chitselb" modifier="chitselb" created="201008050757" modified="201008270032" changecount="31">
@@ -529,20 +530,72 @@ Also see [[AdvancedOptions]]</pre>
 &lt;BUILDS ... DOES&gt; Example:
 </pre>
 </div>
-<div title="Dictionary" creator="chitselb" modifier="chitselb" created="201008262310" modified="201009072229" changecount="23">
-<pre>PETTIL uses a ''polythreaded dictionary'' based on a simple name hashing function.  The hash function is to EOR all the bytes of the word together, including the length byte, then splitting the result byte into two 4-bit nybbles which are again &quot;&quot;&quot;EORed&quot;&quot;&quot; together, producing a hashkey value between $00 and $0F.
+<div title="Dictionary" creator="chitselb" modifier="chitselb" created="201008262310" modified="201009152036" changecount="154">
+<pre>!!Definition layout
+|&gt;|&gt;|&gt;| ! PETTIL dictionary definition diagram |
+|! Field |&gt;|! Size |! Description |
+|LFA| 1 word |low |Points to the LFA of the previous definition |
+|~|~|high |~|
+|NFA| 1 byte |bit7 flag |always 1 |
+|~|~|bit6 flag |1 if this definition is immediate, 0 otherwise |
+|~|~|bit5 flag |1 if this definition has been &quot;smudged&quot; |
+|~|~|length is stored in bits 0-4 |The length of this definition's {{green{name}}} (1..31) |
+|~| length-1 bytes |{{green{Name}}}... |(optional, only present for definitions having length &gt; 1) Text of all but the final character of the name field, with bit7 always 0 |
+|~| 1 byte |bit7 flag |Last character of the name field with bit7 always 1 |
+|~|~|{{green{Name}}}[last] |~|
+|CFA| variable |Code Field |Contains executable machine code.  For colon definitions this field contains {{{JSR ENTER}}}.  For primitives, it contains the 6502 machine code for the primitive function. |
+|PFA| variable |Parameter Field |For colon definitions this field contains a list of pointers to the ~CFAs of other words, ending with a pointer to {{{EXIT}}} |
 
-A 16-word table (well, two 16-byte tables actually) at the bottom of the dictionary holds links to the LFA of the most recently defined word for each hashkey, marking the top of the chain.  These chains are scanned by FIND in standard figForth fashion, but on average only 6.25% of the dictionary needs to be scanned vs. 100% for figForth's single linked list of &quot;&quot;&quot;LFAs&quot;&quot;&quot; approach
+The minor difference between figForth dictionary entries and Blazin' Forth is that figForth puts the NFA before the LFA and uses {{{-1 TRAVERSE}}} to get from the LFA to the NFA.  Blazin' Forth switches this, putting the LFA before the NFA.  Blazin' Forth merely adds 2 to the LFA to get to the NFA.  PETTIL agrees that the Blazin' Forth approach here is a win.
+!!PETTIL Optimizations
+The big difference between PETTIL and figForth/Blazin' Forth is how the CFA is handled.  The traditional approach, implemented by both Blazin' Forth and figForth is for the CFA to be a 16-bit address pointer that always points to machine code.  This is called the Indirect Threaded Code (ITC) model.  In PETTIL, the Code Field contains actual machine code (instead of a pointer to it).  PETTIL implements the Direct Threaded Code (DTC) model.  In DTC Forths, only one level of indirection is performed by {{{NEXT}}} vs. two levels of indirection in an ITC (e.g. figForth) Forth. Further information about this idea can be found at [[Brad Rodriguez' website|http://www.bradrodriguez.com/papers/moving1.htm]]
 
-In a parallel universe in the perfect future, dictionary headers will be separated from their code and stored building downward from the bottom of the disc buffers, to allow generation of reduced-size standalone binary programs.
+PETTIL does some things in the dictionary to improve performance that deserve explaining here.  In the {{{QUIT}}} loop, the system accepts keyboard (or source block) input which is passed to {{{INTERPRET}}}.   Here's what {{{INTERPRET}}} does in both systems
+!!figForth:
+# break the input line into blank-delimited &quot;{{green{names}}}&quot;, represented as counted strings
+# for each {{green{name}}}, try {{{FIND}}}:
+## scan a single linked list for each child vocabulary
+## chain to the next vocabulary
+## until we arrive at the tail of the final ({{{FORTH}}}) vocabulary
+# if not found, try {{{NUMBER}}}:
+## {{{NUMBER}}} attempts to convert it to a literal using the current {{{BASE}}}
+The vanilla {{{FIND}}} starts at the highest LFA in the vocabulary and chains sequentially backward through each and every link until the {{green{name}}} is found or until {{{FIND}}} runs out of links at the tail of the chain.   The chain is not ordered, and the only optimization is to exit early when a match for {{green{name}}} is found.  Numeric literals are never found and represent a worst-case scenario where the length of the number is compared to the length of every word in the dictionary and the first character of the number is compared to all dictionary words having the same length.
+!!PETTIL:
+# break the input line into blank-delimited &quot;{{green{names}}}&quot;, represented as counted strings
+# for each {{green{name}}}, try {{{FIND}}}:
+## scan a single linked list for each child vocabulary
+## chain to the next vocabulary
+## until we arrive at the head of the root ({{{FORTH}}}) vocabulary
+Everything has been the same up to this point.  Here is where PETTIL introduces some optimizations.
+# {{{DHASH}}} generates {{green{hash1}}} and {{green{hash2}}} for {{green{name}}}.  More on {{{DHASH}}} below.
+# use {{green{hash2}}} to test a bit in a 64-bit [[Bloom filter|http://en.wikipedia.org/wiki/Bloom_filter]]
+# If the Bloom filter bit at {{green{hash2}}} is 0, the {{green{name}}} can't be in the {{{FORTH}}} vocabulary.  {{{FIND}}} will indicate failure and exit.
+# If we're still here, that means the {{green{name}}} could be in the dictionary and most likely it will be found.  In each {{green{strand}}}'s linked list, {{green{names}}} are ordered by ascending length, from shortest {{green{name}}} to longest {{green{name}}}.  
+# For each definition (node) on this {{green{strand}}}: 
+## Compare the length of the {{green{name}}} {{{FIND}}} is searching for (A) vs. the length of the {{green{name}}} at this node (B).  
+Here are the three possibilities
+|!Condition|! What happens |
+| A&lt;B |Not there yet.  Hop to the next node and try again. |
+| A=B |This could be it.  Perform a string comparison between A.{{green{name}}} and B.{{green{name}}}. |
+|~|If the {{green{names}}} match, we've found it!  Indicate success and exit {{{FIND}}}. |
+|~|Otherwise, hop to the next node and iterate |
+| A&gt;B |{{{FIND}}} has just gone past the point in this {{green{strand}}} where {{green{name}}} could possibly be found, and we're done. Since the {{green{strand}}} is ordered by length, no need to keep going.  Indicate failure and exit {{{FIND}}} |
 
-|! Field |! Size |! Description |
-|LFA lsb | 2 bytes |Points to the LFA of the previous word |
-|LFA msb |~|~|
-|flags &amp; length | 1 byte |bit7 = on, bit6 = immediate, bit5 = smudge, the rest is length |
-|NFA Name Field | variable |[ length ] bytes of text with bit7 set on the final byte |
-|CFA Code Field | variable |executable machine code, for secondaries a JSR ENTER instruction |
-|PFA Parameter Field | variable |for secondaries, a series of pointers to Code Fields of other words |
+After {{{FIND}}}, things are back to just like business as usual in traditional Forth
+# if not found, try {{{NUMBER}}}:
+## {{{NUMBER}}} attempts to convert it to a literal using the current {{{BASE}}}
+!!Hashing (aka Thing 1 and Thing 2)
+{{{DHASH}}} generates a uniformly distributed 4-bit hash ({{green{hash1}}}) for this {{green{name}}}
+{{{DHASH}}} Simultaneously generates a bernoulli-distributed 6-bit hash ({{green{hash2}}}) for this {{green{name}}}
+!!!Nybble hashing to divide up the {{{FORTH}}} vocabulary
+{{green{Hash1}}} is used to break the dictionary up into 16 roughly equal-sized '{{green{strand}}}s' instead of having just one linked list.  The savings we anticipate here is that in the average worst-case, we'll only have scan 6.25% of the FORTH vocabulary and in the average case we'll only have to scan half of that! (3.125%).  So {{green{hash1}}} will eliminate searching (on average) take your pick of 93.75% or 96.875% vs. the single linked list approach.  
+
+The {{green{hash1}}} function is to EOR all the bytes of the word together,which are passed including the length byte and smudge flag, then splitting the result byte into two 4-bit nybbles which are again ~EORed together, producing a {{green{hash1}}} value between $00 and $0F.
+
+There's a 16-word table containing  the LFA of the tail of each {{green{strand}}} for all 16 possible values of {{green{hash1}}}
+!!!Bloom filter to weed out numbers
+The Bloom filter {{green{hash2}}} is designed to distinguish regular dictionary words like {{{DUP ROT @ EMPTY-BUFFERS}}} apart from numeric literals like {{{11 32767 -23 9999.99}}}.  A {{green{name}}} that has no numeric digits returns a {{green{hash2}}} value of 0.  It indexes into a Bloom filter to see whether this word is even in the dictionary at all.  The filter and {{green{hash2}}} should usually kick us out before we ever get to FIND if the {{green{name}}} we are searching for contains numeric digits.  The formula for {{green{hash2}}} is to sum up all the digits found in the {{green{name}}} plus the count of how many digits there are.  So {{green{hash2}}}({{{SP0}}}) -&gt; 1, {{green{hash2}}}({{{FORTH-83}}}) -&gt; 13, {{green{hash2}}}({{{2ROT}}}) -&gt; 3 and so on.
+
 </pre>
 </div>
 <div title="Editor" creator="chitselb" modifier="chitselb" created="201008262112" modified="201008262251" changecount="11">
@@ -836,14 +889,20 @@ The PET Kernel ROM uses zero page locations from $8D - $FF for its own nefarious
 <div title="SiteTitle" creator="chitselb" modifier="chitselb" created="201008050751" modified="201008270034" changecount="5">
 <pre>[[pettil|Welcome]]</pre>
 </div>
-<div title="Welcome" creator="chitselb" modifier="chitselb" created="201008262328" modified="201009110240" changecount="5">
-<pre>There's a joke that goes, &quot;A guy walks into a bar and sits down.  Shortly afterward, a woman comes up and sits at the empty stool next to him.  She's very attractive, too, and she says, 'Hi.  My name is Carmen.  That's not really my name but it's how I like to introduce myself when I'm out on the prowl, because I like cars, and I like men.  Who are you?' And the guy says, 'Pleased to meet you, Carmen.  I'm Beersex.'&quot;
-
-So welcome to my project page.  I like the PET, and Forth.  So I wrote PETTIL.
+<div title="StyleSheet" creator="chitselb" modifier="chitselb" created="201009151938" modified="201009151950" changecount="8">
+<pre>.green{color: #060;}
 </pre>
 </div>
-<div title="Why" creator="chitselb" modifier="chitselb" created="201008050754" modified="201009130613" changecount="6">
-<pre>I was bored.  I wanted to write a Forth that would run on the PET. Not an [[emulated PET|http://www.viceteam.org/]], but this one [[PET|http://www.flickr.com/photos/chitselb/sets/72157624696682160/]] in particular.  I wanted it to run very fast!  And I wanted teaching the PET to speak this new language to teach me things about myself.</pre>
+<div title="Welcome" creator="chitselb" modifier="chitselb" created="201008262328" modified="201009152037" changecount="6">
+<pre>There's a joke that goes, &quot;A guy walks into a bar and sits down.  Shortly afterward, a woman comes up and sits at the empty stool next to him.  She's very attractive, too, and she says, 'Hi.  My name is Carmen.  That's not really my name but it's how I like to introduce myself when I'm out on the prowl, because I like cars, and I like men.  Who are you?' And the guy says, 'Pleased to meet you, Carmen.  I'm Beersex.'&quot;
+
+So welcome to my project page.  I like the PET, and I like Forth.  So I wrote PETTIL.
+</pre>
+</div>
+<div title="Why" creator="chitselb" modifier="chitselb" created="201008050754" modified="201009152038" changecount="10">
+<pre>Tearing off a huge project that involves programming hardware that was totally obsoleted by the Commodore 64?  Really??
+
+ I was bored.  I wanted to write a Forth that would run on the PET. Not just on an [[emulated PET|http://www.viceteam.org/]], but on [[this particular PET.|http://www.flickr.com/photos/chitselb/sets/72157624696682160/]]  I wanted it to run very fast, and I wanted to have fun with it and learn a lot of new things.</pre>
 </div>
 <div title="literal" creator="chitselb" modifier="chitselb" created="201009011528" modified="201009011534" changecount="11">
 <pre>consider {{{: FOO 42 420 ;}}} as it crosses a page
