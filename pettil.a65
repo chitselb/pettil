@@ -505,12 +505,14 @@ nonum		tya
 
 ;--------------------------------------------------------------
 ;
-;	(FIND)   ( addr1 addr2 -- addr flag )
+;	(FIND)   ( addr1 addr2 flag -- addr flag )
 ;
 ; * outer interpreter headerless
 ;
-; first search the context dictionary, which may be unhashed
-; then hash the word and search only that thread in the main dictionary
+; addr1 is the address of a counted string we are searching for.
+; addr2 is the LFA at the head of a chain of LFAs
+; flag is true if the words in this chain are ordered by ascending length
+; returns ( NFA true ) if found, ( addr1 false ) if not found
 ;
 ;pfindlfa	.word $adde
 ;		.byt (pfind-*-1)|bit7
@@ -585,6 +587,26 @@ l8		sec
 		jmp push
 
 ;--------------------------------------------------------------
+		; pops up to 4 words from the split stack to N area
+		; A = how many words to pop (valid range 1-4)
+		; returns
+		; Y = 0
+		; TOS unchanged
+		; 2OS -> N0, 3OS -> N1, 4OS -> N2, 5OS -> N3
+		;      1          2          3          4
+setup		asl
+		tay
+l045		lda stackl,x
+		sta n-2,y
+		lda stackh,x
+		sta n-1,y
+		inx
+		dey
+		dey
+		bne l045
+l046		rts
+
+;--------------------------------------------------------------
 		; pops up to 4 words from the split stack to the N area
 		; A = how many words to pop (valid range 1-4)
 		;
@@ -616,63 +638,66 @@ l005		lda stackl,x
 
 ;--------------------------------------------------------------
 ;
-;	SKIP   ( addr count char -- addr count )
+;	SKIP   ( addr1 count1 char -- addr2 count2 )
 ;
+; * headerless selfmodifying
 ;
+; addr1 is the starting address in the input stream where up
+; to count1 bytes are skipped *WHILE* they match char.  Returns
+; addr2 as the address of the first non-matching character and
+; count2 as the remaining number of bytes in the buffer.
 skiplfa		.word $adde
 		.byt (skip-*-1)|bit7
 		.asc "SKI","P"|bit7
-skip		lda #3		;
-		jsr popnwords	; N0 N1 N2	; N0 = char
-l13		lda n+2		;		; N1 = count
-		ora n+3		;		; N2 = addr
-		beq l10		; N1=0?
-		lda (n+4),y	;
-		eor n		;
-		asl		;
-		bne l10		; [N2]<>N?
-		inc n+4		;
-		bne l11		;
-		inc n+5		; N2+
-l11		lda n+2		;
-		bne l12		;
-		dec n+3		;
-l12		dec n+2		; N1-
+skip		lda #$d0		; BNE intruction
+		sta l14
+skipscan	lda #2
+		jsr setup		; count1 -> N0; addr1 -> N1
+		stx n+4
+		ldx n+2
+l13		txa
+		ora n+3
+		beq l10
+		lda (n),y
+		eor tos
+		asl
+l14		bne l10
+		iny
+		bne l11
+		inc n+1
+l11		txa
+		bne l12
+		dec n+3
+l12		dex
 		jmp l13
-
-l10		lda n+4		;
-		sta tos		;
-		lda n+5		;
-		sta tos+1	; push N2
-		ldy n+2		;
-		lda n+3		;
-		jmp push	; push N1
+l10		stx n+2
+		ldx n+4
+		clc
+		tya
+		adc n
+		sta tos
+		ldy n+1
+		bcc l16
+		iny
+l16		sty tos+1
+		ldy n+3
+		lda n+2
+		jmp push
 
 ;--------------------------------------------------------------
 ;
-;	SCAN
+;	SCAN   ( addr count char -- addr count )
 ;
+; addr1 is the starting address in the input stream where up
+; to count1 bytes are skipped *UNTIL* they match char.  Returns
+; addr2 as the address of the first non-matching character and
+; count2 as the remaining number of bytes in the buffer.
 scanlfa		.word $adde
 		.byt (scan-*-1)|bit7
 		.asc "SCA","N"|bit7
-scan		lda #3
-		jsr popnwords	; N0 N1 N2	; N0 = char
-l16		lda n+2		;		; N1 = count
-		ora n+3		;		; N2 = addr
-		beq l10		; N1=0?
-		lda (n+4),y	;
-		eor n		;
-		asl		; ignore bit7
-		beq l10		; [N2]=N?
-		inc n+4		;
-		bne l14		;
-		inc n+5		; N2+
-l14		lda n+2		;
-		bne l15		;
-		dec n+3		;
-l15		dec n+2		; N1-
-		jmp l16
-
+scan		lda #$f0		; BNE intruction
+		sta l14
+		jmp skipscan
 
 ;--------------------------------------------------------------
 ;
@@ -748,7 +773,7 @@ l133		jmp next
 
 ;--------------------------------------------------------------
 ;
-;	CMOVE
+;	CMOVE   ( from to howmany -- )
 ;
 ; * 83 nucleus
 ;
@@ -756,28 +781,24 @@ l133		jmp next
 cmovelfa	.word $adde
 		.byt (cmove-*-1)|bit7
 		.asc "CMOV","E"|bit7
-cmove		lda #3
-		jsr popnwords
-		stx n+6
-		ldx n+1
+cmove		lda #2
+		jsr setup	; from -> N0; to -> N1
+		stx n+4
+		inc tos+1
+		ldx tos
 		beq l17
-l18		lda (n+4),y
+l18		lda (n),y
 		sta (n+2),y
 		iny
-		bne l18
-		inc n+5
+		bne l15
+		inc n+1
 		inc n+3
-		dex
+l15		dex
 		bne l18
-l17		ldx n
-		beq l19
-l20		lda (n+4),y
-		sta (n+2),y
-		iny
-		dex
-		bne l20
-l19		ldx n+6
-		jmp next
+l17		dec tos+1
+		bne l18
+		ldx n+4
+		jmp pop
 
 ;--------------------------------------------------------------
 ;
@@ -2131,10 +2152,9 @@ doneq		jsr uservar
 ;
 ; * 83 interpreter
 ;
-; The address of a variable containing the number of bytes in
-; the text input buffer.  #TIB is accessed by WORD when BLK is
-; zero.  {{0..capacity of TIB}}  See:  "input stream"
-
+;  The address of a variable containing the number of bytes in
+;  the text input buffer.  #TIB is accessed by WORD when BLK is
+;" zero.  {{0..capacity of TIB}}  See:  "input stream"
 numtiblfa	.word $adde
 		.byt (numtib-*-1)|bit7
 		.asc "#TI","B"|bit7
@@ -2619,7 +2639,7 @@ _bodyfrom
 
 ;--------------------------------------------------------------
 ;
-;	NAME>
+;	NAME>   ( nfa -- cfa )
 ;
 namefromlfa	.word $adde
 		.byt (_namefrom-*-1)|bit7
@@ -2635,7 +2655,7 @@ _namefrom
 
 ;--------------------------------------------------------------
 ;
-;	LINK>
+;	LINK>   ( lfa -- cfa )
 ;
 linkfromlfa	.word $adde
 		.byt (_linkfrom-*-1)|bit7
@@ -2649,7 +2669,7 @@ _linkfrom
 
 ;--------------------------------------------------------------
 ;
-;	N>LINK
+;	N>LINK   ( nfa -- lfa )
 ;
 ntolinklfa	.word $adde
 		.byt (_ntolink-*-1)|bit7
@@ -2661,7 +2681,7 @@ _ntolink
 
 ;--------------------------------------------------------------
 ;
-;	L>NAME
+;	L>NAME   ( lfa -- nfa )
 ;
 linktonamelfa	.word $adde
 		.byt (_linktoname-*-1)|bit7
@@ -3678,7 +3698,7 @@ _pad
 
 ;--------------------------------------------------------------
 ;
-;	'STREAM   ( c --
+;	'STREAM   ( -- 
 ;
 ;" : 'stream
 ;	blk @ ?dup
@@ -3695,45 +3715,45 @@ _tickstream
 #include "page.i65"
 		.word fetch
 #include "page.i65"
-		.word qdup
+		.word qdup		; ( 0 | blk blk )
 #include "page.i65"
-		.word qbranch
+		.word qbranch		; if
 		.word l76
 #include "page.i65"
-		.word _block
+		.word _block		; ( addr )
 #include "page.i65"
-		.word bperbuf
+		.word bperbuf		; ( addr b/buf )
 #include "page.i65"
-		.word branch
+		.word branch		; else
 		.word l77
 #include "page.i65"
-l76		.word tib
+l76		.word tib		; ( tib )
 #include "page.i65"
 		.word numtib
 #include "page.i65"
-		.word fetch
+		.word fetch		; ( tib #tib )
+#include "page.i65"			; then
+l77		.word toin		; ( addr size >in )
 #include "page.i65"
-l77		.word toin
+		.word fetch		; ( addr size ptr )
 #include "page.i65"
-		.word fetch
+		.word over		; ( addr size ptr size )
 #include "page.i65"
-		.word over
+		.word _min		; ( addr size ptr )
 #include "page.i65"
-		.word _min
+		.word tor		; ( addr size )
 #include "page.i65"
-		.word tor
+		.word swap		; ( size addr )
 #include "page.i65"
-		.word swap
+		.word rfetch		; ( size addr ptr )
 #include "page.i65"
-		.word rfetch
+		.word plus		; ( size addr )
 #include "page.i65"
-		.word plus
+		.word swap		; ( addr size )
 #include "page.i65"
-		.word swap
+		.word rfrom		; ( addr size ptr )
 #include "page.i65"
-		.word rfrom
-#include "page.i65"
-		.word minus
+		.word minus		; ( addr remaining )
 		.word exit
 
 ;--------------------------------------------------------------
@@ -3757,7 +3777,7 @@ l77		.word toin
 ; If the delimiter is not found the value of >IN is the size
 ; of the input stream.  If the delimiter is found >IN is
 ; adjusted to indicate the offset to the character following
-; the delimiter.  #TIB is unmodified. 
+; the delimiter.  #TIB is unmodified. 		; ( 0100 0104 0107 0009 ) 
 ;
 ; The counted string returned by WORD may reside in the "free"
 ; dictionary area at HERE or above.  Note that the text
@@ -3771,44 +3791,65 @@ l77		.word toin
 ;
 ; blazin' high level
 ;" : 'stream
-;	blk @ ?dup if block b/buf else tib #tib fetch then >in fetch over min >r swap r@ + swap r> - ;
+;	blk @ ?dup			; ( 0 | blk )
+;	if  block b/buf
+;	else  tib #tib fetch
+;	then				; ( addr size )
+;	>in fetch			; ( addr size pointer )
+;	over min			; ( addr pointer )
+;	>r swap				
+;	r@ + swap
+;	r> - ;
 ;" : skip
 ;
 ;" : scan
 ;
-;" : word
-;	>r 'stream over swap r@ skip over swap r> scan drop over over swap - >r rot - 1+ >in +! r> here over over c!
-;	1+ swap cmove here dup count + bl swap c! ;
+;" : word   ( c -- nfa )
+;	>r				; ( -- ) r( c )
+;	'stream
+;	over swap
+;	r@ skip
+;	over swap
+;	r> scan
+;	drop over over swap -
+;	>r
+;	rot - 1+
+;	>in +!
+;	r> here
+;	over over c!
+;	1+ swap cmove
+;	here dup count +
+;	bl swap c! ;
 wordlfa		.word $adde
 		.byt (_word-*-1)|bit7
 		.asc "WOR","D"|bit7
 _word
 #include "enter.i65"
-		.word tor
+		.word tor		; ( addr )
 #include "page.i65"
-		.word _tickstream
+		.word _tickstream	; ( addr addr size )
 #include "page.i65"
-		.word over
+		.word over		; ( addr addr size addr )
 #include "page.i65"
-		.word swap
+		.word swap		; ( addr addr addr size )
 #include "page.i65"
-		.word rfetch
+		.word rfetch		; ( addr addr addr size char )
 #include "page.i65"
-		.word skip
+		.word skip		; ( addr addr size )
 #include "page.i65"
-		.word over
+		.word over		; ( addr addr size addr )
 #include "page.i65"
-		.word swap
+		.word swap		; ( addr addr addr size )
 #include "page.i65"
-		.word rfrom
-#include "page.i65"
-		.word scan
-#include "page.i65"
-		.word drop
-#include "page.i65"
-		.word over
+		.word rfrom		; ( addr addr addr size char )
+#include "page.i65" 
+		.word scan		; ( addr addr size )
+#include "page.i65"		; ( 0100 0104 0107 0009 ) ~
+		.word drop		; ( addr addr )
 #include "page.i65"
 		.word over
+#include "page.i65"
+		.word over		; 
 #include "page.i65"
 		.word swap
 #include "page.i65"
@@ -4112,6 +4153,9 @@ _find
 		.word context
 #include "page.i65"
 		.word fetch
+; ~ determine here whether we're in FORTH
+; something like  FORTH?  IF  DHASH@  THEN 
+
 #include "page.i65"
 		.word fetch
 #include "page.i65"
@@ -4138,18 +4182,13 @@ l89		.word exit
 existsqlfa	.word $adde
 		.byt (_existsq-*-1)|bit7
 		.asc "EXISTS","?"|bit7
-xpetp
 _existsq
 #include "enter.i65"
-		.word bl
+		.word bl		; ( c )
 #include "page.i65"
-		.word _word
+		.word _word		; ( nfa )
 #include "page.i65"
-		.word dup
-#include "page.i65"
-		.word count
-#include "page.i65"
-		.word _find
+		.word _find		; ( nfa true | here false )
 		.word exit
 
 ;--------------------------------------------------------------
@@ -4595,7 +4634,7 @@ _interpret
 #include "enter.i65"
 l99		.word qstack
 #include "page.i65"
-		.word _existsq
+		.word _existsq		; ( addr flag )
 #include "page.i65"
 		.word qbranch
 		.word l96
@@ -8426,57 +8465,52 @@ l060		ldy #1		; put things back at HERE
 ;
 ;	DHASH	( nfa -- hash1 hash2 )
 ;
-; input is NFA or counted string. Output is two hashcodes
+; input is NFA or address of a counted string. Output is two hashcodes
 ;
 dhashlfa	.word $adde
 		.byt (dhash-*-1)|bit7
 		.asc "DHAS","H"|bit7
-dhash		stx n+3
+dhash		stx n+7
 		ldy #0
 		lda (tos),y
 		and #$3f		; turn off 7 and 6, not 5 (smudge)
-		sta n
+		sta n			; seed hash1 with length
 		sty n+1			; hash2 = 0
-		sty n+2
 		tay
 		iny
-			;	hash2	hash1
-l009		dey			;[2]
-		beq l047		;[2]
-		lda (tos),y		;[5]
-		tax		;[2]
-		eor n			;[3]	; just XOR everything
-		sta n			;[3]	; hash1
-
-		txa		;[2]
-		and #$7f	;[2]
-		clc		;[2]
-		adc #$FF-'9'	;[2]
-		adc #'9'-'0'+1	;[2]
-		bcc l009		;[3]	[12] / [18]
+				;	hash2	hash1
+l009		dey				;[2]
+		beq l047			;[2]
+		lda (tos),y			;[5]
+		asl				;[2]	; ignore bit7
+		tax			;[2]
+		eor n				;[3]	; just XOR everything
+		sta n				;[3]	; hash1
+		txa			;[2]
+		clc			;[2]
+		adc #$FF-('9'*2)	;[2]		; things are doubled
+		adc #('9'-'0')*2+1	;[2]		; due to ASL above
+		bcc l009			;[3]	
 		adc n+1			; 0> -1 0 1 2 3 0= 0< 0<> sp0 rp0
 		sta n+1			; 1+ 1- 2+ 2- 2/ 2* forth-83 dr0 dr1 
 		jmp l009		; 2drop 2dup 2over 2rot 2swap 2! 2@
 					; 2constant 2variable d0= d2/ d2* 
-l047		lda n+2		; currently unused
-		sta tos
-		lda n+1		; sum of all digits 0..9
-		sta tos+1
-		lda n
+l047		lda n
 		lsr
 		lsr
-		lsr			; - - - 7 [ 6 5 4 3 ]
+		lsr
+		lsr			; - - - - [ 7 6 5 4 ]
 		eor n			; 7 6 5 4 [ 3 2 1 0 ]
 		and #$0f		; - - - - [4bit hash]
-		ldx n+3
-		dex
-		sta stackl,x		; here's hash1 0..f
-		sty stackh,x
-		jmp next
+		jsr debug
+		sta tos
+		sty tos+1
+		lda n+1		; sum of all digits 0..9	
+		ldx n+7
+		jmp push
 
 ;~debug hex dump the byte in A
-debug	stx n+7
-	pha
+debug	pha
 	pha
 	and #$0f
 	jsr print
@@ -8487,8 +8521,7 @@ debug	stx n+7
 	lsr
 ;	jsr print
 	pla
-dbout	ldx n+7
-	rts
+dbout	rts
 print	sed
 	cmp #10
 	adc #'0'
@@ -8585,7 +8618,8 @@ loop		lda (n+4),y
 		adc #1
 		tay
 strcmp		lda (n+2),y
-		cmp (n+4),y
+		eor (n+4),y
+		asl
 		bne hop
 		dey
 		cpy #2
@@ -8720,6 +8754,7 @@ l053		.word drop
 rethreadlfa	.word $adde
 		.byt (_rethread-*-1)|bit7
 		.asc "RETHREA","D"|bit7
+xpetp
 _rethread
 #include "enterx.i65"
 		.word plit
