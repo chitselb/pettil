@@ -101,9 +101,7 @@ usercold
 lfalist		.dsb 32,0	; heads of link threads
 bloom2		.dsb 32,0	; Forth vocabulary bloom filter for hash2
 power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
-nybroll		.byt $00,$02,$04,$06,$08,$0a,$0c,$0e
-		.byt $01,$03,$05,$07,$09,$0b,$0d,$0f
-
+pearson		.byt 26,115,76,23,138,222,77,7
 ;--------------------------------------------------------------
 ;
 ;	NEXT
@@ -149,7 +147,7 @@ rootlfa		.word 0
 ; NEXTO
 executelfa	.word $adde		; <-- link field address
 		.byt (execute-*-1)|bit7	; <-- name field address
-		.asc "EXECUT","E"|bit7	; length and final byte are OR $80
+		.asc "EXECUT","E"|bit7
 execute		lda tos			; <-- code field address
 		sta w1			; in direct-threaded models, this
 		lda tos+1		; contains code instead of a pointer
@@ -607,36 +605,6 @@ l045		lda stackl,x
 l046		rts
 
 ;--------------------------------------------------------------
-		; pops up to 4 words from the split stack to the N area
-		; A = how many words to pop (valid range 1-4)
-		;
-		; returns
-		; TOS -> N0, 2OS -> N1, 3OS -> N2, 4OS -> N3
-		;      1          2          3          4
-popnwords	ldy tos
-		sty n
-		ldy tos+1
-		sty n+1
-		sta tos			; temporarily use TOS as loop counter
-		ldy #0
-l004		dec tos
-		beq l005
-		iny
-		iny
-		lda stackl,x
-		sta n,y
-		lda stackh,x
-		sta n+1,y
-		inx
-		bne l004		; bra
-l005		lda stackl,x
-		sta tos
-		lda stackh,x
-		sta tos+1
-		inx
-		rts
-
-;--------------------------------------------------------------
 ;
 ;	SKIP   ( addr1 count1 char -- addr2 count2 )
 ;
@@ -802,45 +770,45 @@ l17		dec tos+1
 
 ;--------------------------------------------------------------
 ;
-;	CMOVE>
+;	CMOVE>   ( from to howmany -- )
 ;
 ; * 83 nucleus
 ;
 cmovegtlfa	.word $adde
 		.byt (cmovegt-*-1)|bit7
 		.asc "CMOVE",">"|bit7
-cmovegt		lda #3
-		jsr popnwords
-		stx n+6
-		lda n+1
+cmovegt		lda #2
+		jsr setup
+		stx n+7
+		lda tos+1
 		pha
-		clc
-		adc n+5
-		sta n+5
-		pla
 		clc
 		adc n+3
 		sta n+3
-		ldy n
+		pla
+		clc
+		adc n+1
+		sta n+1
+		ldy tos
 		beq l21
 l22		dey
-		lda (n+4),y
-		sta (n+2),y
+		lda (n+2),y
+		sta (n),y
 		cpy #0
 		bne l22
-l21		ldx n+1
+l21		ldx tos+1
 		beq l23
-l25		dec n+5
-		dec n+3
+l25		dec n+3
+		dec n+1
 l24		dey
-		lda (n+4),y
-		sta (n+2),y
+		lda (n+2),y
+		sta (n),y
 		cpy #0
 		bne l24
 		dex
 		bne l25
-l23		ldx n+6
-		jmp next
+l23		ldx n+7
+		jmp pop
 
 ;--------------------------------------------------------------
 ;
@@ -852,16 +820,15 @@ l23		ldx n+6
 filllfa		.word $adde
 		.byt (fill-*-1)|bit7
 		.asc "FIL","L"|bit7
-fill		lda #3
-		jsr popnwords
-		ldy #0
+fill		lda #2
+		jsr setup	; addr -> N0; howmany -> N1
 		lda n+2
 		ora n+3
 		beq l026	; leave if howmany = 0
-		lda n
+		lda tos
 		ldy n+2
 l025		dey
-		sta (n+4),y
+		sta (n),y
 		bne l025
 		dec n+3
 		bpl l025
@@ -922,12 +889,13 @@ rrot		ror			;shift partial product right
 ;
 ; * 83 nucleus
 ;
+;	~ needs a lot of work
 ;"	http://6502.org/source/integers/ummodfix/ummodfix.htm
 umslashmodlfa	.word $adde
 		.byt (umslashmod-*-1)|bit7
 		.asc "UM/MO","D"|bit7
-umslashmod	lda #6
-		jsr popnwords
+umslashmod	lda #2
+		jsr setup	; udhi -> N0; udlo -> N1
 modulo		sec
 		lda n+2		; Subtract hi cell of dividend by
 		sbc n		; divisor to see if there's an overflow condition.
@@ -3121,6 +3089,7 @@ l63		.word rfrom
 compilelfa	.word $adde
 		.byt (_compile-*-1)|bit7
 		.asc "COMPIL","E"|bit7
+
 _compile
 #include "enter.i65"
 		.word _qcomp
@@ -3281,9 +3250,9 @@ _decimal
 ;
 ;	(;CODE)
 ;
-psemilfa	.word $adde
-		.byt (_psemi-*-1)|bit7
-		.asc "(;CODE",")"|bit7
+;psemilfa	.word $adde
+;		.byt (_psemi-*-1)|bit7
+;		.asc "(;CODE",")"|bit7
 _psemi
 #include "enter.i65"
 		.word rfrom
@@ -3446,26 +3415,25 @@ l020		jmp push
 typelfa		.word $adde
 		.byt (type-*-1)|bit7
 		.asc "TYP","E"|bit7
-type		clc
+type		lda #1
+		jsr setup
+		clc
 		lda tos
 		adc outputted
 		sta outputted
 		lda tos+1
 		adc outputted+1
 		sta outputted+1
-		lda #2
-		jsr popnwords
-		ldy #0
-l041		cpy n
+l041		cpy tos
 		bne l042
-		dec n+1
+		dec tos+1
 		bpl l042
-		jmp next
-l042		lda (n+2),y
+		jmp pop
+l042		lda (n),y
 		jsr CHROUT
 		iny
 		bne l041
-		inc n+3
+		inc n+1
 		bne l041
 
 ;--------------------------------------------------------------
@@ -3533,23 +3501,22 @@ expectlfa	.word $adde
 		.byt (expect-*-1)|bit7
 		.asc "EXPEC","T"|bit7
 expect		jmp expectvector
-expectvector	lda #2
-		jsr popnwords
-		stx n+4
-		ldy #$ff
+expectvector	lda #1
+		jsr setup
+		sty inputted+1
+		stx n+7
+		dey
 l74		iny
-		cpy n
+		cpy tos
 		bcs l75
 		jsr CHRIN
 		cmp #$0d
 		beq l75
-		sta (n+2),y
+		sta (n),y
 		bne l74
 l75		sty inputted		; ~ direct uarea ref breaks multitasking
-		lda #0
-		sta inputted+1
-		ldx n+4
-		jmp next
+		ldx n+7
+		jmp pop
 
 ;--------------------------------------------------------------
 ;
@@ -3588,15 +3555,15 @@ _query
 ;
 ;	" "
 ;
-spacenplfa	.word $adde
-		.byt (_spacenp-*-1)|bit7|bit6
-		.asc " "|bit7
-_spacenp
-#include "enter.i65"
-		.word doneq
-#include "page.i65"
-		.word on
-		.word exit
+;spacenplfa	.word $adde
+;		.byt (_spacenp-*-1)|bit7|bit6
+;		.asc " "|bit7
+;_spacenp
+;#include "enter.i65"
+;		.word doneq
+;#include "page.i65"
+;		.word on
+;		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -3900,34 +3867,11 @@ _word
 
 ;--------------------------------------------------------------
 ;
-;	>LOWER
-;
-; ~ a Blazin' thing that doesn't really fit in with case-sensitive PETTIL
-tolowerlfa	.word $adde
-		.byt (tolower-*-1)|bit7
-		.asc ">LOWE","R"|bit7
-tolower		lda #2
-		jsr popnwords
-l79		cpy n
-		bne l78
-		dec n+1
-		bpl l78
-		jmp next
-l78		lda (n+2),y
-		and #$7f
-		sta (n+2),y
-		iny
-		bne l79
-		inc n+3
-		jmp l79
-
-;--------------------------------------------------------------
-;
 ;	(PUNCT?)
 ;
-ppunctqlfa	.word $adde
-		.byt (_ppunctq-*-1)|bit7
-		.asc "(PUNCT?",")"|bit7
+;ppunctqlfa	.word $adde
+;		.byt (_ppunctq-*-1)|bit7
+;		.asc "(PUNCT?",")"|bit7
 _ppunctq
 #include "enter.i65"
 		.word clit
@@ -4229,13 +4173,13 @@ _iddot
 		.word count
 #include "page.i65"
 		.word clit
-		.byt $1f
+		.byt $1f		; ~ shouldn't this use WIDTH?
 #include "pad.i65"
 		.word andx
-#include "page.i65"
-		.word _twodup
-#include "page.i65"
-		.word tolower		; ~ really?
+;#include "page.i65"
+;		.word _twodup
+;#include "page.i65"
+;		.word tolower		; ~ really?
 #include "page.i65"
 		.word type
 		.word exit
@@ -4309,9 +4253,9 @@ l013
 #include "page.i65"
 		.word over
 #include "page.i65"
-		.word plit
-		.word _spacenp
-#include "pad.i65"
+;		.word plit
+;		.word _spacenp		; ~ remove this?
+;#include "pad.i65"
 		.word eq
 #include "page.i65"
 #if ((* & $ff) = 253-13)
@@ -4994,13 +4938,13 @@ _warm2		.word _emptybuffers
 #include "page.i65"
 		.word _definitions
 #include "page.i65"
-#if ((* & $ff) = 253-18)
+#if ((* & $ff) = 253-19)
 	.word next
 #endif
 		.word _pdotq
 		.byt s016-*-1
-		.asc	"WELCOME TO PETTIL!"
-			;123456789.12345678
+		.asc	$0d,"WELCOME TO PETTIL!"
+			    ;123456789.12345678
 s016
 #include "page.i65"
 		.word startup
@@ -6238,9 +6182,9 @@ ldr1		.asc "U2:13,"
 ;
 ;	(R/W)
 ;
-prslashwlfa	.word $adde
-		.byt (_prslashw-*-1)|bit7
-		.asc "(R/W",")"|bit7
+;prslashwlfa	.word $adde
+;		.byt (_prslashw-*-1)|bit7
+;		.asc "(R/W",")"|bit7
 _prslashw
 #include "enter.i65"
 		.word _qdisc
@@ -6341,9 +6285,9 @@ _rslashw
 ;
 ;1581 80 tracks, 40 sectors, tracks 40-41 = DIR/BAM
 ;
-tnslfa		.word $adde
-		.byt (_tns-*-1)|bit7
-		.asc "T&","S"|bit7
+;tnslfa		.word $adde
+;		.byt (_tns-*-1)|bit7
+;		.asc "T&","S"|bit7
 _tns
 #include "enter.i65"
 		.word tor
@@ -6519,9 +6463,9 @@ l256a		.word rot
 ;
 ;	(OPEN)
 ;
-popenlfa	.word $adde
-		.byt (popen-*-1)|bit7
-		.asc "(OPEN",")"|bit7
+;popenlfa	.word $adde
+;		.byt (popen-*-1)|bit7
+;		.asc "(OPEN",")"|bit7
 popen	;	stx storex
 	;	lda stack,x
 		pha
@@ -6571,9 +6515,9 @@ close		stx n
 ;
 ;	(CMDIN)
 ;
-pcmdinlfa	.word $adde
-		.byt (_pcmdin-*-1)|bit7
-		.asc "(CMDIN",")"|bit7
+;pcmdinlfa	.word $adde
+;		.byt (_pcmdin-*-1)|bit7
+;		.asc "(CMDIN",")"|bit7
 _pcmdin
 #include "enter.i65"
 
@@ -6581,9 +6525,9 @@ _pcmdin
 ;
 ;	(CMDOUT)
 ;
-pcmdoutlfa	.word $adde
-		.byt (pcmdout-*-1)|bit7
-		.asc "(CMDOUT",")"|bit7
+;pcmdoutlfa	.word $adde
+;		.byt (pcmdout-*-1)|bit7
+;		.asc "(CMDOUT",")"|bit7
 pcmdout;	stx storex
 	;	lda stack,x
 		tax
@@ -6628,9 +6572,9 @@ _status
 ;
 ;	(?DISC)
 ;
-pqdisclfa	.word $adde
-		.byt (_pqdisc-*-1)|bit7
-		.asc "(?DISC",")"|bit7
+;pqdisclfa	.word $adde
+;		.byt (_pqdisc-*-1)|bit7
+;		.asc "(?DISC",")"|bit7
 _pqdisc
 #include "enter.i65"
 
@@ -7522,9 +7466,9 @@ _sharps
 ;
 ;	(U.)
 ;
-pudotlfa	.word $adde
-		.byt (_pudot-*-1)|bit7
-		.asc "(U.",")"|bit7
+;pudotlfa	.word $adde
+;		.byt (_pudot-*-1)|bit7
+;		.asc "(U.",")"|bit7
 _pudot
 #include "enter.i65"
 		.word zero
@@ -7582,9 +7526,9 @@ _udotr
 ;
 ;	(.)
 ;
-pdotlfa		.word $adde
-		.byt (_pdot-*-1)|bit7
-		.asc "(.",")"|bit7
+;pdotlfa		.word $adde
+;		.byt (_pdot-*-1)|bit7
+;		.asc "(.",")"|bit7
 _pdot
 #include "enter.i65"
 		.word dup
@@ -7650,9 +7594,9 @@ _dotr
 ;
 ;	(UD.)
 ;
-puddotlfa	.word $adde
-		.byt (_puddot-*-1)|bit7
-		.asc "(UD.",")"|bit7
+;puddotlfa	.word $adde
+;		.byt (_puddot-*-1)|bit7
+;		.asc "(UD.",")"|bit7
 _puddot
 #include "enter.i65"
 		.word _ltsharp
@@ -7706,9 +7650,9 @@ _uddotr
 ;
 ;	(D.)
 ;
-pdddotlfa	.word $adde
-		.byt (_pddot-*-1)|bit7
-		.asc "(D.",")"|bit7
+;pdddotlfa	.word $adde
+;		.byt (_pddot-*-1)|bit7
+;		.asc "(D.",")"|bit7
 _pddot
 #include "enter.i65"
 		.word dup
@@ -8285,11 +8229,11 @@ _freeze
 ;
 ;	(BSAVE)
 ;
-pbsavelfa	.word $adde
-		.byt (pbsave-*-1)|bit7
-		.asc "(BSAVE",")"|bit7
-pbsave		lda #4
-		jsr popnwords
+;pbsavelfa	.word $adde
+;		.byt (pbsave-*-1)|bit7
+;		.asc "(BSAVE",")"|bit7
+pbsave		lda #3
+		jsr setup
 		stx tos
 		lda #<basic+1
 		ldx #>basic+1
@@ -8391,9 +8335,9 @@ s030		.word _pad
 ; in memory that is followed by a name
 ;" http://www.youtube.com/watch?v=grbSQ6O6kbs
 ;
-boydlfa		.word $adde
-		.byt (boyd-*-1)|bit7
-		.asc "BRINGOUTYERDEA","D"|bit7
+;boydlfa		.word $adde
+;		.byt (boyd-*-1)|bit7
+;		.asc "BRINGOUTYERDEA","D"|bit7
 boyd		ldy #userdp-userarea
 		lda (up),y
 		sta n+2
@@ -8467,30 +8411,33 @@ l060		ldy #1		; put things back at HERE
 ;
 ; input is NFA or address of a counted string. Output is two hashcodes
 ;
-dhashlfa	.word $adde
-		.byt (dhash-*-1)|bit7
-		.asc "DHAS","H"|bit7
+;dhashlfa	.word $adde
+;		.byt (dhash-*-1)|bit7
+;		.asc "DHAS","H"|bit7
 dhash		stx n+7
 		ldy #0
 		lda (tos),y
 		and #$3f		; turn off 7 and 6, not 5 (smudge)
 		sta n			; seed hash1 with length
-		sty n+1			; hash2 = 0
+		sty n+1			; seed hash2 with 0
 		tay
 		iny
 				;	hash2	hash1
 l009		dey				;[2]
 		beq l047			;[2]
 		lda (tos),y			;[5]
-		asl				;[2]	; ignore bit7
-		tax			;[2]
-		eor n				;[3]	; just XOR everything
-		sta n				;[3]	; hash1
-		txa			;[2]
+		sec				;[2]
+		sbc #$20			;[2]
+		and #(zpnext-pearson-1)		;[2]
+		tax				;[2]
+		lda n				;[3]
+		eor pearson,x			;[4]
+		sta n				;[3]
+		lda (tos),y		;[5]
 		clc			;[2]
-		adc #$FF-('9'*2)	;[2]		; things are doubled
-		adc #('9'-'0')*2+1	;[2]		; due to ASL above
-		bcc l009			;[3]	
+		adc #$FF-('9')		;[2]		; things are doubled
+		adc #'9'-'0'+1		;[2]		; due to ASL above
+		bcc l009			;[3]  [12]hash2 [27]hash1	
 		adc n+1			; 0> -1 0 1 2 3 0= 0< 0<> sp0 rp0
 		sta n+1			; 1+ 1- 2+ 2- 2/ 2* forth-83 dr0 dr1 
 		jmp l009		; 2drop 2dup 2over 2rot 2swap 2! 2@
@@ -8502,7 +8449,7 @@ l047		lda n
 		lsr			; - - - - [ 7 6 5 4 ]
 		eor n			; 7 6 5 4 [ 3 2 1 0 ]
 		and #$0f		; - - - - [4bit hash]
-		jsr debug
+		;jsr debug
 		sta tos
 		sty tos+1
 		lda n+1		; sum of all digits 0..9	
@@ -8519,7 +8466,7 @@ debug	pha
 	lsr
 	lsr
 	lsr
-;	jsr print
+	;jsr print
 	pla
 dbout	rts
 print	sed
@@ -8534,9 +8481,9 @@ print	sed
 ;
 ; retrieve the head of this hash thread
 ;
-dhashfetchlfa	.word $adde
-		.byt (dhashfetch-*-1)|bit7
-		.asc "DHASH","@"|bit7
+;dhashfetchlfa	.word $adde
+;		.byt (dhashfetch-*-1)|bit7
+;		.asc "DHASH","@"|bit7
 dhashfetch	lda tos
 		asl
 		tay
@@ -8553,9 +8500,9 @@ dhashfetch	lda tos
 ; set the bit in the dictionary's bloom filter
 ;
 ; hash is an 8-bit hash code indexing a 256-bit bitfield
-bloomstorelfa	.word $adde
-		.byt (bloomstore-*-1)|bit7
-		.asc "BLOOM","!"|bit7
+;bloomstorelfa	.word $adde
+;		.byt (bloomstore-*-1)|bit7
+;		.asc "BLOOM","!"|bit7
 bloomstore	lda tos			; set bloom filter bit for hash2
 		and #7
 		tay
@@ -8581,16 +8528,20 @@ bloomstore	lda tos			; set bloom filter bit for hash2
 ; the new top of this hash thread, and the new word's LFA will link
 ; to the previous top of the chain.
 ;
-dhashstorelfa	.word $adde
-		.byt (dhashstore-*-1)|bit7
-		.asc "DHASH","!"|bit7
-dhashstore	lda stackh,x
-		sta n+3
-		lda stackl,x
-		sta n+2
-		lda #0
-		sta n
-		sta n+1
+;dhashstorelfa	.word $adde
+;		.byt (dhashstore-*-1)|bit7
+;		.asc "DHASH","!"|bit7
+dhashstore	lda #1
+		jsr setup
+		sty n+4
+		sty n+5
+;	lda stackh,x
+;	sta n+3
+;	lda stackl,x
+;	sta n+2
+;	lda #0
+;	sta n
+;	sta n+1
 		lda tos
 		asl
 		tay
@@ -8600,70 +8551,70 @@ dhashstore	lda stackh,x
 		sta lfalist,y
 		lda #>rootlfa
 		sta lfalist+1,y
-notempty	sta n+5
+notempty	sta n+3
 		lda lfalist,y
-		sta n+4
+		sta n+2
 		ldy #2
-		lda (n+2),y
+		lda (n),y
 		and #$1f
-		sta n+7
-loop		lda (n+4),y
+		sta n+7			; length of name being inserted
+loop		lda (n+2),y
 		and #$1f
 		sta n+6
 		lda n+7
-		cmp n+6
+		cmp n+6			; compare lengths
 		bcc insert
 		bne hop
 		;sec
 		adc #1
-		tay
-strcmp		lda (n+2),y
-		eor (n+4),y
-		asl
+		tay			; last char in names
+strcmp		lda (n),y
+		eor (n+2),y
+		asl			; compare char ignoring bit7
 		bne hop
 		dey
 		cpy #2
-		bne strcmp
+		bne strcmp		; stop at first char
 		dey
 		lda #$AD
-		sta (n+4),y
+		sta (n+2),y
 		dey
 		lda #$DE
-		sta (n+4),y
-hop		lda n+5
-		sta n+1
-		lda n+4
-		sta n
+		sta (n+2),y		; mark existing duplicate DE AD
+hop		lda n+3
+		sta n+5
+		lda n+2
+		sta n+4			; keep track of where we've just been
 		ldy #0
-		lda (n+4),y
+		lda (n+2),y
 		pha
 		iny
-		lda (n+4),y
-		sta n+5
+		lda (n+2),y
+		sta n+3
 		pla
-		sta n+4
-		iny
-		bne loop
-insert		bit n+1
+		sta n+2			; (N1) -> N1
+		iny			; Y=2
+		bne loop		; bra
+insert		bit n+5			; check if list is empty
 		bne linkin
-head		lda tos
+head		lda tos			; which list?
 		asl
 		adc #<lfalist
-		sta n
+		sta n+4
 		lda #>lfalist
 		adc #0
-		sta n+1
+		sta n+5			; head -> N2
 linkin		ldy #0
+		lda n
+		sta (n+4),y		; N0 -> (N2)
 		lda n+2
-		sta (n),y
-		lda n+4
-		sta (n+2),y
+		sta (n),y		; N1 -> (N0)
 		iny
+		lda n+1
+		sta (n+4),y
 		lda n+3
 		sta (n),y
-		lda n+5
-		sta (n+2),y
-outtie		jmp poptwo
+outtie		jmp pop			; toss the hash
 
 ;--------------------------------------------------------------
 ;
@@ -8688,9 +8639,9 @@ outtie		jmp poptwo
 ;		drop			( )
 ;	loop
 ;
-unthreadlfa	.word $adde
-		.byt (_unthread-*-1)|bit7
-		.asc "UNTHREA","D"|bit7
+;unthreadlfa	.word $adde
+;		.byt (_unthread-*-1)|bit7
+;		.asc "UNTHREA","D"|bit7
 _unthread
 #include "enter.i65"
 		.word clit
@@ -8751,10 +8702,9 @@ l053		.word drop
 ; It also marks the last word in the core dictionary.
 ; links all LFAs
 ; ~ make it turn off bit7 on redefinitions
-rethreadlfa	.word $adde
-		.byt (_rethread-*-1)|bit7
-		.asc "RETHREA","D"|bit7
-xpetp
+;rethreadlfa	.word $adde
+;		.byt (_rethread-*-1)|bit7
+;		.asc "RETHREA","D"|bit7
 _rethread
 #include "enterx.i65"
 		.word plit
@@ -8792,6 +8742,7 @@ l044		.word boyd		; begin boyd ?dup while ... repeat
 		.word l044
 #include "pad.i65"
 l024		.word exit
+
 
 ;--------------------------------------------------------------
 ;
@@ -8942,15 +8893,15 @@ l160		.word i
 #include "pad.i65"
 l161		.word exit
 
-foolfa		.word $adde
-		.byt (_foo-*-1)|bit7
-		.asc "FO","O"|bit7
+;foolfa		.word $adde
+;		.byt (_foo-*-1)|bit7
+;		.asc "FO","O"|bit7
 _foo
 #include "enterx.i65"
 		.word exit
-barlfa		.word $adde
-		.byt (_bar-*-1)|bit7
-		.asc "BA","R"|bit7
+;barlfa		.word $adde
+;		.byt (_bar-*-1)|bit7
+;		.asc "BA","R"|bit7
 _bar
 #include "enterx.i65"
 		.word exit
