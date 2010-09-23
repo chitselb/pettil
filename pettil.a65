@@ -99,9 +99,11 @@ userblk		.word 0					; 24..25
 usercold
 
 lfalist		.dsb 32,0	; heads of link threads
-bloom2		.dsb 32,0	; Forth vocabulary bloom filter for hash2
+bloom2		.dsb 8,0	; Forth vocabulary bloom filter for hash2
 power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
-pearson		.byt 26,115,76,23,138,222,77,7
+;pearson		.byt 26,115,76,23,138,222,77,7
+;pearson		.byt 99,87,163,121,251,119,228,7
+pearson		.byt 150,191,252,0,194,202,129,7
 ;--------------------------------------------------------------
 ;
 ;	NEXT
@@ -184,9 +186,9 @@ plit		ldy #3
 skiplit		ldy ip
 		cpy #$fb
 		bcc nopage
-		bne l003
+		bne plit01
 		iny
-l003		inc ip+1
+plit01		inc ip+1
 nopage		iny
 		iny
 		sty ip
@@ -229,6 +231,46 @@ clit		ldy #2
 
 ;--------------------------------------------------------------
 ;
+;	(?DO)   ( end begin -- )
+;
+; * inner interpreter control headerless
+;
+; Performs a do-loop if limit<>start
+;pqdolfa	.word $adde
+;		.byt (pqdo-*-1)|bit7
+;		.asc "(?DO",")"|bit7
+pqdo		lda tos
+		sta n
+		lda tos+1
+		sta n+1
+		lda stackl,x
+		sta n+2
+		eor n
+		sta n+4
+		lda stackh,x
+		sta n+3
+		eor n+1
+		ora n+4
+		php
+		inx
+		lda stackl,x
+		sta tos
+		lda stackh,x
+		sta tos+1
+		inx
+		plp
+		beq branch
+		ldy #3
+pqdo01		lda zi,y		; set up for a loop
+		pha
+		lda n,y
+		sta zi,y
+		dey
+		bpl pqdo01
+		jmp bump		; and skip the branch
+
+;--------------------------------------------------------------
+;
 ;	?BRANCH   ( flag -- )
 ;
 ; * inner interpreter control headerless
@@ -249,9 +291,9 @@ bump		lda #4
 nexta		clc		;[2]
 		adc ip		;[3]
 		sta ip		;[3]
-		bcc l023	;[2]
+		bcc qbranch01	;[2]
 		inc ip+1	;[5]
-l023		jmp nexto	;[3]
+qbranch01	jmp nexto	;[3]
 
 ;--------------------------------------------------------------
 ;
@@ -316,9 +358,9 @@ pploop		clc
 		sta tos
 		inx
 		tay
-		bcc l043
+		bcc pploop01
 		eor #$80
-l043		bmi branch
+pploop01	bmi branch
 		bpl bump
 
 ;--------------------------------------------------------------
@@ -331,9 +373,9 @@ l043		bmi branch
 ;		.byt (ploop-*-1)|bit7
 ;		.asc "(LOOP",")"|bit7
 ploop		inc zi
-		bne pl1
+		bne ploop01
 		inc zi+1
-pl1		lda zi+2
+ploop01		lda zi+2
 		eor zi
 		bne branch
 		lda zi+3
@@ -359,14 +401,11 @@ pl1		lda zi+2
 ;pdolfa		.word $adde
 ;		.byt (pdo-*-1)|bit7
 ;		.asc "(DO",")"|bit7
-pdo		lda zi+3
+pdo		ldy #3
+pdo01		lda zi,y		; set up for a loop
 		pha
-		lda zi+2
-		pha
-		lda zi+1
-		pha
-		lda zi
-		pha
+		dey
+		bpl pdo01
 		lda stackh,x
 		sta zi+3
 		lda stackl,x
@@ -380,34 +419,6 @@ pop		ldy stackh,x
 		lda stackl,x
 		inx
 		jmp put
-
-;--------------------------------------------------------------
-;
-;	(?DO)
-;
-; * inner interpreter control headerless
-;
-;pqdolfa	.word $adde
-;		.byt (pqdo-*-1)|bit7
-;		.asc "(?DO",")"|bit7
-pqdo	;	lda stack,x
-	;	cmp stack+2,x
-		bne pqdo1
-	;	lda stack+1,x
-	;	cmp stack+3,x
-		beq pqdo3
-pqdo1		clc
-		lda ip
-		adc #2
-		sta ip
-		bcc pqdo2
-		inc ip+1
-pqdo2		jmp pdo+2
-pqdo3		inx
-		inx
-		inx
-		inx
-		jmp branch+2
 
 ;--------------------------------------------------------------
 ;
@@ -449,10 +460,14 @@ j		stx n
 ;		.byt (pleave-*-1)|bit7
 ;		.asc "(LEAVE",")"|bit7
 pleave		pla
+		sta zi
 		pla
+		sta zi+1
 		pla
+		sta zi+2
 		pla
-		jmp branch+2
+		sta zi+3
+		jmp branch
 
 ;--------------------------------------------------------------
 ;
@@ -472,117 +487,101 @@ pqleave		inx
 
 ;--------------------------------------------------------------
 ;
-;	DIGIT
+;	DIGIT    ( char base -- digit true | false )
 ;
 digitlfa	.word $adde
 		.byt (digit-*-1)|bit7
 		.asc "DIGI","T"|bit7
-digit
+digit		ldy #0			; presume failure
 		sec
-	;	lda stack+2,x
-		sbc #$30
-		bmi nonum
-		cmp #$0a
-		bmi isnum
+		lda stackl,x
+		sbc #'0'
+		bmi digit02		; no num
+		cmp #10
+		bmi digit01		; is num
 		sec
 		sbc #7
-		cmp #$0a
-		bmi nonum
-isnum	;	cmp stack,x
-		bpl nonum
-	;	sta stack+2,x
+		cmp #10
+		bmi digit02
+digit01		cmp tos
+		bpl digit02
+		sta stackl,x
 		dey
-		tya
-		pha
-		jmp put
-nonum		tya
-		pha
-		inx
-		inx
+		bmi digit03
+digit02		inx
+digit03		tya
 		jmp put
 
 ;--------------------------------------------------------------
 ;
-;	(FIND)   ( addr1 addr2 flag -- addr flag )
+;	(FIND)   ( addr1 addr2 -- addr flag )
 ;
 ; * outer interpreter headerless
 ;
 ; addr1 is the address of a counted string we are searching for.
 ; addr2 is the LFA at the head of a chain of LFAs
-; flag is true if the words in this chain are ordered by ascending length
 ; returns ( NFA true ) if found, ( addr1 false ) if not found
 ;
 ;pfindlfa	.word $adde
 ;		.byt (pfind-*-1)|bit7
 ;		.asc "(FIND",")"|bit7
-pfind		lda tos
-		sta n
-		lda tos+1
-		sta n+1
-		lda stackl,x
-		sta n+2
-		lda stackh,x
-		sta n+3
-		ldy #1
-l9		dey
+pfind		lda #1
+		jsr setup		; name -> N0
+		ldy #2
 		lda (n),y
-		eor (n+2),y
-		and #($100-bit7-bit6)
-		bne l8
-l6		iny
-		lda (n),y
-		eor (n+2),y
-		asl
-		bne l8
-		bcc l6
-		dex
-		dex
-		iny
-		tya
-		clc
-		adc n
-		sta stackl+1,x
-		ldy #0
-		tya
-		adc n+1
-		sta stackh+1,x
-		sty tos+1
-		lda (n),y
-		asl
-		bpl l7		; branch if non-immediate
-		lda #1		; immediate
-		sta tos
-		jmp next
-l7		lda #$ff	;true
-		tya
-		jmp put
-
-l8		sec
-		lda n		; traverse the LFAs?
-		sbc #2
-		sta n
-		lda n+1
-		sbc #0
-		sta n+1
-		ldy #0
-		lda (n),y
-		tax
-		iny
-		lda (n),y
-		sta n+1
-		stx n
-		ora n
-		bne l9
-		ldx n+4
-		dex
-		dex
+		and #$1f
+		sta n+2			; length of name we are seeking
+pfind01		lda (tos),y
+		sta n+4			; raw length & flags
+		and #$1f
+		sta n+3			; just the length
 		lda n+2
-		sta tos
-		lda n+3
-		sta tos+1
-		lda #0		;false
+		cmp n+3			; compare lengths
+		bcc pfind05		; found something longer, not found
+		bne pfind04		; found something shorter, hop
+		lda n+4			; just right
+		and #bit5		; what about the smudge bit?
+		bne pfind04		; hop if smudged
+		lda n+3			; or n+2... doesn't matter
+		adc #1			; adds 2 with carry already set
+		tay
+pfind02		lda (tos),y		; compare strings back-to-front
+		eor (n),y
+		asl			; ignoring bit7
+		bne pfind04		; mismatch in strcmp, hop
+		dey
+		cpy #2
+		bne pfind02
+		bit n+4
+		bvs pfind03
+		ldy #$ff		; non-immediate
+		tya
+		bne pfind07		; bra
+pfind03		ldy #0			; immediate
+		lda #1
+		bne pfind07		; bra
+
+pfind04		ldy #0			; here's where we hop
+		lda (tos),y
 		pha
-		jmp push
+		iny
+		lda (tos),y
+		sta tos+1
+		pla
+		sta tos
+		iny			; Y=2
+		bne pfind01		; bra
+
+pfind05		ldy n+1
+		lda n
+		adc #2
+		sta tos
+		bcc pfind06
+		iny
+pfind06		sty tos+1
+		ldy #0			; not found
+		tya
+pfind07		jmp push
 
 ;--------------------------------------------------------------
 		; pops up to 4 words from the split stack to N area
@@ -594,60 +593,60 @@ l8		sec
 		;      1          2          3          4
 setup		asl
 		tay
-l045		lda stackl,x
+setup01		lda stackl,x
 		sta n-2,y
 		lda stackh,x
 		sta n-1,y
 		inx
 		dey
 		dey
-		bne l045
-l046		rts
+		bne setup01
+		rts
 
 ;--------------------------------------------------------------
 ;
-;	SKIP   ( addr1 count1 char -- addr2 count2 )
+;	SKIP   ( addr1 size1 char -- addr2 count2 )
 ;
 ; * headerless selfmodifying
 ;
 ; addr1 is the starting address in the input stream where up
-; to count1 bytes are skipped *WHILE* they match char.  Returns
+; to size1 bytes are skipped *WHILE* they match char.  Returns
 ; addr2 as the address of the first non-matching character and
 ; count2 as the remaining number of bytes in the buffer.
 skiplfa		.word $adde
 		.byt (skip-*-1)|bit7
 		.asc "SKI","P"|bit7
 skip		lda #$d0		; BNE intruction
-		sta l14
+		sta skip02
 skipscan	lda #2
 		jsr setup		; count1 -> N0; addr1 -> N1
 		stx n+4
 		ldx n+2
-l13		txa
+skip01		txa
 		ora n+3
-		beq l10
+		beq skip05
 		lda (n),y
 		eor tos
 		asl
-l14		bne l10
+skip02		bne skip05
 		iny
-		bne l11
+		bne skip03
 		inc n+1
-l11		txa
-		bne l12
+skip03		txa
+		bne skip04
 		dec n+3
-l12		dex
-		jmp l13
-l10		stx n+2
+skip04		dex
+		jmp skip01
+skip05		stx n+2
 		ldx n+4
 		clc
 		tya
 		adc n
 		sta tos
 		ldy n+1
-		bcc l16
+		bcc skip06
 		iny
-l16		sty tos+1
+skip06		sty tos+1
 		ldy n+3
 		lda n+2
 		jmp push
@@ -664,7 +663,7 @@ scanlfa		.word $adde
 		.byt (scan-*-1)|bit7
 		.asc "SCA","N"|bit7
 scan		lda #$f0		; BNE intruction
-		sta l14
+		sta skip02
 		jmp skipscan
 
 ;--------------------------------------------------------------
@@ -678,9 +677,9 @@ emitlfa		.word $adde
 		.asc "EMI","T"|bit7
 emit		jmp emitvector
 emitvector	inc outputted
-		bne l130
+		bne emit01
 		inc outputted+1
-l130		lda tos
+emit01		lda tos
 		jsr CHROUT
 		jmp pop
 
@@ -695,8 +694,8 @@ keylfa		.word $adde
 		.asc "KE","Y"|bit7
 key		jmp keyvector
 keyvector	stx n
-l131		jsr GETIN
-		beq l131
+key01		jsr GETIN
+		beq key01
 		ldx n
 		ldy #0
 		jmp push
@@ -712,9 +711,9 @@ qterminal	jmp qtermvector
 qtermvector	stx n
 		ldy #0
 		jsr STOP
-		bne l132
+		bne qterminal01
 		dey
-l132		tya
+qterminal01	tya
 		pha
 		ldx n
 		jmp push
@@ -735,9 +734,9 @@ crvector	lda #$0d
 		sty outputted
 		sty outputted+1
 		inc linesout
-		bne l133
+		bne cr01
 		inc linesout+1
-l133		jmp next
+cr01		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -754,17 +753,17 @@ cmove		lda #2
 		stx n+4
 		inc tos+1
 		ldx tos
-		beq l17
-l18		lda (n),y
+		beq cmove03
+cmove01		lda (n),y
 		sta (n+2),y
 		iny
-		bne l15
+		bne cmove02
 		inc n+1
 		inc n+3
-l15		dex
-		bne l18
-l17		dec tos+1
-		bne l18
+cmove02		dex
+		bne cmove01
+cmove03		dec tos+1
+		bne cmove01
 		ldx n+4
 		jmp pop
 
@@ -790,24 +789,24 @@ cmovegt		lda #2
 		adc n+1
 		sta n+1
 		ldy tos
-		beq l21
-l22		dey
+		beq cmovegt02
+cmovegt01	dey
 		lda (n+2),y
 		sta (n),y
 		cpy #0
-		bne l22
-l21		ldx tos+1
-		beq l23
-l25		dec n+3
+		bne cmovegt01
+cmovegt02	ldx tos+1
+		beq cmovegt05
+cmovegt03	dec n+3
 		dec n+1
-l24		dey
+cmovegt04	dey
 		lda (n+2),y
 		sta (n),y
 		cpy #0
-		bne l24
+		bne cmovegt04
 		dex
-		bne l25
-l23		ldx n+7
+		bne cmovegt03
+cmovegt05	ldx n+7
 		jmp pop
 
 ;--------------------------------------------------------------
@@ -824,15 +823,15 @@ fill		lda #2
 		jsr setup	; addr -> N0; howmany -> N1
 		lda n+2
 		ora n+3
-		beq l026	; leave if howmany = 0
+		beq fill02	; leave if howmany = 0
 		lda tos
 		ldy n+2
-l025		dey
+fill01		dey
 		sta (n),y
-		bne l025
+		bne fill01
 		dec n+3
-		bpl l025
-l026		jmp next
+		bpl fill01
+fill02		jmp next
 
 ;"~ check http://6502.org/source/ for multiply and divide and stuff
 ;--------------------------------------------------------------
@@ -901,15 +900,15 @@ modulo		sec
 		sbc n		; divisor to see if there's an overflow condition.
 		lda n+3
 		sbc n+1
-		bcs l039	; Branch if /0 or overflow.
+		bcs modulo02	; Branch if /0 or overflow.
 		;clc
 		txa
 		pha		; preserve data stack pointer
 		ldx #16		; loop 16x
-l038		rol n+4		; Rotate dividend lo cell left one bit.
+modulo01	rol n+4		; Rotate dividend lo cell left one bit.
 		rol n+5
 		dex		; loop counter
-		bmi l040
+		bmi modulo03
 		rol n+2
 		rol n+3
 		lda #0
@@ -924,17 +923,17 @@ l038		rol n+4		; Rotate dividend lo cell left one bit.
 		tay
 		lda n+6
 		sbc #0
-		bcc l038
+		bcc modulo01
 		lda n+7
 		sta n+2
 		sty n+3
-		bcs l038	; bra
-l039		lda #$ff
+		bcs modulo01	; bra
+modulo02	lda #$ff
 		sta n+2
 		sta n+3
 		sta n+4
 		sta n+5
-l040		pla
+modulo03	pla
 		tax
 		jmp swap	; more to do here... put stuff back on the stack
 
@@ -1123,9 +1122,9 @@ zgtlfa		.word $adde
 		.asc "0",">"|bit7
 zgt		ldy #$ff
 		bit tos+1
-		bpl l022
+		bpl zgt01
 		iny
-l022		tya
+zgt01		tya
 		jmp put
 
 ;--------------------------------------------------------------
@@ -1138,12 +1137,12 @@ nelfa	.word $adde
 ne		ldy #$ff		; assume inequality
 		lda tos
 		eor stackl,x
-		bne l021
+		bne ne01
 		lda tos+1
 		eor stackh,x
-		bne l021
+		bne ne01
 		iny			; they're equal
-l021		tya
+ne01		tya
 		inx
 		jmp put
 
@@ -1228,11 +1227,11 @@ dltlfa		.word $adde
 		.asc "D","<"|bit7
 dlt		ldy #0		; false
 		jsr dcmp
-		bvc l43
+		bvc dlt01
 		eor #$80
-l43		bpl l44
+dlt01		bpl dlt02
 		dey		; true
-l44		sty tos
+dlt02		sty tos
 		sty tos+1
 		inx
 		inx
@@ -1517,11 +1516,11 @@ enter		pla		;[4]
 		lda n+1		;[3]
 		sta ip+1	;[3]
 		iny		;[2]
-		beq l001	;[2]
-l002		sty ip		;[3]
+		beq enter02	;[2]
+enter01		sty ip		;[3]
 		jmp nexto	;[3]
-l001		inc ip+1
-		bne l002
+enter02		inc ip+1
+		bne enter01
 
 ;--------------------------------------------------------------
 ;
@@ -1608,9 +1607,9 @@ uservar		pla
 		pla
 		sta n+1
 		iny
-		bne l008
+		bne uservar01
 		inc n+1
-l008		sty n
+uservar01	sty n
 		ldy #0
 		clc
 		lda up
@@ -1798,9 +1797,9 @@ zeqlfa		.word $adde
 zeq		ldy #$ff
 		lda tos
 		ora tos+1
-		beq l031
+		beq zeq01
 		iny
-l031		tya
+zeq01		tya
 		jmp put
 
 ;--------------------------------------------------------------
@@ -1814,9 +1813,9 @@ zltlfa		.word $adde
 		.asc "0","<"|bit7
 zlt		ldy #0
 		bit tos+1
-		bpl l032
+		bpl zlt01
 		dey
-l032		tya
+zlt01		tya
 		jmp put
 
 ;--------------------------------------------------------------
@@ -1828,9 +1827,9 @@ znelfa		.word $adde
 		.asc "0<",">"|bit7
 zne		lda tos
 		ora tos+1
-		beq l033
+		beq zne01
 		lda #$ff
-l033		tay
+zne01		tay
 			jmp put
 
 ;--------------------------------------------------------------
@@ -2149,9 +2148,9 @@ onepluslfa	.word $adde
 		.byt (oneplus-*-1)|bit7
 		.asc "1","+"|bit7
 oneplus		inc tos
-		bne l027
+		bne oneplus01
 		inc tos+1
-l027		jmp next
+oneplus01	jmp next
 
 ;--------------------------------------------------------------
 
@@ -2164,9 +2163,9 @@ oneminuslfa	.word $adde
 		.byt (oneminus-*-1)|bit7
 		.asc "1","-"|bit7
 oneminus	bit tos
-		bne l028
+		bne oneminus01
 		dec tos+1
-l028		dec tos
+oneminus01	dec tos
 		jmp next
 
 ;--------------------------------------------------------------
@@ -2182,9 +2181,9 @@ twoplus		clc
 		lda tos
 		adc #2
 		sta tos
-		bcc l029
+		bcc twoplus01
 		inc tos+1
-l029		jmp next
+twoplus01	jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -2199,9 +2198,9 @@ twominus	sec
 		lda tos
 		sbc #2
 		sta tos
-		bcs l030
+		bcs twominus01
 		dec tos+1
-l030		jmp next
+twominus01	jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -2366,9 +2365,9 @@ lt		ldy #0
 		cmp tos
 		lda stackh,x
 		sbc tos+1
-sgntst		bvc l012
+sgntst		bvc lt01
 		eor #bit7
-l012		bpl cmpout
+lt01		bpl cmpout
 		dey
 		bmi cmpout
 
@@ -2461,11 +2460,11 @@ qduplfa		.word $adde
 		.asc "?DU","P"|bit7
 qdup		lda tos
 		ora tos+1
-		beq l034
+		beq qdup01
 		lda tos
 		ldy tos+1
 		jmp push
-l034		jmp next
+qdup01		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -2489,7 +2488,7 @@ _traverse
 #include "enter.i65"
 		.word swap
 #include "page.i65"
-l010		.word over
+traverse01	.word over
 #include "page.i65"
 		.word plus
 #include "page.i65"
@@ -2503,7 +2502,7 @@ l010		.word over
 		.word lt
 #include "page.i65"
 		.word qbranch
-		.word l010
+		.word traverse01
 #include "page.i65"
 		.word swap
 #include "page.i65"
@@ -2689,7 +2688,7 @@ _where
 		.word fetch
 #include "page.i65"
 		.word qbranch
-		.word l58
+		.word where03
 #include "page.i65"
 		.word blk
 #include "page.i65"
@@ -2709,10 +2708,10 @@ _where
 	.word next
 #endif
 		.word _pdotq
-		.byt s001-*-1
+		.byt where01-*-1
 		.asc	"SCR# "
 			;12345
-s001
+where01
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -2736,10 +2735,10 @@ s001
 	.word next
 #endif
 		.word _pdotq
-		.byt s002-*-1
+		.byt where02-*-1
 		.asc	"LINE# "
 			;123456
-s002
+where02
 #include "page.i65"
 		.word _dot
 #include "page.i65"
@@ -2774,13 +2773,13 @@ s002
 		.word plus
 #include "page.i65"
 		.word branch
-		.word l59
+		.word where04
 #include "page.i65"
-l58		.word toin
+where03		.word toin
 #include "page.i65"
 		.word fetch
 #include "page.i65"
-l59		.word cr
+where04		.word cr
 #include "page.i65"
 		.word _here
 #include "page.i65"
@@ -2808,13 +2807,13 @@ l59		.word cr
 #include "page.i65"
 		.word pdo
 #include "page.i65"
-l60		.word clit
+where05		.word clit
 		.asc '^'
 #include "pad.i65"
 		.word emit
 #include "page.i65"
 		.word ploop
-		.word l60
+		.word where05
 #include "pad.i65"
 		.word exit
 
@@ -2830,7 +2829,7 @@ l60		.word clit
 _pabortq
 #include "enter.i65"
 		.word qbranch
-		.word l61
+		.word pabortq01
 #include "page.i65"
 		.word cmdoff
 #include "page.i65"
@@ -2851,9 +2850,9 @@ _pabortq
 		.word execute
 #include "page.i65"
 		.word branch
-		.word l62
+		.word pabortq02
 #include "page.i65"
-l61		.word rfrom
+pabortq01	.word rfrom
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -2864,7 +2863,7 @@ l61		.word rfrom
 		.word oneplus
 #include "page.i65"
 		.word tor
-l62		.word exit
+pabortq02	.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -2938,10 +2937,10 @@ _qcomp
 	.word next
 #endif
 		.word _pabortq
-		.byt s003-*-1
+		.byt qcomp01-*-1
 		.asc	"COMPILATION ONLY, USE IN DEFINITION"
 			;123456789.123456789.123456789.12345
-s003		.word exit
+qcomp01		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -2951,15 +2950,15 @@ qfindlfa	.word $adde
 		.byt (_qfind-*-1)|bit7
 		.asc "?FIN","D"|bit7
 _qfind
-#include "enterx.i65"
-#if ((* & $ff) = 253-27)
-	.word next
+#if ((* & $ff) = 256-27-1-2-3)		; message len pabortq jsr_enter
+	nop
 #endif
+#include "enterx.i65"
 		.word _pabortq
-		.byt s004-*-1
+		.byt qfind01-*-1
 		.asc	"NOT IN CURRENT SEARCH ORDER"
 			;123456789.123456789.1234567
-s004		.word exit
+qfind01		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -2976,10 +2975,10 @@ _qpairs
 	.word next
 #endif
 		.word _pabortq
-		.byt s005-*-1
+		.byt qpairs01-*-1
 		.asc	"CONDITIONALS NOT PAIRED"
 			;123456789.123456789.123
-s005		.word exit
+qpairs01	.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -3002,10 +3001,10 @@ _qcsp
 	.word next
 #endif
 		.word _pabortq
-		.byt s006-*-1
+		.byt qcsp01-*-1
 		.asc	"DEFINITION NOT FINISHED"
 			;123456789.123456789.123
-s006		.word exit
+qcsp01		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -3055,7 +3054,7 @@ _qchar
 		.word rfrom
 #include "page.i65"
 		.word qbranch
-		.word l63
+		.word qchar02
 #include "page.i65"
 		.word rfrom
 #include "page.i65"
@@ -3067,14 +3066,12 @@ _qchar
 	.word next
 #endif
 		.word _pdotq
-		.byt s017-*-1
+		.byt qchar01-*-1
 		.asc	" MISSING "
 			;123456789
-s017		.word spstore
-#include "page.i65"
-		.word _quit
-#include "page.i65"
-l63		.word rfrom
+qchar01		.word _abort
+#include "pad.i65"
+qchar02		.word rfrom
 #include "page.i65"
 		.word drop
 		.word exit
@@ -3138,31 +3135,31 @@ _rbracket
 #include "page.i65"
 		.word on
 #include "page.i65"
-l68		.word qstack
+rbracket01	.word qstack
 #include "page.i65"
 		.word _existsq
 #include "page.i65"
 		.word dup
 #include "page.i65"
 		.word qbranch
-		.word l64
+		.word rbracket03
 #include "pad.i65"
 		.word zlt
 #include "page.i65"
 		.word qbranch
-		.word l65
+		.word rbracket02
 #include "pad.i65"
 		.word _comma
 #include "page.i65"
 		.word branch
-		.word l66
+		.word rbracket05
 #include "pad.i65"
-l65		.word execute
+rbracket02	.word execute
 #include "page.i65"
 		.word branch
-		.word l66
+		.word rbracket05
 #include "pad.i65"
-l64		.word drop
+rbracket03	.word drop
 #include "page.i65"
 		.word _number
 #include "page.i65"
@@ -3173,23 +3170,23 @@ l64		.word drop
 		.word oneplus
 #include "page.i65"
 		.word qbranch
-		.word l67
+		.word rbracket04
 #include "pad.i65"
 		.word _dliteral
 #include "page.i65"
 		.word branch
-		.word l66
+		.word rbracket05
 #include "pad.i65"
-l67		.word drop
+rbracket04	.word drop
 #include "page.i65"
 		.word _literal
 #include "page.i65"
-l66		.word true
+rbracket05	.word true
 #include "page.i65"
 		.word _quitq
 #include "page.i65"
 		.word qbranch
-		.word l68
+		.word rbracket01
 #include "pad.i65"
 		.word exit
 
@@ -3303,17 +3300,17 @@ dodoes		pla
 		lda ip
 		pha
 		ldy n
-		bne l067
+		bne dodoes01
 		dec n+1
-l067		dey
+dodoes01	dey
 		sty ip
 		lda n+1
 		sta ip+1
 		ldy n+3
 		inc n+2
-		bne l068
+		bne dodoes02
 		iny
-l068		lda n+2
+dodoes02	lda n+2
 		jmp push
 
 ;--------------------------------------------------------------
@@ -3333,7 +3330,7 @@ _dashtrailing
 #include "page.i65"
 		.word pdo
 #include "page.i65"
-l72		.word _twodup
+dashtrailing01	.word _twodup
 #include "page.i65"
 		.word plus
 #include "page.i65"
@@ -3346,13 +3343,13 @@ l72		.word _twodup
 		.word ne
 #include "page.i65"
 		.word pqleave
-		.word l73
+		.word dashtrailing02
 #include "page.i65"
 		.word oneminus
 #include "page.i65"
 		.word ploop
-		.word l72
-l73		.word exit
+		.word dashtrailing01
+dashtrailing02	.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -3402,9 +3399,9 @@ countlfa	.word $adde
 count		ldy #0
 		lda (tos),y
 		inc tos
-		bne l020
+		bne count01
 		inc tos+1
-l020		jmp push
+count01		jmp push
 
 ;--------------------------------------------------------------
 ;
@@ -3424,17 +3421,17 @@ type		lda #1
 		lda tos+1
 		adc outputted+1
 		sta outputted+1
-l041		cpy tos
-		bne l042
+type01		cpy tos
+		bne type02
 		dec tos+1
-		bpl l042
+		bpl type02
 		jmp pop
-l042		lda (n),y
+type02		lda (n),y
 		jsr CHROUT
 		iny
-		bne l041
+		bne type01
 		inc n+1
-		bne l041
+		bne type01
 
 ;--------------------------------------------------------------
 ;
@@ -3506,15 +3503,15 @@ expectvector	lda #1
 		sty inputted+1
 		stx n+7
 		dey
-l74		iny
+expect01	iny
 		cpy tos
-		bcs l75
+		bcs expect02
 		jsr CHRIN
 		cmp #$0d
-		beq l75
+		beq expect02
 		sta (n),y
-		bne l74
-l75		sty inputted		; ~ direct uarea ref breaks multitasking
+		bne expect01
+expect02	sty inputted		; ~ direct uarea ref breaks multitasking
 		ldx n+7
 		jmp pop
 
@@ -3685,40 +3682,40 @@ _tickstream
 		.word qdup		; ( 0 | blk blk )
 #include "page.i65"
 		.word qbranch		; if
-		.word l76
+		.word tickstream01
 #include "page.i65"
 		.word _block		; ( addr )
 #include "page.i65"
 		.word bperbuf		; ( addr b/buf )
 #include "page.i65"
 		.word branch		; else
-		.word l77
+		.word tickstream02
 #include "page.i65"
-l76		.word tib		; ( tib )
+tickstream01	.word tib		; ( tib )
 #include "page.i65"
 		.word numtib
 #include "page.i65"
 		.word fetch		; ( tib #tib )
 #include "page.i65"			; then
-l77		.word toin		; ( addr size >in )
+tickstream02	.word toin		; ( buf size >in )
 #include "page.i65"
-		.word fetch		; ( addr size ptr )
+		.word fetch		; ( buf size offset )
 #include "page.i65"
-		.word over		; ( addr size ptr size )
+		.word over		; ( buf size offset size )
 #include "page.i65"
-		.word _min		; ( addr size ptr )
+		.word _min		; ( buf size offset )
 #include "page.i65"
-		.word tor		; ( addr size )
+		.word tor		; ( buf size )
 #include "page.i65"
-		.word swap		; ( size addr )
+		.word swap		; ( size buf )
 #include "page.i65"
-		.word rfetch		; ( size addr ptr )
+		.word rfetch		; ( size buf offset )
 #include "page.i65"
 		.word plus		; ( size addr )
 #include "page.i65"
 		.word swap		; ( addr size )
 #include "page.i65"
-		.word rfrom		; ( addr size ptr )
+		.word rfrom		; ( addr size offset )
 #include "page.i65"
 		.word minus		; ( addr remaining )
 		.word exit
@@ -3790,79 +3787,73 @@ l77		.word toin		; ( addr size >in )
 wordlfa		.word $adde
 		.byt (_word-*-1)|bit7
 		.asc "WOR","D"|bit7
-_word
+_word					; ( char )
 #include "enter.i65"
-		.word tor		; ( addr )
+		.word tor		; ( )
 #include "page.i65"
-		.word _tickstream	; ( addr addr size )
+		.word _tickstream	; ( addr size )
 #include "page.i65"
-		.word over		; ( addr addr size addr )
+		.word over		; ( addr size addr )
 #include "page.i65"
-		.word swap		; ( addr addr addr size )
+		.word swap		; ( addr addr size )
 #include "page.i65"
-		.word rfetch		; ( addr addr addr size char )
+		.word rfetch		; ( addr addr size char )
 #include "page.i65"
-		.word skip		; ( addr addr size )
+		.word skip		; ( addr addr2 size )
 #include "page.i65"
-		.word over		; ( addr addr size addr )
+		.word over		; ( addr addr2 size addr2 )
 #include "page.i65"
-		.word swap		; ( addr addr addr size )
+		.word swap		; ( addr addr2 addr2 size )
 #include "page.i65"
-		.word rfrom		; ( addr addr addr size char )
+		.word rfrom		; ( addr addr2 addr2 size char )
 #include "page.i65" 
-		.word scan		; ( addr addr size )
-#include "page.i65"		; ( 0100 0104 0107 0009 ) ~
-		.word drop		; ( addr addr )
+		.word scan		; ( addr addr2 addr3 size )
 #include "page.i65"
-		.word over
+		.word drop		; ( addr addr2 addr3 )
 #include "page.i65"
-		.word over		; 
+		.word _twodup		; ( addr addr2 addr3 addr2 addr3 )
 #include "page.i65"
-		.word swap
+		.word swap		; ( addr addr2 addr3 addr3 addr2 )
 #include "page.i65"
-		.word minus
+		.word minus		; ( addr addr2 addr3 wordsize )
 #include "page.i65"
-		.word tor
+		.word tor		; ( addr addr2 addr3 )
 #include "page.i65"
-		.word rot
+		.word rot		; ( addr2 addr3 addr )
 #include "page.i65"
-		.word minus
+		.word minus		; ( addr2 offset )
 #include "page.i65"
-		.word oneplus
+		.word oneplus		; ( addr2 offset )
 #include "page.i65"
-		.word toin
+		.word toin		; ( addr2 offset toin )
 #include "page.i65"
-		.word plusstore
+		.word plusstore		; ( addr2 )
 #include "page.i65"
-		.word rfrom
+		.word rfrom		; ( addr2 size )
 #include "page.i65"
-		.word _here
+		.word _here		; ( addr2 size here )
 #include "page.i65"
-		.word over
+		.word _twodup		; ( addr2 size here size here )
 #include "page.i65"
-		.word over
+		.word cstore		; ( addr2 size here )
 #include "page.i65"
-		.word cstore
+		.word oneplus		; ( addr2 size here+1 )
 #include "page.i65"
-		.word oneplus
+		.word swap		; ( addr2 here+1 size )
 #include "page.i65"
-		.word swap
+		.word cmove		; ( )
 #include "page.i65"
-		.word cmove
+		.word _here		; ( here )
+#include "page.i65"			; the following may be unnecessary ~
+		.word bl		; ( here bl )
 #include "page.i65"
-		.word _here
+		.word over		; ( here bl here )
 #include "page.i65"
-		.word dup
+		.word count		; ( here bl here+1 size )
 #include "page.i65"
-		.word count
+		.word plus		; ( here bl here+size+1 )
 #include "page.i65"
-		.word plus
-#include "page.i65"
-		.word bl
-#include "page.i65"
-		.word swap
-#include "page.i65"
-		.word cstore
+		.word cstore		; ( here )
 		.word exit
 
 ;--------------------------------------------------------------
@@ -3904,7 +3895,7 @@ convertlfa	.word $adde
 		.asc "CONVER","T"|bit7
 _convert
 #include "enter.i65"
-l81		.word oneplus
+convert01	.word oneplus
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -3919,7 +3910,7 @@ l81		.word oneplus
 		.word digit
 #include "page.i65"
 		.word qbranch
-		.word l80
+		.word convert03
 #include "page.i65"
 		.word swap
 #include "page.i65"
@@ -3948,7 +3939,7 @@ l81		.word oneplus
 		.word oneplus
 #include "page.i65"
 		.word qbranch
-		.word l82
+		.word convert02
 #include "page.i65"
 		.word one
 #include "page.i65"
@@ -3956,18 +3947,22 @@ l81		.word oneplus
 #include "page.i65"
 		.word plusstore
 #include "page.i65"
-l82		.word rfrom
+convert02	.word rfrom
 #include "page.i65"
 		.word branch
-		.word l81
+		.word convert01
 #include "page.i65"
-l80		.word rfrom
+convert03	.word rfrom
 		.word exit
 
 ;--------------------------------------------------------------
 ;
-;	NUMBER
+;	NUMBER    ( addr -- d )
 ;
+; Convert the count and character string at addr, to a signed
+; 32-bit integer, using the value of BASE .  If numeric
+; conversion is not possible, an error condition exists.  The
+; string may contain a preceding minus sign.
 numberlfa	.word $adde
 		.byt (_number-*-1)|bit7
 		.asc "NUMBE","R"|bit7
@@ -3986,9 +3981,9 @@ _number
 		.word swap
 #include "page.i65"
 		.word pqdo
-		.word l83
-#include "page.i65"
-l84		.word i
+		.word number03
+#include "pad.i65"
+number01	.word i
 #include "page.i65"
 		.word cfetch
 #include "page.i65"
@@ -3999,19 +3994,19 @@ l84		.word i
 		.word digit
 #include "page.i65"
 		.word qbranch
-		.word l87
+		.word number02
 #include "page.i65"
 		.word twodrop
 #include "page.i65"
 		.word false
 #include "page.i65"
 		.word pleave
-		.word l83
+		.word number03
 #include "page.i65"
-l87		.word ploop
-		.word l84
+number02	.word ploop
+		.word number01
 #include "page.i65"
-l83		.word _qfind
+number03	.word _qfind
 #include "page.i65"
 		.word zero
 #include "page.i65"
@@ -4040,7 +4035,7 @@ l83		.word _qfind
 #include "page.i65"
 		.word on
 #include "page.i65"
-l85		.word _convert
+number04	.word _convert
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -4049,16 +4044,16 @@ l85		.word _convert
 		.word _punctq
 #include "page.i65"
 		.word qbranch
-		.word l88
+		.word number05
 #include "page.i65"
 		.word dpl
 #include "page.i65"
 		.word off
 #include "page.i65"
 		.word branch
-		.word l85
+		.word number04
 #include "page.i65"
-l88		.word cfetch
+number05	.word cfetch
 #include "page.i65"
 		.word bl
 #include "page.i65"
@@ -4069,10 +4064,67 @@ l88		.word cfetch
 		.word rfrom
 #include "page.i65"
 		.word qbranch
-		.word l86
+		.word number06
 #include "page.i65"
 		.word dnegate
-l86		.word exit
+number06	.word exit
+
+;--------------------------------------------------------------
+;
+;	TRYCHAIN   ( name vocab -- addr2 n )
+;
+;": trychain ( name vocabulary -- addr flag )
+;	@ @ ?dup			( name head head | name 0 )
+;	if	(find)			( addr flag )
+;	else	dup 2+ dhash		( name hash1 hash2 )
+;		bloom@			( name hash1 flag )
+;		if	dhash@ (find)	( addr flag )
+;		else	drop false	( name false )
+;		then
+;	then ;
+;
+;trychainlfa	.word $adde
+;		.byt (_trychain-*-1)|bit7
+;		.asc "TRYCHAI","N"|bit7
+_trychain
+#include "enter.i65"
+		.word fetch
+#include "page.i65"
+		.word fetch
+#include "page.i65"
+		.word qdup
+#include "page.i65"
+		.word qbranch
+		.word trychain01
+#include "pad.i65"
+		.word pfind
+#include "page.i65"
+		.word branch
+		.word trychain02
+#include "pad.i65"
+trychain01	.word dup
+#include "page.i65"
+		.word twoplus
+#include "page.i65"
+		.word dhash
+#include "page.i65"
+		.word bloomfetch
+#include "page.i65"
+		.word qbranch
+		.word trychain02
+#include "pad.i65"
+		.word dhashfetch
+#include "page.i65"
+		.word pfind
+#include "page.i65"
+		.word branch
+		.word trychain02
+#include "pad.i65"
+		.word drop
+#include "page.i65"
+		.word false
+#include "page.i65"
+trychain02	.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -4089,35 +4141,60 @@ l86		.word exit
 ; n is set to one.  If the word is non-immediate, n is set to
 ; minus one (true).
 ;
+;": find  ( name -- addr flag )
+;	2- context trychain		( addr -1|1 | name false )
+;	?dup 0=				( addr -1|1 false | name true )
+;	if	current			( name current )
+;		dup @ context @ <>	( name current flag )
+;		if	trychain	( addr flag )
+;		else	drop 2+ false	( name 0 )
+;		then
+;	then ;
+;
 findlfa		.word $adde
 		.byt (_find-*-1)|bit7
 		.asc "FIN","D"|bit7
+xyzzy
 _find
 #include "enter.i65"
+		.word twominus		; ( name-2 )
+#include "page.i65"
 		.word context
 #include "page.i65"
-		.word fetch
-; ~ determine here whether we're in FORTH
-; something like  FORTH?  IF  DHASH@  THEN 
-
+		.word _trychain
 #include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word pfind
-#include "page.i65"
-		.word dup
+		.word qdup
 #include "page.i65"
 		.word zeq
 #include "page.i65"
 		.word qbranch
-		.word l89
+		.word find02
+#include "pad.i65"
+		.word current
 #include "page.i65"
-		.word drop
+		.word dup
 #include "page.i65"
-		.word _latest
+		.word fetch
 #include "page.i65"
-		.word pfind
-l89		.word exit
+		.word context
+#include "page.i65"
+		.word fetch
+#include "page.i65"
+		.word ne
+#include "page.i65"
+		.word qbranch
+		.word find01
+#include "pad.i65"
+		.word _trychain
+#include "page.i65"
+		.word branch
+		.word find02
+#include "pad.i65"
+find01		.word drop
+#include "page.i65"
+		.word false
+#include "page.i65"
+find02		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -4176,10 +4253,6 @@ _iddot
 		.byt $1f		; ~ shouldn't this use WIDTH?
 #include "pad.i65"
 		.word andx
-;#include "page.i65"
-;		.word _twodup
-;#include "page.i65"
-;		.word tolower		; ~ really?
 #include "page.i65"
 		.word type
 		.word exit
@@ -4244,28 +4317,25 @@ _create
 	.word next
 #endif
 		.word _pabortq
-		.byt l013-*-1
+		.byt create01-*-1
 		.asc	"DICTIONARY FULL"
 			;123456789.12345
-l013
+create01
 #include "page.i65"
 		.word _existsq
 #include "page.i65"
 		.word over
 #include "page.i65"
-;		.word plit
-;		.word _spacenp		; ~ remove this?
-;#include "pad.i65"
 		.word eq
 #include "page.i65"
 #if ((* & $ff) = 253-13)
 	.word next
 #endif
 		.word _pabortq
-		.byt l014-*-1
+		.byt create02-*-1
 		.asc	"NAME REQUIRED"
 			;123456789.123
-l014
+create02
 #include "page.i65"
 		.word warning
 #include "page.i65"
@@ -4274,7 +4344,7 @@ l014
 		.word andx
 #include "page.i65"
 		.word qbranch
-		.word l016
+		.word create04
 #include "page.i65"
 		.word _toname
 #include "page.i65"
@@ -4296,17 +4366,17 @@ l014
 	.word next
 #endif
 		.word _pdotq
-		.byt l015-*-1
+		.byt create03-*-1
 		.asc	" ALREADY EXISTS "
 			;1234567869.12345
-l015
+create03
 #include "page.i65"
 		.word branch
-		.word l017
+		.word create05
 #include "page.i65"
-l016		.word drop
+create04	.word drop
 #include "page.i65"
-l017		.word _here
+create05	.word _here
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -4361,7 +4431,7 @@ l017		.word _here
 		.word eq
 #include "page.i65"
 		.word qbranch
-		.word l018
+		.word create06
 #include "page.i65"
 		.word _twodup
 #include "page.i65"
@@ -4386,7 +4456,7 @@ l017		.word _here
 #include "page.i65"
 		.word swap
 #include "page.i65"
-l018		.word twoplus
+create06	.word twoplus
 #include "page.i65"
 		.word viewq
 #include "page.i65"
@@ -4425,7 +4495,7 @@ l018		.word twoplus
 		.word fetch
 #include "page.i65"
 		.word qbranch
-		.word l019
+		.word create07
 #include "page.i65"
 		.word blk
 #include "page.i65"
@@ -4439,7 +4509,7 @@ l018		.word twoplus
 #include "page.i65"
 		.word store
 #include "page.i65"
-l019		.word two
+create07	.word two
 #include "page.i65"
 		.word _allot
 #include "page.i65"
@@ -4455,9 +4525,9 @@ docreate	pla
 		sta n
 		pla
 		tay
-		bcc l035
+		bcc docreate01
 		iny
-l035		lda n
+docreate01	lda n
 		jmp push
 
 ;--------------------------------------------------------------
@@ -4497,7 +4567,7 @@ _literal
 		.word ult
 #include "page.i65"
 		.word qbranch
-		.word l94
+		.word literal01
 #include "page.i65"
 		.word _compile
 		.word clit
@@ -4505,13 +4575,13 @@ _literal
 		.word _ccomma
 #include "page.i65"
 		.word branch
-		.word l95
+		.word literal02
 #include "page.i65"
-l94		.word _compile
+literal01	.word _compile
 		.word plit
 #include "page.i65"
 		.word _comma
-l95		.word exit
+literal02	.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -4539,19 +4609,19 @@ qstacklfa	.word $adde
 		.byt (qstack-*-1)|bit7
 		.asc "?STAC","K"|bit7
 qstack		txa
-		bmi l070	; stack overflow
+		bmi qstack01	; stack overflow
 		ldy #usersp0-userarea
 		cmp (up),y
-		bcc l069	; things are just fine
-		beq l069	; SP@ = bos, not a problem either
+		bcc qstack03	; things are just fine
+		beq qstack03	; SP@ = bos, not a problem either
 		ldy #>(qstackempty-2)	; stack underflow error
 		lda #<(qstackempty-2)
-		bcs l071	; bra
-l070		ldy #>(qstackfull-2)	; stack overflow error
+		bcs qstack02	; bra
+qstack01	ldy #>(qstackfull-2)	; stack overflow error
 		lda #<(qstackfull-2)
-l071		sty ip+1
+qstack02	sty ip+1
 		sta ip
-l069		jmp next
+qstack03	jmp next
 #include "pad.i65"
 qstackempty	.word _pabortq		; qstack might transfer control here
 		.byt qstackfull-*-1	; no need for an exit because we're
@@ -4561,10 +4631,10 @@ qstackempty	.word _pabortq		; qstack might transfer control here
 	.asc " "		; pad with a space (more printable than NOP)
 #endif
 qstackfull	.word _pabortq
-		.byt s012-*-1
+		.byt qstack04-*-1
 		.asc	"STACK OVERFLOW "
 			;123456789.12345
-s012
+qstack04
 
 ;--------------------------------------------------------------
 ;
@@ -4576,19 +4646,19 @@ interpretlfa	.word $adde
 		.asc "INTERPRE","T"|bit7
 _interpret
 #include "enter.i65"
-l99		.word qstack
+interpret01	.word qstack		; ( )
 #include "page.i65"
 		.word _existsq		; ( addr flag )
 #include "page.i65"
 		.word qbranch
-		.word l96
+		.word interpret02
 #include "page.i65"
 		.word execute
 #include "page.i65"
 		.word branch
-		.word l98
+		.word interpret03
 #include "page.i65"
-l96		.word _number
+interpret02	.word _number
 #include "page.i65"
 		.word dpl
 #include "page.i65"
@@ -4598,17 +4668,17 @@ l96		.word _number
 #include "page.i65"
 		.word zeq
 #include "page.i65"
-l97		.word qbranch
-		.word l98
+		.word qbranch
+		.word interpret03
 #include "page.i65"
 		.word drop
 #include "page.i65"
-l98		.word false
+interpret03	.word false
 #include "page.i65"
 		.word _quitq
 #include "page.i65"
 		.word qbranch
-		.word l99
+		.word interpret01
 #include "pad.i65"
 		.word exit
 
@@ -4692,7 +4762,7 @@ forthlfa	.word $adde
 		.byt (forth-*-1)|bit7
 		.asc "FORT","H"|bit7
 forth		jsr vocabdoes
-		.word ntop		; last nfa in this vocabulary
+		.word 0			; flag as root vocabulary
 		.word $a081		; some magic number?
 lastvoc		.word 0			; link to next vocabulary, 0 for last
 
@@ -4749,7 +4819,7 @@ _run
 		.word fetch
 #include "page.i65"
 		.word qbranch
-		.word l100
+		.word run01
 #include "page.i65"
 		.word _rbracket
 #include "page.i65"
@@ -4760,15 +4830,15 @@ _run
 		.word not
 #include "page.i65"
 		.word qbranch
-		.word l101
+		.word run02
 #include "page.i65"
 		.word _interpret
 #include "page.i65"
 		.word branch
-		.word l101
+		.word run02
 #include "page.i65"
-l100		.word _interpret
-l101		.word exit
+run01		.word _interpret
+run02		.word exit
 
 
 ;--------------------------------------------------------------
@@ -4844,43 +4914,39 @@ d003	sta zi,y
 ;~debug
 ; copy NEXT code to zeropage
 		ldy #page-zpnext
-l011		lda zpnext-1,y
+cold01		lda zpnext-1,y
 		sta next-1,y
 		dey
-		bne l011
+		bne cold01
 
 		lda #<warmvector
 		sta errlnk
 		lda #>warmvector
 		sta errlnk+1
 
-		lda userntop
-		sta forth+3
-		lda userntop+1
-		sta forth+4
-		lda #>_cold2
+		lda #>_warm03
 		sta w1+1
-		lda #<_cold2
+		lda #<_warm03
 		sta w1
 
 		ldy #usercold-userarea-1
-		bne l036
+		bne warm01
 
-warm		lda #>_warm2
+warm		lda #>warm05
 		sta w1+1
-		lda #<_warm2
+		lda #<warm05
 		sta w1
 
 		ldy #userwarm-userarea-1
 
-l036		lda userup
+warm01		lda userup
 		sta up
 		lda userup+1
 		sta up+1
-l037		lda userarea,y
+warm02		lda userarea,y
 		sta (up),y
 		dey
-		bpl l037
+		bpl warm02
 		cld
 		cli
 		jsr CLRCHN
@@ -4892,7 +4958,7 @@ l037		lda userarea,y
 		sta ip
 
 		jmp rpstore		; and we're off
-_cold2
+_warm03
 #include "enter.i65"
 		.word spstore
 #include "page.i65"
@@ -4900,7 +4966,7 @@ _cold2
 	.word next
 #endif
 		.word _pdotq
-		.byt s015-*-1
+		.byt warm04-*-1
 		.byt CLRSCR
 .byt 236,239,17,157,157,234,32,41,17,157,157,157,234,247,17,157,157,252
 .byt 32,32,145,145,145
@@ -4926,11 +4992,11 @@ _cold2
 		.byt 47,47
 		.asc "CHITSELB.COM 2010"
 		.byt $0d,$0d
-s015
+warm04
 #include "page.i65"
 		.word _rethread
 #include "page.i65"
-_warm2		.word _emptybuffers
+warm05		.word _emptybuffers
 #include "page.i65"
 		.word _decimal
 #include "page.i65"
@@ -4942,10 +5008,10 @@ _warm2		.word _emptybuffers
 	.word next
 #endif
 		.word _pdotq
-		.byt s016-*-1
+		.byt warm06-*-1
 		.asc	$0d,"WELCOME TO PETTIL!"
 			    ;123456789.12345678
-s016
+warm06
 #include "page.i65"
 		.word startup
 #include "page.i65"
@@ -4971,7 +5037,7 @@ _quit
 #include "page.i65"
 		.word _lbracket
 #include "page.i65"
-l007		.word rpstore
+quit01		.word rpstore
 #include "page.i65"
 		.word cr
 #include "page.i65"
@@ -4986,19 +5052,19 @@ l007		.word rpstore
 		.word zeq
 #include "page.i65"
 		.word qbranch
-		.word l006
+		.word quit02
 #include "page.i65"
 #if ((* & $ff) = 253-2)
 	.word next
 #endif
 		.word _pdotq
-		.byt (l006-*-1)
+		.byt (quit02-*-1)
 		.asc	"OK"
 			;12
-l006
+quit02
 #include "page.i65"
 		.word branch
-		.word l007
+		.word quit01
 
 ;--------------------------------------------------------------
 ;
@@ -5016,17 +5082,17 @@ _stod
 
 ;--------------------------------------------------------------
 ;
-;	ABS
+;	ABS   ( n -- +n )
 ;
 ; * 83 nucleus
 ;
 abslfa		.word $adde
 		.byt (abs-*-1)|bit7
 		.asc "AB","S"|bit7
-abs	;	lda stack+1,x
-		bpl l106
-		jmp negate+2
-l106		jmp next
+abs		lda tos+1
+		bpl abs01
+		jmp negate
+abs01		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -5035,9 +5101,9 @@ l106		jmp next
 dabslfa		.word $adde
 		.byt (dabs-*-1)|bit7
 		.asc "DAB","S"|bit7
-dabs	;	lda stack+1,x
-		bpl l106
-		jmp dnegate+2
+dabs		lda tos+1
+		bpl abs01
+		jmp dnegate
 
 ;--------------------------------------------------------------
 ;
@@ -5055,11 +5121,11 @@ _min
 		.word gt
 #include "page.i65"
 		.word qbranch
-		.word l107
+		.word min01
 #include "pad.i65"
 		.word swap
 #include "page.i65"
-l107		.word drop
+min01		.word drop
 		.word exit
 
 ;--------------------------------------------------------------
@@ -5078,11 +5144,11 @@ _max
 		.word lt
 #include "page.i65"
 		.word qbranch
-		.word l108
+		.word max01
 #include "pad.i65"
 		.word swap
 #include "page.i65"
-l108		.word drop
+max01		.word drop
 		.word exit
 
 ;--------------------------------------------------------------
@@ -5102,10 +5168,10 @@ mult		lda stackl,x
 		eor tos+1
 		php			; we only care about the sign bit
 		bit tos+1
-		bpl l064
+		bpl mult01
 		jsr donegate
-l064		bit n+5
-		bpl l065
+mult01		bit n+5
+		bpl mult02
 		sec
 		lda #0
 		sbc n+4
@@ -5113,7 +5179,7 @@ l064		bit n+5
 		lda #0
 		sbc n+5
 		sta n+5
-l065		jsr multiply
+mult02		jsr multiply
 		lda n+1
 		sta stackh,x
 		lda n
@@ -5123,9 +5189,9 @@ l065		jsr multiply
 		lda n+2
 		sta tos
 		plp
-		bpl l066
+		bpl mult03
 		jmp dodnegate
-l066		rts
+mult03		rts
 
 ;--------------------------------------------------------------
 ;
@@ -5138,15 +5204,15 @@ mslash
 		jsr domslash
 		jmp next
 domslash	cpx #$6f
-		bcc l112
-l113		ldx #bos
+		bcc domslash02
+domslash01	ldx #bos
 	;	sty stack,x
 	;	sty stack+1,x
 		tya
 		rts
-l112	;	lda stack,x
+domslash02;	lda stack,x
 	;	ora stack+1,x
-		beq l113
+		beq domslash01
 	;	lda stack+1,x
 		pha
 	;	lda stack,x
@@ -5156,29 +5222,29 @@ l112	;	lda stack,x
 		pha
 	;	lda stack+1,x
 		pha
-		bpl l114
+		bpl domslash03
 		jsr donegate
-l114	;	lda stack+3,x
-		bpl l115
+domslash03;	lda stack+3,x
+		bpl domslash04
 		inx
 		inx
 		jsr dnegate
 		dex
 		dex
-l115		jsr modulo
+domslash04	jsr modulo
 		pla
-		bpl l116
+		bpl domslash05
 		jsr remult
-l116		pla
-		bpl l117
+domslash05	pla
+		bpl domslash07
 		jsr donegate
 	;	lda stack+2,x
 	;	ora stack+3,x
-		beq l117
+		beq domslash07
 	;	lda stack,x
-		bne l118
+		bne domslash06
 	;	dec stack+1,x
-l118	;	dec stack,x
+domslash06;	dec stack,x
 		jsr remult
 		clc
 		pla
@@ -5188,7 +5254,7 @@ l118	;	dec stack,x
 	;	adc stack+3,x
 	;	sta stack+3,x
 		rts
-l117		pla
+domslash07	pla
 		pla
 		rts
 remult		inx
@@ -5227,9 +5293,9 @@ doslashmod;	lda stack+1,x
 	;	lda stack,x
 		pha
 	;	lda stack+3,x
-		bpl l119
+		bpl doslashmod01
 		dey
-l119	;	sty stack,x
+doslashmod01;	sty stack,x
 	;	sty stack+1,x
 		dex
 		dex
@@ -5434,7 +5500,7 @@ _latestq
 		.word eq
 #include "page.i65"
 		.word qbranch
-		.word l120
+		.word latestq01
 #include "pad.i65"
 		.word drop
 #include "page.i65"
@@ -5451,7 +5517,7 @@ _latestq
 		.word rfrom
 #include "page.i65"
 		.word drop
-l120		.word exit
+latestq01	.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -5483,14 +5549,14 @@ _absentq
 #include "page.i65"
 		.word pdo
 #include "page.i65"
-l123		.word _twodup
+absentq01	.word _twodup
 #include "page.i65"
 		.word fetch
 #include "page.i65"
 		.word eq
 #include "page.i65"
 		.word qbranch
-		.word l121
+		.word absentq02
 #include "pad.i65"
 		.word dup
 #include "page.i65"
@@ -5533,17 +5599,17 @@ l123		.word _twodup
 		.word _tobcq
 #include "page.i65"
 		.word pleave
-		.word l122
+		.word absentq03
 #include "pad.i65"
-l121		.word clit
+absentq02	.word clit
 		.byt 6
 #include "pad.i65"
 		.word plus
 #include "page.i65"
 		.word ploop
-		.word l123
+		.word absentq01
 #include "pad.i65"
-l122		.word twoplus
+absentq03	.word twoplus
 #include "page.i65"
 		.word fetch
 #include "page.i65"
@@ -5643,7 +5709,7 @@ _missing
 		.word fetch
 #include "page.i65"
 		.word qbranch
-		.word l124
+		.word missing01
 #include "pad.i65"
 		.word _bcqto
 #include "page.i65"
@@ -5674,7 +5740,7 @@ _missing
 #include "page.i65"
 		.word off
 #include "page.i65"
-l124		.word _bcqto
+missing01	.word _bcqto
 #include "page.i65"
 		.word twominus
 #include "page.i65"
@@ -5729,7 +5795,7 @@ _buffer
 		.word _absentq
 #include "page.i65"
 		.word qbranch
-		.word l125
+		.word buffer01
 #include "pad.i65"
 		.word drop
 #include "page.i65"
@@ -5742,7 +5808,7 @@ _buffer
 		.word twoplus
 #include "page.i65"
 		.word fetch
-l125		.word exit
+buffer01	.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -5769,7 +5835,7 @@ _block
 		.word _absentq
 #include "page.i65"
 		.word qbranch
-		.word l126
+		.word block01
 #include "pad.i65"
 		.word drop
 #include "page.i65"
@@ -5800,7 +5866,7 @@ _block
 		.word twoplus
 #include "page.i65"
 		.word fetch
-l126		.word exit
+block01		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -5847,7 +5913,7 @@ _emptybuffers
 #include "page.i65"
 		.word pdo
 #include "page.i65"
-l105		.word plit
+emptybuffers01	.word plit
 		.word -1
 #include "pad.i65"
 		.word over
@@ -5873,7 +5939,7 @@ l105		.word plit
 		.word twoplus
 #include "page.i65"
 		.word ploop
-		.word l105
+		.word emptybuffers01
 #include "pad.i65"
 		.word twodrop
 		.word exit
@@ -5903,14 +5969,14 @@ _savebuffers
 #include "page.i65"
 		.word pdo
 #include "page.i65"
-l129		.word dup
+savebuffers01	.word dup
 #include "page.i65"
 		.word fetch
 #include "page.i65"
 		.word oneplus
 #include "page.i65"
 		.word qbranch
-		.word l127
+		.word savebuffers03
 #include "pad.i65"
 		.word dup
 #include "page.i65"
@@ -5921,7 +5987,7 @@ l129		.word dup
 		.word fetch
 #include "page.i65"
 		.word qbranch
-		.word l128
+		.word savebuffers02
 #include "pad.i65"
 		.word dup
 #include "page.i65"
@@ -5945,13 +6011,13 @@ l129		.word dup
 #include "page.i65"
 		.word off
 #include "page.i65"
-l128		.word clit
+savebuffers02	.word clit
 		.byt 6
 #include "pad.i65"
 		.word plus
 #include "page.i65"
-l127		.word ploop
-		.word l129
+savebuffers03	.word ploop
+		.word savebuffers01
 #include "pad.i65"
 		.word drop
 		.word exit
@@ -5990,10 +6056,10 @@ _load
 	.word next
 #endif
 		.word _pabortq
-		.byt s017x-*-1
+		.byt load01-*-1
 		.asc	"CAN'T LOAD SCR# 0"
 			;123456789.1234567
-s017x		.word blk
+load01		.word blk
 #include "page.i65"
 		.word fetch
 #include "page.i65"
@@ -6045,17 +6111,17 @@ todisc		lda curindev
 		jsr CLRCHN
 	;	ldx storex
 	;	lsr stack,x
-		bcs l134
-		jsr l136
+		bcs todisc01
+		jsr todisc12
 		ldx #<ldr1
 		lda #>ldr1
-		jsr l137
-		jmp l138
-l134		ldx #<ldr0
+		jsr todisc03
+		jmp todisc02
+todisc01	ldx #<ldr0
 		lda #>ldr0
-		jsr l137
-		jsr l135
-l138		lda #0
+		jsr todisc03
+		jsr todisc05
+todisc02	lda #0
 		pha
 		ldx n+6
 		jsr CHKIN
@@ -6072,55 +6138,55 @@ l138		lda #0
 		inx
 		inx
 		jmp poptwo
-l137		stx n
+todisc03	stx n
 		sta n+1
 		ldx #15
 		jsr CHKOUT
 		ldx n
 		lda n+1
-		jsr l139
+		jsr todisc14
 	;	ldx storex
 	;	lda stack+2,x
-		jsr l140
+		jsr todisc07
 		lda #','
 		jsr CHROUT
 	;	lda stack+4,x
-		jsr l140
+		jsr todisc07
 		lda #','
 		jsr CHROUT
 	;	lda stack+6,x
-		jsr l140
+		jsr todisc07
 		lda #$0d
 		jsr CHROUT
 		jsr CLRCHN
-		jmp l146
-l144		ldx #15
+		jmp todisc09
+todisc04	ldx #15
 		jsr CHKOUT
 		ldx #<discstring
 		lda #>discstring
-		jsr l139
+		jsr todisc14
 		jsr CLRCHN
-		jmp l146
-l135	;	ldx storex
+		jmp todisc09
+todisc05;	ldx storex
 	;	lda stack+8,x
 		sta n+2
 	;	lda stack+9,x
 		sta n+3
-		jsr l144
+		jsr todisc04
 		ldx #$0d
 		jsr CHKIN
 		ldy #0
-l145		jsr GETIN
+todisc06	jsr GETIN
 		sta (n+2),y
 		iny
-		bne l145
+		bne todisc06
 		jsr CLRCHN
-		jmp l146
-l140		ldy #$ff
+		jmp todisc09
+todisc07	ldy #$ff
 		sec
-l147		iny
+todisc08	iny
 		sbc #10
-		bcs l147
+		bcs todisc08
 		adc #10
 		pha
 		tya
@@ -6129,47 +6195,47 @@ l147		iny
 		pla
 		ora #'0'
 		jmp CHROUT
-l146		ldx #15
+todisc09	ldx #15
 		jsr CHKIN
 		ldy #$ff
-l148		iny
+todisc10	iny
 		jsr GETIN
 		sta inbuf+1,y
 		cmp #$0d
-		bne l148
+		bne todisc10
 		sty inbuf
 		jsr CLRCHN
 		lda inbuf+1
 		cmp #'0'
-		bne l149
+		bne todisc11
 		rts
-l149		lda #$ff
+todisc11	lda #$ff
 	;	jmp l150
-l136	;	ldx storex
+todisc12;	ldx storex
 	;	lda stack+8,x
 		sta n+2
 	;	lda stack+9,x
 		sta n+3
-		jsr l144
+		jsr todisc04
 		ldx #$0d
 		jsr CHKOUT
 		ldy #0
-l151		lda (n+2),y
+todisc13	lda (n+2),y
 		jsr CHROUT
 		iny
-		bne l151
+		bne todisc13
 		jsr CLRCHN
-		jmp l146
-l139		stx n
+		jmp todisc09
+todisc14	stx n
 		sta n+1
 		ldy #0
-l153		lda (n),y
+todisc15	lda (n),y
 		cmp #0
-		beq l152
+		beq todisc16
 		jsr CHROUT
 		iny
-		bne l153
-l152		rts
+		bne todisc15
+todisc16	rts
 discstring	.asc "B-P13,0"
 		.byt $0d
 		.byt 0
@@ -6198,29 +6264,29 @@ _prslashw
 #include "page.i65"
 		.word pdo
 #include "page.i65"
-l141		.word clit
+prslashw01	.word clit
 		.byt 5
 #include "pad.i65"
 		.word zero
 #include "page.i65"
 		.word pdo
 #include "page.i65"
-l142		.word clit
+prslashw02	.word clit
 		.byt 4
 #include "pad.i65"
 		.word pick
 #include "page.i65"
 		.word ploop
-		.word l142
+		.word prslashw02
 #include "pad.i65"
 		.word todisc
 #include "page.i65"
 		.word qbranch
-		.word l143
+		.word prslashw03
 #include "pad.i65"
 		.word _dotderr
 #include "page.i65"
-l143		.word tor
+prslashw03	.word tor
 #include "page.i65"
 		.word tor
 #include "page.i65"
@@ -6230,6 +6296,7 @@ l143		.word tor
 #include "page.i65"
 		.word plit
 		.word $0100	; rstack
+
 #include "pad.i65"
 		.word plus
 #include "page.i65"
@@ -6246,12 +6313,12 @@ l143		.word tor
 		.word rfrom
 #include "page.i65"
 		.word plus
-v		.word rfrom
+		.word rfrom
 #include "page.i65"
 		.word rfrom
 #include "page.i65"
 		.word ploop
-		.word l141
+		.word prslashw01
 #include "pad.i65"
 		.word twodrop
 #include "page.i65"
@@ -6303,11 +6370,11 @@ _tns
 	.word next
 #endif
 		.word _pabortq
-		.byt s018-*-1
+		.byt tns01-*-1
 		.asc	"SCREEN DOES NOT EXIST "
 			;123456789.123456789.12
 #include "pad.i65"
-s018		.word clit
+tns01		.word clit
 		.byt 166
 #include "pad.i65"
 		.word slashmod
@@ -6322,7 +6389,7 @@ s018		.word clit
 		.word lt
 #include "page.i65"
 		.word qbranch
-		.word l154
+		.word tns02
 #include "pad.i65"
 		.word clit
 		.byt 21
@@ -6332,9 +6399,9 @@ s018		.word clit
 		.word tor
 #include "page.i65"
 		.word branch
-		.word l256a
+		.word tns06
 #include "pad.i65"
-l154		.word dup
+tns02		.word dup
 #include "page.i65"
 		.word clit
 		.byt 92
@@ -6342,7 +6409,7 @@ l154		.word dup
 		.word lt
 #include "page.i65"
 		.word qbranch
-		.word l2525
+		.word tns03
 #include "pad.i65"
 		.word twoplus
 #include "page.i65"
@@ -6354,9 +6421,9 @@ l154		.word dup
 		.word tor
 #include "page.i65"
 		.word branch
-		.word l256a
+		.word tns06
 #include "pad.i65"
-l2525		.word dup
+tns03		.word dup
 #include "page.i65"
 		.word clit
 		.byt 120
@@ -6364,7 +6431,7 @@ l2525		.word dup
 		.word lt
 #include "page.i65"
 		.word qbranch
-		.word l2541
+		.word tns04
 #include "pad.i65"
 		.word clit
 		.byt 92
@@ -6380,9 +6447,9 @@ l2525		.word dup
 		.word tor
 #include "page.i65"
 		.word branch
-		.word l256a
+		.word tns06
 #include "pad.i65"
-l2541		.word dup
+tns04		.word dup
 #include "page.i65"
 		.word clit
 		.byt 146
@@ -6390,7 +6457,7 @@ l2541		.word dup
 		.word lt
 #include "page.i65"
 		.word qbranch
-		.word l255d
+		.word tns05
 #include "pad.i65"
 		.word clit
 		.byt 120
@@ -6406,9 +6473,9 @@ l2541		.word dup
 		.word tor
 #include "page.i65"
 		.word branch
-		.word l256a
+		.word tns06
 #include "pad.i65"
-l255d		.word clit
+tns05		.word clit
 		.byt 146
 #include "pad.i65"
 		.word minus
@@ -6421,7 +6488,7 @@ l255d		.word clit
 #include "pad.i65"
 		.word tor
 #include "page.i65"
-l256a		.word rot
+tns06		.word rot
 #include "page.i65"
 		.word rot
 #include "page.i65"
@@ -6436,7 +6503,6 @@ l256a		.word rot
 		.word over
 #include "page.i65"
 		.word minus
-
 #include "page.i65"
 		.word twostar
 #include "page.i65"
@@ -6483,14 +6549,14 @@ popen	;	stx storex
 		pla
 	;	jsr SETLFS
 		jsr OPEN
-		bcs l155
+		bcs popen02
 	;	jsr READST
 		and #$80
-		beq l156
+		beq popen01
 		lda #5
 		.byt $2c	; bit xxxx instruction
-l156		lda #0
-l155		pha
+popen01		lda #0
+popen02		pha
 	;	lda storex
 		clc
 		adc #10
@@ -6516,10 +6582,20 @@ close		stx n
 ;	(CMDIN)
 ;
 ;pcmdinlfa	.word $adde
-;		.byt (_pcmdin-*-1)|bit7
+;		.byt (pcmdin-*-1)|bit7
 ;		.asc "(CMDIN",")"|bit7
-_pcmdin
-#include "enter.i65"
+pcmdin		.word *+2
+		stx n+7
+	;	lda stack,x
+		tax
+		jsr CHKIN
+		bcs pcmdout01
+		bcc pcmdout02
+pcmdin01	ldx n+7
+		lda #0
+		inx
+		inx
+		jmp push
 
 ;--------------------------------------------------------------
 ;
@@ -6528,23 +6604,23 @@ _pcmdin
 ;pcmdoutlfa	.word $adde
 ;		.byt (pcmdout-*-1)|bit7
 ;		.asc "(CMDOUT",")"|bit7
-pcmdout;	stx storex
+pcmdout		stx n+7
 	;	lda stack,x
 		tax
 		jsr CHKOUT
-		bcc l158
-l157		pha
+		bcc pcmdout02
+pcmdout01	pha
 		jsr CLRCHN
 		pla
-	;	ldx storex
+		ldx n+7
 		inx
 		inx
 		jmp push
-l158	;	jsr READST
+pcmdout02;	jsr READST
 		and #$80
-	;	beq l159
+		beq pcmdin01
 		lda #5
-		bne l157
+		bne pcmdout01
 
 ;--------------------------------------------------------------
 ;
@@ -6553,9 +6629,9 @@ l158	;	jsr READST
 cmdofflfa	.word $adde
 		.byt (cmdoff-*-1)|bit7
 		.asc "CMDOF","F"|bit7
-cmdoff	;	stx storex
+cmdoff		stx n+7
 		jsr CLRCHN
-	;	ldx storex
+		ldx n+7
 		jmp next
 
 ;--------------------------------------------------------------
@@ -6567,6 +6643,12 @@ statuslfa	.word $adde
 		.asc "STATU","S"|bit7
 _status
 #include "enter.i65"
+		.word plit
+		.word 144
+#include "pad.i65"
+		.word cfetch
+#include "page.i65"
+		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -6590,7 +6672,7 @@ _ioerr
 		.word qdup
 #include "page.i65"
 		.word qbranch
-		.word s028
+		.word ioerr09
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -6602,10 +6684,10 @@ _ioerr
 	.word next
 #endif
 		.word _pabortq
-		.byt s020-*-1
+		.byt ioerr01-*-1
 		.asc	"TOO MANY OPEN FILES"
 			;123456789.123456789
-s020
+ioerr01
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -6617,10 +6699,10 @@ s020
 	.word next
 #endif
 		.word _pabortq
-		.byt s021-*-1
+		.byt ioerr02-*-1
 		.asc	"FILE ALREADY OPEN"
 			;123456789.1234567
-s021
+ioerr02
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -6632,10 +6714,10 @@ s021
 	.word next
 #endif
 		.word _pabortq
-		.byt s022-*-1
+		.byt ioerr03-*-1
 		.asc	"FILE NOT OPEN"
 			;123456789.123
-s022
+ioerr03
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -6648,10 +6730,10 @@ s022
 	.word next
 #endif
 		.word _pabortq
-		.byt s023-*-1
+		.byt ioerr04-*-1
 		.asc	"FILE NOT FOUND"
 			;123456789.1234
-s023
+ioerr04
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -6664,10 +6746,10 @@ s023
 	.word next
 #endif
 		.word _pabortq
-		.byt s024-*-1
+		.byt ioerr05-*-1
 		.asc	"DEVICE NOT PRESENT"
 			;123456789.12345678
-s024
+ioerr05
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -6680,10 +6762,10 @@ s024
 	.word next
 #endif
 		.word _pabortq
-		.byt s025-*-1
+		.byt ioerr06-*-1
 		.asc	"NOT INPUT FILE"
 			;123456789.1234
-s025
+ioerr06
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -6696,10 +6778,10 @@ s025
 	.word next
 #endif
 		.word _pabortq
-		.byt s026-*-1
+		.byt ioerr07-*-1
 		.asc	"NOT OUTPUT FILE"
 			;123456789.12345
-s026
+ioerr07
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -6712,10 +6794,10 @@ s026
 	.word next
 #endif
 		.word _pabortq
-		.byt s027-*-1
+		.byt ioerr08-*-1
 		.asc	"MISSING FILE NAME"
 			;123456789.1234567
-s027
+ioerr08
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -6728,10 +6810,10 @@ s027
 	.word next
 #endif
 		.word _pabortq
-		.byt s028-*-1
+		.byt ioerr09-*-1
 		.asc	"ILLEGAL DEVICE NUMBER"
 			;123456789.123456789.1
-s028		.word exit
+ioerr09		.word exit
 
 
 ;--------------------------------------------------------------
@@ -6749,10 +6831,10 @@ _dotderr
 	.word next
 #endif
 		.word _pdotq
-		.byt s033-*-1
+		.byt dotderr01-*-1
 		.asc	"DISK ERROR: "
 			;123456789.12
-s033		.word plit
+dotderr01	.word plit
 		.word inbuf
 #include "pad.i65"
 		.word count
@@ -6806,10 +6888,10 @@ _mount
 	.word next
 #endif
 		.word _pdotq
-		.byt s031-*-1
+		.byt mount01-*-1
 		.asc	"I1"
 			;12
-s031		.word cmdoff
+mount01		.word cmdoff
 #include "page.i65"
 		.word clit
 		.byt 15
@@ -6822,10 +6904,10 @@ s031		.word cmdoff
 	.word next
 #endif
 		.word _pdotq
-		.byt s032-*-1
+		.byt mount02-*-1
 		.asc	"I0"
 			;12
-s032		.word cmdoff
+mount02		.word cmdoff
 #include "page.i65"
 		.word clit
 		.byt 13
@@ -6859,13 +6941,12 @@ _qdisc
 		.word _pqdisc
 #include "page.i65"
 		.word qbranch
-		.word *+8
+		.word qdisc01
+#include "pad.i65"
 		.word _dotderr
 #include "page.i65"
-		.word spstore
-#include "page.i65"
-		.word _quit
-		.word exit
+		.word _abort
+qdisc01		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -6897,6 +6978,7 @@ brticklfa	.word $adde
 _brtick
 #include "enter.i65"
 		.word _qcomp
+#include "page.i65"
 		.word _tick
 #include "page.i65"
 		.word _literal
@@ -6907,9 +6989,9 @@ _brtick
 ;
 ;	?>MARK
 ;
-qtomarklfa	.word $adde
-		.byt (_qtomark-*-1)|bit7
-		.asc "?>MAR","K"|bit7
+;qtomarklfa	.word $adde
+;		.byt (_qtomark-*-1)|bit7
+;		.asc "?>MAR","K"|bit7
 _qtomark
 #include "enter.i65"
 		.word _qcomp
@@ -6925,9 +7007,9 @@ _qtomark
 ;
 ;	?<MARK
 ;
-qfrommarklfa	.word $adde
-		.byt (_qfrommark-*-1)|bit7
-		.asc "?<MAR","K"|bit7
+;qfrommarklfa	.word $adde
+;		.byt (_qfrommark-*-1)|bit7
+;		.asc "?<MAR","K"|bit7
 _qfrommark
 #include "enter.i65"
 		.word _qcomp
@@ -6941,15 +7023,15 @@ _qfrommark
 ;
 ;	?>RESOLVE
 ;
-qtoresolvelfa	.word $adde
-		.byt (_qtoresolve-*-1)|bit7
-		.asc "?>RESOLV","E"|bit7
+;qtoresolvelfa	.word $adde
+;		.byt (_qtoresolve-*-1)|bit7
+;		.asc "?>RESOLV","E"|bit7
 _qtoresolve
 #include "enter.i65"
-		.word qdup
+qtoresolve01	.word qdup
 #include "page.i65"
 		.word qbranch
-		.word *+16
+		.word qtoresolve02
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -6962,17 +7044,17 @@ _qtoresolve
 		.word store
 #include "page.i65"
 		.word branch
-		.word *-18
-		.word exit
+		.word qtoresolve01
+qtoresolve02	.word exit
 
 ;--------------------------------------------------------------
 ;
 ;	?<RESOLVE
 ;
-qfromresolvelfa	.word $adde
-		.byt (_qfromresolve-*-1)|bit7
-		.asc "?<RESOLV","E"|bit7
-_qfromresolve
+;qltresolvelfa	.word $adde
+;		.byt (_qltresolve-*-1)|bit7
+;		.asc "?<RESOLV","E"|bit7
+_qltresolve
 #include "enter.i65"
 		.word swap
 #include "page.i65"
@@ -6985,16 +7067,16 @@ _qfromresolve
 ;
 ;	ADD>MARK
 ;
-addtomarklfa	.word $adde
-		.byt (_addtomark-*-1)|bit7
-		.asc "ADD>MAR","K"|bit7
+;addtomarklfa	.word $adde
+;		.byt (_addtomark-*-1)|bit7
+;		.asc "ADD>MAR","K"|bit7
 _addtomark
 #include "enter.i65"
 		.word true
 #include "page.i65"
 		.word tor
 #include "page.i65"
-		.word one
+addtomark01	.word one
 #include "page.i65"
 		.word roll
 #include "page.i65"
@@ -7005,12 +7087,12 @@ _addtomark
 		.word eq
 #include "page.i65"
 		.word qbranch
-		.word *-12
+		.word addtomark01
 		.word drop
 #include "page.i65"
 		.word _qtomark
 #include "page.i65"
-		.word rfrom
+addtomark02	.word rfrom
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -7019,7 +7101,7 @@ _addtomark
 		.word eq
 #include "page.i65"
 		.word qbranch
-		.word *-10
+		.word addtomark02
 #include "page.i65"
 		.word drop
 		.word exit
@@ -7124,8 +7206,8 @@ _loop
 #include "page.i65"
 		.word _compile
 		.word ploop
-#include "page.i65"
-		.word _qfromresolve
+#include "pad.i65"
+		.word _qltresolve
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7145,7 +7227,8 @@ _plusloop
 #include "page.i65"
 		.word _compile
 		.word pploop
-		.word _qfromresolve
+#include "pad.i65"
+		.word _qltresolve
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7202,7 +7285,7 @@ _until
 		.word _compile
 		.word qbranch
 #include "page.i65"
-		.word _qfromresolve
+		.word _qltresolve
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7220,7 +7303,7 @@ _again
 #include "page.i65"
 		.word _compile
 		.word branch
-		.word _qfromresolve
+		.word _qltresolve
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7327,12 +7410,12 @@ _spaces
 		.word zero
 #include "page.i65"
 		.word pqdo
-		.word *+8
-		.word _space
+		.word spaces02
+spaces01	.word _space
 #include "page.i65"
 		.word ploop
-		.word *-4
-		.word exit
+		.word spaces01
+spaces02	.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -7409,7 +7492,6 @@ sharplfa	.word $adde
 _sharp
 #include "enter.i65"
 		.word base
-
 #include "page.i65"
 		.word fetch
 #include "page.i65"
@@ -7425,13 +7507,13 @@ _sharp
 		.word lt
 #include "page.i65"
 		.word qbranch
-		.word *+7
+		.word sharp01
 		.word clit
 		.byt 7
 #include "pad.i65"
 		.word plus
 #include "page.i65"
-		.word clit
+sharp01		.word clit
 		.byt '0'
 #include "pad.i65"
 		.word plus
@@ -7774,15 +7856,15 @@ roll		stx n
 		sta tos+1
 		lda stackl,x
 		sta tos
-l056		cpx n
-		beq l057
+roll01		cpx n
+		beq roll02
 		lda stackh+$ff,x
 		sta stackh,x
 		lda stackl+$ff,x	; ~ probably not work!
 		sta stackl,x
 		dex
-		bne l056
-l057		inx
+		bne roll01
+roll02		inx
 		jmp next
 
 ;--------------------------------------------------------------
@@ -7919,7 +8001,7 @@ twostorelfa	.word $adde
 		.byt (twostore-*-1)|bit7
 		.asc "2","!"|bit7
 twostore	ldy #0
-l055		lda stackh,x
+twostore01	lda stackh,x
 		sta (tos),y
 		iny
 		lda stackl,x
@@ -7927,7 +8009,7 @@ l055		lda stackh,x
 		iny
 		inx
 		cpy #4
-		bne l055
+		bne twostore01
 		jmp pop
 
 ;--------------------------------------------------------------
@@ -8016,9 +8098,8 @@ dzeq		ldy #0
 		bne *+3
 		dey
 		inx
-		sty tos
-		sty tos+1
-		jmp next
+		tya
+		jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -8030,23 +8111,22 @@ deqlfa		.word $adde
 deq		ldy #0
 		lda tos
 		eor stackl+1,x
-		bne l054
+		bne deq01
 		lda tos+1
 		eor stackh+1,x
-		bne l054
+		bne deq01
 		lda stackl,x
 		eor stackl+2,x
-		bne l054
+		bne deq01
 		lda stackh,x
 		eor stackh+2,x
-		bne l054
+		bne deq01
 		dey
-l054		sty tos
-		sty tos+1
+deq01		inx
 		inx
 		inx
-		inx
-		jmp next
+		tya
+		jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -8056,9 +8136,9 @@ dultlfa		.word $adde
 		.byt (dult-*-1)|bit7
 		.asc "DU","<"|bit7
 dult		jsr dcmp
-		bcs *+3
+		bcs dult01
 		dey
-	;	sty stack+6,x
+dult01	;	sty stack+6,x
 	;	sty stack+7,x
 		inx
 		inx
@@ -8195,13 +8275,14 @@ _configure
 ;
 ;	FREEZE
 ;
+; ~ what does this do?
 freezelfa	.word $adde
 		.byt (_freeze-*-1)|bit7
 		.asc "FREEZ","E"|bit7
 _freeze
 #include "enter.i65"
 		.word plit
-		.word forth+2
+		.word forth+3
 #include "pad.i65"
 		.word fetch
 #include "page.i65"
@@ -8270,10 +8351,10 @@ _saveforth
 	.word next
 #endif
 		.word _pdotq
-		.byt s030-*-1
+		.byt saveforth01-*-1
 		.asc	"FILENAME? "
 			;123456789.
-s030		.word _pad
+saveforth01	.word _pad
 #include "page.i65"
 		.word oneplus
 #include "page.i65"
@@ -8355,49 +8436,49 @@ boyd		ldy #userdp-userarea
 		sta n+4
 		lda #$AD
 		sta (n+2),y
-l061		lda #$DE
-l049		cmp (tos),y
-		beq l050
+boyd01		lda #$DE
+boyd02		cmp (tos),y
+		beq boyd03
 		iny
-		bne l049
+		bne boyd02
 		inc tos+1
-		bpl l049
+		bpl boyd02
 		brk		; we're not supposed to ever get here
-l050		clc
+boyd03		clc
 		tya
 		adc tos
 		sta tos		; move TOS to point where DE AD was found
-		bcc l058
+		bcc boyd04
 		inc tos+1
-l058		ldy #1
+boyd04		ldy #1
 		lda #$AD
 		cmp (tos),y	; really DE AD?  Or just DE?
-		bne l061
+		bne boyd01
 		lda tos
 		cmp n+2
-		bne l062
+		bne boyd05
 		lda tos+1
 		cmp n+3
-		beq l063	; are we HERE yet?
-l062		iny
+		beq boyd07	; are we HERE yet?
+boyd05		iny
 		lda (tos),y	; get the length byte
-		bpl l061	; length should have bit7 set
+		bpl boyd01	; length should have bit7 set
 		and #$1f
 		clc
 		adc #2		; LFA to NFA offset
 		tay
 		lda (tos),y	; last character should have bit7 set (> $80)
-		bpl l061
-l059		dey		; in-between characters should be < $80
+		bpl boyd01
+boyd06		dey		; in-between characters should be < $80
 		cpy #2
-		beq l060
+		beq boyd08
 		lda (tos),y
-		bpl l059
-		bmi l061
-l063		lda #0
+		bpl boyd06
+		bmi boyd01
+boyd07		lda #0
 		sta tos
 		sta tos+1
-l060		ldy #1		; put things back at HERE
+boyd08		ldy #1		; put things back at HERE
 		lda n+5
 		sta (n+2),y
 		dey
@@ -8423,8 +8504,8 @@ dhash		stx n+7
 		tay
 		iny
 				;	hash2	hash1
-l009		dey				;[2]
-		beq l047			;[2]
+dhash01		dey				;[2]
+		beq dhash02			;[2]
 		lda (tos),y			;[5]
 		sec				;[2]
 		sbc #$20			;[2]
@@ -8435,14 +8516,14 @@ l009		dey				;[2]
 		sta n				;[3]
 		lda (tos),y		;[5]
 		clc			;[2]
-		adc #$FF-('9')		;[2]		; things are doubled
-		adc #'9'-'0'+1		;[2]		; due to ASL above
-		bcc l009			;[3]  [12]hash2 [27]hash1	
+		adc #$FF-('9')		;[2]
+		adc #'9'-'0'+1		;[2]
+		bcc dhash01			;[3]  [12]hash2 [27]hash1	
 		adc n+1			; 0> -1 0 1 2 3 0= 0< 0<> sp0 rp0
 		sta n+1			; 1+ 1- 2+ 2- 2/ 2* forth-83 dr0 dr1 
-		jmp l009		; 2drop 2dup 2over 2rot 2swap 2! 2@
+		jmp dhash01		; 2drop 2dup 2over 2rot 2swap 2! 2@
 					; 2constant 2variable d0= d2/ d2* 
-l047		lda n
+dhash02		lda n
 		lsr
 		lsr
 		lsr
@@ -8512,11 +8593,42 @@ bloomstore	lda tos			; set bloom filter bit for hash2
 		lsr
 		lsr
 		lsr
+		and #(power2-bloom2-1)	; don't write outside filter area
 		tay
 		lda n
 		ora bloom2,y
 		sta bloom2,y
 		jmp pop
+
+;--------------------------------------------------------------
+;
+;	BLOOM@   ( hash -- flag )
+;
+; test a bit in the filter
+; hash indexes a single bit in the bloom2 filter
+; false = it can't be in there (bit was clear)
+; true = it might be in there (bit was set)
+;bloomfetchlfa	.word $adde
+;		.byt (bloomfetch-*-1)|bit7
+;		.asc "BLOOM","@"|bit7
+bloomfetch	lda tos			; read bloom filter bit for hash2
+		and #7
+		tay
+		lda power2,y
+		sta n
+		lda tos
+		lsr
+		lsr
+		lsr
+		and #(power2-bloom2-1)	; don't read outside filter area
+		tay
+		lda bloom2,y
+		ldy #0
+		and n
+		beq bloomfetch01
+		dey
+bloomfetch01	tya
+		jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -8651,16 +8763,16 @@ _unthread
 #include "page.i65"
 		.word pdo
 #include "page.i65"
-l051		.word i
+unthread01	.word i
 #include "page.i65"
 		.word dhashfetch
 #include "page.i65"
-l052		.word dup
+unthread02	.word dup
 #include "page.i65"
 		.word fetch
 #include "page.i65"
 		.word qbranch
-		.word l053
+		.word unthread03
 #include "pad.i65"
 		.word plit
 		.word $adde
@@ -8670,9 +8782,9 @@ l052		.word dup
 		.word store
 #include "page.i65"
 		.word branch
-		.word l052
+		.word unthread02
 #include "page.i65"
-l053		.word drop
+unthread03	.word drop
 #include "page.i65"
 		.word zero
 #include "page.i65"
@@ -8681,7 +8793,7 @@ l053		.word drop
 		.word dhashstore
 #include "page.i65"
 		.word ploop
-		.word l051
+		.word unthread01
 #include "page.i65"
 		.word exit
 
@@ -8719,12 +8831,12 @@ _rethread
 #include "page.i65"
 		.word _plusorigin
 #include "page.i65"
-l044		.word boyd		; begin boyd ?dup while ... repeat
+rethread01	.word boyd		; begin boyd ?dup while ... repeat
 #include "page.i65"
 		.word qdup
 #include "page.i65"
 		.word qbranch
-		.word l024
+		.word rethread02
 #include "page.i65"
 		.word dup		; ( lfa lfa )
 #include "page.i65"
@@ -8739,9 +8851,9 @@ l044		.word boyd		; begin boyd ?dup while ... repeat
 		.word dhashstore	; ( lfa )
 #include "page.i65"
 		.word branch
-		.word l044
+		.word rethread01
 #include "pad.i65"
-l024		.word exit
+rethread02	.word exit
 
 
 ;--------------------------------------------------------------
@@ -8782,23 +8894,23 @@ _forget
 	.word next
 #endif
 		.word _pabortq
-		.byt s029-*-1
+		.byt forget01-*-1
 		.asc	"IN PROTECTED DICTIONARY"
 			;123456789.123456789.123
-s029		.word tor
+forget01	.word tor
 #include "page.i65"
 		.word voclink
 #include "page.i65"
 		.word fetch
 #include "page.i65"
-l162		.word rfetch
+forget02	.word rfetch
 #include "page.i65"
 		.word over
 #include "page.i65"
 		.word ult
 #include "page.i65"
 		.word qbranch
-		.word l163
+		.word forget03
 #include "page.i65"
 		.word forth
 #include "page.i65"
@@ -8807,19 +8919,19 @@ l162		.word rfetch
 		.word fetch
 #include "page.i65"
 		.word branch
-		.word l162
+		.word forget02
 #include "page.i65"
-l163		.word dup
+forget03	.word dup
 #include "page.i65"
 		.word voclink
 #include "page.i65"
 		.word store
 #include "page.i65"
-l165		.word dup
+forget04	.word dup
 #include "page.i65"
 		.word twominus
 #include "page.i65"
-l164		.word _ntolink
+forget05	.word _ntolink
 #include "page.i65"
 		.word fetch
 #include "page.i65"
@@ -8830,7 +8942,7 @@ l164		.word _ntolink
 		.word ult
 #include "page.i65"
 		.word qbranch
-		.word l164
+		.word forget05
 #include "pad.i65"
 		.word over
 #include "page.i65"
@@ -8847,7 +8959,7 @@ l164		.word _ntolink
 		.word zeq
 #include "page.i65"
 		.word qbranch
-		.word l165
+		.word forget04
 #include "pad.i65"
 		.word rfrom
 #include "page.i65"
@@ -8875,7 +8987,7 @@ _thru
 #include "page.i65"
 		.word pdo
 #include "page.i65"
-l160		.word i
+thru01		.word i
 #include "page.i65"
 		.word _udot
 #include "page.i65"
@@ -8886,12 +8998,12 @@ l160		.word i
 		.word qterminal
 #include "page.i65"
 		.word pqleave
-		.word l161
+		.word thru02
 #include "pad.i65"
 		.word ploop
-		.word l160
+		.word thru01
 #include "pad.i65"
-l161		.word exit
+thru02		.word exit
 
 ;foolfa		.word $adde
 ;		.byt (_foo-*-1)|bit7
@@ -8955,4 +9067,7 @@ endofile
 ;		CREATE  DO  DOES>  ELSE  IF  IMMEDIATE  LEAVE  LITERAL  LOOP
 ;		REPEAT  STATE  THEN  UNTIL  VARIABLE  VOCABULARY  WHILE  [
 ;		[']  [COMPILE]  ]
-
+; The fig-Forth, F79, F83, and ANS standards have quite a
+; variance of words.  There are 229
+; defined words for fig-FORTH, 236 defined words for F79, and 255 defined
+; words for F83.
