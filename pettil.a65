@@ -94,16 +94,15 @@ userfence	.word forgetfence			; 16..17
 userdp		.word endofile				; 18..19
 uservoclink	.word lastvoc				; 20..21
 userviewquery	.word 2					; 22..23
-userblk		.word 0					; 24..25
+;userblk	.word 0					; 24..25
 
 usercold
 
 lfalist		.dsb 32,0	; heads of link threads
 bloom2		.dsb 8,0	; Forth vocabulary bloom filter for hash2
-power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
-;pearson		.byt 26,115,76,23,138,222,77,7
-;pearson		.byt 99,87,163,121,251,119,228,7
 pearson		.byt 150,191,252,0,194,202,129,7
+power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
+
 ;--------------------------------------------------------------
 ;
 ;	NEXT
@@ -148,20 +147,13 @@ slip		dex			; slip something onto the stack
 		sta stackl,x
 		rts
 
+;--------------------------------------------------------------
 slide		lda stackl,x		; slide something off of the stack
 		sta tos
 		lda stackh,x
 		sta tos+1
 		inx
 		rts
-
-		; pass YA = value to push/put on stack
-push		pha
-		jsr slip
-		pla
-put		sty tos+1
-		sta tos
-		jmp next
 
 ;--------------------------------------------------------------
 rootlfa		.word 0
@@ -216,6 +208,7 @@ plit		jsr slip
 		ldy #3
 		lda (ip),y
 		inc ip
+		ldy #1
 		jmp lithi
 
 ;--------------------------------------------------------------
@@ -231,8 +224,8 @@ plit		jsr slip
 ;		.asc "CLI","T"|bit7
 clit		jsr slip
 		lda #0
-lithi		sta tos+1
 		ldy #2
+lithi		sta tos+1
 		lda (ip),y
 		sta tos
 		lda #3
@@ -273,7 +266,6 @@ page		lda #0
 pagen		inc ip+1		; cross the page
 pado		sta ip
 		jmp nexto
-
 
 ;--------------------------------------------------------------
 ;
@@ -426,7 +418,9 @@ poptwo		inx
 pop		ldy stackh,x
 		lda stackl,x
 		inx
-		jmp put
+put		sty tos+1
+		sta tos
+		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -439,7 +433,11 @@ ilfa		.word $adde
 		.asc "I"|bit7
 i		ldy zi+1
 		lda zi
-		jmp push
+		; pass YA = value to push/put on stack
+push		pha
+		jsr slip
+		pla
+		jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -453,7 +451,7 @@ jlfa		.word $adde
 j		stx storex
 		tsx
 		ldy $0102,x
-		lda $0101,x
+		lda $0101,x		; ~ test this
 		ldx storex
 		jmp push
 
@@ -807,20 +805,27 @@ cmovegt05	ldx storex
 filllfa		.word $adde
 		.byt (fill-*-1)|bit7
 		.asc "FIL","L"|bit7
+xyzzy
 fill		ldy #2
 		jsr setup	; howmany -> N0; addr -> N1
-		lda n
-		ora n+1
-		beq fill02	; leave if howmany = 0
+		stx storex
 		lda tos
-		ldy n
-fill01		dey
-		sta (n+2),y
+		ldx n+1
+		beq fill02	; last page?
+fill01		sta (n+2),y	; fill from here to end of this page
+		iny
 		bne fill01
 		inc n+3
-		dec n+1
-		bpl fill01
-fill02		jmp next
+		dex
+		bne fill01
+fill02		ldx n
+		beq fill04
+fill03		sta (n+2),y
+		iny
+		dex
+		bne fill03
+fill04		ldx storex
+		jmp next
 
 ;"~ check http://6502.org/source/ for multiply and divide and stuff
 ;--------------------------------------------------------------
@@ -1027,12 +1032,12 @@ spstore		ldy #usersp0-userarea
 rpstorelfa	.word $adde
 		.byt (rpstore-*-1)|bit7
 		.asc "RP","!"|bit7
-rpstore		stx n
+rpstore		stx storex
 		ldy #userrp0-userarea
 		lda (up),y
 		tax
 		txs
-		ldx n
+		ldx storex
 		jmp next
 
 ;--------------------------------------------------------------
@@ -1497,12 +1502,12 @@ _colon		.word _storecsp
 enter		pla		;[4]
 		tay		;[2]
 		pla		;[4]
-		sta n+1		;[3]
+		sta storex	;[3]
 		lda ip+1	;[3]
 		pha		;[3]
 		lda ip		;[3]
 		pha		;[3]
-		lda n+1		;[3]
+		lda storex	;[3]
 		sta ip+1	;[3]
 		iny		;[2]
 		beq enter02	;[2]
@@ -1922,6 +1927,15 @@ viewqlfa	.word $adde
 viewq		jsr uservar
 		.byt userviewquery-userarea
 
+; ^ cold
+; |
+;  >  user variables pre-initialized from the dictionary
+; |
+; v soft
+;
+; user variables beyond this point are not pre-initialized from the dictionary
+;
+
 ;--------------------------------------------------------------
 ;
 ;	BLK   ( -- addr )
@@ -1938,16 +1952,7 @@ blklfa		.word $adde
 		.byt (blk-*-1)|bit7
 		.asc "BL","K"|bit7
 blk		jsr uservar
-		.byt userblk-userarea
-
-; ^ cold
-; |
-;  >  user variables pre-initialized from the dictionary
-; |
-; v soft
-;
-; user variables beyond this point are not pre-initialized from the dictionary
-;
+		.byt 22
 
 ;--------------------------------------------------------------
 ;
@@ -3353,9 +3358,9 @@ dashtrailing02	.word exit
 ;		.asc "(.",'"',")"|bit7
 _pdotq
 #include "enter.i65"
-		.word rfetch
+		.word rfetch		; address of _pdotq within secondary
 #include "page.i65"
-		.word twoplus		; because we pre-increment?
+		.word twoplus		; address of counted string following
 #include "page.i65"
 		.word count
 #include "page.i65"
@@ -3366,6 +3371,7 @@ _pdotq
 		.word rfrom
 #include "page.i65"
 		.word plus
+					; ~ check for $xxFF bug here
 #include "page.i65"
 		.word tor
 #include "page.i65"
@@ -4918,7 +4924,7 @@ d003	sta zi,y
 	sta tos
 ;~debug
 ; copy NEXT code to zeropage
-		ldy #page-zpnext
+		ldy #setup-zpnext
 cold01		lda zpnext-1,y
 		sta next-1,y
 		dey
@@ -4927,11 +4933,11 @@ cold01		lda zpnext-1,y
 		lda #<warmvector
 		sta errlnk
 		lda #>warmvector
-		sta errlnk+1
+		sta errlnk+1			; ~ test with NMI switch
 
-		lda #>_warm03
+		lda #>_cold
 		sta w1+1
-		lda #<_warm03
+		lda #<_cold
 		sta w1
 
 		ldy #usercold-userarea-1
@@ -4963,7 +4969,7 @@ warm02		lda userarea,y
 		sta ip
 
 		jmp rpstore		; and we're off
-_warm03
+_cold
 #include "enter.i65"
 		.word spstore
 #include "page.i65"
@@ -8514,7 +8520,7 @@ dhash01		dey				;[2]
 		lda (tos),y			;[5]
 		sec				;[2]
 		sbc #$20			;[2]
-		and #(zpnext-pearson-1)		;[2]
+		and #(power2-pearson-1)		;[2]
 		tax				;[2]
 		lda n				;[3]
 		eor pearson,x			;[4]
@@ -8599,7 +8605,7 @@ bloomstore	lda tos			; set bloom filter bit for hash2
 		lsr
 		lsr
 		lsr
-		and #(power2-bloom2-1)	; don't write outside filter area
+		and #(pearson-bloom2-1)	; don't write outside filter area
 		tay
 		lda n
 		ora bloom2,y
@@ -8626,7 +8632,7 @@ bloomfetch	lda tos			; read bloom filter bit for hash2
 		lsr
 		lsr
 		lsr
-		and #(power2-bloom2-1)	; don't read outside filter area
+		and #(pearson-bloom2-1)	; don't read outside filter area
 		tay
 		lda bloom2,y
 		ldy #0
@@ -8816,14 +8822,13 @@ unthread03	.word drop
 ;rethreadlfa	.word $adde
 ;		.byt (_rethread-*-1)|bit7
 ;		.asc "RETHREA","D"|bit7
-xyzzy
 _rethread
 #include "enterx.i65"
 		.word plit
 		.word lfalist
 #include "pad.i65"
 		.word clit
-		.byt <(power2-lfalist)	; all list heads and bloom filters
+		.byt <(pearson-lfalist)	; all list heads and bloom filters
 #include "pad.i65"
 		.word _erase
 #include "page.i65"

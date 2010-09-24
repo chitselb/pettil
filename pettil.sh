@@ -5,6 +5,7 @@ sed 's/^\([_a-zA-Z0-9]*\),\ 0x\(....\).*$/al C\:\2 \.\1/g' < pettil.lab > t.lab
 sort t.lab > pettil.lab
 rm t.lab
 #echo break .cold>>pettil.lab
+echo break .nexto>>pettil.lab
 echo break .xyzzy>>pettil.lab
 # echo break .foo>>pettil.lab
 # echo break .test>>pettil.lab
