@@ -7,7 +7,8 @@ rm t.lab
 #echo break .cold>>pettil16.lab
 #echo break .nexto>>pettil16.lab
 echo break .xyzzy>>pettil16.lab
-echo break .SW16>>pettil16.lab
+echo break .NUL>>pettil16.lab
+#echo break .SW16>>pettil16.lab
 # echo break .foo>>pettil16.lab
 # echo break .test>>pettil16.lab
 # echo break .plit>>pettil16.lab
