@@ -1,20 +1,20 @@
 ;"http://6502.org/source/interpreters/sweet16.htm
 ;"********************************
-;"*				*
-;"*   APPLE-II  PSEUDO MACHINE	*
-;"*	   INTERPRETER		*
-;"*				*
-;"*	COPYRIGHT (C) 1977	*
-;"*     APPLE COMPUTER,  INC	*
-;"*				*
-;"*     ALL  RIGHTS RESERVED	*
-;"*				*
-;"*	   S. WOZNIAK		*
-;"*				*
+;"*				 *
+;"*   APPLE-II  PSEUDO MACHINE	 *
+;"*	   INTERPRETER		 *
+;"*				 *
+;"*	COPYRIGHT (C) 1977	 *
+;"*     APPLE COMPUTER,  INC	 *
+;"*				 *
+;"*     ALL  RIGHTS RESERVED	 *
+;"*				 *
+;"*	   S. WOZNIAK		 *
+;"*				 *
 ;"********************************
-;"*				*
+;"*				 *
 ;"* TITLE:  SWEET 16 INTERPRETER *
-;"*				*
+;"*				 *
 ;"********************************
 set	= $10
 ld	= $20
@@ -41,12 +41,12 @@ bz	= $06
 bnz	= $07
 bm1	= $08
 bnm1	= $09
-bk	= $0A ;(Unassigned)
+bk	= $0A
 rs	= $0B
 bs	= $0C
-nul	= $0D ;(Unassigned)
-	; $0E (Unassigned)
-	; $0F (Unassigned)
+pull	= $0D ;drop TOS on the Forth data stack
+push	= $0E ;push ACC to the Forth data stack
+nul	= $0F ;nop
 
 R0	= $0	; ACC
 R1	= $1	; TOS
@@ -112,7 +112,9 @@ SW16D	LDA #>SET	;COMMON HIGH BYTE FOR ALL ROUTINES
 	LDA OPTBL-2,Y	;LOW ORDER ADR BYTE
 	PHA		;ONTO STACK
 	RTS		;GOTO REG-OP ROUTINE
-TOBR	INC R15L
+TOBR	CPX #$18
+	BCS TOBR2	;0D, 0E, 0F instructions are single byte
+	INC R15L
 	BNE TOBR2	;INCR PC
 	INC R15H
 TOBR2	LDA BRTBL,X	;LOW ORDER ADR BYTE
@@ -145,6 +147,15 @@ SETZ	LDA (R15L),Y	;HIGH ORDER BYTE OF CONSTANT
 	BCC SET2
 	INC R15H
 SET2	RTS
+RSZ	LDX #$18	;12*2 FOR R12 AS STACK POINTER
+	JSR DCR		;DECR STACK POINTER
+	LDA (R0L,X)	;POP HIGH RETURN ADDRESS TO PC
+	STA R15H
+	JSR DCR		;SAME FOR LOW ORDER BYTE
+	LDA (R0L,X)
+	STA R15L
+	RTS
+
 OPTBL	.BYT <SET-1	;1X
 BRTBL	.BYT <RTN-1	;0
 	.BYT <LD-1	;2X
@@ -172,9 +183,9 @@ BRTBL	.BYT <RTN-1	;0
 	.BYT <CPR-1	;DX
 	.BYT <BS-1	;C
 	.BYT <INR-1	;EX
-	.BYT <NUL-1	;D
+	.BYT <PULL-1	;D
 	.BYT <DCR-1	;FX
-	.BYT <NUL-1	;E
+	.BYT <PUSH-1	;E
 	.BYT <NUL-1	;UNUSED
 	.BYT <NUL-1	;F
 
@@ -195,7 +206,6 @@ ST	LDA R0L
 STAT	LDA R0L
 STAT2	STA (R0L,X)	;STORE BYTE INDIRECT
 	LDY #0
-BK	= *-1
 STAT3	STY R14H	;INDICATE R0 IS RESULT NEG
 INR	INC R0L,X
 	BNE INR2	;INCR RX
@@ -307,13 +317,11 @@ BNM1	ASL		;DOUBLE RESULT-REG INDEX
 	EOR #$FF
 	BNE BR1		;BRANCH IF NOT MINUS 1
 NUL	RTS
-RS	LDX #$18	;12*2 FOR R12 AS STACK POINTER
-	JSR DCR		;DECR STACK POINTER
-	LDA (R0L,X)	;POP HIGH RETURN ADDRESS TO PC
-	STA R15H
-	JSR DCR		;SAME FOR LOW ORDER BYTE
-	LDA (R0L,X)
-	STA R15L
-	RTS
+RS	JMP RSZ
 RTN	JMP RTNZ
+BK	JMP mon		; redirect BRK to TIM and enter ML Monitor
+PULL	JMP slide	; remove item from Forth data stack
+PUSH	JSR slip	; push ACC -> Forth data stack as TOS
+	LDX #1
+	JMP ST
 
