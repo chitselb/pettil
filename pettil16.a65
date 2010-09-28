@@ -592,15 +592,19 @@ digit03		tya
 ;
 ; * outer interpreter headerless
 ;
-; addr1 is the address of a counted string we are searching for.
+; addr1 is the address-2 of a counted string we are searching for.
 ; addr2 is the LFA at the head of a chain of LFAs
-; returns ( NFA true ) if found, ( addr1 false ) if not found
+; returns
+;	( CFA true ) if found normal word
+;	( CFA 1 ) if found immediate word
+;	( addr1+2 false ) if not found
 ;
 ;pfindlfa	.word $adde
 ;		.byt (pfind-*-1)|bit7
 ;		.asc "(FIND",")"|bit7
 pfind		ldy #1
 		jsr setup		; name -> N0
+		sty n+5			; return flag = 0
 		ldy #2
 		lda (n),y
 		and #$1f
@@ -611,7 +615,7 @@ pfind01		lda (tos),y
 		sta n+3			; just the length
 		lda n+2
 		cmp n+3			; compare lengths
-		bcc pfind05		; found something longer, not found
+		bcc pfind05		; found something longer, fail
 		bne pfind04		; found something shorter, hop
 		lda n+4			; just right
 		and #bit5		; what about the smudge bit?
@@ -626,14 +630,24 @@ pfind02		lda (tos),y		; compare strings back-to-front
 		dey
 		cpy #2
 		bne pfind02
-		bit n+4
-		bvs pfind03
-		ldy #$ff		; non-immediate
+		;sec			; winner winner pizza dinner!
+		ldy n+3			; let's return ( CFA flag )
+		iny			; skip past LFA
+		iny
+		iny			; skip past length byte
 		tya
-		bne pfind07		; bra
-pfind03		ldy #0			; immediate
-		lda #1
-		bne pfind07		; bra
+		adc n
+		sta tos
+		ldy n+1
+		bcc pfind03
+		iny			; LFA+len+name might cross a page
+pfind03		sty tos+1		; CFA -> TOS
+		lda n+4
+		asl
+		asl			; bit6 is now in C flag
+		bcs pfind06		; immediate word
+		dec n+5
+		bcc pfind06		; normal word
 
 pfind04		ldy #0			; here's where we hop
 		lda (tos),y
@@ -646,16 +660,19 @@ pfind04		ldy #0			; here's where we hop
 		iny			; Y=2
 		bne pfind01		; bra
 
-pfind05		ldy n+1
+pfind05		;clc			; not found
+		lda n+1
+		sta tos+1
 		lda n
 		adc #2
 		sta tos
 		bcc pfind06
-		iny
-pfind06		sty tos+1
-		ldy #0			; not found
+		inc tos+1
+		clc
+pfind06		ldy n+5
 		tya
-pfind07		jmp pushya
+		adc #0
+		jmp pushya
 
 ;--------------------------------------------------------------
 ;
@@ -2311,9 +2328,9 @@ twostar		asl tos
 ; * 83 interpreter
 ;
 herelfa		.word $adde
-		.byt (_here-*-1)|bit7
+		.byt (here-*-1)|bit7
 		.asc "HER","E"|bit7
-_here		ldy #(userdp-userarea)
+here		ldy #(userdp-userarea)
 		lda (up),y
 		pha
 		iny
@@ -2349,7 +2366,7 @@ commalfa	.word $adde
 		.asc ","|bit7
 _comma
 #include "enter.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word store
 #include "page.i65"
@@ -2367,7 +2384,7 @@ ccommalfa	.word $adde
 		.asc "C",","|bit7
 _ccomma
 #include "enter.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word cstore
 #include "page.i65"
@@ -2861,7 +2878,7 @@ where03		.word toin
 #include "page.i65"
 where04		.word cr
 #include "page.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word cfetch
 #include "page.i65"
@@ -2960,7 +2977,7 @@ _commadollar
 #include "page.i65"
 		.word over
 #include "page.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word _twodup
 #include "page.i65"
@@ -3740,7 +3757,7 @@ padlfa		.word $adde
 		.asc "PA","D"|bit7
 _pad
 #include "enter.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word clit
 		.byt 80
@@ -3787,70 +3804,45 @@ tickstream01	.word tib		; ( tib )
 #include "page.i65"			; then
 tickstream02	.word toin		; ( buf size >in )
 #include "page.i65"
-		.word to6502
-		ldy #2
-		jsr setup
-		brk
-		.byt ldd  | TOS		; >IN @
-		.byt cpr  | N0
-		.byt bm,  <(tickstream03-*-2)
-		.byt ld   | N0
-tickstream03	.byt st   | N2
-		.byt ld   | N1
-		.byt add  | N2
-		.byt st   | TOS
-		.byt ld   | N0
-		.byt sub  | N2
-		.byt push			; ( addr remaining )
-		.byt rtn
-#include "toforth.i65"
+		.word fetch		; ( buf size offset )
+#include "page.i65"
+		.word over		; ( buf size offset size )
+#include "page.i65"
+		.word _min		; ( buf size offset )
+#include "page.i65"
+		.word tor		; ( buf size )
+#include "page.i65"
+		.word swap		; ( size buf )
+#include "page.i65"
+		.word rfetch		; ( size buf offset )
+#include "page.i65"
+		.word plus		; ( size addr )
+#include "page.i65"
+		.word swap		; ( addr size )
+#include "page.i65"
+		.word rfrom		; ( addr size offset )
+#include "page.i65"
+		.word minus		; ( addr remaining )
 		.word exit
 
-;_tickstream
-;#include "enter.i65"
-;		.word blk
-;#include "page.i65"
-;		.word fetch
-;#include "page.i65"
-;		.word qdup		; ( 0 | blk blk )
-;#include "page.i65"
-;		.word qbranch		; if
-;		.word tickstream01
-;#include "page.i65"
-;		.word _block		; ( addr )
-;#include "page.i65"
-;		.word bperbuf		; ( addr b/buf )
-;#include "page.i65"
-;		.word branch		; else
-;		.word tickstream02
-;#include "page.i65"
-;tickstream01	.word tib		; ( tib )
-;#include "page.i65"
-;		.word numtib
-;#include "page.i65"
-;		.word fetch		; ( tib #tib )
-;#include "page.i65"			; then
-;tickstream02	.word toin		; ( buf size >in )
-;#include "page.i65"
-;		.word fetch		; ( buf size offset )
-;#include "page.i65"
-;		.word over		; ( buf size offset size )
-;#include "page.i65"
-;		.word _min		; ( buf size offset )
-;#include "page.i65"
-;		.word tor		; ( buf size )
-;#include "page.i65"
-;		.word swap		; ( size buf )
-;#include "page.i65"
-;		.word rfetch		; ( size buf offset )
-;#include "page.i65"
-;		.word plus		; ( size addr )
-;#include "page.i65"
-;		.word swap		; ( addr size )
-;#include "page.i65"
-;		.word rfrom		; ( addr size offset )
-;#include "page.i65"
-;		.word minus		; ( addr remaining )
+;		.word to6502
+;		ldy #2
+;		jsr setup
+;		brk
+;		.byt ldd  | TOS		; >in @
+;		.byt cpr  | N0		; #tib or b/buf
+;		.byt bm,  <(tickstream03-*-2)
+;		.byt ld   | N0
+;tickstream03	.byt st   | N2		; smaller of (#tib or b/buf, >in)
+;		.byt ld   | N1		; tib
+;		.byt add  | N2		; cursor position
+;		.byt st   | TOS
+;		.byt ld   | N0
+;		.byt sub  | N2		; bytes remaining
+;		.byt push		; ( addr remaining )
+;		.byt rtn
+;		jmp exit
+;#include "toforth.i65"
 ;		.word exit
 
 ;--------------------------------------------------------------
@@ -3964,7 +3956,7 @@ _word					; ( char )
 #include "page.i65"
 		.word rfrom		; ( addr2 size )
 #include "page.i65"
-		.word _here		; ( addr2 size here )
+		.word here		; ( addr2 size here )
 #include "page.i65"
 		.word _twodup		; ( addr2 size here size here )
 #include "page.i65"
@@ -3976,7 +3968,7 @@ _word					; ( char )
 #include "page.i65"
 		.word cmove		; ( )
 #include "page.i65"
-		.word _here		; ( here )
+		.word here		; ( here )
 #include "page.i65"			; the following may be unnecessary ~
 		.word bl		; ( here bl )
 #include "page.i65"
@@ -4204,15 +4196,15 @@ number06	.word exit
 
 ;--------------------------------------------------------------
 ;
-;	TRYCHAIN   ( name vocab -- addr2 n )
+;	TRYCHAIN   ( name-2 vocabptr -- addr flag )
 ;
 ;": trychain ( name vocabulary -- addr flag )
-;	@ @ ?dup			( name head head | name 0 )
-;	if	(find)			( addr flag )
-;	else	dup 2+ dhash		( name hash1 hash2 )
-;		bloom@			( name hash1 flag )
-;		if	dhash@ (find)	( addr flag )
-;		else	drop false	( name false )
+;	@ @ ?dup			( name-2 head head | name-2 0 )
+;	if	(find)			( addr flag ; result of vocab search )
+;	else	dup 2+ dhash		( name-2 hash1 hash2 )
+;		bloom@			( name-2 hash1 flag )
+;		if	dhash@ (find)	( lfa flag ; result of FORTH search )
+;		else	drop false	( name-2 false ; bloom filter skip )
 ;		then
 ;	then ;
 ;
@@ -4221,43 +4213,45 @@ number06	.word exit
 ;		.asc "TRYCHAI","N"|bit7
 _trychain
 #include "enter.i65"
-		.word fetch
+		.word fetch		; ( name-2 vocabulary )
 #include "page.i65"
-		.word fetch
+		.word fetch		; ( name-2 LFA|0 )
 #include "page.i65"
-		.word qdup
+		.word qdup		; ( name-2 LFA LFA | name-2 false )
 #include "page.i65"
 		.word qbranch
 		.word trychain01
-#include "pad.i65"
-		.word pfind
+#include "pad.i65"			; ( name-2 LFA )
+		.word pfind		; ( addr flag )
 #include "page.i65"
 		.word branch
-		.word trychain02
+		.word trychain03
 #include "pad.i65"
-trychain01	.word dup
+trychain01	.word dup		; ( name-2 name-2 )
 #include "page.i65"
-		.word twoplus
+		.word twoplus		; ( name-2 name )
 #include "page.i65"
-		.word dhash
+		.word dhash		; ( name-2 hash1 hash2 )
 #include "page.i65"
-		.word bloomfetch
+		.word bloomfetch	; ( name-2 hash1 flag )
 #include "page.i65"
 		.word qbranch
 		.word trychain02
-#include "pad.i65"
-		.word dhashfetch
+#include "pad.i65"			; ( name-2 hash1 )
+		.word dhashfetch	; ( name-2 LFA )
 #include "page.i65"
-		.word pfind
+		.word pfind		; ( addr flag )
 #include "page.i65"
 		.word branch
-		.word trychain02
-#include "pad.i65"
-		.word drop
+		.word trychain03
+#include "pad.i65"			; ( name-2 hash1 )
+trychain02	.word drop
+#include "page.i65"			; ( name-2 )
+		.word twoplus
 #include "page.i65"
-		.word false
+		.word false		; ( here false )
 #include "page.i65"
-trychain02	.word exit
+trychain03	.word exit		; ( addr flag )
 
 ;--------------------------------------------------------------
 ;
@@ -4288,10 +4282,10 @@ findlfa		.word $adde
 		.byt (_find-*-1)|bit7
 		.asc "FIN","D"|bit7
 _find
-#include "enter.i65"
-		.word twominus		; ( name-2 )
+#include "enter.i65"			; ( name )
+		.word twominus		; ( name-2 ) adjust to look like LFA
 #include "page.i65"
-		.word context
+		.word context		; ( name-2 context )
 #include "page.i65"
 		.word _trychain
 #include "page.i65"
@@ -4425,7 +4419,7 @@ _create
 #include "enter.i65"
 		.word _ltbcq
 #include "page.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word width
 #include "page.i65"
@@ -4511,7 +4505,7 @@ create03
 #include "page.i65"
 create04	.word drop
 #include "page.i65"
-create05	.word _here
+create05	.word here
 #include "page.i65"
 		.word dup
 #include "page.i65"
@@ -4565,6 +4559,7 @@ create05	.word _here
 #include "pad.i65"
 		.word eq
 #include "page.i65"
+
 		.word qbranch
 		.word create06
 #include "page.i65"
@@ -4608,7 +4603,7 @@ create06	.word twoplus
 #include "pad.i65"
 		.word toggle
 #include "page.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word oneminus
 #include "page.i65"
@@ -4881,7 +4876,7 @@ _vocabulary
 #include "pad.i65"
 		.word _comma
 #include "page.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word voclink
 #include "page.i65"
@@ -5934,6 +5929,7 @@ missing01	.word _bcqto
 		.word clit
 		.byt 6
 #include "pad.i65"
+
 		.word star
 #include "page.i65"
 		.word cmovegt
@@ -7168,7 +7164,7 @@ _qtomark
 #include "enter.i65"
 		.word _qcomp
 #include "page.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word swap
 #include "page.i65"
@@ -7186,7 +7182,7 @@ _qfrommark
 #include "enter.i65"
 		.word _qcomp
 #include "page.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word zero
 		.word exit
@@ -7209,7 +7205,7 @@ qtoresolve01	.word qdup
 #include "page.i65"
 		.word fetch
 #include "page.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word rot
 #include "page.i65"
@@ -8555,7 +8551,7 @@ saveforth01	.word _pad
 		.word plit
 		.word basic+1
 #include "pad.i65"
-		.word _here
+		.word here
 #include "page.i65"
 		.word oneplus
 #include "page.i65"
