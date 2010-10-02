@@ -115,21 +115,20 @@ power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
 
 ;--------------------------------------------------------------
 ; Drop down from high-level Forth to inline 6502
-; ~ might want to take the sweetness out for speed here
+; ~ took the sweet16 out for speed here
+; ~ first .word assembler,p6502
 to6502lfa	.word $adde
 		.byt (to6502-*-1)|bit7
 		.asc ">650","2"|bit7
-to6502		ldy #0
-		lda (ip),y
+to6502		lda ip
 		clc
 		adc #2
 		sta n
-		iny
-		lda (ip),y
-		sta n+1
+		ldy ip+1
 		bcc to650201
-		inc n+1
-to650201	jmp (n)
+		iny
+to650201	sty n+1
+		jmp (n)
 
 ;to6502		brk
 ;		.byt set  | N0
@@ -897,10 +896,16 @@ cmove03		dec tos+1
 
 ;--------------------------------------------------------------
 ;
-;	CMOVE>   ( from to howmany -- )
+;	CMOVE>   ( addr1 addr2 u -- )
 ;
 ; * 83 nucleus
 ;
+; Move the u bytes beginning at address addr1 to
+; addr2.  The move begins by moving the byte at
+; (addr1 plus u minus 1) to (addr2 plus u minus 1)
+; and proceeds to successively lower addresses
+; for u bytes.  If u is zero nothing is moved.
+; Useful for sliding a string towards higher addresses.
 cmovegtlfa	.word $adde
 		.byt (cmovegt-*-1)|bit7
 		.asc "CMOVE",">"|bit7
@@ -1095,50 +1100,13 @@ umslashmodlfa	.word $adde
 umslashmod	ldy #2
 		jsr setup	; udhi -> N0; udlo -> N1
 		jsr divmod
-		jmp pushya
-divmod		stx storex	; pass N0-N3=divisor, TOS=dividend (unsigned)
-		lda n		; return TOS=remainder YA=quotient
-		cmp tos
-		lda n+1
-		sbc tos+1
-		bcs divmod02	; fail - overflow in quotient
-		ldx #$11
-divmod01	rol n+2
-		rol n+3
-		dex
-		beq divmod03
-		rol n
-		rol n+1
-		lda #0
-		sta n+5
-		rol n+5
-		sec
-		lda n
-		sbc tos
-		sta n+4
-		lda n+1
-		sbc tos+1
-		tay
-		lda n+5
-		sbc #0
-		bcc divmod01
-		lda n+4
-		sta n
-		sty n+1
-		bcs divmod01
-divmod02	lda #$ff
-		sta n
-		sta n+1
-		sta n+2
-		sta n+3
-divmod03	ldx storex
-		lda n
-		sta tos
-		lda n+1
+		lda n+3
 		sta tos+1
-		lda n+2
-		ldy n+3
-		rts
+		lda n+2		; remainder
+		sta tos
+		ldy n+5
+		lda n+4
+		jmp pushya	; quotient
 
 ;--------------------------------------------------------------
 ;
@@ -1998,7 +1966,10 @@ numout		jsr uservar
 
 ;--------------------------------------------------------------
 ;
-;	SCR
+;	SCR   ( -- addr )
+;
+; The address of a user variable containing the
+; number of the screen most recently LISTed.
 ;
 scrlfa		.word $adde
 		.byt (scr-*-1)|bit7
@@ -3037,7 +3008,7 @@ where05		.word clit
 
 ;--------------------------------------------------------------
 ;
-;	(ABORT")
+;	(ABORT")   ( flag 
 ;
 ; * outer interpreter headerless
 ;
@@ -3074,7 +3045,7 @@ _pabortq
 #include "page.i65"
 pabortq01	.word rfrom
 #include "page.i65"
-		.word dup
+		.word dup		; ~ >6502 and call pad
 #include "page.i65"
 		.word cfetch
 #include "page.i65"
@@ -5708,84 +5679,57 @@ starslash	jsr dostarslashmod
 ;	UD/MOD   ( d1 n1 -- n2 d2 )
 ;
 ; * divstar
+;
 ; d2 is the double quotient of d1/n1.  n2 is the remainder.  All
 ; values are unsigned.
+; ~ make this 32-bit divisor?
+; ~ fix for /0
 udslashmodlfa	.word $adde
 		.byt (udslashmod-*-1)|bit7
 		.asc "UD/MO","D"|bit7
-xyzzy
 udslashmod	ldy #2
-		jsr setup	; udhi -> N0; udlo -> N1
-		stx storex
-		jsr divide
-		ldx storex
+		jsr setup		; udhi -> N0; udlo -> N1
+		jsr divmod		; unsigned u32/u16 -> 32quo rem16
 		dex
 		lda n+2
 		sta stackl,x
 		lda n+3
-		sta stackh,x
-		dex
-		lda n+2
-		sta stackl,x
-		lda n+3
-		sta stackh,x
-
-divide		lda zi+1
+		sta stackh,x		; remainder
+		lda n+7
+		sta tos+1
+		lda n+6
+		sta tos
+		ldy n+5
+		lda n+4
+		jmp pushya
+divmod		lda zi+1
 		pha
 		lda zi
 		pha
 		sty zi+1
 		sty zi		; a little more elbow room
-
 		sty n+6		; zero the quotient
 		sty n+7
 		sty n+4
 		sty n+5
-
-		; compare the divisor to the dividend
-		; keep doubing the divisor until it is greater
-		; keep a count (Y) of how many times we double
-divide01	lda n+2
-		cmp tos
-		lda n+3
-		sbc tos+1
-		lda n
-		sbc zi
-		lda n+1
-		sbc zi+1
-		bcc divide02
-		asl tos
-		rol tos+1
-		rol zi
-		rol zi+1
-		iny
-		bne divide01
-		; now go back the other way
-		; 2/ the divisor and decrement the counter to zero
-		; trial subtraction as before but keep the results
-		; replace the dividend if it was initially greater than divisor
-divide02	asl n+6
+		ldy #16+1
+divmod02	asl n+6
 		rol n+7
 		rol n+4
 		rol n+5			; double the quotient here
-
-		lsr zi+1
-		ror zi
-		ror tos+1
-		ror tos
 		sec
 		lda n+2
-		sbc tos
-		pha
-		lda n+3
-		sbc tos+1
-		pha
-		lda n
 		sbc zi
 		pha
-		lda n+1
+		lda n+3
 		sbc zi+1
-		bcc divide03
+		pha
+		lda n
+		sbc tos
+		pha
+		lda n+1
+		sbc tos+1
+		bcc divmod03
 		sta n+1
 		pla
 		sta n
@@ -5794,22 +5738,21 @@ divide02	asl n+6
 		pla
 		sta n+2
 		inc n+6			; add 1 to quotient
-		bcs divide04		; bra
-divide03	pla
+		bcs divmod04		; bra
+divmod03	pla
 		pla
 		pla			; discard result of subtraction
-divide04	dey
-		bne divide02
+divmod04	lsr tos+1
+		ror tos
+		ror zi+1
+		ror zi
+		dey
+		bne divmod02
+		pla
+		sta zi
+		pla
+		sta zi+1
 		rts
-
-;To perform binary division follow the following steps:
-;1. Align the divisor (Y) with the most significant end of the dividend. 
-;Let the portion of the dividend from its MSB to its bit aligned with 
-;the LSB of the divisor be denoted X.
-;2. Compare X and Y.
-;a) If X >= Y, the quotient bit is 1 and perform the subtraction X-Y.
-;b) If X < Y, the quotient bit is 0 and do not perform any subtractions.
-;3. Shift Y one bit to the right and go to step 2.
 
 ;--------------------------------------------------------------
 ;
@@ -7401,6 +7344,7 @@ qdisc01		.word exit
 ticklfa		.word $adde
 		.byt (_tick-*-1)|bit7
 		.asc "'"|bit7
+xyzzy
 _tick
 #include "enter.i65"
 		.word _existsq
@@ -7905,9 +7849,12 @@ _sharpgt
 
 ;--------------------------------------------------------------
 ;
-;	SIGN
+;	SIGN    ( n -- )
 ;
 ; * 83 interpreter
+;
+; If n is negative, an ASCII "-" (minus sign) is appended to the
+; pictured numeric output string.  Typically used between <# and #> .
 ;
 signlfa		.word $adde
 		.byt (_sign-*-1)|bit7
@@ -7917,12 +7864,13 @@ _sign
 		.word zlt
 #include "page.i65"
 		.word qbranch
-		.word *+7
+		.word sign01
+#include "pad.i65"
 		.word clit
 		.byt '-'
 #include "pad.i65"
 		.word _hold
-		.word exit
+sign01		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -7952,28 +7900,17 @@ _sharp
 #include "page.i65"
 		.word udslashmod	; ( rem d )
 #include "page.i65"
-		.word rot
+		.word rot		; ( d rem )
 #include "page.i65"
-		.word clit
-		.byt 9
-#include "pad.i65"
-		.word over
-#include "page.i65"
-		.word lt
-#include "page.i65"
-		.word qbranch
-		.word sharp01
-		.word clit
-		.byt 7
-#include "pad.i65"
-		.word plus
-#include "page.i65"
-sharp01		.word clit
-		.byt '0'
-#include "pad.i65"
-		.word plus
-#include "page.i65"
-		.word _hold
+		.word to6502
+		lda tos
+		sed
+		cmp #10
+		adc #'0'
+		cld
+		sta tos			; ( d char )
+#include "toforth.i65"
+		.word _hold		; ( d )
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7991,9 +7928,7 @@ sharps01	.word _sharp		; ( d )
 #include "page.i65"
 		.word _twodup		; ( d d )
 #include "page.i65"
-		.word orx		; ( d n )
-#include "page.i65"
-		.word zeq		; ( d flag )
+		.word dzeq		; ( d flag )
 #include "page.i65"
 		.word qbranch
 		.word sharps01
@@ -8037,8 +7972,14 @@ _udot
 
 ;--------------------------------------------------------------
 ;
-;	U.R
+;	U.R    ( u n -- )
 ;
+; u is converted using the value of BASE and then
+; displayed as an unsigned number right-aligned
+; in a field +n characters wide.  If the number
+; of characters required to display u is greater
+; than +n, an error condition exists.
+
 udotrlfa	.word $adde
 		.byt (_udotr-*-1)|bit7
 		.asc "U.","R"|bit7
@@ -8534,7 +8475,7 @@ dminus	;	jsr dnegate
 
 ;--------------------------------------------------------------
 ;
-;	D0=   ( hi lo -- flag )
+;	D0=   ( d -- flag )
 ;
 dzeqlfa		.word $adde
 		.byt (dzeq-*-1)|bit7
@@ -8544,9 +8485,9 @@ dzeq		ldy #0
 		ora tos+1
 		ora stackl,x
 		ora stackh,x
-		bne *+3
+		bne dzeq01
 		dey
-		inx
+dzeq01		inx
 		tya
 		jmp put
 
@@ -8649,11 +8590,11 @@ _dmin
 		.word _dgt
 #include "page.i65"
 		.word qbranch
-		.word *+4
+		.word dmin01
 #include "page.i65"
 		.word twoswap
 #include "page.i65"
-		.word twodrop
+dmin01		.word twodrop
 		.word exit
 
 ;--------------------------------------------------------------
@@ -8672,11 +8613,11 @@ _dmax
 		.word dlt
 #include "page.i65"
 		.word qbranch
-		.word *+4
+		.word dmax01
 #include "pad.i65"
 		.word twoswap
 #include "page.i65"
-		.word twodrop
+dmax01		.word twodrop
 		.word exit
 
 ;--------------------------------------------------------------
