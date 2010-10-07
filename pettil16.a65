@@ -90,7 +90,7 @@ warmvector	jmp warm
 		; this gets copied to the cassette buffer
 		; and is pointed to by the UP (user pointer)
 userarea
-userup		.word cas2buf				; 0..1		W
+userup		.word CAS2BUF				; 0..1		W
 usersp0		.word bos				; 2..3		A
 userrp0		.word $01ff				; 4..5		R
 userwidth	.word 31				; 6..7		M
@@ -1600,6 +1600,8 @@ cfetch		ldy #0
 ;
 ; * 83 nucleus
 ;
+
+
 ; "store" 
 ; 16b is stored at addr.
 storelfa	.word $adde
@@ -1982,6 +1984,7 @@ scr		jsr uservar
 ;	OFFSET
 ;
 offsetlfa	.word $adde
+
 		.byt (offset-*-1)|bit7
 		.asc "OFFSE","T"|bit7
 offset		jsr uservar
@@ -2853,6 +2856,7 @@ storecsplfa	.word $adde
 		.byt (_storecsp-*-1)|bit7
 		.asc "!CS","P"|bit7
 _storecsp
+
 #include "enter.i65"
 		.word spfetch
 #include "page.i65"
@@ -3547,7 +3551,7 @@ dashtrailing02	.word exit
 ;		.asc "(.",'"',")"|bit7
 _pdq
 #include "enter.i65"
-		.word rfrom
+		.word rfrom		; ( cstring-2 )
 #include "page.i65"
 		.word twoplus
 #include "page.i65"
@@ -3744,6 +3748,7 @@ _query
 
 ;--------------------------------------------------------------
 ;
+
 ;	QUIT?   ( flag -- flag )
 ;
 quitqlfa	.word $adde
@@ -4082,6 +4087,7 @@ _ppunctq
 ;	PUNCT?
 ;
 punctqlfa	.word $adde
+
 		.byt (_punctq-*-1)|bit7
 		.asc "PUNCT","?"|bit7
 _punctq
@@ -4864,6 +4870,7 @@ qstack04
 ;	again ;
 ;
 interpretlfa	.word $adde
+
 		.byt (_interpret-*-1)|bit7
 		.asc "INTERPRE","T"|bit7
 _interpret
@@ -5663,7 +5670,6 @@ starslash	jsr dostarslashmod
 udslashmodlfa	.word $adde
 		.byt (udslashmod-*-1)|bit7
 		.asc "UD/MO","D"|bit7
-xyzzy
 udslashmod	ldy #2
 		jsr setup		; udhi -> N0; udlo -> N1
 		jsr divmod		; unsigned u32/u16 -> 32quo rem16
@@ -9250,6 +9256,7 @@ _forget
 		.word ult
 #if (((*&$ff)+3+23)=$ff)
 	.word next
+
 	.word next
 #endif
 		.word _pabortq
@@ -9328,6 +9335,369 @@ forget05	.word _ntolink
 		.word exit
 
 forgetfence
+
+;--------------------------------------------------------------
+;
+;	UNPACK   ( shamrock -- quad )
+;
+; unpack four 6-bit codes into four 8-bit bytes
+; input
+; N	bits 7-0
+; N+1	always $00
+; TOS	bits 15-8
+; TOS+1	bits 23-16
+;
+; returns
+; TOS	byte 0 (lsb)
+; TOS+1	byte 1
+; N	byte 2
+; N+1	byte 3 (msb)
+unpacklfa	.word $adde
+		.byt (unpack-*-1)|bit7
+		.asc "UNPAC","K"|bit7
+unpack		ldy #1
+		jsr setup	; 24 bits in tos       n         n+1
+		sty tos+1	;            PA50;PB54 PB30;PC52 PC10;PD50
+		stx storex
+		ldx #4
+unpack01	ldy #6		;            23-18  17-12 11-6 5-0
+unpack02	asl n
+		rol n+1
+		rol n
+		rol tos
+		rol tos+1
+		dey
+		bne unpack02
+		lda tos+1
+		sty tos+1
+		sta n-1,x
+		dex
+		bne unpack01
+		ldx storex
+		lda n
+		sta tos
+		lda n+1
+		sta tos+1
+		lda n+2
+		ldy n+3
+		jmp pushya
+		
+;--------------------------------------------------------------
+;
+;	SHAMPACK   ( from to size -- size2 )
+;
+; pack four 8-bit bytes into four 6-bit codes until "size" bytes
+; have been packed from the input stream starting at "from".
+; return "size2" as the number of bytes in the packed buffer at "to"
+;
+;	set quad for 1 character
+;	00 00
+;	00 01
+;	00 02
+;	00 03
+;
+;	set quad for multiple characters
+;	00 04
+;	00 05
+;	00 06
+;	00 07
+;
+;	an '@' sign within this quad
+;	00 10
+;
+;	A = byte to pack
+shamrockshift	ldy #6
+shamrockshift01	lsr
+		ror n+5
+		ror n+6
+		ror n+7
+		dey
+		bne shamrockshift01
+		dex
+		bne shamrockshift05
+		ldx #2
+shamrockshift02	lda n+5,x		; write bytes to output stream
+		jsr rle_write
+		dex
+		bpl shamrockshift02
+		ldx #4			; make a new shamrock
+shamrockshift05	rts
+
+;	A = byte to pack
+shamrockshake	bcc shamrockshake02	; read?
+		lda zi			; original byte
+		eor n+4			
+		and #$c0
+		beq shamrockshake03
+		lda #0			; new quad here
+		jsr shamrockshift	; escape character
+		lda zi
+		eor (n+2),y		; quad of byte after current byte
+		and #$c0		; just the quad bits, please
+		php
+		pla
+		lsr
+		lsr			; C is a copy of Z flag (from and #c0)
+		lda zi
+		and #$c0
+		bcc shamrockshake02
+		sta n+4			; set quad as permanent
+shamrockshake02	rol			; carry bit
+		rol			; quad
+		rol			; bits
+		jsr shamrockshift	; send command
+shamrockshake03	lda zi
+		and #$3f
+		bne shamrockshake04	; handle "@" sign
+		jsr shamrockshift
+		lda #$10
+shamrockshake04	jmp shamrockshift	; send character & exit
+
+shampacklfa	.word $adde
+		.byt (shampack-*-1)|bit7
+		.asc "SHAMPAC","K"|bit7
+xyzzy
+shampack	ldy #2
+		jsr setup		; 4 bytes in tos tos+1 n n+1
+		stx storex
+		lda n+1
+		eor #$ff
+		pha
+		lda n
+		eor #$ff
+		pha			; preserve original "to" address
+		lda zi
+		pha			; elbow room
+		ldx #4			; bytes per shamrock
+		inc tos+1		; bias +$0100 for bne loop
+		jsr rle_read		; get first byte
+		sta zi
+		and #$c0		; mask off hi two bits ( quad )
+		eor #$c0		; make it the wrong quad
+		sta n+4			; current quad
+		lda zi
+shampack01	sec			; write
+		jsr shamrockshake
+		jsr rle_read
+		sta zi
+		bne shampack01		; ~ might be missing the last byte
+shampack02	cpx #4			; ~ find out when I write unpack
+		beq shampack03
+		lda #$3f		; pad last shamrock with 1 bits
+		ora n+4			; use current quad to avoid spillover
+		sec			; write
+		jsr shamrockshake
+		bne shampack02		; bra
+shampack03	ldx storex
+		pla
+		sta zi
+		sec
+		pla
+		adc n
+		sta tos
+		pla
+		adc n+1
+		sta tos+1
+		jmp next
+
+;--------------------------------------------------------------
+;
+;	RLDECODE   ( from to size -- )
+;
+; run-length decodes beginning at "from" to address "to" until
+; "size" bytes have been decoded
+rld_read	lda (n+2),y
+		inc n+2
+		bne rldecode01
+		inc n+3
+rldecode01	rts
+
+rld_write	sta (n),y
+		inc n
+		bne rldecode02
+		inc n+1
+rldecode02	dec tos
+		bne rldecode03
+		dec tos+1
+rldecode03	rts
+
+rldecodelfa	.word $adde
+		.byt (rldecode-*-1)|bit7
+		.asc "RLDECOD","E"|bit7
+rldecode	ldy #2
+		jsr setup	; n = to; n+2 = from; tos = howmany
+		stx storex
+		inc tos+1	; bias $0100 for bne loop
+rldecode04	jsr rld_read
+rldecode05	sta n+4		; lastbyte
+		jsr rld_write
+		beq rldecode09
+		jsr rld_read
+		cmp n+4
+		bne rldecode05
+		jsr rld_write
+		beq rldecode09
+		jsr rld_read
+		tax
+		beq rldecode04
+		lda n+4
+rldecode07	jsr rld_write
+		beq rldecode09
+		dex
+		bne rldecode07
+		beq rldecode04
+rldecode09	ldx storex
+		jmp pops
+
+;--------------------------------------------------------------
+;
+;	RLENCODE   ( from to size -- size2 )
+;
+; run-length encodes beginning at "from" for "size" bytes to address "to"
+; returns "size2" as the number of compressed bytes at "to"
+;
+rle_read	lda (n+2),y
+		inc n+2
+		bne rlencode01
+		inc n+3
+rlencode01	dec tos
+		bne rlencode02
+		dec tos+1
+rlencode02	rts
+
+rle_write	sta (n),y
+		inc n
+		bne rlencode03
+		inc n+1
+rlencode03	rts
+
+rlencodelfa	.word $adde
+		.byt (rlencode-*-1)|bit7
+		.asc "RLENCOD","E"|bit7
+rlencode	ldy #2
+		jsr setup		; n = to; n+2 = from; tos = howmany
+		lda n
+		sta n+6
+		lda n+1
+		sta n+7			; copy original to address
+		stx storex
+		inc tos+1		; bias $0100 for bne loop
+rlencode04	jsr rle_read
+		sta n+4			; lastbyte
+		beq rlencode10
+		jsr rle_write
+rlencode05	jsr rle_read
+		beq rlencode10		; done
+		jsr rle_write
+		tax
+		eor n+4
+		bne rlencode08		; newchar
+		ldx #1
+rlencode06	jsr rle_read
+		pha
+		beq rlencode09		; done rle
+		eor n+4
+		bne rlencode07		; endrle
+		pla
+		inx
+		bne rlencode06		; rleloop
+rlencode07	dex
+		txa			; overflow
+		jsr rle_write
+		inx
+		beq rlencode04		; handle overflow - restart
+		pla
+		tax
+		jsr rle_write
+rlencode08	stx n+4
+		jmp rlencode05		; next
+rlencode09	txa
+		jsr rle_write
+		pla
+rlencode10	jsr rle_write
+		ldx storex
+		sec
+		lda n
+		sbc n+6
+		sta tos
+		lda n+1
+		sbc n+7
+		sta tos+1
+		jmp next
+
+;hex 4241 4443 8000 decimal
+;996 + rot over !
+;14 59468 c!
+;2+ !
+;hex 8000 7c00 decimal 1000
+;rlencode
+;hex 7c00 8000 decimal 1000
+;rldecode
+;
+;		brk
+;		.byt sub  | ACC
+;		.byt st   | N2	; destlen
+;		.byt set  | R9
+;		.word 31	; maxlen
+;		.byt ldi  | N1	; rle_read
+;		.byt st   | N3	; lastbyte
+;		.byt sti  | N0	; rle_store
+;		.byt dcr  | TOS	; decrement source count
+;		.byt bz,  <(rlencode02-*-2)	; end
+;rlencode01	.byt ldi  | N1	; rle_read
+;		.byt cpr  | N3  ; lastbyte
+;		.byt bz,  <(rlencode03-*-2)	; @rle
+;		.byt st   | N3	; lastbyte
+;		.byt sti  | N0	; rle_store
+;		.byt dcr  | TOS ; decrement count
+;		.byt bnz, <(rlencode01-*-2)	; next
+;rlencode02	.byt ld   | N3	; lastbyte
+;		.byt sti  | N0	; rle_store
+;		.byt sub  | ACC	; zero
+;		.byt sti  | N0	; ...with a 0 count as the terminator
+;		.byt rtn
+;
+;rlencode03	.byt set  | R10	; start with a count of 1
+;		.word 1
+;		.byt dcr  | TOS	; decrement source count
+;		.byt bz,  <(rlencode05-*-2)	; rleend
+;rlencode04	.byt ldi  | N1	; rle_read
+;		.byt cpr  | N3	; lastbyte
+;		.byt bnz, <(rlencode06-*-2)	; newbyte
+;		.byt inr  | R10	; length of this run
+;		.byt ld   | R10
+;		.byt cpr  | R9	; maxlen
+;		.byt bz,  <(rlencode07-*-2)	; stop
+;		.byt dcr  | TOS
+;		.byt bnz, <(rlencode04-*-2)	; loop
+;rlencode05	.byt sub  | ACC
+;		.byt std  | N0	; rle_write
+;		.byt ld   | R10	; run length
+;		.byt std  | N0	; rle_write
+;		.byt ld   | N3	; lastbyte
+;		.byt std  | N0	; rle_write
+;		.byt br,  <(rlencode02-*-2)	; end
+;rlencode07	.byt sub  | ACC	; zero
+;		.byt std  | N0	; rle_write
+;		.byt ld   | R10	; maxlen
+;		.byt std  | N0	; rle_write
+;		.byt ld   | N3	; lastbyte
+;		.byt std  | N0	; rle_write
+;		.byt dcr  | TOS	; decrement source length
+;		.byt bz,  <(rlencode05-*-2)	; rleend
+;		.byt br,  <(rlencode04-*-2)	; rlenext
+;rlencode06	.byt st   | R11	; temp
+;		.byt sub  | ACC	; zero
+;		.byt sti  | N0	; rle_write
+;		.byt ld   | R9	; count
+;		.byt sti  | N0	; rle_write
+;		.byt ld   | N3	; lastbyte
+;		.byt sti  | N0	; rle_write
+;		.byt ld   | R11
+;		.byt st   | N3	; lastbyte
+;		.byt dcr  | TOS
+;		.byt bnz, <(rlencode04-*-2)	; loop
+;		.byt br,  <(rlencode02-*-2)	; end
 
 ;==============================================================
 
@@ -9445,4 +9815,21 @@ endofile
 ;	that performs division with a double-length result. So to divide
 ;	200,000 by 4, for instance, we must supply a "1" as a dummy numerator
 ;	/  *  */  */MOD  /MOD  MOD  UM*  UM/MOD  M*  M*/
+;
+; EDITOR
+; stop key is the editor escape and launches this foreground process
+; * reverse the display
+; * wait for a keypress
+; * unreverse display
+; * branch on command
+;
+; stop-home	first screen
+; stop-down	next screen
+; stop-up	prev screen
+; stop-stop	nop
+; stop-?	help
+; stop-h	help
+;
+
+
 

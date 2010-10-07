@@ -517,7 +517,7 @@ Also see [[AdvancedOptions]]</pre>
 [[Welcome]]
 [[Why]]</pre>
 </div>
-<div title="DesignChoices" creator="chitselb" modifier="chitselb" created="201008050757" modified="201008270032" changecount="31">
+<div title="DesignChoices" creator="chitselb" modifier="YourName" created="201008050757" modified="201010050611" changecount="32">
 <pre>[[MemoryMap]]
 [[Internals]]
 [[Dictionary]]
@@ -525,7 +525,7 @@ Also see [[AdvancedOptions]]</pre>
 [[OuterInterpreter]]
 [[Metacompilation]]
 [[Editor]]
-
+[[VirtualMemory]]
 
 &lt;BUILDS ... DOES&gt; Example:
 </pre>
@@ -618,6 +618,39 @@ Since I'm doing this for the PET, I wanted to have a fullscreen editor too.  I l
 ''RVS W'' - toggles to this screen's shadow screen
 ''RVS S'' - saves the current screen, using the [[screen wrap table|ftp://ftp.zimmers.net/pub/cbm/manuals/anthology/p034.jpg]] at $E0 - $F8
 ''RVS Q'' - quit the editor
+</pre>
+</div>
+<div title="Editor design notes" creator="YourName" modifier="YourName" created="201010040421" modified="201010040604" changecount="4">
+<pre>$9B = 
+$FF most times, 
+$EF when stop pressed, 
+$FB when space pressed
+$BF when &quot;.&quot; pressed
+
+Stop is the editor escape key
+with disk it's the BFORTH way.  Code is edited in blocks
+with tape, it's different
+blocks are compressed, variable size pieces of memory
+the screen itself is the block buffer
+compressed memory builds downward in memory one page at a time (CMOVE)
+user variables: START
+6-bit compressed text?  screen codes?  run-length encoding?
+
+editor functionality
+vi mode?
+
+CLR - wipe the block
+STOP-k mark the end of a block
+STOP-x cut from cursor to the other end of the block to paste buffer
+STOP-c copy from cursor to the other end of the block to paste buffer
+STOP-v insert paste buffer here
+
+STOP-Y yank line (copy entire line to line buffer)
+STOP-P put line (insert or overstrike line here with line buffer)
+STOP-R revert screen to last &quot;saved&quot; contents
+STOP-I toggle insert/overstrike mode
+STOP-L load a group of screens prompt for name or next file if blank
+STOP-S save a group of screens to a named tape file
 </pre>
 </div>
 <div title="GettingStarted" creator="chitselb" modifier="chitselb" created="201008262105" changecount="1">
@@ -891,6 +924,125 @@ The PET Kernel ROM uses zero page locations from $8D - $FF for its own nefarious
 </div>
 <div title="StyleSheet" creator="chitselb" modifier="chitselb" created="201009151938" modified="201009151950" changecount="8">
 <pre>.green{color: #060;}
+</pre>
+</div>
+<div title="VirtualMemory" creator="YourName" modifier="YourName" created="201010050643" modified="201010050711" changecount="4">
+<pre>As with other standard, Forth systems, virtual memory in PETTIL is implemented with the BLOCK word.  Most PET owners had a cassette drive (or two).  Disk drives were rare, except in schools.  PETTIL's mass storage device will be cassette tape, not disk.  This changes things around from how most 6502 Forths (figForth, Blazin' Forth, et al) implement virtual memory.
+
+figForth uses a fixed number of 1K block buffers ending at the top of physical memory.  Blocks are moved in and out of RAM by a T&amp;S word which randomly accesses the disk reading and writing sectors on the disk.
+
+PETTIL also implements buffering extending downward from the top of physical memory, but instead of a fixed number of buffers, the PETTIL VM buffer space grows dynamically downward until it bumps into the top of the dictionary growing dynamically upward.  The 6502's 8-bit index registers make the 256-byte page a natural choice for allocating VM buffer space.  PETTIL leverages the SAVE and LOAD routines in ROM to store and retrieve compressed buffer space on cassette tape.
+
+A compression scheme is implemented in the PETTIL screen editor to minimize tape I/O time for the enduser (someone loading and running applications from source) and to maximize available virtual memory buffers to the developer.  Raw block I/O will also be supported, for cases when the assumptions made by the PETTIL screen editor don't hold true.
+
+Compression algorithm assumptions:
+a block of data is a screen of source code
+source code consists primarily of the screen codes $00-$3F (printable ASCII)
+many strings of repeating characters (usually spaces)
+many strings are repeated (e.g. &quot; DUP &quot; and &quot; SWAP &quot; and &quot;: &quot; occur more than once)
+
+The ROM screen editor provides a natural and intuitive interface for PET users to modify source code a line at a time.  So the ROM line editor at $FFCF (CHRIN) becomes the basis of the PETTIL editor (EDIT).  What is lacking in the ROM editor is a way to press &quot;Return&quot; for the entire screen instead of entering a single line at a time.  Also lacking is basic editor functionality like cut/copy/paste and insert line, delete line, move to a different page, etc...
+
+Miniglossary of some terms we will use
+EDIT The PETTIL screen editor
+CHRIN The Commodore PET kernel line editor with a ROM entry point at $FFCF
+PAGE 256 bytes of RAM
+SCREENCODE What is stored in the memory mapped video area ($8000-$83E7)
+SHAMROCK 3 bytes of packed 6-bit data (24 bits)
+QUAD an unpacked shamrock (4 bytes, 32 bits)
+PACK the act of converting a QUAD to a SHAMROCK
+UNPACK the act of converting a SHAMROCK to a QUAD
+RLENCODE run length encode
+RLDECODE run length decode
+
+Probably the best way to describe the scheme is by way of example.  Consider the following source code
+: drop-object  ( object where -- )
+
+   \ Place an object at a given loc, prefixing it onto the atloc list.
+
+   \ Decr holdng if the object is being toted.
+
+   &gt;R  DUP 100 &gt;
+
+   IF DUP 100 - fixed
+
+   ELSE DUP place @ -1 = IF holdng 1- TO holdng THEN DUP place THEN
+
+   R@ SWAP !
+
+   R@ 0&gt; IF R@ atloc @ OVER link !  R&gt; atloc ! ELSE R&gt; 2DROP THEN ;
+
+: death-by-dwarfs  \ 19000
+
+    136 rspeak
+
+    ?score ;
+
+Here's the hex dump of video memory
+{{{&gt;C:8000  28 60 01 04  16 05 0e 14  15 12 05 20  29 20 20 20   (`......... )   
+&gt;C:8010  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8020  20 20 20 20  20 20 20 20  3a 20 04 12  0f 10 2d 0f           : ....-.
+&gt;C:8030  02 0a 05 03  14 20 20 28  60 0f 02 0a  05 03 14 20   .....  (`...... 
+&gt;C:8040  17 08 05 12  05 20 2d 2d  20 29 20 20  20 20 20 20   ..... -- )      
+&gt;C:8050  20 20 20 20  1c 20 10 0c  01 03 05 20  01 0e 20 0f       . ..... .. .
+&gt;C:8060  02 0a 05 03  14 20 01 14  20 01 20 07  09 16 05 0e   ..... .. . .....
+&gt;C:8070  20 0c 0f 03  2c 20 10 12  05 06 09 18  09 0e 07 20    ..., ......... 
+&gt;C:8080  09 14 20 0f  0e 14 0f 20  14 08 05 20  01 14 0c 0f   .. .... ... ....
+&gt;C:8090  03 20 0c 09  13 14 20 20  20 20 20 20  20 20 20 20   . ....          
+&gt;C:80a0  20 20 20 20  1c 20 04 05  03 12 20 08  0f 0c 04 09       . .... .....
+&gt;C:80b0  0e 07 20 09  06 20 14 08  05 20 0f 02  0a 05 03 14   .. .. ... ......
+&gt;C:80c0  20 09 13 20  02 05 09 0e  07 20 14 0f  14 05 04 2e    .. ..... ......
+&gt;C:80d0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:80e0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:80f0  20 20 20 20  3e 12 20 04  15 10 20 31  30 30 20 3e       &gt;. ... 100 &gt;
+&gt;C:8100  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8110  20 20 20 20  20 20 20 20  20 20 20 20  09 06 20 04               .. .
+&gt;C:8120  15 10 20 31  30 30 20 2d  20 06 09 18  05 04 20 20   .. 100 - .....  
+&gt;C:8130  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8140  20 20 20 20  05 0c 13 05  20 04 15 10  20 10 0c 01       .... ... ...
+&gt;C:8150  03 05 20 00  20 2d 31 20  3d 20 09 06  20 08 0f 0c   .. . -1 = .. ...
+&gt;C:8160  04 0e 07 20  31 2d 20 14  0f 20 08 0f  0c 04 0e 07   ... 1- .. ......
+&gt;C:8170  20 14 08 05  0e 20 04 15  10 20 10 0c  01 03 05 20    .... ... ..... 
+&gt;C:8180  14 08 05 0e  20 20 20 20  20 20 20 20  20 20 20 20   ....            
+&gt;C:8190  20 20 20 20  12 00 20 13  17 01 10 20  21 20 20 20       .. .... !   
+&gt;C:81a0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:81b0  20 20 20 20  20 20 20 20  20 20 20 20  12 00 20 30               .. 0
+&gt;C:81c0  3e 60 09 06  20 12 00 20  01 14 0c 0f  03 20 00 20   &gt;`.. .. ..... . 
+&gt;C:81d0  0f 16 05 12  20 0c 09 0e  0b 20 21 20  12 3e 60 01   .... .... ! .&gt;`.
+&gt;C:81e0  14 0c 0f 03  20 21 20 05  0c 13 05 20  12 3e 60 32   .... ! .... .&gt;`2
+&gt;C:81f0  04 12 0f 10  20 14 08 05  0e 20 3b 20  20 20 20 20   .... .... ;     
+&gt;C:8200  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8210  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8220  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8230  3a 20 04 05  01 14 08 2d  02 19 2d 04  17 01 12 06   : .....-..-.....
+&gt;C:8240  13 20 20 1c  20 31 39 30  30 30 20 20  20 20 20 20   .  . 19000      
+&gt;C:8250  20 20 20 20  20 20 20 20  20 20 20 20  31 33 36 20               136 
+&gt;C:8260  12 13 10 05  01 0b 20 20  20 20 20 20  20 20 20 20   ......          
+&gt;C:8270  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8280  20 20 20 20  3f 13 03 0f  12 05 20 3b  20 20 20 20       ?..... ;    
+&gt;C:8290  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:82a0  20 20 20 20  20 20 20 20  a0 20 20 20  20 20 20 20           .       
+&gt;C:82b0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:82c0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:82d0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:82e0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:82f0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8300  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8310  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8320  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8330  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8340  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8350  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8360  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8370  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8380  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:8390  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:83a0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:83b0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:83c0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:83d0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:83e0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20                   
+&gt;C:83f0  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20}}}
 </pre>
 </div>
 <div title="Welcome" creator="chitselb" modifier="chitselb" created="201008262328" modified="201009152037" changecount="6">
