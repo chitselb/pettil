@@ -90,21 +90,23 @@ warmvector	jmp warm
 		; this gets copied to the cassette buffer
 		; and is pointed to by the UP (user pointer)
 userarea
-userup		.word CAS2BUF				; 0..1		W
-usersp0		.word bos				; 2..3		A
-userrp0		.word $01ff				; 4..5		R
-userwidth	.word 31				; 6..7		M
-userwarning	.word -1				; 8..9		.
+userup		.word CAS2BUF				; W
+usersp0		.word bos				; A
+userrp0		.word $01ff				; R
+userwidth	.word 31				; M
+userwarning	.word -1				; .
+uservmbuf	.word $7b00				; .
+uservidbuf	.word $7c00				; .
 userwarm
-userfence	.word forgetfence			; 10..11	C
-userdp		.word endofile				; 12..13	O
-uservoclink	.word lastvoc				; 14..15	L
-userviewquery	.word 2					; 16..17	D
-usermlmon	.word $d478				; 18..19	.
+userfence	.word forgetfence			; C
+userdp		.word endofile				; O
+uservoclink	.word lastvoc				; L
+userviewquery	.word 2					; D
+usermlmon	.word $d478				; .
 usercold
 
 lfalist		.dsb 32,0	; heads of link threads
-bloom2		.dsb 8,0	; Forth vocabulary bloom filter for hash2
+bloom2		.dsb 4,0	; Forth vocabulary bloom filter for hash2
 bloom2x
 pearson		.byt 150,191,252,0,194,202,129,7
 power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
@@ -129,15 +131,6 @@ to6502		lda ip
 		iny
 to650201	sty n+1
 		jmp (n)
-
-;to6502		brk
-;		.byt set  | N0
-;		.word ip
-;		.byt ldd  | N0
-;		.byt inr  | ACC
-;		.byt inr  | ACC
-;		.byt rtn
-;		jmp (R0L)
 
 ;--------------------------------------------------------------
 ; Jump up to high-level Forth from inline 6502
@@ -166,6 +159,18 @@ page		lda #0
 pagen		inc ip+1		; cross the page
 pado		sta ip
 		jmp nexto
+
+;--------------------------------------------------------------
+; first fix the brk instruction so we can use TIM instead of Sweet16
+mon		ldy #(usermlmon-userarea)
+		lda (up),y
+		sta BRKVEC
+		iny
+		lda (up),y
+		sta BRKVEC+1
+ 		brk			; presumably we return here
+		jsr sweet16on
+		jmp next
 
 ;--------------------------------------------------------------
 sweet16on	lda #<SW16
@@ -252,6 +257,38 @@ dnegaten	ldy #0
 		rts
 
 ;--------------------------------------------------------------
+n0write		sta (n),y
+		inc n
+		bne n0write01
+		inc n+1
+n0write01	rts
+
+;--------------------------------------------------------------
+n1read		lda (n+2),y
+		inc n+2
+		bne n1read01
+		inc n+3
+n1read01	rts
+
+;--------------------------------------------------------------
+n0writez	sta (n),y
+		inc n
+		bne countdown
+		inc n+1
+		bne countdown		; bra
+
+;--------------------------------------------------------------
+n1readz		lda (n+2),y
+		inc n+2
+		bne countdown
+		inc n+3
+
+countdown	dec tos
+		bne countdown01
+		dec tos+1
+countdown01	rts
+
+;--------------------------------------------------------------
 ;
 ;	NEXT
 ;
@@ -303,18 +340,6 @@ execute		lda tos			; <-- code field address
 		jmp pops
 w1		.word $dead		; (for when you just need a W register)
 		.word exit		; 'fragment secondary' used by EXECUTE
-
-;--------------------------------------------------------------
-; first fix the brk instruction so we can use TIM instead of Sweet16
-mon		ldy #(usermlmon-userarea)
-		lda (up),y
-		sta BRKVEC
-		iny
-		lda (up),y
-		sta BRKVEC+1
- 		brk			; presumably we return here
-		jsr sweet16on
-		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -1849,6 +1874,35 @@ warninglfa	.word $adde
 warning		jsr uservar
 		.byt userwarning-userarea
 
+;--------------------------------------------------------------
+;
+;	VMBUF   ( -- addr )
+;
+; User variable storing the address of the next available 256-byte
+; page for tape virtual memory.  VMBUF grows downward in memory beginning
+; at $7b00 (leaving 2K buffer above it for the compression/decompression)
+; until it hits the top of the dictionary (PAD).
+;
+vmbuflfa	.word $adde
+		.byt (vmbuf-*-1)|bit7
+		.asc "VMBU","F"|bit7
+vmbuf		jsr uservar
+		.byt uservmbuf-userarea
+
+;--------------------------------------------------------------
+;
+;	VIDBUF   ( -- addr )
+;
+; User variable storing the address of a 1024-byte region of memory
+; used by the RLENCODE, RLDECODE and SHAMROCK compression routines.
+; currently top-of-RAM - $0400 ($7c00)
+;
+vidbuflfa	.word $adde
+		.byt (vidbuf-*-1)|bit7
+		.asc "VIDBU","F"|bit7
+vidbuf		jsr uservar
+		.byt uservidbuf-userarea
+
 ; ^ warm
 ; |
 ;  >  user variables pre-initialized from the dictionary
@@ -2258,6 +2312,18 @@ tiblfa		.word $adde
 		.asc "TI","B"|bit7
 tib		jsr doconst
 		.word $0100
+
+;--------------------------------------------------------------
+;
+;	VIDRAM   ( -- addr )
+;
+; address of PET video memory $8000
+;
+vidramlfa	.word $adde
+		.byt (vidram-*-1)|bit7
+		.asc "VIDRA","M"|bit7
+vidram		jsr doconst
+		.word VIDRAM
 
 ;--------------------------------------------------------------
 ;
@@ -3397,7 +3463,7 @@ _smudge
 ;	HEX
 ;
 hexlfa	.word $adde
-		.byt (_hex-*-1)|bit7
+		.byt (_hex-*-1)|bit7|bit6
 		.asc "HE","X"|bit7
 _hex
 #include "enter.i65"
@@ -3416,7 +3482,7 @@ _hex
 ; * 83 interpreter
 ;
 decimallfa	.word $adde
-		.byt (_decimal-*-1)|bit7
+		.byt (_decimal-*-1)|bit7|bit6
 		.asc "DECIMA","L"|bit7
 _decimal
 #include "enter.i65"
@@ -5145,10 +5211,10 @@ cold01		lda zpnext-1,y
 		lda #<warmvector
 		sta NMIVEC
 		lda #>warmvector
-		sta NMIVEC+1			; ~ test with NMI switch
+		sta NMIVEC+1		; ~ test with NMI switch
 
 		ldy #usercold-userarea-1
-		bne warm01
+		bne warm01		; bra
 
 warm		lda #>warm05
 		sta w1+1
@@ -5175,7 +5241,7 @@ warm02		lda userarea,y
 		lda #<(w1-2)
 		sta ip
 #include "toforth.i65"
-warm03		.word rpstore		; and we're off
+		.word rpstore		; and we're off
 #include "page.i65"
 		.word spstore
 #include "page.i65"
@@ -5225,6 +5291,12 @@ warm03		.word rpstore		; and we're off
 warm04
 #include "pad.i65"
 		.word _rethread
+#include "page.i65"
+		.word vmbuf		; address of vmbuf user variable
+#include "page.i65"
+		.word fetch		; $7b00
+#include "page.i65"
+		.word off		; mark first page of VM available
 #include "page.i65"
 warm05		.word _emptybuffers
 #include "page.i65"
@@ -9381,14 +9453,15 @@ unpack02	asl n
 		lda n+2
 		ldy n+3
 		jmp pushya
-		
+
 ;--------------------------------------------------------------
 ;
-;	SHAMPACK   ( from to size -- size2 )
+;	SHAMROCK   ( addr size -- addr )
 ;
 ; pack four 8-bit bytes into four 6-bit codes until "size" bytes
 ; have been packed from the input stream starting at "from".
-; return "size2" as the number of bytes in the packed buffer at "to"
+; return "addr" points to the beginning of a groups of shamrocks
+; preceded by a length byte.  Updates VMBUF and hi memory as needed.
 ;
 ;	set quad for 1 character
 ;	00 00
@@ -9403,8 +9476,34 @@ unpack02	asl n
 ;	00 07
 ;
 ;	an '@' sign within this quad
-;	00 10
+;	00 40
 ;
+;	A = byte to pack
+shamrockshake	and #&300		; quad of this character
+		cmp n+4			; is it the current quad?
+		beq shamrockshake03	; yes, just roll in the 6-bits
+		sta zi+1		; no, new quad here
+		tya
+		jsr shamrockshift	; send '00' (the escape character)
+		lda zi
+		eor (n+2),y		; quad of following byte (perm/temp?)
+		and #&300		; just the quad bits, please
+		clc
+		bne shamrockshake02
+		sec
+		lda zi+1
+		sta n+4			; set quad as permament
+shamrockshake02	lda zi+1
+		rol			; carry bit
+		rol			; quad
+		rol			; bits
+		jsr shamrockshift	; send command
+shamrockshake03	lda zi			; finally, the actual screen code
+		and #&77
+		bne shamrockshift	; handle "@" sign?
+		jsr shamrockshift	; send '00'
+		lda #&40		; send '40', code for '@' sign
+		; fall through
 ;	A = byte to pack
 shamrockshift	ldy #6
 shamrockshift01	lsr
@@ -9412,93 +9511,89 @@ shamrockshift01	lsr
 		ror n+6
 		ror n+7
 		dey
-		bne shamrockshift01
+		bne shamrockshift01	; roll in 6 bits
 		dex
 		bne shamrockshift05
 		ldx #2
 shamrockshift02	lda n+5,x		; write bytes to output stream
-		jsr rle_write
+		jsr n0write
 		dex
 		bpl shamrockshift02
 		ldx #4			; make a new shamrock
+		lda n			; if zero the current page is full
+		bne shamrockshift05
+		dec n+1			; back up one page to current VMBUF
+		lda #$ff
+		sta (n),y		; mark current page as full
+		dec n+1			; allocate the previous page to VMBUF
+		tya
+		sta (n),y		; zero the counter byte on new page
+		lda #1
+		sta n			; point to first shamrock on new page
 shamrockshift05	rts
+shamrocklfa	.word $adde
+		.byt (shamrock-*-1)|bit7
+		.asc "SHAMROC","K"|bit7
 
-;	A = byte to pack
-shamrockshake	bcc shamrockshake02	; read?
-		lda zi			; original byte
-		eor n+4			
-		and #$c0
-		beq shamrockshake03
-		lda #0			; new quad here
-		jsr shamrockshift	; escape character
-		lda zi
-		eor (n+2),y		; quad of byte after current byte
-		and #$c0		; just the quad bits, please
-		php
-		pla
-		lsr
-		lsr			; C is a copy of Z flag (from and #c0)
-		lda zi
-		and #$c0
-		bcc shamrockshake02
-		sta n+4			; set quad as permanent
-shamrockshake02	rol			; carry bit
-		rol			; quad
-		rol			; bits
-		jsr shamrockshift	; send command
-shamrockshake03	lda zi
-		and #$3f
-		bne shamrockshake04	; handle "@" sign
-		jsr shamrockshift
-		lda #$10
-shamrockshake04	jmp shamrockshift	; send character & exit
-
-shampacklfa	.word $adde
-		.byt (shampack-*-1)|bit7
-		.asc "SHAMPAC","K"|bit7
-xyzzy
-shampack	ldy #2
-		jsr setup		; 4 bytes in tos tos+1 n n+1
+shamrock	ldy #1
+		jsr setup		; $7c00 -> N0
 		stx storex
-		lda n+1
-		eor #$ff
+		brk
+		.byt ld   | N0
+		.byt st   | N1
+		.byt set  | ACC
+		.word uservmbuf-userarea
+		.byt add  | UP
+		.byt st   | R11		; VMBUF
+		.byt ldd  | R11		; ACC points at a page $xx00
+		.byt popd | R11		; move pointer
+		.byt st   | N0
+		.byt ld   | I
+		.byt st   | R9		; make some elbow room
+		.byt rtn
+		ldx #4			; bytes per shamrock
+		lda tos
+		beq shamrock01
+		inc tos+1		; bias +$0100 for bne loop
+shamrock01	lda (n),y		; first byte of vm page (offset byte)
+		sta n
+		bne shamrock02
+		inc n			; N0 points to next output byte
+shamrock02	lda n+1
 		pha
 		lda n
-		eor #$ff
-		pha			; preserve original "to" address
-		lda zi
-		pha			; elbow room
-		ldx #4			; bytes per shamrock
-		inc tos+1		; bias +$0100 for bne loop
-		jsr rle_read		; get first byte
+		pha			; the starting address of this screen
+		jsr n1readz		; get first byte
 		sta zi
-		and #$c0		; mask off hi two bits ( quad )
-		eor #$c0		; make it the wrong quad
+		and #&300		; mask off hi two bits ( quad )
+		eor #&300		; make it the wrong quad
 		sta n+4			; current quad
 		lda zi
-shampack01	sec			; write
-		jsr shamrockshake
-		jsr rle_read
+shamrock03	jsr shamrockshake	; encode and shift each byte
+		jsr n1readz
 		sta zi
-		bne shampack01		; ~ might be missing the last byte
-shampack02	cpx #4			; ~ find out when I write unpack
-		beq shampack03
-		lda #$3f		; pad last shamrock with 1 bits
+		bne shamrock03		; ~ might be missing the last byte
+shamrock04	cpx #4			; ~ find out when I write unpack
+		beq shamrock05
+		lda #&77		; pad last shamrock with 1 bits
 		ora n+4			; use current quad to avoid spillover
-		sec			; write
 		jsr shamrockshake
-		bne shampack02		; bra
-shampack03	ldx storex
+		bne shamrock04		; bra
+shamrock05	ldx storex
 		pla
-		sta zi
-		sec
-		pla
-		adc n
 		sta tos
 		pla
-		adc n+1
-		sta tos+1
-		jmp next
+		sta tos+1		; starting address of compressed data
+		lda n			; update offset on current VMBUF page
+		sty n
+		sta (n),y
+		brk
+		.byt ld   | R9
+		.byt st   | I		; restore I register
+		.byt ld   | N0
+		.byt std  | R11		; move VMBUF
+		.byt rtn
+xyzzy		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -9506,21 +9601,6 @@ shampack03	ldx storex
 ;
 ; run-length decodes beginning at "from" to address "to" until
 ; "size" bytes have been decoded
-rld_read	lda (n+2),y
-		inc n+2
-		bne rldecode01
-		inc n+3
-rldecode01	rts
-
-rld_write	sta (n),y
-		inc n
-		bne rldecode02
-		inc n+1
-rldecode02	dec tos
-		bne rldecode03
-		dec tos+1
-rldecode03	rts
-
 rldecodelfa	.word $adde
 		.byt (rldecode-*-1)|bit7
 		.asc "RLDECOD","E"|bit7
@@ -9528,20 +9608,20 @@ rldecode	ldy #2
 		jsr setup	; n = to; n+2 = from; tos = howmany
 		stx storex
 		inc tos+1	; bias $0100 for bne loop
-rldecode04	jsr rld_read
+rldecode04	jsr n1read
 rldecode05	sta n+4		; lastbyte
-		jsr rld_write
+		jsr n0writez
 		beq rldecode09
-		jsr rld_read
+		jsr n1read
 		cmp n+4
 		bne rldecode05
-		jsr rld_write
+		jsr n0writez
 		beq rldecode09
-		jsr rld_read
+		jsr n1read
 		tax
 		beq rldecode04
 		lda n+4
-rldecode07	jsr rld_write
+rldecode07	jsr n0writez
 		beq rldecode09
 		dex
 		bne rldecode07
@@ -9556,44 +9636,31 @@ rldecode09	ldx storex
 ; run-length encodes beginning at "from" for "size" bytes to address "to"
 ; returns "size2" as the number of compressed bytes at "to"
 ;
-rle_read	lda (n+2),y
-		inc n+2
-		bne rlencode01
-		inc n+3
-rlencode01	dec tos
-		bne rlencode02
-		dec tos+1
-rlencode02	rts
-
-rle_write	sta (n),y
-		inc n
-		bne rlencode03
-		inc n+1
-rlencode03	rts
-
 rlencodelfa	.word $adde
 		.byt (rlencode-*-1)|bit7
 		.asc "RLENCOD","E"|bit7
 rlencode	ldy #2
 		jsr setup		; n = to; n+2 = from; tos = howmany
+		stx storex
 		lda n
 		sta n+6
 		lda n+1
 		sta n+7			; copy original to address
-		stx storex
+		lda tos
+		beq rlencode04
 		inc tos+1		; bias $0100 for bne loop
-rlencode04	jsr rle_read
+rlencode04	jsr n1readz
 		sta n+4			; lastbyte
 		beq rlencode10
-		jsr rle_write
-rlencode05	jsr rle_read
+		jsr n0write
+rlencode05	jsr n1readz
 		beq rlencode10		; done
-		jsr rle_write
+		jsr n0write
 		tax
 		eor n+4
 		bne rlencode08		; newchar
 		ldx #1
-rlencode06	jsr rle_read
+rlencode06	jsr n1readz
 		pha
 		beq rlencode09		; done rle
 		eor n+4
@@ -9603,18 +9670,17 @@ rlencode06	jsr rle_read
 		bne rlencode06		; rleloop
 rlencode07	dex
 		txa			; overflow
-		jsr rle_write
+		jsr n0write
 		inx
 		beq rlencode04		; handle overflow - restart
 		pla
 		tax
-		jsr rle_write
+		jsr n0write
 rlencode08	stx n+4
 		jmp rlencode05		; next
-rlencode09	txa
-		jsr rle_write
-		pla
-rlencode10	jsr rle_write
+rlencode09	pla			; discard
+		txa			; record rle count
+rlencode10	jsr n0write
 		ldx storex
 		sec
 		lda n
@@ -9625,79 +9691,56 @@ rlencode10	jsr rle_write
 		sta tos+1
 		jmp next
 
-;hex 4241 4443 8000 decimal
-;996 + rot over !
-;14 59468 c!
-;2+ !
-;hex 8000 7c00 decimal 1000
-;rlencode
-;hex 7c00 8000 decimal 1000
-;rldecode
+;--------------------------------------------------------------
 ;
-;		brk
-;		.byt sub  | ACC
-;		.byt st   | N2	; destlen
-;		.byt set  | R9
-;		.word 31	; maxlen
-;		.byt ldi  | N1	; rle_read
-;		.byt st   | N3	; lastbyte
-;		.byt sti  | N0	; rle_store
-;		.byt dcr  | TOS	; decrement source count
-;		.byt bz,  <(rlencode02-*-2)	; end
-;rlencode01	.byt ldi  | N1	; rle_read
-;		.byt cpr  | N3  ; lastbyte
-;		.byt bz,  <(rlencode03-*-2)	; @rle
-;		.byt st   | N3	; lastbyte
-;		.byt sti  | N0	; rle_store
-;		.byt dcr  | TOS ; decrement count
-;		.byt bnz, <(rlencode01-*-2)	; next
-;rlencode02	.byt ld   | N3	; lastbyte
-;		.byt sti  | N0	; rle_store
-;		.byt sub  | ACC	; zero
-;		.byt sti  | N0	; ...with a 0 count as the terminator
-;		.byt rtn
+;	SCRIMP   ( -- addr )
 ;
-;rlencode03	.byt set  | R10	; start with a count of 1
-;		.word 1
-;		.byt dcr  | TOS	; decrement source count
-;		.byt bz,  <(rlencode05-*-2)	; rleend
-;rlencode04	.byt ldi  | N1	; rle_read
-;		.byt cpr  | N3	; lastbyte
-;		.byt bnz, <(rlencode06-*-2)	; newbyte
-;		.byt inr  | R10	; length of this run
-;		.byt ld   | R10
-;		.byt cpr  | R9	; maxlen
-;		.byt bz,  <(rlencode07-*-2)	; stop
-;		.byt dcr  | TOS
-;		.byt bnz, <(rlencode04-*-2)	; loop
-;rlencode05	.byt sub  | ACC
-;		.byt std  | N0	; rle_write
-;		.byt ld   | R10	; run length
-;		.byt std  | N0	; rle_write
-;		.byt ld   | N3	; lastbyte
-;		.byt std  | N0	; rle_write
-;		.byt br,  <(rlencode02-*-2)	; end
-;rlencode07	.byt sub  | ACC	; zero
-;		.byt std  | N0	; rle_write
-;		.byt ld   | R10	; maxlen
-;		.byt std  | N0	; rle_write
-;		.byt ld   | N3	; lastbyte
-;		.byt std  | N0	; rle_write
-;		.byt dcr  | TOS	; decrement source length
-;		.byt bz,  <(rlencode05-*-2)	; rleend
-;		.byt br,  <(rlencode04-*-2)	; rlenext
-;rlencode06	.byt st   | R11	; temp
-;		.byt sub  | ACC	; zero
-;		.byt sti  | N0	; rle_write
-;		.byt ld   | R9	; count
-;		.byt sti  | N0	; rle_write
-;		.byt ld   | N3	; lastbyte
-;		.byt sti  | N0	; rle_write
-;		.byt ld   | R11
-;		.byt st   | N3	; lastbyte
-;		.byt dcr  | TOS
-;		.byt bnz, <(rlencode04-*-2)	; loop
-;		.byt br,  <(rlencode02-*-2)	; end
+; for "screen implode". Compresses screen contents (including line-wrap
+; table) returning an address suitable for SPLURGE to uncompress.
+;
+scrimplfa	.word $adde
+		.byt (_scrimp-*-1)|bit7
+		.asc "SCRIM","P"|bit7
+_scrimp
+#include "enter.i65"
+		.word clit
+		.byt LDTB1+1		; ( 00e1 )
+#include "pad.i65"
+		.word vidram		; ( 00e1 8000 )
+#include "page.i65"
+		.word plit		; ( 00e1 8000 03e8 )
+		.word 1000
+#include "pad.i65"
+		.word plus		; ( 00e1 83e8 )
+#include "page.i65"
+		.word clit		; ( 00e1 83e8 24 )
+		.byt 24
+#include "pad.i65"
+		.word cmove		; ( )
+#include "page.i65"
+		.word vidbuf		; ( 3xx )
+#include "page.i65"
+		.word fetch		; ( 7c00 )
+#include "page.i65"
+		.word vidram		; ( 7c00 8000 )
+#include "page.i65"
+		.word over		; ( 7c00 8000 7c00 )
+#include "page.i65"
+		.word plit		; ( 7c00 8000 7c00 0400 )
+		.word 1024
+#include "pad.i65"
+		.word rlencode		; ( 7c00 size )
+#include "page.i65"
+		.word shamrock
+		.word exit
+
+;--------------------------------------------------------------
+;
+;	SPLURGE   ( addr -- )
+;
+; antonym for SCRIMP.  Unpacks the data at addr to the screen, including
+; line-wrap table.
+;
 
 ;==============================================================
 
