@@ -80,39 +80,86 @@ basic		= $0400
 		.word basend
 		.word 10
 		.byt $9e
-		.asc " 1038",0		; sys $040e
+		.asc "(1039)",0		; $040f
 basend		.word 0
 
 coldvector	jmp cold
 warmvector	jmp warm
 
-		; user area initialization data
-		; this gets copied to the cassette buffer
-		; and is pointed to by the UP (user pointer)
-userarea
-userup		.word CAS2BUF				; W
-usersp0		.word bos				; A
-userrp0		.word $01ff				; R
-userwidth	.word 31				; M
-userwarning	.word -1				; .
-uservmbuf	.word $7b00				; .
-uservidbuf	.word $7c00				; .
-userwarm
-userfence	.word forgetfence			; C
-userdp		.word endofile				; O
-uservoclink	.word lastvoc				; L
-userviewquery	.word 2					; D
-usermlmon	.word $d478				; .
-usercold
+;--------------------------------------------------------------
+;
+;	NEXT
+;
+; * inner interpreter headerless
+;
+;		+IP
+;		[IP] -> PC
+;
+; minimalist NEXT, copied to zeropage by COLD
+zpnext	inc ip
+	inc ip
+	jmp ($cafe)
+zpnextx
 
-lfalist		.dsb 32,0	; heads of link threads
-bloom2		.dsb 4,0	; Forth vocabulary bloom filter for hash2
-bloom2x
+;--------------------------------------------------------------
+w1		.word $dead		; (for when you just need a W register)
+		.word exit		; 'fragment secondary' used by EXECUTE
+
+;--------------------------------------------------------------
 pearson		.byt 150,191,252,0,194,202,129,7
-power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
+pearsonx
 
-; Juggle things around as necessary to keep SET..PUSH within a single page
+;--------------------------------------------------------------
+rootlfa		.word 0
+		.byt 31			; longest word in the dictionary
 
+;--------------------------------------------------------------
+slide		lda stackl,x		; slide something off of the stack
+		sta tos
+		lda stackh,x
+		sta tos+1
+		inx
+		rts
+
+;--------------------------------------------------------------
+slip		dex			; slip something onto the stack
+		lda tos+1
+		sta stackh,x
+		lda tos
+		sta stackl,x
+		rts
+
+;--------------------------------------------------------------
+		; pops up to 4 words from the split stack to N area
+		; Y = how many words to pop (valid range 1-4)
+		; returns
+		; Y = 0
+		; TOS unchanged
+		; 2OS -> N0, 3OS -> N1, 4OS -> N2, 5OS -> N3
+		;      1          2          3          4
+setup		sty storex
+		ldy #0
+setup01		lda stackl,x
+		sta n,y
+		lda stackh,x
+		sta n+1,y
+		iny
+		iny
+		inx
+		dec storex
+		bne setup01
+		ldy #0
+		rts
+
+;--------------------------------------------------------------
+sweet16on	lda #<SW16
+		sta BRKVEC
+		lda #>SW16
+		sta BRKVEC+1		; set up Sweet-16
+		rts
+
+;==============================================================
+; SET and PUSH must be on the same page.
 #include sweet16.a65
 
 ;--------------------------------------------------------------
@@ -173,72 +220,6 @@ mon		ldy #(usermlmon-userarea)
 		jmp next
 
 ;--------------------------------------------------------------
-sweet16on	lda #<SW16
-		sta BRKVEC
-		lda #>SW16
-		sta BRKVEC+1		; set up Sweet-16
-		rts
-
-;--------------------------------------------------------------
-slide		lda stackl,x		; slide something off of the stack
-		sta tos
-		lda stackh,x
-		sta tos+1
-		inx
-		rts
-
-;--------------------------------------------------------------
-slip		dex			; slip something onto the stack
-		lda tos+1
-		sta stackh,x
-		lda tos
-		sta stackl,x
-		rts
-
-;--------------------------------------------------------------
-		; pops up to 4 words from the split stack to N area
-		; Y = how many words to pop (valid range 1-4)
-		; returns
-		; Y = 0
-		; TOS unchanged
-		; 2OS -> N0, 3OS -> N1, 4OS -> N2, 5OS -> N3
-		;      1          2          3          4
-setup		sty storex
-		ldy #0
-setup01		lda stackl,x
-		sta n,y
-		lda stackh,x
-		sta n+1,y
-		iny
-		iny
-		inx
-		dec storex
-		bne setup01
-		ldy #0
-		rts
-
-;--------------------------------------------------------------
-		; push up to 4 words from the N area to the data stack
-		; Y = how many words to push (valid range 1-4)
-		; returns
-		; Y = 0
-		; TOS unchanged
-		; N0 -> 2OS, N1 -> 3OS, N2 -> 4OS, N3 -> 5OS
-		;      1          2          3          4
-restack		tya
-		asl
-		tay
-restack01	dex
-		lda n-2,y
-		sta stackl,x
-		lda n-1,y
-		sta stackh,x
-		dey
-		dey
-		bne restack01
-		rts
-
-;--------------------------------------------------------------
 		; negate the double at n..n+3
 dnegaten	ldy #0
 		sec
@@ -289,23 +270,30 @@ countdown	dec tos
 countdown01	rts
 
 ;--------------------------------------------------------------
-;
-;	NEXT
-;
-; * inner interpreter headerless
-;
-;		+IP
-;		[IP] -> PC
-;
-; minimalist NEXT, copied to zeropage by COLD
-zpnext	inc ip
-	inc ip
-	jmp ($cafe)
-zpend
+lfalist		.dsb 32,0	; heads of link threads
+bloom2		.dsb 8,0	; Forth vocabulary bloom filter for hash2
+bloom2x
+power2		.byt $80,$40,$20,$10,$08,$04,$02,$01
 
 ;--------------------------------------------------------------
-rootlfa		.word 0
-		.byt 31			; longest word in the dictionary
+; user area initialization data
+; this gets copied to the cassette buffer
+; and is pointed to by the UP (user pointer)
+userarea
+userup		.word CAS2BUF				; W
+usersp0		.word bos				; A
+userrp0		.word $01ff				; R
+userwidth	.word 31				; M
+userwarning	.word -1				; .
+uservmbuf	.word $7b00				; .
+userwarm
+userfence	.word forgetfence			; C
+userdp		.word endofile				; O
+uservoclink	.word lastvoc				; L
+userviewquery	.word 2					; D
+usermlmon	.word $d478				; .
+uservidbuf	.word $7c00				; .
+usercold
 
 ;--------------------------------------------------------------
 ;
@@ -338,8 +326,6 @@ execute		lda tos			; <-- code field address
 		lda #>(w1-2)
 		sta ip+1
 		jmp pops
-w1		.word $dead		; (for when you just need a W register)
-		.word exit		; 'fragment secondary' used by EXECUTE
 
 ;--------------------------------------------------------------
 ;
@@ -669,7 +655,7 @@ digit03		tya
 ;		.asc "(FIND",")"|bit7
 pfind		ldy #1
 		jsr setup		; name -> N0
-		sty n+5			; return flag = 0
+		sty n+5			; return flag = 0 (not found)
 		ldy #2
 		lda (n),y
 		and #$1f
@@ -1880,8 +1866,9 @@ warning		jsr uservar
 ;
 ; User variable storing the address of the next available 256-byte
 ; page for tape virtual memory.  VMBUF grows downward in memory beginning
-; at $7b00 (leaving 2K buffer above it for the compression/decompression)
-; until it hits the top of the dictionary (PAD).
+; at $7a00 until it hits the top of the dictionary (PAD).  There is a 
+; page above it ($7b00) for the in-memory screen index, and a 2K buffer
+; from $7c00-$7fff for compression/decompression 
 ;
 vmbuflfa	.word $adde
 		.byt (vmbuf-*-1)|bit7
@@ -5019,11 +5006,6 @@ _vocabulary
 #include "page.i65"
 		.word _comma
 #include "page.i65"
-		.word plit
-		.word $a081
-#include "pad.i65"
-		.word _comma
-#include "page.i65"
 		.word here
 #include "page.i65"
 		.word voclink
@@ -5202,7 +5184,7 @@ d002	sta R0L,y
 	sta tos
 ;~debug
 ; copy NEXT code to zeropage
-		ldy #zpend-zpnext
+		ldy #zpnextx-zpnext
 cold01		lda zpnext-1,y
 		sta next-1,y
 		dey
@@ -5291,12 +5273,6 @@ warm02		lda userarea,y
 warm04
 #include "pad.i65"
 		.word _rethread
-#include "page.i65"
-		.word vmbuf		; address of vmbuf user variable
-#include "page.i65"
-		.word fetch		; $7b00
-#include "page.i65"
-		.word off		; mark first page of VM available
 #include "page.i65"
 warm05		.word _emptybuffers
 #include "page.i65"
@@ -6323,76 +6299,32 @@ block01		.word exit
 ;
 ;	EMPTY-BUFFERS   ( -- )
 ;
-; 09/16/10 cah
 emptybufferslfa	.word $adde
 		.byt (_emptybuffers-*-1)|bit7
 		.asc "EMPTY-BUFFER","S"|bit7
 _emptybuffers
 #include "enter.i65"
-		.word first
-#include "page.i65"
-		.word limit
-#include "page.i65"
-		.word over
-#include "page.i65"
-		.word minus
-#include "page.i65"
-		.word _erase
-#include "page.i65"
-		.word _ltbcq
-#include "page.i65"
-		.word numbuf
-#include "page.i65"
-		.word oneplus
-#include "page.i65"
-		.word clit
-		.byt 6
+		.word plit
+		.word uservmbuf
 #include "pad.i65"
-		.word star
+		.word fetch		; directory page ($7b00)
 #include "page.i65"
-		.word _erase
+		.word dup
 #include "page.i65"
-		.word first
+		.word off		; wipe the directory page
 #include "page.i65"
-		.word one
-#include "page.i65"
-		.word _tobcq
-#include "page.i65"
-		.word numbuf
-#include "page.i65"
-		.word zero
-#include "page.i65"
-		.word pdo
-#include "page.i65"
-emptybuffers01	.word plit
-		.word -1
+		.word plit
+		.word 256
 #include "pad.i65"
-		.word over
+		.word minus		; first page
+#include "page.i65"
+		.word dup
+#include "page.i65"
+		.word off		; mark the first page available
+#include "page.i65"
+		.word vmbuf
 #include "page.i65"
 		.word store
-#include "page.i65"
-		.word twoplus
-#include "page.i65"
-		.word _twodup
-#include "page.i65"
-		.word store
-#include "page.i65"
-		.word swap
-#include "page.i65"
-		.word bperbuf
-#include "page.i65"
-		.word plus
-#include "page.i65"
-		.word swap
-#include "page.i65"
-		.word twoplus
-#include "page.i65"
-		.word twoplus
-#include "page.i65"
-		.word ploop
-		.word emptybuffers01
-#include "pad.i65"
-		.word twodrop
 		.word exit
 
 ;--------------------------------------------------------------
@@ -8959,7 +8891,7 @@ dhash01		dey				;[2]
 		lda (tos),y			;[5]
 		sec				;[2]
 		sbc #$20			;[2]
-		and #(power2-pearson-1)		;[2]
+		and #(pearsonx-pearson-1)	;[2]
 		tax				;[2]
 		lda n				;[3]
 		eor pearson,x			;[4]
@@ -9026,7 +8958,6 @@ dhashfetch	brk
 		.byt st   | TOS
 		.byt rtn
 		jmp next
-
 
 ;--------------------------------------------------------------
 ;
@@ -9463,6 +9394,13 @@ unpack02	asl n
 ; return "addr" points to the beginning of a groups of shamrocks
 ; preceded by a length byte.  Updates VMBUF and hi memory as needed.
 ;
+; Since the first character is always used to set the quad, the first
+; 6-bit code stored at the beginning of a block will always be 00.
+; Saying 'addr @ true not addr !' can be used to mark a block as
+; dirty/discardable.  The same code will undo the process, recovering
+; the block.  'addr on' will mark a block as dirty in an unreversable
+; way
+;
 ;	set quad for 1 character
 ;	00 00
 ;	00 01
@@ -9546,7 +9484,7 @@ shamrock	ldy #1
 		.byt add  | UP
 		.byt st   | R11		; VMBUF
 		.byt ldd  | R11		; ACC points at a page $xx00
-		.byt popd | R11		; move pointer
+		.byt popd | R11		; back up R11 pointer
 		.byt st   | N0
 		.byt ld   | I
 		.byt st   | R9		; make some elbow room
@@ -9567,7 +9505,7 @@ shamrock02	lda n+1
 		sta zi
 		and #&300		; mask off hi two bits ( quad )
 		eor #&300		; make it the wrong quad
-		sta n+4			; current quad
+		sta n+4			; current quad, forces a quad change
 		lda zi
 shamrock03	jsr shamrockshake	; encode and shift each byte
 		jsr n1readz
@@ -9742,6 +9680,78 @@ _scrimp
 ; line-wrap table.
 ;
 
+;--------------------------------------------------------------
+;
+;	EDITIRQ   ( flag -- )
+;
+; * headerless
+;
+; sets the hardware IRQ vector to run some code that handles
+; the STOP key (used as a command escape by the screen editor)
+; If flag is false, restores the IRQ to it's normal state.
+;
+;editirqlfa	.word 0
+;		.byt (editirq-*-1)|bit7
+;		.asc "EDITIR","Q"|bit7
+editirq		lda tos
+		ora tos+1
+		sei
+		beq editirq01
+		lda IRQVEC
+		ldy IRQVEC+1
+		sta editirq07+1
+		sta editirq07+2
+		lda #<editirq03
+		ldy #>editirq03
+		bne editirq02
+editirq01	lda editirq07+1
+		ldy editirq07+2
+editirq02	sta IRQVEC
+		sty IRQVEC+1
+		cli
+		jmp pops
+
+editirq03	ldx #$27
+editirq04	lda TIME,x
+		sta VIDRAM,x
+		dex
+		bpl editirq04
+		lda $97
+		cmp #4
+		bne editirq07
+		lda #$01
+		sta $9e		; put 1 char in buffer
+		lda #$0d
+		sta KBBUF
+editirq07	jmp $e455	; continue with normal IRQ
+
+;--------------------------------------------------------------
+;
+;	EDIT   ( n -- )
+;
+; Edit block n
+;
+editlfa		.word rootlfa
+		.byt (_edit-*-1)|bit7
+		.asc "EDI","T"|bit7
+_edit
+#include "enter.i65"
+		.word drop
+		.word exit
+
+;--------------------------------------------------------------
+;
+;	EDITOR   ( -- )
+;
+; The editor vocabulary
+;
+editorlfa	.word $adde
+		.byt (editor-*-1)|bit7
+		.asc "EDITO","R"|bit7
+editor		jsr vocabdoes
+		.word editlfa		; top word in vocab
+		.word forth		; parent vocabulary
+
 ;==============================================================
 
 ;--------------------------------------------------------------
@@ -9792,21 +9802,6 @@ _bar
 
 endofile
 
-; words that use psemi
-;"	:		jsr	enter
-;	constant	jsr	doconst
-;	user		jsr	uservar
-;	does>		jsr	dodoes
-;	create		jsr	docreate
-;	vocabulary	jsr	vocabdoes
-;
-; words that might page
-; 	page
-;	plit
-;	clit
-;	branch
-;	pdq
-;
 ; from the forth-83 standards doc
 ;"http://forth.sourceforge.net/standard/fst83/FORTH-83.PRN
 ;
