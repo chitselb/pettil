@@ -8,8 +8,7 @@ rm t.lab
 echo break .xyzzy>>pettil.lab
 echo break .foo>>pettil.lab
 echo break .bar>>pettil.lab
-echo break .whead>>pettil.lab
-
+#echo break f563>>pettil.lab
 #echo break .cold>>pettil.lab
 #echo break .nexto>>pettil.lab
 #echo break .nexto>>pettil.lab
