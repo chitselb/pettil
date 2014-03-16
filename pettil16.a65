@@ -43,6 +43,20 @@
 ;
 ;pettil16.a65
 ;
+; target machine -- choose one
+;#define PET_ORIG	; it'll be a frosty Friday before this version works
+;#define PET_UPGR	; has the WAIT 6502 easter egg
+#define	PET_ROM4
+
+; set up tape or disk (or both) virtual memory
+#define USE_TAPE
+#define USE_DISK
+
+; decide here whether to generate code for debugging PETTIL
+#define DEBUG
+; decide here whether to include bulky memory compression routines
+; #define USE_COMPRESSION
+
 #include cbm.def
 
 ;bitmasks
@@ -68,11 +82,15 @@ tos	= $02		; 02-03 top of stack (2 bytes)
 up	= $04		; 04-05 user area pointer (2 bytes)
 zi	= $06		; 06-09 innermost DO LOOP counter/limit (4 bytes)
 n	= $0a		; 0a-11 scratch space, contiguous with tos.  (8 bytes) see (?DO)
-stackl	= $20		; stackl = $20..$52 (51 bytes)
-stackh	= $53		; stackh = $53..$85 (51 bytes)
-bos	= stackh-stackl
 
-next	= $86
+stackl		=	$20
+stackh		=	stackl+51		; stackh = $53..$85 (51 bytes)
+#ifdef DEBUG
+-stackh		=	stackl+$30		; visually align stack
+#endif ;/DEBUG
+bos		= stackh-stackl
+
+next	=	$86
 ;0086 next	inc ip
 ;0088		inc ip
 nexto	= $8a
@@ -91,8 +109,8 @@ basic		= $0400
 *		= basic+1
 		.word basend
 		.word 10
-		.byt $9e
-		.asc "(1039)",0		; $040f
+		.byt $9e			; SYS token
+		.asc "(1039)",0			; $040f
 basend		.word 0
 
 coldvector	jmp cold
@@ -165,9 +183,9 @@ setup01		lda stackl,x
 
 ;--------------------------------------------------------------
 sweet16on	lda #<SW16
-		sta BRKVEC
+		sta CBINV
 		lda #>SW16
-		sta BRKVEC+1		; set up Sweet-16
+		sta CBINV+1		; set up Sweet-16
 		rts
 
 ;==============================================================
@@ -223,10 +241,10 @@ pado		sta ip
 ; first fix the brk instruction so we can use TIM instead of Sweet16
 mon		ldy #(usermlmon-userarea)
 		lda (up),y
-		sta BRKVEC
+		sta CBINV
 		iny
 		lda (up),y
-		sta BRKVEC+1
+		sta CBINV+1
  		brk			; presumably we return here
 		jsr sweet16on
 		jmp next
@@ -237,7 +255,7 @@ dnegaten	ldy #0
 		sec
 		tya
 		sbc n+2
-		sta n+2
+		sta n+2		; low order byte
 		tya
 		sbc n+3
 		sta n+3
@@ -246,7 +264,7 @@ dnegaten	ldy #0
 		sta n
 		tya
 		sbc n+1
-		sta n+1
+		sta n+1		; high order byte
 		rts
 
 ;--------------------------------------------------------------
@@ -1953,8 +1971,8 @@ viewq		jsr uservar
 ;	MLMON   ( -- addr )
 ;
 ; The address of a variable to store the location of the ML monitor.
-; COLD sets this from the contents of BRKVECTOR at $0092, then
-; points BRKVECTOR to SW16.  The MON primitive sets BRKVECTOR
+; COLD sets this from the contents of BRK vector at $0092, then
+; points BRK vector to SW16.  The MON primitive sets BRK vector
 ; back to its original state before exiting to TIM (or TIM's
 ; replacement e.g. Micromon).  Exiting the ML monitor with
 ; "G" will reestablish Sweet16 as the BRK instruction target.
@@ -2930,6 +2948,7 @@ _storecsp
 		.word store
 		.word exit
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	WHERE
@@ -3066,6 +3085,7 @@ where05		.word clit
 		.word where05
 #include "pad.i65"
 		.word exit
+#endif
 
 ;--------------------------------------------------------------
 ;
@@ -3094,12 +3114,12 @@ _pabortq
 		.word pabortq01
 #include "pad.i65"
 		.word cmdoff
-#include "page.i65"
-		.word _where
-#include "page.i65"
-		.word cr
-#include "page.i65"
-		.word type
+;#include "page.i65"
+;		.word _where
+;#include "page.i65"
+;		.word cr
+;#include "page.i65"
+;		.word type
 #include "page.i65"
 		.word startup
 #include "page.i65"
@@ -5169,26 +5189,33 @@ coldlfa		.byt $de,$ad
 		.byt (cold-*-1)|bit7
 		.asc "COL","D"|bit7
 cold		sei
-;~debug - fill the stack with patterns to make things easier in the debugger
-;	ldy #<next
-;	lda #$3e
-;d000	sta $FFFF,y
-;	dey
-;	bne d000
-
-	ldy #bos-1
+#ifdef DEBUG
+;~debug - fill the zp with patterns to make things easier in the debugger
+	; first fill everything below the TI clock with DE AD
+	ldx #ip+2
+	lda #$de
+d000	sta <$ff,x
+	eor #$73	; de <--> ad
+	dex
+	bne d000
+	
+	; fill the stack with CCBB
+	ldx #bos-1
 d001	lda #$bb
-	sta stackl,y
+	sta <stackl,x
 	lda #$cc
-	sta stackh,y
-	dey
+	sta <stackh,x
+	dex
 	bpl d001
 
-	lda #$dd
-	ldy #31
-d002	sta R0L,y
-	dey
+	; fill the sweet16 registers with EEDD
+	lda #$ee
+	ldx #31
+d002	sta R0L,x
+	eor #$33	; ee <--> dd
+	dex
 	bpl d002
+#endif	;/debug
 
 	lda #$ba
 	sta tos+1
@@ -5196,16 +5223,16 @@ d002	sta R0L,y
 	sta tos
 ;~debug
 ; copy NEXT code to zeropage
-		ldy #zpnextx-zpnext
-cold01		lda zpnext-1,y
-		sta next-1,y
-		dey
+		ldx #zpnextx-zpnext
+cold01	lda zpnext-1,x
+		sta next-1,x
+		dex
 		bne cold01
 
 		lda #<warmvector
-		sta NMIVEC
+		sta NMINV
 		lda #>warmvector
-		sta NMIVEC+1		; ~ test with NMI switch
+		sta NMINV+1		; ~ test with NMI switch
 
 		ldy #usercold-userarea-1
 		bne warm01		; bra
@@ -5243,7 +5270,7 @@ warm02		lda userarea,y
 		.word SW16
 #include "pad.i65"
 		.word plit
-		.word BRKVEC
+		.word CBINV
 #include "pad.i65"
 		.word dup
 #include "page.i65"
@@ -5862,7 +5889,7 @@ mslashmod04	ldy n+1
 		lda n
 		jmp push
 
-
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	<BCQ
@@ -5878,7 +5905,9 @@ _ltbcq
 #include "page.i65"
 		.word minus
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	BCQ>
@@ -5892,7 +5921,9 @@ _bcqto
 #include "page.i65"
 		.word twominus
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	>BCQ
@@ -5911,7 +5942,9 @@ _tobcq
 #include "page.i65"
 		.word plus
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	LATEST?
@@ -5956,7 +5989,9 @@ _latestq
 #include "page.i65"
 		.word drop
 latestq01	.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	ABSENT?
@@ -6057,7 +6092,9 @@ absentq03	.word twoplus
 #include "page.i65"
 		.word swap
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	UPDATE
@@ -6079,7 +6116,9 @@ _update
 #include "page.i65"
 		.word on
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	DR0
@@ -6093,7 +6132,9 @@ _drzero
 #include "page.i65"
 		.word off
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	DR1
@@ -6110,7 +6151,9 @@ _drone
 #include "page.i65"
 		.word store
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	DISCARD
@@ -6130,7 +6173,9 @@ _discard
 #include "page.i65"
 		.word off
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	MISSING
@@ -6219,7 +6264,9 @@ missing01	.word _bcqto
 #include "page.i65"
 		.word cmovegt
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	BUFFER
@@ -6248,6 +6295,7 @@ _buffer
 #include "page.i65"
 		.word fetch
 buffer01	.word exit
+#endif
 
 ;--------------------------------------------------------------
 ;
@@ -6307,6 +6355,7 @@ _block
 		.word fetch
 block01		.word exit
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	EMPTY-BUFFERS   ( -- )
@@ -6338,7 +6387,9 @@ _emptybuffers
 #include "page.i65"
 		.word store
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	SAVE-BUFFERS   ( -- )
@@ -6416,7 +6467,9 @@ savebuffers03	.word ploop
 #include "pad.i65"
 		.word drop
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	FLUSH
@@ -6432,7 +6485,9 @@ _flush
 #include "page.i65"
 		.word _emptybuffers
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	LOAD
@@ -6489,7 +6544,9 @@ load01		.word blk
 #include "page.i65"
 		.word store
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	>DISC
@@ -6639,7 +6696,9 @@ ldr0		.asc "U1:13,"
 		.byt 0
 ldr1		.asc "U2:13,"
 		.byt 0
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	(R/W)
@@ -6722,7 +6781,9 @@ prslashw03	.word tor
 #include "page.i65"
 		.word twodrop
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	R/W
@@ -6734,7 +6795,9 @@ _rslashw
 #include "enter.i65"
 		.word _prslashw
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	T&S
@@ -6921,7 +6984,9 @@ tns06		.word rot
 #include "page.i65"
 		.word rfrom
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	(OPEN)
@@ -6960,7 +7025,9 @@ popen02		pha
 		tax
 		pla
 		jmp pushya
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	CLOSE
@@ -6973,7 +7040,9 @@ close		stx n
 		jsr close
 		ldx n
 		jmp pops
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	(CMDIN)
@@ -6993,7 +7062,9 @@ pcmdin01	ldx n+7
 		inx
 		inx
 		jmp pushya
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	(CMDOUT)
@@ -7018,6 +7089,7 @@ pcmdout02;	jsr READST
 		beq pcmdin01
 		lda #5
 		bne pcmdout01
+#endif
 
 ;--------------------------------------------------------------
 ;
@@ -7031,6 +7103,7 @@ cmdoff		stx storex
 		ldx storex
 		jmp next
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	STATUS
@@ -7040,13 +7113,15 @@ statuslfa	.byt $de,$ad
 		.asc "STATU","S"|bit7
 _status
 #include "enter.i65"
-		.word plit
-		.word 144
+		.word clit
+		.byt <STATUS
 #include "pad.i65"
 		.word cfetch
 #include "page.i65"
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	(?DISC)
@@ -7056,11 +7131,13 @@ _status
 ;		.asc "(?DISC",")"|bit7
 _pqdisc
 #include "enter.i65"
+#endif
 
 ;--------------------------------------------------------------
 ;
 ;	IOERR
 ;
+; ~~ make this use the ROM messages
 ioerrlfa	.byt $de,$ad
 		.byt (_ioerr-*-1)|bit7
 		.asc "IOER","R"|bit7
@@ -7221,7 +7298,7 @@ ioerr08
 			;123456789.123456789.1
 ioerr09		.word exit
 
-
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	.DERR
@@ -7246,7 +7323,9 @@ dotderr01
 #include "page.i65"
 		.word type
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	MOUNT
@@ -7332,7 +7411,9 @@ mount02
 #include "page.i65"
 		.word _qdisc
 		.word exit
+#endif
 
+#ifdef USE_DISK
 ;--------------------------------------------------------------
 ;
 ;	?DISC
@@ -7351,6 +7432,7 @@ _qdisc
 #include "page.i65"
 		.word _abort
 qdisc01		.word exit
+#endif
 
 ;--------------------------------------------------------------
 ;
@@ -8932,6 +9014,7 @@ dhash02		lda n
 		ldx storex
 		jmp pushya
 
+#ifdef DEBUG
 ;~debug hex dump the byte in A
 debug	pha
 	pha
@@ -8950,6 +9033,7 @@ print	sed
 	adc #'0'
 	cld
 	jmp CHROUT
+#endif ;/DEBUG
 
 ;--------------------------------------------------------------
 ;
@@ -9351,6 +9435,7 @@ forget05	.word _ntolink
 
 forgetfence
 
+#ifdef USE_COMPRESSION
 ;--------------------------------------------------------------
 ;
 ;	UNPACK   ( shamrock -- quad )
@@ -9396,7 +9481,9 @@ unpack02	asl n
 		lda n+2
 		ldy n+3
 		jmp pushya
+#endif ;/USE_COMPRESSION
 
+#ifdef USE_COMPRESSION
 ;--------------------------------------------------------------
 ;
 ;	SHAMROCK   ( addr size -- addr )
@@ -9498,7 +9585,7 @@ shamrock	ldy #1
 		.byt ldd  | R11		; ACC points at a page $xx00
 		.byt popd | R11		; back up R11 pointer
 		.byt st   | N0
-		.byt ld   | I
+		.byt ld   | IREG
 		.byt st   | R9		; make some elbow room
 		.byt rtn
 		ldx #4			; bytes per shamrock
@@ -9539,12 +9626,14 @@ shamrock05	ldx storex
 		sta (n),y
 		brk
 		.byt ld   | R9
-		.byt st   | I		; restore I register
+		.byt st   | IREG	; restore I register
 		.byt ld   | N0
 		.byt std  | R11		; move VMBUF
 		.byt rtn
-xyzzy		jmp next
+		jmp next
+#endif ;/USE_COMPRESSION
 
+#ifdef USE_COMPRESSION
 ;--------------------------------------------------------------
 ;
 ;	RLDECODE   ( from to size -- )
@@ -9578,7 +9667,9 @@ rldecode07	jsr n0writez
 		beq rldecode04
 rldecode09	ldx storex
 		jmp pops
+#endif ;/USE_COMPRESSION
 
+#ifdef USE_COMPRESSION
 ;--------------------------------------------------------------
 ;
 ;	RLENCODE   ( from to size -- size2 )
@@ -9640,7 +9731,9 @@ rlencode10	jsr n0write
 		sbc n+7
 		sta tos+1
 		jmp next
+#endif ;/USE_COMPRESSION
 
+#ifdef USE_COMPRESSION
 ;--------------------------------------------------------------
 ;
 ;	SCRIMP   ( -- addr )
@@ -9683,7 +9776,9 @@ _scrimp
 #include "page.i65"
 		.word shamrock
 		.word exit
+#endif ;/USE_COMPRESSION
 
+#ifdef USE_COMPRESSION
 ;--------------------------------------------------------------
 ;
 ;	SPLURGE   ( addr -- )
@@ -9691,6 +9786,7 @@ _scrimp
 ; antonym for SCRIMP.  Unpacks the data at addr to the screen, including
 ; line-wrap table.
 ;
+#endif ;/USE_COMPRESSION
 
 ;--------------------------------------------------------------
 ;
@@ -9709,8 +9805,8 @@ editirq		lda tos
 		ora tos+1
 		sei
 		beq editirq01
-		lda IRQVEC
-		ldy IRQVEC+1
+		lda CINV
+		ldy CINV+1
 		sta editirq07+1
 		sta editirq07+2
 		lda #<editirq03
@@ -9718,8 +9814,8 @@ editirq		lda tos
 		bne editirq02
 editirq01	lda editirq07+1
 		ldy editirq07+2
-editirq02	sta IRQVEC
-		sty IRQVEC+1
+editirq02	sta CINV
+		sty CINV+1
 		cli
 		jmp pops
 
