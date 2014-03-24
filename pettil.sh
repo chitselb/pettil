@@ -5,7 +5,9 @@ alias xap='xa -x pettil.a65;xa pettil.a65;./pettil.sh'
 sed 's/^\([_a-zA-Z0-9]*\),\ 0x\(....\).*$/al C\:\2 \.\1/g' < pettil.lab > t.lab
 sort t.lab > pettil.lab
 rm t.lab
-echo break .xyzzy>>pettil.lab
+echo break .cold>>pettil.lab
+#echo break ._query>>pettil.lab
+echo break ._interpret>>pettil.lab
 echo break .foo>>pettil.lab
 echo break .bar>>pettil.lab
 #echo break f563>>pettil.lab
