@@ -58,53 +58,11 @@
 ; #define USE_COMPRESSION
 
 #include cbm.def
-
-;bitmasks
-#define		bit7	$80		; marks first/last bytes of name field
-#define		bit6	$40		; immediate
-#define		bit5	$20		; smudge
-
-#define		blockbuf	$7c00	; 1K block below VIDRAM
-
-; zero page usage
-;00-1f	R0-R15
-;02-03	TOS
-;04-05	UP, pointer to user area
-;06-09	IREG, current innermost do loop index and limit
-;0a-11	N area, 8 bytes of scratch space for primitives
-
-;20-52	STACKL
-;53-85	STACKH
-;86-8c	NEXT
-;ff		STOREX, used for temporary register storage, faster than PHA
-
-tos		=		$02		; 02-03 top of stack (2 bytes)
-up		=		$04		; 04-05 user area pointer (2 bytes)
-zi		=		$06		; 06-09 innermost DO LOOP counter/limit (4 bytes)
-n		=		$0a		; 0a-11 scratch space, contiguous with tos.  (8 bytes) see (?DO)
-
-stackl		=		$20
-stackh		=		51+stackl		; stackh = $53..$85 (51 bytes)
-#ifdef DEBUG
--stackh		=		$30+stackl
-#endif
-#define		bos		stackh-stackl
-
-next		=		$86
-;0086 next	inc ip
-;0088		inc ip
-nexto		=		$8a
-;008a nexto	jmp ($cafe)
-ip		=		$8b
-
-storex	= $ff		; unused zeropage for temporary stashing X register
-;$8d..$ff kernel zeropage area
-
-#define		curindev	$99
-#define		curoutdev	$9a
+#include pettil.def
 
 #define		basic		$0400
 		.word basic+1		; PET BASIC storage starts here
+;==============================================================
 *		= basic+1
 		.word basend
 		.word 10
@@ -112,20 +70,86 @@ storex	= $ff		; unused zeropage for temporary stashing X register
 		.asc "(1039)",0			; $040f
 basend		.word 0
 		jmp cold
+		jmp warm
+		nop
+;==============================================================
+; things between ;==== bars are at fixed addresses
+; things between ;---- bars may be moved freely
+;
+; The next several things are here mostly because they...
+; * won't be changing
+; * aren't part of the dictionary
+; * effectively pad out the area to align Sweet16 on a page boundary
+;
+; powers of 2 in a lookup table
+power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
+
+; pops up to 4 words from the split stack to N area
+; Y = how many words to pop (valid range 1-4)
+; returns
+; Y = 0
+; TOS unchanged
+; 2OS-->N0; 3OS-->N1; 4OS-->N2; 5OS-->N3
+; Y     1         2         3         4
+;
+setup		sty storex
+		ldy #0
+setup01		lda stackl,x
+		sta n,y
+		lda stackh,x
+		sta n+1,y
+		iny
+		iny
+		inx
+		dec storex
+		bne setup01
+		ldy #0
+		rts
+
+; swap lower area on the zeropage between BASIC and PETTIL
+; caller must frame this between sei/cli instructions
+;
+swapzp		stx storex
+		ldx #TIME ; swap zeropage area below the jiffy clock
+swapzp01	lda $ff,x
+		pha
+		lda zpbuf-1,x
+		sta $ff,x
+		pla
+		sta zpbuf-1,x
+		dex
+		bne swapzp01
+		ldx storex
+		rts
+
+slide		lda stackl,x		; slide something off of the stack
+		sta tos
+		lda stackh,x
+		sta tos+1
+		inx
+		rts
+
+slip		dex			; slip something onto the stack
+		lda tos+1
+		sta stackh,x
+		lda tos
+		sta stackl,x
+		rts
+
+; bam!  SET = $0500
+
+; SET and PUSH must be on the same page.
+#include sweet16.a65
 ;==============================================================
 ; this is an image of PETTIL zeropage at cold start.  Swapping it
 ; with the BASIC zeropage makes hopping back and forth possible
 ;
 zpbuf		.word $0000,$0101,$0202,$0303
-		.word $0404,$0505,$0606,$0707	; forth registers
-		.word $0808,$0909,$0a0a,$0b0b
-		.word $0c0c,$0d0d,$0e0e,$0f0f	; sweet16 
+		.word $0404,$0505,$0606,$0707	; PETTIL registers
+		.word $0808,$0909,$0a0a,$0b0b	; and
+		.word $0c0c,$0d0d,$0e0e,$0f0f	; Sweet16 registers 
 		.dsb bos,$aa			; low stack
 		.dsb bos,$bb			; high stack
-#ifdef DEBUG
-		.dsb 6,$cc
-#endif
-;--------------------------------------------------------------
 ;
 ;	NEXT
 ;
@@ -135,11 +159,49 @@ zpbuf		.word $0000,$0101,$0202,$0303
 ;		[IP] -> PC
 ;
 ; minimalist NEXT, copied to zeropage by COLD
-		inc ip			; 5 
+zpnext		inc ip			; 5 
 		inc ip			; 5 
 		jmp ($cafe)		; 5 
-					;15 cycles total
-;==============================================================
+zpnextx					;15 cycles total
+;--------------------------------------------------------------
+msgdicful	.asc	"DICTIONARY FUL","L"|bit7
+msgnamreq	.asc	"NAME REQUIRE","D"|bit7
+msgexists	.asc	" ALREADY EXIST","S"|bit7
+msgcomponly	.asc	"COMPILATION ONL","Y"|bit7
+msgnotfound	.asc	"NOT FOUN","D"|bit7
+msgunpaired	.asc	"NOT PAIRE","D"|bit7
+msgunfinished	.asc	"DEFINITION NOT FINISHE","D"|bit7
+msgmissing	.asc	" MISSIN","G"|bit7
+msgstackempty	.asc	"STACK EMPT","Y"|bit7
+msgstackfull	.asc	"STACK FUL","L"|bit7
+msgwelcome	.asc	$0d,"WELCOME TO "
+msgpettil	.asc	"PETTIL","!"|bit7
+msgprotected	.asc	"PROTECTED WOR","D"|bit7
+
+;--------------------------------------------------------------
+; user area initialization data
+; this gets copied to the cassette buffer
+; and is pointed to by the UP (user pointer)
+userarea
+userup		.word UAREA				; W
+usersp0		.word bos+1				; A
+userrp0		.word $01ff				; R
+userwidth	.word 31				; M
+userwarning	.word -1				; .
+uservmbuf	.word $7b00				; .
+userwarm
+userfence	.word forgetfence			; C
+userdp		.word endofile				; O
+uservoclink	.word lastvoc				; L
+userviewquery	.word 2					; D
+usermlmon	.word TIMBRK				; .
+usersw16	.word SW16				; .
+uservidbuf	.word $7c00				; .
+usercold
+
+UAREA		.dsb usercold-userarea+32,0
+
+;--------------------------------------------------------------
 ; Jump up to high-level Forth from inline 6502
 ;
 ; Page boundary crossing is handled by the compiler inserting 'page'
@@ -168,97 +230,6 @@ pado		sta ip
 w1		.word $dead		; (for when you just need a W register)
 		.word exit		; 'fragment secondary' used by EXECUTE
 
-msgdicful	.asc	"DICTIONARY FUL","L"|bit7
-msgnamreq	.asc	"NAME REQUIRE","D"|bit7
-msgexists	.asc	" ALREADY EXIST","S"|bit7
-msgcomponly	.asc	"COMPILATION ONL","Y"|bit7
-msgnotsearch	.asc	"NOT FOUN","D"|bit7
-msgunpaired	.asc	"NOT PAIRE","D"|bit7
-msgunfinished	.asc	"DEFINITION NOT FINISHE","D"|bit7
-msgmissing	.asc	" MISSIN","G"|bit7
-msgstackempty	.asc	"STACK EMPT","Y"|bit7
-msgstackfull	.asc	"STACK FUL","L"|bit7
-msgwelcome	.asc	$0d,"WELCOME TO "
-msgpettil	.asc	"PETTIL","!"|bit7
-msgprotected	.asc	"PROTECTED WOR","D"|bit7
-
-;==============================================================
-; SET and PUSH must be on the same page.
-#include sweet16.a65
-;==============================================================
-
-rootlfa		.word 0
-		.byt 31			; longest word in the dictionary ~wut?
-
-UAREA		.dsb 32,0
-
-pearson		.byt 150,191,252,0,194,202,129,7
-pearsonx
-lfalist		.dsb 32,0	; heads of link threads for root vocabulary
-bloom2		.dsb 8,0	; Forth vocabulary 64-bit bloom filter for hash2
-bloom2x
-power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
-
-;--------------------------------------------------------------
-swapzp		stx storex
-		ldx #TIME ; swap zeropage area below the jiffy clock
-swapzp01	lda $ff,x
-		pha
-		lda zpbuf-1,x
-		sta $ff,x
-		pla
-		sta zpbuf-1,x
-		dex
-		bne swapzp01
-		ldx storex
-		cli
-		rts
-;--------------------------------------------------------------
-slide		lda stackl,x		; slide something off of the stack
-		sta tos
-		lda stackh,x
-		sta tos+1
-		inx
-		rts
-
-;--------------------------------------------------------------
-slip		dex			; slip something onto the stack
-		lda tos+1
-		sta stackh,x
-		lda tos
-		sta stackl,x
-		rts
-
-;--------------------------------------------------------------
-		; pops up to 4 words from the split stack to N area
-		; Y = how many words to pop (valid range 1-4)
-		; returns
-		; Y = 0
-		; TOS unchanged
-		; 2OS -> N0, 3OS -> N1, 4OS -> N2, 5OS -> N3
-		;      1          2          3          4
-setup		sty storex
-		ldy #0
-setup01		lda stackl,x
-		sta n,y
-		lda stackh,x
-		sta n+1,y
-		iny
-		iny
-		inx
-		dec storex
-		bne setup01
-		ldy #0
-		rts
-
-;--------------------------------------------------------------
-sweet16on	lda #<SW16
-		sta CBINV
-		lda #>SW16
-		sta CBINV+1		; set up Sweet-16
-		rts
-
-
 ;--------------------------------------------------------------
 ; Drop down from high-level Forth to inline 6502
 to6502lfa	.byt $de,$ad
@@ -274,21 +245,22 @@ to6502		lda ip
 to650201	sty n+1
 		jmp (n)
 
-
 ;--------------------------------------------------------------
-; first fix the brk instruction so we can use TIM instead of Sweet16
-mon		ldy #(usermlmon-userarea)
-		lda (up),y
+; set the BRK vector
+; pass - Y = user area pointer to new vector
+setbrk		lda (up),y
 		sta CBINV
 		iny
 		lda (up),y
 		sta CBINV+1
- 		brk			; presumably we return here
-		jsr sweet16on
-		jmp next
+		rts
+mon		ldy #(usermlmon-userarea)
+		.byt $2c	; BIT instruction
+sw16		ldy #(usersw16-userarea)
+		bne setbrk
 
 ;--------------------------------------------------------------
-		; negate the double at n..n+3
+		; negate the double at n0..n3
 dnegaten	ldy #0
 		sec
 		tya
@@ -305,25 +277,22 @@ dnegaten	ldy #0
 		sta n+1		; high order byte
 		rts
 
+
 ;--------------------------------------------------------------
-; user area initialization data
-; this gets copied to the cassette buffer
-; and is pointed to by the UP (user pointer)
-userarea
-userup		.word UAREA				; W
-usersp0		.word bos				; A
-userrp0		.word $01ff				; R
-userwidth	.word 31				; M
-userwarning	.word -1				; .
-uservmbuf	.word $7b00				; .
-userwarm
-userfence	.word forgetfence			; C
-userdp		.word endofile				; O
-uservoclink	.word lastvoc				; L
-userviewquery	.word 2					; D
-usermlmon	.word $d478				; .
-uservidbuf	.word $7c00				; .
-usercold
+;
+; tables used by Pearson hash function and Bloom filter for root
+; vocabulary
+;
+pearson		.byt 150,191,252,0,194,202,129,7
+pearsonx
+bloom		.dsb 8,0	; Forth vocabulary 64-bit bloom filter for hash2
+bloomx
+
+lfalist		.dsb 32,0	; heads of link threads for root vocabulary
+
+rootlfa		.word 0
+		.byt 31			; longest word in the dictionary ~wut?
+
 
 ;--------------------------------------------------------------
 ;
@@ -373,7 +342,7 @@ plit		jsr slip
 		lda (ip),y
 		inc ip
 		ldy #1
-		jmp lithi
+		bne lithi ; bra
 
 ;--------------------------------------------------------------
 ;
@@ -1241,6 +1210,7 @@ spstorelfa	.byt $de,$ad
 spstore		ldy #usersp0-userarea
 		lda (up),y
 		tax
+		dex		; because it's stored 1+ for ?STACK
 		jmp next
 
 ;--------------------------------------------------------------
@@ -3316,38 +3286,62 @@ type02		lda (n),y
 
 ;--------------------------------------------------------------
 ;
-;	SYSMSG   ( number -- )
+;	SYSMSG   ( msgid -- )
 ;
-;	 0 - 00 - TOO MANY FILES
-;	 1 - 0e - FILE OPEN
-;	 2 - 17 - FILE NOT OPEN
-;	 3 - 24 - FILE NOT FOUND
-;	 4 - 32 - [cr]SEARCHING FOR 
-;	 5 - 41 - [cr]PRESS PLAY 
-;	 6 - 4d - & RECORD 
-;	 7 - 56 - ON TAPE #
-;	 8 - 5f - [cr]LOAD
-;	 9 - 64 - [cr]WRITING 
-;	10 - 6d - [cr]VERIFY
-;	11 - 74 - DEVICE NOT PRESENT
-;	12 - 86 - NOT INPUT FILE
-;	13 - 94 - NOT OUTPUT FILE
-;	14 - a3 - [cr]FOUND
-;	15 - aa - [cr]OK[cr]
-;	16 - ae - [cr]READY.[cr]
-;	17 - b6 - [cr]ARE YOU SURE ?
-;	18 - c5 - [cr]? BAD DISK [cr]
+; display a message before (ABORT)
 ;
-;	20 - 00 
 sysmsglfa	.byt $de,$ad
 		.byt (sysmsg-*-1)|bit7
 		.asc "SYSMS","G"|bit7
 sysmsg		ldx tos
 		ldy sysmsgtable,x
+		cpx #20
+		bcs sysmsg01
 		jsr MSGOUT
 		jmp pops
-sysmsgtable	.byt $00,$0e,$17,$24,$32,$3d,$41,$4d,$56,$5f
-		.byt $64,$6d,$74,$86,$94,$a3,$aa,$ae,$b6,$c5
+sysmsg01	lda $0400,y
+		php
+		and #$7f
+		jsr $e202
+		iny
+		plp
+		bpl sysmsg01
+		jmp pops
+
+sysmsgtable	.byt $00 ;  0 - TOO MANY FILES
+		.byt $0e ;  1 - FILE OPEN  
+		.byt $17 ;  2 - FILE NOT OPEN
+		.byt $24 ;  3 - FILE NOT FOUND
+		.byt $32 ;  4 - [cr]SEARCHING_
+		.byt $3d ;  5 - FOR_
+		.byt $41 ;  6 - [cr]PRESS PLAY_
+		.byt $4d ;  7 - & RECORD_
+		.byt $56 ;  8 - ON TAPE #
+		.byt $5f ;  9 - [cr]LOAD
+		.byt $64 ; 10 - [cr]WRITING 
+		.byt $6d ; 11 - [cr]VERIFY
+		.byt $74 ; 12 - DEVICE NOT PRESENT
+		.byt $86 ; 13 - NOT INPUT FILE
+		.byt $94 ; 14 - NOT OUTPUT FILE
+		.byt $a3 ; 15 - [cr]FOUND
+		.byt $aa ; 16 - [cr]OK[cr]
+		.byt $ae ; 17 - [cr]READY.[cr]
+		.byt $b6 ; 18 - [cr]ARE YOU SURE ?
+		.byt $c5 ; 19 - [cr]? BAD DISK [cr]
+
+pettilmsgtable	.byt $12 ; 20 -	DICTIONARY FULL
+		.byt $21 ; 21 -	NAME REQUIRED
+		.byt $2e ; 22 -	 ALREADY EXISTS
+		.byt $3d ; 23 -	COMPILATION ONLY
+		.byt $4d ; 24 -	NOT FOUND
+		.byt $56 ; 25 -	NOT PAIRED
+		.byt $60 ; 26 -	DEFINITION NOT FINISHED
+		.byt $77 ; 27 -	 MISSING
+		.byt $7f ; 28 -	STACK EMPTY
+		.byt $8a ; 29 -	STACK FULL
+		.byt $94 ; 30 -	[cr]WELCOME TO_
+		.byt $a0 ; 31 -	PETTIL!
+		.byt $a7 ; 32 -	PROTECTED WORD
 
 ;--------------------------------------------------------------
 ;
@@ -3532,7 +3526,7 @@ _status
 
 ;--------------------------------------------------------------
 ;
-;	(ABORT")   ( flag -- )
+;	(ABORT")   ( msgid -- )
 ;
 ; * outer interpreter headerless
 ;
@@ -3545,35 +3539,15 @@ _status
 ;		.asc "(ABORT",'"',")"|bit7
 _pabortq
 #include "enter.i65"
-		.word rfrom
-#include "page.i65"
-		.word twoplus
-#include "page.i65"
-		.word count
-#include "page.i65"
-		.word rot
-#include "page.i65"
-		.word qbranch
-		.word pabortq01
-#include "pad.i65"
 		.word cmdoff
-;#include "page.i65"
-;		.word _where
-;#include "page.i65"
-;		.word cr
-;#include "page.i65"
-;		.word type
+#include "page.i65"
+		.word sysmsg
 #include "page.i65"
 		.word startup
 #include "page.i65"
 		.word fetch
 #include "page.i65"
 		.word execute
-pabortq01
-		.word plus
-#include "page.i65"
-		.word to6502
-		jmp skipinline
 
 ;--------------------------------------------------------------
 ;
@@ -3602,40 +3576,27 @@ _abortq
 ;
 ;	?STACK
 ;
-; inspect data stack pointer for sanity, halt with a message if trouble
-; a hybrid primitive that jumps up to high-level Forth to invoke ABORT"
+; inspect data stack pointer for sanity, abort if trouble
 qstacklfa	.byt $de,$ad
 		.byt (qstack-*-1)|bit7
 		.asc "?STAC","K"|bit7
 qstack		txa
-		bmi qstack01	; stack overflow
+		bmi qstack02	; stack full
 		ldy #usersp0-userarea
 		cmp (up),y
-		bcc qstack03	; things are just fine
-		beq qstack03	; SP@ = bos, not a problem either
-		ldy #>(qstackempty-2)	; stack underflow error
-		lda #<(qstackempty-2)
-		bcs qstack02	; bra
-qstack01	ldy #>(qstackfull-2)	; stack overflow error
-		lda #<(qstackfull-2)
-qstack02	sty ip+1
+		bcs qstack01	; stack empty
+		jmp next
+qstack01	lda #28
+		.byt $2c	; BIT instruction fall-through trick
+qstack02	lda #29
+		sta tos
+		lda #0
+		sta tos+1
+		lda #<_pabortq
 		sta ip
-qstack03	jmp next
-#if (((*&$ff)+3+12)=$ff)
-	.byt $ea,$ea,$ea,$ea
-#endif
-qstackempty	.word _pabortq		; qstack might transfer control here
-		.byt qstackfull-*-1	; no need for an exit because we're
-		.asc	"STACK EMPTY "	; not coming back from ABORT"
-			;123456789.12
-#if (((*&$ff)+3+15)=$ff)
-	.byt $ea,$ea,$ea,$ea
-#endif
-qstackfull	.word _pabortq
-		.byt qstack04-*-1
-		.asc	"STACK OVERFLOW "
-			;123456789.12345
-qstack04
+		lda #>_pabortq
+		sta ip+1
+		jmp nexto
 
 ;--------------------------------------------------------------
 ;
@@ -5265,61 +5226,44 @@ warm02		lda userarea,y
 		bpl warm02
 		cld
 		cli
+		ldy #(usersw16-userarea)
+		jsr setbrk		; call Sweet16 on BRK
 		jsr CLRCHN
 		jsr CLALL
-
-		lda #>(w1-2)
-		sta ip+1
-		lda #<(w1-2)
-		sta ip
 #include "toforth.i65"
 		.word rpstore		; and we're off
 #include "page.i65"
 		.word spstore
 #include "page.i65"
-		.word plit
-		.word SW16
-#include "pad.i65"
-		.word plit
-		.word CBINV
-#include "pad.i65"
-		.word dup
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word mlmon
-#include "page.i65"
-		.word store
-#include "page.i65"
-		.word store		; set up Sweet-16
-#include "page.i65"
 		.word _pdq
 		.byt warm04-*-1
-		.byt CLRSCR
-.byt 236,239,17,157,157,234,32,41,17,157,157,157,234,247,17,157,157,252
-.byt 32,32,145,145,145
-.byt 236,239,251,17,157,157,157,234,17,157,234,247,17,157,157
-.byt 252,247,254,145,145,145
-.byt 236,239,239,251,17,157,157,157,234,17,157,234,17,157,252,32,32
-.byt 145,145,145
-.byt 236,239,239,251,17,157,157,157,234,17,157,234,17,157,252,32,32
-.byt 145,145,145
-.byt 239,239,17,157,157,234,17,157,234,17,157
-.byt 247,247,145,145,145
-.byt 236,17,157,234,17,157,234,17,157,252,247,247,254
-.byt 145,145,145
-		.asc "6502 FORTH FOR THE"
-.byt 17,17,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157
-.byt 157,157,157
+		.byt CLR
+;		.byt BLOCK8,HBAR6,DOWN,LEFT,LEFT,VBAR7,SPACE,SPACE
+;		.byt BLOCK8,HBAR6,BLOCK4,SPACE
+;		.byt BLOCK8,HBAR6,HBAR6,BLOCK4,SPACE
+;		.byt BLOCK8,HBAR6,HBAR6,BLOCK4
+;		.byt HBAR6,HBAR6,BLOCK8,SPACE,SPACE,SPACE
+		.asc "6502 FORTH FOR THE",CR
 		.asc "COMMODORE PET 2001"
-.byt 17,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157
-		.asc "......... ... ...."
+;.byt 252,247,254,145,145,145
+;.byt 236,239,239,251,17,157,157,157,234,17,157,234,17,157,252,32,32
+;.byt 145,145,145
+;.byt 236,239,239,251,17,157,157,157,234,17,157,234,17,157,252,32,32
+;.byt 145,145,145
+;.byt 239,239,17,157,157,234,17,157,234,17,157
+;.byt 247,247,145,145,145
+;.byt 236,17,157,234,17,157,234,17,157,252,247,247,254
+;.byt 145,145,145
+;		.asc "6502 FORTH FOR THE"
+;.byt 17,17,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157
+;.byt 157,157,157
+;		.asc "COMMODORE PET 2001"
+;.byt 17,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157
+;		.asc "......... ... ...."
 
-		.byt $0d,$0d
-		.asc "HTTP:"
-		.byt 47,47
-		.asc "CHITSELB.COM 2010"
-		.byt $0d,$0d
+		.byt CR,CR
+		.asc "CHITSELB.COM 2014"
+		.byt CR,CR
 warm04
 #include "pad.i65"
 		.word _rethread
@@ -7557,11 +7501,11 @@ bloomstore	lda tos			; set bloom filter bit for hash2
 		lsr
 		lsr
 		lsr
-		and #(bloom2x-bloom2-1)	; don't write outside filter area
+		and #(bloomx-bloom-1)	; don't write outside filter area
 		tay
 		lda n
-		ora bloom2,y
-		sta bloom2,y
+		ora bloom,y
+		sta bloom,y
 		jmp pops
 
 ;--------------------------------------------------------------
@@ -7584,9 +7528,9 @@ bloomfetch	lda tos			; read bloom filter bit for hash2
 		lsr
 		lsr
 		lsr
-		and #(bloom2x-bloom2-1)	; don't read outside filter area
+		and #(bloomx-bloom-1)	; don't read outside filter area
 		tay
-		lda bloom2,y
+		lda bloom,y
 		ldy #0
 		and n
 		beq bloomfetch01
@@ -7708,10 +7652,10 @@ dhashstore06	.byt ld   | N0
 _rethread
 #include "enterx.i65"
 		.word plit
-		.word lfalist
+		.word bloom
 #include "pad.i65"
 		.word clit
-		.byt <(bloom2x-lfalist)		; clear list head
+		.byt <(rootlfa-bloom)		; clear list head
 #include "pad.i65"
 		.word _erase
 #include "page.i65"
