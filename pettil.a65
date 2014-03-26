@@ -84,6 +84,22 @@ basend		.word 0
 ; powers of 2 in a lookup table
 power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
 
+; swap lower area on the zeropage between BASIC and PETTIL
+; caller must frame this between sei/cli instructions
+;
+swapzp		stx storex
+		ldx #TIME ; swap zeropage area below the jiffy clock
+swapzp01	lda $ff,x
+		pha
+		lda zpbuf-1,x
+		sta $ff,x
+		pla
+		sta zpbuf-1,x
+		dex
+		bne swapzp01
+		ldx storex
+		rts
+
 ; pops up to 4 words from the split stack to N area
 ; Y = how many words to pop (valid range 1-4)
 ; returns
@@ -104,22 +120,6 @@ setup01		lda stackl,x
 		dec storex
 		bne setup01
 		ldy #0
-		rts
-
-; swap lower area on the zeropage between BASIC and PETTIL
-; caller must frame this between sei/cli instructions
-;
-swapzp		stx storex
-		ldx #TIME ; swap zeropage area below the jiffy clock
-swapzp01	lda $ff,x
-		pha
-		lda zpbuf-1,x
-		sta $ff,x
-		pla
-		sta zpbuf-1,x
-		dex
-		bne swapzp01
-		ldx storex
 		rts
 
 slide		lda stackl,x		; slide something off of the stack
@@ -163,20 +163,6 @@ zpnext		inc ip			; 5
 		inc ip			; 5 
 		jmp ($cafe)		; 5 
 zpnextx					;15 cycles total
-;--------------------------------------------------------------
-msgdicful	.asc	"DICTIONARY FUL","L"|bit7
-msgnamreq	.asc	"NAME REQUIRE","D"|bit7
-msgexists	.asc	" ALREADY EXIST","S"|bit7
-msgcomponly	.asc	"COMPILATION ONL","Y"|bit7
-msgnotfound	.asc	"NOT FOUN","D"|bit7
-msgunpaired	.asc	"NOT PAIRE","D"|bit7
-msgunfinished	.asc	"DEFINITION NOT FINISHE","D"|bit7
-msgmissing	.asc	" MISSIN","G"|bit7
-msgstackempty	.asc	"STACK EMPT","Y"|bit7
-msgstackfull	.asc	"STACK FUL","L"|bit7
-msgwelcome	.asc	$0d,"WELCOME TO "
-msgpettil	.asc	"PETTIL","!"|bit7
-msgprotected	.asc	"PROTECTED WOR","D"|bit7
 
 ;--------------------------------------------------------------
 ; user area initialization data
@@ -199,6 +185,8 @@ usersw16	.word SW16				; .
 uservidbuf	.word $7c00				; .
 usercold
 
+; live userarea has 2 bytes for each initializer plus 32 bytes
+; for "soft" user variables, e.g. #OUT 
 UAREA		.dsb usercold-userarea+32,0
 
 ;--------------------------------------------------------------
@@ -1690,7 +1678,7 @@ ccommalfa	.byt $de,$ad
 _ccomma
 #include "enter.i65"
 		.word here
-#include "page.i65"
+#include "page.i65"20
 		.word cstore
 #include "page.i65"
 		.word one
@@ -3286,65 +3274,6 @@ type02		lda (n),y
 
 ;--------------------------------------------------------------
 ;
-;	SYSMSG   ( msgid -- )
-;
-; display a message before (ABORT)
-;
-sysmsglfa	.byt $de,$ad
-		.byt (sysmsg-*-1)|bit7
-		.asc "SYSMS","G"|bit7
-sysmsg		ldx tos
-		ldy sysmsgtable,x
-		cpx #20
-		bcs sysmsg01
-		jsr MSGOUT
-		jmp pops
-sysmsg01	lda $0400,y
-		php
-		and #$7f
-		jsr $e202
-		iny
-		plp
-		bpl sysmsg01
-		jmp pops
-
-sysmsgtable	.byt $00 ;  0 - TOO MANY FILES
-		.byt $0e ;  1 - FILE OPEN  
-		.byt $17 ;  2 - FILE NOT OPEN
-		.byt $24 ;  3 - FILE NOT FOUND
-		.byt $32 ;  4 - [cr]SEARCHING_
-		.byt $3d ;  5 - FOR_
-		.byt $41 ;  6 - [cr]PRESS PLAY_
-		.byt $4d ;  7 - & RECORD_
-		.byt $56 ;  8 - ON TAPE #
-		.byt $5f ;  9 - [cr]LOAD
-		.byt $64 ; 10 - [cr]WRITING 
-		.byt $6d ; 11 - [cr]VERIFY
-		.byt $74 ; 12 - DEVICE NOT PRESENT
-		.byt $86 ; 13 - NOT INPUT FILE
-		.byt $94 ; 14 - NOT OUTPUT FILE
-		.byt $a3 ; 15 - [cr]FOUND
-		.byt $aa ; 16 - [cr]OK[cr]
-		.byt $ae ; 17 - [cr]READY.[cr]
-		.byt $b6 ; 18 - [cr]ARE YOU SURE ?
-		.byt $c5 ; 19 - [cr]? BAD DISK [cr]
-
-pettilmsgtable	.byt $12 ; 20 -	DICTIONARY FULL
-		.byt $21 ; 21 -	NAME REQUIRED
-		.byt $2e ; 22 -	 ALREADY EXISTS
-		.byt $3d ; 23 -	COMPILATION ONLY
-		.byt $4d ; 24 -	NOT FOUND
-		.byt $56 ; 25 -	NOT PAIRED
-		.byt $60 ; 26 -	DEFINITION NOT FINISHED
-		.byt $77 ; 27 -	 MISSING
-		.byt $7f ; 28 -	STACK EMPTY
-		.byt $8a ; 29 -	STACK FULL
-		.byt $94 ; 30 -	[cr]WELCOME TO_
-		.byt $a0 ; 31 -	PETTIL!
-		.byt $a7 ; 32 -	PROTECTED WORD
-
-;--------------------------------------------------------------
-;
 ;	SETIRQ   ( newirq -- oldirq )
 ;
 ; Safely changes the IRQ vector at $90-$91 to the new value,
@@ -3526,7 +3455,7 @@ _status
 
 ;--------------------------------------------------------------
 ;
-;	(ABORT")   ( msgid -- )
+;	(ABORT")   ( -- )
 ;
 ; * outer interpreter headerless
 ;
@@ -3539,15 +3468,35 @@ _status
 ;		.asc "(ABORT",'"',")"|bit7
 _pabortq
 #include "enter.i65"
-		.word cmdoff
+		.word rfrom
 #include "page.i65"
-		.word sysmsg
+		.word twoplus
+#include "page.i65"
+		.word count
+#include "page.i65"
+		.word rot
+#include "page.i65"
+		.word qbranch
+		.word pabortq01
+#include "pad.i65"
+		.word cmdoff
+;#include "page.i65"
+;		.word _where
+;#include "page.i65"
+;		.word cr
+;#include "page.i65"
+;		.word type
 #include "page.i65"
 		.word startup
 #include "page.i65"
 		.word fetch
 #include "page.i65"
 		.word execute
+pabortq01
+		.word plus
+#include "page.i65"
+		.word to6502
+		jmp skipinline
 
 ;--------------------------------------------------------------
 ;
@@ -4048,6 +3997,7 @@ dashtrailing02	.word exit
 ;		.byt (_pdq-*-1)|bit7
 ;		.asc "(.",'"',")"|bit7
 _pdq
+xyzzy
 #include "enter.i65"
 		.word rfrom		; ( cstring-2 )
 #include "page.i65"
@@ -5209,7 +5159,7 @@ cold		sei
 		ldy #usercold-userarea-1
 		bne warm01		; bra
 
-warm		lda #>warm05
+warm		lda #>warm05		; ~wut? this probably isn't doing what I think it does
 		sta w1+1
 		lda #<warm05
 		sta w1
@@ -5236,35 +5186,10 @@ warm02		lda userarea,y
 		.word spstore
 #include "page.i65"
 		.word _pdq
-		.byt warm04-*-1
-		.byt CLR
-;		.byt BLOCK8,HBAR6,DOWN,LEFT,LEFT,VBAR7,SPACE,SPACE
-;		.byt BLOCK8,HBAR6,BLOCK4,SPACE
-;		.byt BLOCK8,HBAR6,HBAR6,BLOCK4,SPACE
-;		.byt BLOCK8,HBAR6,HBAR6,BLOCK4
-;		.byt HBAR6,HBAR6,BLOCK8,SPACE,SPACE,SPACE
-		.asc "6502 FORTH FOR THE",CR
-		.asc "COMMODORE PET 2001"
-;.byt 252,247,254,145,145,145
-;.byt 236,239,239,251,17,157,157,157,234,17,157,234,17,157,252,32,32
-;.byt 145,145,145
-;.byt 236,239,239,251,17,157,157,157,234,17,157,234,17,157,252,32,32
-;.byt 145,145,145
-;.byt 239,239,17,157,157,234,17,157,234,17,157
-;.byt 247,247,145,145,145
-;.byt 236,17,157,234,17,157,234,17,157,252,247,247,254
-;.byt 145,145,145
-;		.asc "6502 FORTH FOR THE"
-;.byt 17,17,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157
-;.byt 157,157,157
-;		.asc "COMMODORE PET 2001"
-;.byt 17,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157,157
-;		.asc "......... ... ...."
-
-		.byt CR,CR
-		.asc "CHITSELB.COM 2014"
-		.byt CR,CR
-warm04
+		.byt (warm03-*-1)
+		.asc	CLR,"FORTH FOR THE COMMODORE PET 2001",CR
+		.asc	"HTTP:","/","/GITHUB.COM/CHITSELB/PETTIL 2014-03-25",CR
+warm03
 #include "pad.i65"
 		.word _rethread
 #include "page.i65"
@@ -5275,11 +5200,9 @@ warm05		.word _decimal
 		.word _definitions
 #include "page.i65"
 		.word _pdq
-		.byt warm06-*-1
-		.asc	$0d,"WELCOME TO "
-pettil		.asc	"PETTIL!"
-			   ;123456789.123456789
-warm06
+		.byt (warm04-*-1)
+		.asc	CR,"WELCOME TO PETTIL!",CR
+warm04
 #include "pad.i65"
 		.word startup
 #include "page.i65"
@@ -7859,32 +7782,9 @@ forget05	.word _ntolink
 #include "page.i65"
 		.word store
 		.word exit
-
 forgetfence
 		
 ;==============================================================
-
-foolfa		.byt $de,$ad
-		.byt (foo-*-1)|bit7
-		.asc "FO","O"|bit7
-foo
-		ldy #1
-		sty FA		; set default device to tape #1
-		dey
-		sty FNLEN	; Length of Current File Name
-		sty STATUS	; kernel i/o status
-		sty VERCK	; 0 = load, 1 = verify
-
-		brk
-		; if we were setting a filename, we'd store the pointer at $da-$db
-;		.byt set | R0
-;		.word FNADR
-;		.byt set | R5
-;		.word $0209		; pointer to filename ~~ why here?
-;		.byt std | R5	; $00da <-- #$0209
-		
-		.byt rtn
-		jmp next
 
 ;--------------------------------------------------------------
 barlfa		.byt $de,$ad
@@ -7893,13 +7793,6 @@ barlfa		.byt $de,$ad
 bar
 		jmp next
 
-;--------------------------------------------------------------
-;
-;	BLOCK   ( block -- address )
-;
-
-
-
 
 ;--------------------------------------------------------------
 ;
@@ -7907,21 +7800,21 @@ bar
 ;
 ; The editor vocabulary
 ;
-wheadlfa	.byt $de,$ad
-		.byt (whead-*-1)|bit7
-		.asc "WHEA","D"|bit7
-whead
-		brk
-		.byt set  | R0
-		.word	blockbuf
-		.byt set  | N0
-		.word	SAL
-		.byt std  | N0
-		.byt set  | R0		; blockbuf -> SAL
-		.word	VIDRAM
-		.byt std  | N0		; VIDRAM -> EAL
-		.byt rtn
-		
+;wheadlfa	.byt $de,$ad
+;		.byt (whead-*-1)|bit7
+;		.asc "WHEA","D"|bit7
+;whead
+;		brk
+;		.byt set  | R0
+;		.word	blockbuf
+;		.byt set  | N0
+;		.word	SAL
+;		.byt std  | N0
+;		.byt set  | R0		; blockbuf -> SAL
+;		.word	VIDRAM
+;		.byt std  | N0		; VIDRAM -> EAL
+;		.byt rtn
+;		
 ;		lda #<blockbuf		; start address
 ;		sta STAL
 ;		lda #>blockbuf
@@ -7930,34 +7823,34 @@ whead
 ;		sta EAL
 ;		lda #>VIDRAM
 ;		sta 1+EAL
-
+;
 ;		lda #6			; file name
 ;		sta FNLEN
 ;		lda #<pettil
 ;		sta FNADR
 ;		lda #>pettil
 ;		sta 1+FNADR
-
-				
-		lda #1		
-		sta FA		; current device number = tape 1
-		lda #7		; header id byte
-		jsr SAVEHEADER
-		
-		
+;
+;				
+;		lda #1		
+;		sta FA		; current device number = tape 1
+;		lda #7		; header id byte
+;		jsr SAVEHEADER
+;		
+;		
 ;		lda #$69
 ;		sta RIPRTY	; header gap delay
 ;		jsr PRESSRECORD
 ;		jsr TAPEWRITE
-		jmp next
-
+;		jmp next
+;
 ;--------------------------------------------------------------
-wblocklfa	.byt $de,$ad
-		.byt (wblock-*-1)|bit7
-		.asc "WBLOC","K"|bit7
-wblock		jsr TAPEWRITE
-		jmp next
-
+;wblocklfa	.byt $de,$ad
+;		.byt (wblock-*-1)|bit7
+;		.asc "WBLOC","K"|bit7
+;wblock		jsr TAPEWRITE
+;		jmp next
+;
 ;--------------------------------------------------------------
 
 endofile
