@@ -3,7 +3,7 @@
 ; PETTIL
 ; Personal Electronics Transactor Threaded Interpreted Language
 ;
-; (A Forth-like language for my venerable Commodore PET 2001)
+; (A Forth-like language for my venerable Commodore PET 2001N)
 ;
 ;" ven-er-a-ble (adj.)
 ;" 3a : calling forth respect through age, character and attainments
@@ -27,78 +27,109 @@
 ; Charles Moore - creator of Forth
 ; Charles M. Schultz - creator of Peanuts
 ; Charlie Brown - for teaching me how to read
-;
-; My lawyer made me put this in here.
-;
-; chitselb.com reserves the right to make changes at any time without
-; notice in order to improve design and supply the best possible product.
-; Information contained herein is provided gratuitously and without
-; liability, to any user. Reasonable efforts have been made to verify
-; the accuracy of the information but no guarantee whatsoever is given
-; as to the accuracy or as to its applicability to particular uses. In 
-; every instance, it must be the responsibility of the user to determine
-; the suitability of the products for each application. PETTIL is not
-; authorized for use as critical components in life support devices or
-; systems. Nothing contained herein shall be construed as a recommendation 
-; to use any product in violation of existing patents or other rights of
-; third parties. 
-;
-;pettil.a65
-;
-; target machine -- choose one
-;#define PET_ORIG	; it'll be a frosty Friday before this version works
-;#define PET_UPGR	; has the WAIT 6502 easter egg
-#define	PET_ROM4
 
-; set up tape or disk (or both) virtual memory
+; things between ;==== bars == use caution if relocating
+; things between ;---- bars -- may be moved freely
 
-; decide here whether to generate code for debugging PETTIL
+; e.g. only a 48-cell stack so the bytes line up visually 
 #define DEBUG
-; decide here whether to include bulky memory compression routines
-; #define USE_COMPRESSION
+#define PET_ROM4		; target machine
 
 #include cbm.def
 #include pettil.def
 
+
+;====BASIC cold start and Sweet16, with some ML subroutines====
 #define		basic		$0400
-		.word basic+1		; PET BASIC storage starts here
-;==============================================================
+		.word basic+1			; this will be the load address
 *		= basic+1
+
 		.word basend
 		.word 10
 		.byt $9e			; SYS token
 		.asc "(1039)",0			; $040f
 basend		.word 0
-		jmp cold
-		jmp warm
-		nop
-;==============================================================
-; things between ;==== bars are at fixed addresses
-; things between ;---- bars may be moved freely
+		jmp ice
+
+;--------------------------------------------------------------
 ;
-; The next several things are here mostly because they...
-; * won't be changing
-; * aren't part of the dictionary
-; * effectively pad out the area to align Sweet16 on a page boundary
-;
+; Tables used by Pearson hash function and Bloom filter for root
+; vocabulary.  The Pearson hash is used by hash1 to evenly distribute
+; words among the multiple threads of the dictionary. The Bloom 
+; filter lets us skip looking for things that we know aren't in
+; the dictionary (e.g. numbers).  For now, keep bloom and lfalist
+; consecutive in memory, with bloom first so RETHREAD won't break
+pearson		.byt 150,191,252,0,194,202,129,7
+pearsonx
+bloom		.dsb 8,0	; 64-bit, used by hash2
+bloomx
+lfalist		.dsb 32,0	; heads of link threads for root vocabulary
+
 ; powers of 2 in a lookup table
 power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
 
-; swap lower area on the zeropage between BASIC and PETTIL
-; caller must frame this between sei/cli instructions
-;
-swapzp		stx storex
-		ldx #TIME ; swap zeropage area below the jiffy clock
+; Unlike FIG Forth, PETTIL uses a direct-threaded model for
+; greater efficiency (both speed and memory).  So there's
+; no W register in the inner interpreter.
+w1		.word $dead		; (for when you just need a W register)
+		.word exit		; 'fragment secondary' used by EXECUTE
+
+
+; using ROM tape I/O drops to BASIC if there's a problem.
+; we'd like the user to be able to type RUN and pick up
+; more or less at the dropping off point if this happens.
+; this subroutine performs that BASIC/PETTIL context switch
+; between $00-$8C inclusive. 
+swapzp		stx storex	; preserve Forth data stack pointer
+		ldx #TIME	; everything below the jiffy clock
 swapzp01	lda $ff,x
-		pha
-		lda zpbuf-1,x
-		sta $ff,x
-		pla
+		ldy zpbuf-1,x
+		sty $ff,x
 		sta zpbuf-1,x
 		dex
 		bne swapzp01
-		ldx storex
+		ldx storex	; restore Forth data stack pointer
 		rts
+
+; Putting all this junk between basend and here properly aligns
+; Sweet16.  PETTIL's Sweet16 is *mostly* stock Woz. I have made 
+; some small adaptations. SET and PUSH must be on the same page!
+#include sweet16.a65
+;==============================================================
+; this is an image of PETTIL zeropage at cold start.  Swapping it
+; with the BASIC zeropage makes hopping back and forth possible
+;
+zpbuf		.word $0000,$0101,$0202,$0303
+		.word $0404,$0505,$0606,$0707	; PETTIL registers
+		.word $0808,$0909,$0a0a,$0b0b	; and
+		.word $0c0c,$0d0d,$0e0e,$0f0f	; Sweet16 registers 
+		.dsb bos,$aa			; low stack
+		.dsb bos,$bb			; high stack
+;
+;	NEXT
+;
+; * inner interpreter headerless
+;
+;		+IP
+;		[IP] -> PC
+;
+; minimalist NEXT, copied to zeropage by COLD
+zpnext		inc ip			; 5 
+		inc ip			; 5 
+;ip = *+1
+		jmp ($cafe)		; 5 
+zpnextx					;15 cycles total
+
+; if #DEBUG is on, adds enough padding between NEXT and TIME
+		.dsb TIME-(*-zpbuf),$69	; more cowbell
+
+;==============================================================
+; The next few routines are here mostly because they...
+; * aren't Forth words (part of the dictionary)
+; * probably won't be changing
+; * properly align parts of Sweet16 between page boundaries
+
+
 
 ; pops up to 4 words from the split stack to N area
 ; Y = how many words to pop (valid range 1-4)
@@ -136,40 +167,15 @@ slip		dex			; slip something onto the stack
 		sta stackl,x
 		rts
 
-; bam!  SET = $0500
 
-; SET and PUSH must be on the same page.
-#include sweet16.a65
-;==============================================================
-; this is an image of PETTIL zeropage at cold start.  Swapping it
-; with the BASIC zeropage makes hopping back and forth possible
-;
-zpbuf		.word $0000,$0101,$0202,$0303
-		.word $0404,$0505,$0606,$0707	; PETTIL registers
-		.word $0808,$0909,$0a0a,$0b0b	; and
-		.word $0c0c,$0d0d,$0e0e,$0f0f	; Sweet16 registers 
-		.dsb bos,$aa			; low stack
-		.dsb bos,$bb			; high stack
-;
-;	NEXT
-;
-; * inner interpreter headerless
-;
-;		+IP
-;		[IP] -> PC
-;
-; minimalist NEXT, copied to zeropage by COLD
-zpnext		inc ip			; 5 
-		inc ip			; 5 
-		jmp ($cafe)		; 5 
-zpnextx					;15 cycles total
+
 
 ;--------------------------------------------------------------
 ; user area initialization data
 ; this gets copied to the cassette buffer
 ; and is pointed to by the UP (user pointer)
 userarea
-userup		.word UAREA				; W
+userup		.word uarea				; W
 usersp0		.word bos+1				; A
 userrp0		.word $01ff				; R
 userwidth	.word 31				; M
@@ -183,11 +189,10 @@ userviewquery	.word 2					; D
 usermlmon	.word TIMBRK				; .
 usersw16	.word SW16				; .
 uservidbuf	.word $7c00				; .
-usercold
 
 ; live userarea has 2 bytes for each initializer plus 32 bytes
 ; for "soft" user variables, e.g. #OUT 
-UAREA		.dsb usercold-userarea+32,0
+uarea		.dsb *-userarea+32,0
 
 ;--------------------------------------------------------------
 ; Jump up to high-level Forth from inline 6502
@@ -214,9 +219,6 @@ page		lda #0
 pagen		inc ip+1		; cross the page
 pado		sta ip
 		jmp nexto
-
-w1		.word $dead		; (for when you just need a W register)
-		.word exit		; 'fragment secondary' used by EXECUTE
 
 ;--------------------------------------------------------------
 ; Drop down from high-level Forth to inline 6502
@@ -266,17 +268,6 @@ dnegaten	ldy #0
 		rts
 
 
-;--------------------------------------------------------------
-;
-; tables used by Pearson hash function and Bloom filter for root
-; vocabulary
-;
-pearson		.byt 150,191,252,0,194,202,129,7
-pearsonx
-bloom		.dsb 8,0	; Forth vocabulary 64-bit bloom filter for hash2
-bloomx
-
-lfalist		.dsb 32,0	; heads of link threads for root vocabulary
 
 rootlfa		.word 0
 		.byt 31			; longest word in the dictionary ~wut?
@@ -2322,7 +2313,7 @@ blklfa		.byt $de,$ad
 		.byt (blk-*-1)|bit7
 		.asc "BL","K"|bit7
 blk		jsr uservar
-		.byt usercold-userarea
+		.byt uarea-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2339,7 +2330,7 @@ toinlfa		.byt $de,$ad
 		.byt (toin-*-1)|bit7
 		.asc ">I","N"|bit7
 toin		jsr uservar
-		.byt usercold-userarea+2
+		.byt uarea-userarea+2
 
 ;--------------------------------------------------------------
 ;
@@ -2349,7 +2340,7 @@ numoutlfa	.byt $de,$ad
 		.byt (numout-*-1)|bit7
 		.asc "#OU","T"|bit7
 numout		jsr uservar
-		.byt usercold-userarea+4
+		.byt uarea-userarea+4
 
 ;--------------------------------------------------------------
 ;
@@ -2362,7 +2353,7 @@ scrlfa		.byt $de,$ad
 		.byt (scr-*-1)|bit7
 		.asc "SC","R"|bit7
 scr		jsr uservar
-		.byt usercold-userarea+6
+		.byt uarea-userarea+6
 
 ;--------------------------------------------------------------
 ;
@@ -2373,7 +2364,7 @@ offsetlfa	.byt $de,$ad
 		.byt (offset-*-1)|bit7
 		.asc "OFFSE","T"|bit7
 offset		jsr uservar
-		.byt usercold-userarea+8
+		.byt uarea-userarea+8
 
 ;--------------------------------------------------------------
 ;
@@ -2383,7 +2374,7 @@ contextlfa	.byt $de,$ad
 		.byt (context-*-1)|bit7
 		.asc "CONTEX","T"|bit7
 context		jsr uservar
-		.byt usercold-userarea+10
+		.byt uarea-userarea+10
 
 ;--------------------------------------------------------------
 ;
@@ -2393,7 +2384,7 @@ currentlfa	.byt $de,$ad
 		.byt (current-*-1)|bit7
 		.asc "CURREN","T"|bit7
 current		jsr uservar
-		.byt usercold-userarea+12
+		.byt uarea-userarea+12
 
 ;--------------------------------------------------------------
 ;
@@ -2411,7 +2402,7 @@ statelfa	.byt $de,$ad
 		.byt (state-*-1)|bit7
 		.asc "STAT","E"|bit7
 state		jsr uservar
-		.byt usercold-userarea+14
+		.byt uarea-userarea+14
 
 ;--------------------------------------------------------------
 ;
@@ -2423,7 +2414,7 @@ baselfa		.byt $de,$ad
 		.byt (base-*-1)|bit7
 		.asc "BAS","E"|bit7
 base		jsr uservar
-		.byt usercold-userarea+16
+		.byt uarea-userarea+16
 
 ;--------------------------------------------------------------
 ;
@@ -2433,7 +2424,7 @@ dpllfa		.byt $de,$ad
 		.byt (dpl-*-1)|bit7
 		.asc "DP","L"|bit7
 dpl		jsr uservar
-		.byt usercold-userarea+18
+		.byt uarea-userarea+18
 
 ;--------------------------------------------------------------
 ;
@@ -2445,7 +2436,7 @@ dpl		jsr uservar
 ; contains the count of characters received and
 ; stored by the most recent execution of EXPECT .
 span		jsr uservar
-		.byt usercold-userarea+20
+		.byt uarea-userarea+20
 
 ;--------------------------------------------------------------
 ;
@@ -2455,7 +2446,7 @@ csplfa		.byt $de,$ad
 		.byt (csp-*-1)|bit7
 		.asc "CS","P"|bit7
 csp		jsr uservar
-		.byt usercold-userarea+22
+		.byt uarea-userarea+22
 
 ;--------------------------------------------------------------
 ;
@@ -2465,7 +2456,7 @@ rsharplfa	.byt $de,$ad
 		.byt (rsharp-*-1)|bit7
 		.asc "R","#"|bit7
 rsharp		jsr uservar
-		.byt usercold-userarea+24
+		.byt uarea-userarea+24
 
 ;--------------------------------------------------------------
 ;
@@ -2475,7 +2466,7 @@ hldlfa		.byt $de,$ad
 		.byt (hld-*-1)|bit7
 		.asc "HL","D"|bit7
 hld		jsr uservar
-		.byt usercold-userarea+26
+		.byt uarea-userarea+26
 
 ;--------------------------------------------------------------
 ;
@@ -2490,7 +2481,7 @@ numtiblfa	.byt $de,$ad
 		.byt (numtib-*-1)|bit7
 		.asc "#TI","B"|bit7
 numtib		jsr uservar
-		.byt usercold-userarea+28
+		.byt uarea-userarea+28
 
 ;--------------------------------------------------------------
 ;
@@ -2500,7 +2491,7 @@ numlinelfa	.byt $de,$ad
 		.byt (numline-*-1)|bit7
 		.asc "#LIN","E"|bit7
 numline		jsr uservar
-		.byt usercold-userarea+30
+		.byt uarea-userarea+30
 
 ;--------------------------------------------------------------
 ;
@@ -3997,7 +3988,6 @@ dashtrailing02	.word exit
 ;		.byt (_pdq-*-1)|bit7
 ;		.asc "(.",'"',")"|bit7
 _pdq
-xyzzy
 #include "enter.i65"
 		.word rfrom		; ( cstring-2 )
 #include "page.i65"
@@ -5145,18 +5135,12 @@ startup		jsr docreate
 ;reset top of the dictionary
 ;reset data and return stack
 
+ice		jsr swapzp
+		bne cold		; bra
 coldlfa		.byt $de,$ad
 		.byt (cold-*-1)|bit7
 		.asc "COL","D"|bit7
-cold		sei
-		jsr swapzp
-
-;		lda #<warmvector
-;		sta NMINV
-;		lda #>warmvector
-;		sta NMINV+1		; ~ test with NMI switch
-
-		ldy #usercold-userarea-1
+cold		ldy #uarea-userarea-1
 		bne warm01		; bra
 
 warm		lda #>warm05		; ~wut? this probably isn't doing what I think it does
@@ -5174,8 +5158,7 @@ warm02		lda userarea,y
 		sta (up),y
 		dey
 		bpl warm02
-		cld
-		cli
+xyzzy		cld
 		ldy #(usersw16-userarea)
 		jsr setbrk		; call Sweet16 on BRK
 		jsr CLRCHN
@@ -7578,7 +7561,7 @@ _rethread
 		.word bloom
 #include "pad.i65"
 		.word clit
-		.byt <(rootlfa-bloom)		; clear list head
+		.byt 40			; bloom filter (8) and lfalist (32)
 #include "pad.i65"
 		.word _erase
 #include "page.i65"
