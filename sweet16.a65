@@ -44,42 +44,57 @@
 #define	bk		$0A
 #define	rs		$0B
 #define	bs		$0C
-#define	pull		$0D ;drop TOS on the Forth data stack
-#define	push		$0E ;push ACC to the Forth data stack
-#define	nul		$0F ;nop
+#define	ext		$0D ;general purpose extension, jumps via R0 to 6502
+#define	pull		$0E ;drop TOS on the Forth data stack
+#define	push		$0F ;push ACC to the Forth data stack
 
-#define	R0		$0	; ACC
-#define	R1		$1	; TOS
-#define	R2		$2	; UP
-#define	R3		$3	; I
-#define	R4		$4	; ILIMIT
-#define	R5		$5	; N0
-#define	R6		$6	; N1
-#define	R7		$7	; N2
-#define	R8		$8	; N3
-#define	R9		$9
-#define	R10		$a
-#define	R11		$b
-#define	R12		$c
-#define	R13		$d	; cpr result
-#define	R14		$e	; flags
-#define	R15		$f	; Sweet16 PC
+R0	=		$0	; ACC
+#define R1		$1	; TOS
+r1	=		2*R1
+#define R2		$2	; UP
+r2	=		2*R2
+#define R3		$3	; I
+r3	=		2*R3
+#define R4		$4	; ILIMIT
+r4	=		2*R4
+#define R5		$5	; N0
+r5	=		2*R5
+#define R6		$6	; N1
+r6	=		2*R6
+#define R7		$7	; N2
+r7	=		2*R7
+#define R8		$8	; N3
+r8	=		2*R8
+#define R9		$9
+r9	=		2*R9
+#define R10		$a
+r10	=		2*R10
+#define R11		$b
+r11	=		2*R11
+#define R12		$c
+r12	=		2*R12
+#define R13		$d	; cpr result
+r13	=		2*R13
+#define R14		$e	; flags
+r14	=		2*R14
+#define R15		$f	; Sweet16 PC
+r15	=		2*R15
 
 #define	ACC		$0
 #define	TOS		$1
 #define	UP		$2
-#define	IREG	$3
-#define	ILIMIT	$4
+#define	IREG		$3
+#define	ILIMIT		$4
 #define	N0		$5
 #define	N1		$6
 #define	N2		$7
 #define	N3		$8
 
-#define	R0L		tos-2
-#define	R0H		R0L+1
-#define	R14H	R0L+29
-#define	R15L	R0L+30
-#define	R15H	R0L+31
+#define	R0L		$0
+#define	R0H		R0L+$1
+#define	R14H		R0L+$1d
+#define	R15L		R0L+$1e
+#define	R15H		R0L+$1f
 
 SW16	ldy $0106,x	;INIT SWEET16 PC
 	lda $0105,x	;ADDRESS
@@ -112,8 +127,8 @@ SW16D	LDA #>SET	;COMMON HIGH BYTE FOR ALL ROUTINES
 	LDA OPTBL-2,Y	;LOW ORDER ADR BYTE
 	PHA		;ONTO STACK
 	RTS		;GOTO REG-OP ROUTINE
-TOBR	CPX #$1A
-	BCS TOBR2	;0D, 0E, 0F instructions are single byte
+TOBR	CPX #$1C
+	BCS TOBR2	;0E, 0F instructions are single byte
 	INC R15L
 	BNE TOBR2	;INCR PC
 	INC R15H
@@ -183,11 +198,11 @@ BRTBL	.BYT <RTN-1	;0
 	.BYT <CPR-1	;DX
 	.BYT <BS-1	;C
 	.BYT <INR-1	;EX
-	.BYT <PULL-1	;D
+	.BYT <EXT-1	;D
 	.BYT <DCR-1	;FX
-	.BYT <PUSH-1	;E
+	.BYT <PULL-1	;E
 	.BYT <NUL-1	;UNUSED
-	.BYT <NUL-1	;F
+	.BYT <PUSH-1	;F
 
 ;* FOLLOWING CODE MUST BE
 ;* CONTAINED ON A SINGLE PAGE!
@@ -320,14 +335,19 @@ NUL	RTS
 RS	JMP RSZ
 RTN	JMP RTNZ
 BK	JMP mon		; redirect BRK to TIM and enter ML Monitor
-PULL	JSR getpstack	; get PETTIL stack pointer
-	JSR slide	; remove item from Forth data stack (DROP in Forth)
-	JMP putpstack	; update PETTIL stack pointer
+EXT	LDX #r8		; SETZ will use R8 for the indirect transfer
+	LDY #1		; point to high byte of transfer address
+	JSR SETZ
+	JMP (r8)	; implement your 6502 extension to Sweet16 here!
+PULL	BNE PULLZ	; bra
 PUSH	JSR getpstack	; get PETTIL stack pointer
 	JSR slip	; push TOS -> Forth data stack (DUP in Forth)
 	JSR putpstack	; update PETTIL stack pointer
 	LDX #2
 	JMP ST
+PULLZ	JSR getpstack	; get PETTIL stack pointer
+	JSR slide	; remove item from Forth data stack (DROP in Forth)
+	JMP putpstack	; update PETTIL stack pointer
 getpstack	tsx
 		lda $0106,x
 		tax
@@ -336,4 +356,20 @@ putpstack	txa
 		tsx
 		sta $0106,x
 		rts
+slide		lda stackl,x		; slide something off of the stack
+		sta tos
+		lda stackh,x
+		sta tos+1
+		inx
+		rts
+slip		dex			; slip something onto the stack
+		lda tos+1
+		sta stackh,x
+		lda tos
+		sta stackl,x
+		rts
+; this is a demo of the EXT instruction.  It doesn't do much.
+;		.byt ext
+;		.word strcmp16
+strcmp16	rts
 
