@@ -41,7 +41,7 @@
 #define	bnz		$07
 #define	bm1		$08
 #define	bnm1		$09
-#define	bk		$0A
+#define	bk		$0A	; this is pretty worthless.  NEXT?
 #define	rs		$0B
 #define	bs		$0C
 #define	ext		$0D ;general purpose extension, jumps via R0 to 6502
@@ -126,7 +126,7 @@ SW16D	LDA #>SET	;COMMON HIGH BYTE FOR ALL ROUTINES
 	TAY		;TO Y REG FOR INDEXING
 	LDA OPTBL-2,Y	;LOW ORDER ADR BYTE
 	PHA		;ONTO STACK
-	RTS		;GOTO REG-OP ROUTINE
+disp2	RTS		;GOTO REG-OP ROUTINE
 TOBR	CPX #$1C
 	BCS TOBR2	;0E, 0F instructions are single byte
 	INC R15L
@@ -136,7 +136,7 @@ TOBR2	LDA BRTBL,X	;LOW ORDER ADR BYTE
 	PHA		;ONTO STACK FOR NON-REG OP
 	LDA R14H	;"PRIOR RESULT REG" INDEX
 	LSR		;PREPARE CARRY FOR BC, BNC.
-	RTS		;GOTO NON-REG OP ROUTINE
+disp1	RTS		;GOTO NON-REG OP ROUTINE
 RTNZ	pla
 	pla
 	tsx
@@ -201,7 +201,7 @@ BRTBL	.BYT <RTN-1	;0
 	.BYT <EXT-1	;D
 	.BYT <DCR-1	;FX
 	.BYT <PULL-1	;E
-	.BYT <NUL-1	;UNUSED
+	.BYT 0		;UNUSED
 	.BYT <PUSH-1	;F
 
 ;* FOLLOWING CODE MUST BE
@@ -331,15 +331,14 @@ BNM1	ASL		;DOUBLE RESULT-REG INDEX
 	AND R0H,X	;CHECK BOTH BYTES FOR NO $FF
 	EOR #$FF
 	BNE BR1		;BRANCH IF NOT MINUS 1
-NUL	RTS
+BK	RTS
 RS	JMP RSZ
 RTN	JMP RTNZ
-BK	JMP mon		; redirect BRK to TIM and enter ML Monitor
 EXT	LDX #r8		; SETZ will use R8 for the indirect transfer
 	LDY #1		; point to high byte of transfer address
 	JSR SETZ
 	JMP (r8)	; implement your 6502 extension to Sweet16 here!
-PULL	BNE PULLZ	; bra
+PULL	BPL PULLZ	; bra
 PUSH	JSR getpstack	; get PETTIL stack pointer
 	JSR slip	; push TOS -> Forth data stack (DUP in Forth)
 	JSR putpstack	; update PETTIL stack pointer
@@ -348,28 +347,46 @@ PUSH	JSR getpstack	; get PETTIL stack pointer
 PULLZ	JSR getpstack	; get PETTIL stack pointer
 	JSR slide	; remove item from Forth data stack (DROP in Forth)
 	JMP putpstack	; update PETTIL stack pointer
+
+; return the parameter stack pointer in X
 getpstack	tsx
 		lda $0106,x
 		tax
 		rts
+
+; set the parameter stack pointer on return from X
 putpstack	txa
 		tsx
 		sta $0106,x
 		rts
-slide		lda stackl,x		; slide something off of the stack
-		sta tos
-		lda stackh,x
+
+; pop the stack
+slide		lda stackh,x		; slide something off of the stack
 		sta tos+1
+		lda stackl,x
+		sta tos
 		inx
 		rts
+
+; push TOS to the stack (DUP)
 slip		dex			; slip something onto the stack
 		lda tos+1
 		sta stackh,x
 		lda tos
 		sta stackl,x
 		rts
-; this is a demo of the EXT instruction.  It doesn't do much.
-;		.byt ext
-;		.word strcmp16
-strcmp16	rts
+
+
+; compares the counted string at TOS
+; vs the counted string pointed to by
+; N0 and returns Z flag = true if the
+; strings match, otherwise Z is false
+; returns C flag = true iff the word in
+; dictionary is longer than string it is
+; being compared to, used for early
+; exit when the chain is sorted by size
+; in the core source
+strcmp16	ldy #2
+		lda (
+		rts
 

@@ -39,7 +39,9 @@
 #include pettil.def
 
 
+;==============================================================
 ;====BASIC cold start and Sweet16, with some ML subroutines====
+;==============================================================
 #define		basic		$0400
 		.word basic+1			; this will be the load address
 *		= basic+1
@@ -94,9 +96,11 @@ swapzp01	lda $ff,x
 ; Putting all this junk between basend and here properly aligns
 ; Sweet16.  PETTIL's Sweet16 is *mostly* stock Woz. I have made 
 ; some small adaptations. For example, I call it with BRK instead
-; of JSR.  SET and PUSH must be on the same page!
+; of JSR.  
 #include sweet16.a65
 ; everything above this line puts SET = $0501 and PUSH = $05fc
+;==============================================================
+;==========SET and PUSH must be on the same page!====================================================
 ;==============================================================
 ; this is an image of PETTIL zeropage at cold start.  Swapping it
 ; with the BASIC zeropage makes hopping back and forth possible
@@ -592,6 +596,8 @@ digit02		inx
 digit03		tya
 		jmp put
 
+
+
 ;--------------------------------------------------------------
 ;
 ;	(FIND)   ( addr1 addr2 -- addr flag )
@@ -608,17 +614,116 @@ digit03		tya
 ;pfindlfa	.byt $de,$ad
 ;		.byt (pfind-*-1)|bit7
 ;		.asc "(FIND",")"|bit7
+npfind		brk
+		.byt ld | TOS
+npfind02	.byt st | N0
+		.byt pull		; TOS=addr of counted search-for string
+		.byt ext
+		.word strcmp16		; compares the counted string at TOS
+					; vs the counted string pointed to by
+					; N0 and returns Z flag = true if the
+					; strings match, otherwise Z is false
+					; returns C flag = true iff the word in
+					; dictionary is longer than string it is
+					; being compared to, used for early
+					; exit when the chain is sorted by size
+					; in the core source
+		.byt bz, npfind01-*
+		.byt ldd | N0
+		.byt br
+		.byt <(npfind02-*)
+npfind01	.byt rtn
+
+
+
+
+;		sty n+5			; return flag = 0 (not found)
+;		ldy #2
+;		lda (n),y
+;		and #$1f
+;		sta n+2			; length of name we are seeking
+;pfind01		lda (tos),y
+;		sta n+4			; raw length & flags
+;		and #$1f
+;		sta n+3			; just the length
+;		lda n+2
+;		cmp n+3			; compare lengths
+;		bcc pfind05		; found something longer, fail
+;		bne pfind04		; found something shorter, hop
+;		lda n+4			; just right
+;		and #bit5		; what about the smudge bit?
+;		bne pfind04		; hop if smudged
+;		lda n+3			; or n+2... doesn't matter
+;		adc #1			; adds 2 with carry already set
+;		tay
+;pfind02		lda (tos),y		; compare strings back-to-front
+;		eor (n),y
+;		asl			; ignoring bit7
+;		bne pfind04		; mismatch in strcmp, hop
+;		dey
+;		cpy #2
+;		bne pfind02
+;		;sec			; winner winner pizza dinner!
+;		ldy n+3			; let's return ( CFA flag )
+;		iny			; skip past LFA
+;		iny			; skip past length byte
+;		tya
+;		adc tos
+;		sta tos
+;		ldy tos+1
+;		bcc pfind03
+;		iny			; LFA+len+name might cross a page
+;pfind03		sty tos+1		; CFA -> TOS
+;		lda n+4
+;		asl
+;		asl			; bit6 is now in C flag
+;		bcs pfind06		; immediate word
+;		dec n+5
+;		bcc pfind06		; normal word
+
+;pfind04		ldy #0			; here's where we hop
+;		lda (tos),y
+;		pha
+;		iny
+;		lda (tos),y
+;		sta tos+1
+;		pla
+;		sta tos
+;		iny			; Y=2
+;		bne pfind01		; bra
+
+;pfind05		;clc			; not found
+;		lda n+1
+;		sta tos+1
+;		lda n
+;		adc #2
+;		sta tos
+;		bcc pfind06
+;		inc tos+1
+;		clc
+;pfind06		ldy n+5
+;		tya
+;		adc #0
+;		jmp pushya
+
+;--------------------------------------------------------------
+;
+;	(FIND)   ( addr1 addr2 -- addr flag )
+;
+; * outer interpreter headerless
+;
+; addr1 is the address-2 of a counted string we are searching for.
+; addr2 is the LFA at the head of a chain of LFAs
+; returns
+;	( CFA -1 ) if found normal word
+;	( CFA 1 ) if found immediate word
+;	( addr1+2 false ) if not found
+;
+;pfindlfa	.byt $de,$ad
+;		.byt (pfind-*-1)|bit7
+;		.asc "(FIND",")"|bit7
 pfind		ldy #1
 		jsr setup		; name -> N0
-		brk
-		.byt ext
-		.word strcmp16
-		.byt rtn
-;
-;
-;
-;
-;		
 		sty n+5			; return flag = 0 (not found)
 		ldy #2
 		lda (n),y
@@ -1489,9 +1594,8 @@ swap		ldy tos+1
 duplfa		.byt $de,$ad
 		.byt (dup-*-1)|bit7
 		.asc "DU","P"|bit7
-dup		lda tos
-		ldy tos+1
-		jmp pushya
+dup		jsr slip
+		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -4677,7 +4781,7 @@ _trychain
 		.word qbranch
 		.word trychain01
 #include "pad.i65"			; ( name-2 LFA )
-		.word pfind		; ( addr flag )
+		.word npfind		; ( addr flag )
 #include "page.i65"
 		.word branch
 		.word trychain03
@@ -4695,7 +4799,7 @@ trychain01	.word dup		; ( name-2 name-2 )
 #include "pad.i65"			; ( name-2 hash1 )
 		.word dhashfetch	; ( name-2 LFA )
 #include "page.i65"
-		.word pfind		; ( addr flag )
+		.word npfind		; ( addr flag )
 #include "page.i65"
 		.word branch
 		.word trychain03
