@@ -16,55 +16,117 @@
 ;"* TITLE:  SWEET 16 INTERPRETER *
 ;"*				 *
 ;"********************************
+; set Rn, constant		Rn <-- constant
 #define	set		$10
-#define	ld		$20
-#define	st		$30
-#define	ldi		$40
-#define	sti		$50
-#define	ldd		$60
-#define	std		$70
-#define	pop		$80
-#define	stpx		$90
-#define	add		$A0
-#define	sub		$B0
-#define	popd		$C0
-#define	cpr		$D0
-#define	inr		$E0
-#define	dcr		$F0
-#define	rtn		$00
-#define	br		$01
-#define	bnc		$02
-#define	bc		$03
-#define	bp		$04
-#define	bm		$05
-#define	bz		$06
-#define	bnz		$07
-#define	bm1		$08
-#define	bnm1		$09
-#define	bk		$0A	; this is pretty worthless.  NEXT?
-#define	rs		$0B
-#define	bs		$0C
-#define	ext		$0D ;general purpose extension, jumps via R0 to 6502
-#define	pull		$0E ;drop TOS on the Forth data stack
-#define	push		$0F ;push ACC to the Forth data stack
 
-R0	=		$0	; ACC
-#define R1		$1	; TOS
-r1	=		2*R1
-#define R2		$2	; UP
-r2	=		2*R2
-#define R3		$3	; I
-r3	=		2*R3
-#define R4		$4	; ILIMIT
-r4	=		2*R4
-#define R5		$5	; N0
-r5	=		2*R5
-#define R6		$6	; N1
-r6	=		2*R6
-#define R7		$7	; N2
-r7	=		2*R7
-#define R8		$8	; N3
-r8	=		2*R8
+; load Rn			R0 <-- Rn
+#define	ld		$20
+
+; store Rn			Rn <-- R0
+#define	st		$30
+
+; load indirect	Rn		R0L <-- (Rn++); R0H <-- 0
+#define	ldi		$40
+
+; store indirect Rn		(Rn++) <-- R0L
+#define	sti		$50
+
+; load double indirect Rn	R0L <-- (Rn++); R0H <-- (Rn++)
+#define	ldd		$60
+
+; store double indirect Rn	(Rn++) <-- R0L; (Rn++) <-- R0H
+#define	std		$70
+
+; pop indirect Rn		R0L <-- (--Rn); R0H <-- 0
+#define	pop		$80
+
+; store pop indirect Rn		(--Rn) <-- R0L
+#define	stpx		$90
+
+; add Rn			R0 <-- R0 + Rn
+#define	add		$A0
+
+; sub Rn			R0 <-- R0 - Rn
+#define	sub		$B0
+
+; pop double indirect Rn	R0H <-- (--Rn); R0L <-- (--Rn)
+#define	popd		$C0
+
+; compare Rn			R13 <-- R0 - Rn
+#define	cpr		$D0
+
+; increment Rn			Rn++
+#define	inr		$E0
+
+; decrement Rn			Rn--
+#define	dcr		$F0
+
+; return to 6502 mode
+#define	rtn		$00
+
+; branch always, offset		R15 <-- R15 +/- offset
+#define	br		$01
+
+; branch if no carry, offset	R15 <-- R15 +/- offset if R14L bit 1 is clear
+#define	bnc		$02
+
+; branch if carry, offset	R15 <-- R15 +/- offset if R14L bit 1 is set
+#define	bc		$03
+
+; branch if plus, offset	R15 <-- R15 +/- offset if prior result is positive
+#define	bp		$04
+
+; branch if minus, offset	R15 <-- R15 +/- offset if prior result is negative
+#define	bm		$05
+
+; branch if zero, offset	R15 <-- R15 +/- offset if prior result is 0
+#define	bz		$06
+
+; branch if not zero, offset	R15 <-- R15 +/- offset if prior result is not 0
+#define	bnz		$07
+
+; branch if -1, offset		R15 <-- R15 +/- offset if prior result is -1
+#define	bm1		$08
+
+; branch if not -1, offset	R15 <-- R15 +/- offset if prior result is not -1
+#define	bnm1		$09
+
+; break				executes a break instruction ~wut?
+#define	bk		$0A
+
+; return from subroutine	R15 <-- (R12--); R12--
+#define	rs		$0B
+
+; branch to subroutine, offset	(R12++) <-- R15; R12++ ; R15 <-- R15 +/- offset
+#define	bs		$0C
+
+; extension, address		jumps via R8 to native 6502 code, ended by RTS
+#define	ext		$0D
+
+; pull TOS from the Forth data stack
+#define	pull		$0E
+
+; push R0 to the Forth data stack
+#define	push		$0F
+
+#define R0		$0
+r0	=		$0	; ACC
+#define R1		$1
+r1	=		2*R1	; TOS
+#define R2		$2
+r2	=		2*R2	; UP
+#define R3		$3
+r3	=		2*R3	; I
+#define R4		$4
+r4	=		2*R4	; ILIMIT
+#define R5		$5
+r5	=		2*R5	; N0
+#define R6		$6
+r6	=		2*R6	; N1
+#define R7		$7
+r7	=		2*R7	; N2
+#define R8		$8
+r8	=		2*R8	; N3
 #define R9		$9
 r9	=		2*R9
 #define R10		$a
@@ -73,12 +135,12 @@ r10	=		2*R10
 r11	=		2*R11
 #define R12		$c
 r12	=		2*R12
-#define R13		$d	; cpr result
-r13	=		2*R13
-#define R14		$e	; flags
-r14	=		2*R14
-#define R15		$f	; Sweet16 PC
-r15	=		2*R15
+#define R13		$d
+r13	=		2*R13	; cpr result
+#define R14		$e
+r14	=		2*R14	; flags
+#define R15		$f
+r15	=		2*R15	; Sweet16 PC
 
 #define	ACC		$0
 #define	TOS		$1
@@ -387,6 +449,20 @@ slip		dex			; slip something onto the stack
 ; exit when the chain is sorted by size
 ; in the core source
 strcmp16	ldy #2
-		lda (
+		lda (R0L),y
+		and #$1f
+		sta n
+		lda (tos),y
+		and #$1f
+		sta n+1		; ~wut?
+		cmp n
+		bcc strcmp16d	; longer? fail - only works on 
+				; size-sorted chains
+		bne strcmp16d	; different length? (shorter) hop
+		lda n
+		and #bit5
+		bne strcmp16d	; smudged? hop
+
+strcmp16d	rol r14+1
 		rts
 

@@ -8,6 +8,7 @@ echo break .BK>>pettil.lab
 echo break .PULL>>pettil.lab
 echo break .npfind>>pettil.lab
 echo break .pfind>>pettil.lab
+#echo break .cold>>pettil.lab
 #echo watch store .userarea .setbrk>>pettil.lab
 #echo break .cold>>pettil.lab
 #echo break .xyzzy>>pettil.lab
