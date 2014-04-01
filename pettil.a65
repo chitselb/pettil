@@ -595,7 +595,67 @@ digit02		inx
 digit03		tya
 		jmp put
 
-
+;--------------------------------------------------------------
+;
+;	(FIND)   ( name-2 LFA -- name-2 0 | CFA flag )
+;
+; * outer interpreter headerless
+;
+; name-2 is the address-2 of a counted string we are searching for.
+; LFA is the LFA at the head of a chain of LFAs
+; returns
+;	( CFA -1 ) if found normal word
+;	( CFA 1 ) if found immediate word
+;	( name 0 ) if not found
+;
+;pfindlfa	.byt $de,$ad
+;		.byt (pfind-*-1)|bit7
+;		.asc "(FIND",")"|bit7
+opfind		brk
+		.byt sub | R0
+		.byt st | N3
+		.byt ld | TOS
+		.byt st | N2
+		.byt pull
+		.byt ld | TOS
+		.byt st | N0
+		.byt ext
+		.word wordlen16
+		.byt ld | R11		; set search length
+		.byt st | N1
+		.byt ld | N2
+opfind02	.byt st | N0
+		.byt ext
+		.word wordlen16
+		.byt ld | N1		; search length
+		.byt cpr | R11		; dict length
+		.byt bnc , <(opfind06-*-2)	; we went past it.  outtie
+		.byt bnz , <(opfind03-*-2)	; different lengths, skip
+		.byt ext
+		.word strcomp16
+		.byt bc , <(opfind04-*-2)
+opfind03	.byt ldd | N0			; hop
+		.byt br , <(opfind02-*-2)
+opfind04	;winner!
+		.byt ldd | N0		; add 2 to the LFA
+		.byt ld | N0		; now it's an NFA
+		.byt add | N1		; add the length
+		.byt st | TOS		; now it's almost a CFA
+		.byt inr | TOS		; add 1, now it's a CFA
+		.byt ldi | N0		; fetch dictionary length byte
+		.byt sub | N1		; subtract clean length leaving only bits
+		.byt set | N0
+		.word $80
+		.byt dcr | N3		; assume it's a normal word
+		.byt cpr | N0
+		.byt bz , <(opfind06-*-2)
+		.byt inr | N3
+		.byt inr | N3
+opfind06	.byt push
+		.byt ld | N3
+		.byt st | TOS
+		.byt rtn
+xyzzy		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -623,12 +683,15 @@ npfind02	.byt st | N0		; N0=LFA of dictionary string
 		.byt bnz , <(npfind04-*-2)	; match? exit true
 		.byt ldd | N0			; hop
 		.byt br , <(npfind02-*-2)
-npfind04	.byt ld | N0		; found the word! replace string
-		.byt st | TOS		; address with dictionary address
-npfind01	.byt ld | N1
+npfind04	.byt ld | N0		; found the word!
+		.byt add | N2		; add the length
+		.byt st | TOS		; replace string addr with CFA
+		.byt inr | TOS		; LFA =2; length byte =1
+		.byt ldd | TOS		; to add 3 to TOS
+npfind01	.byt ld | R11
 		.byt push
 		.byt rtn
-
+		jmp next
 
 
 
@@ -786,7 +849,7 @@ pfind05		;clc			; not found
 pfind06		ldy n+5
 		tya
 		adc #0
-		jmp pushya
+plugh		jmp pushya
 
 ;--------------------------------------------------------------
 ;
@@ -4776,7 +4839,7 @@ _trychain
 		.word qbranch
 		.word trychain01
 #include "pad.i65"			; ( name-2 LFA )
-		.word npfind		; ( addr flag )
+		.word opfind		; ( addr flag )
 #include "page.i65"
 		.word branch
 		.word trychain03
@@ -4794,7 +4857,7 @@ trychain01	.word dup		; ( name-2 name-2 )
 #include "pad.i65"			; ( name-2 hash1 )
 		.word dhashfetch	; ( name-2 LFA )
 #include "page.i65"
-		.word npfind		; ( addr flag )
+		.word opfind		; ( addr flag )
 #include "page.i65"
 		.word branch
 		.word trychain03
@@ -5260,7 +5323,7 @@ warm02		lda userarea,y
 		sta (up),y
 		dey
 		bpl warm02
-xyzzy		cld
+		cld
 		ldy #(usersw16-userarea)
 		jsr setbrk		; call Sweet16 on BRK
 		jsr CLRCHN

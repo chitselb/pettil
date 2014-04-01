@@ -396,13 +396,13 @@ BNM1	ASL		;DOUBLE RESULT-REG INDEX
 BK	RTS
 RS	JMP RSZ
 RTN	JMP RTNZ
-EXT	LDA #R6		; SETZ will use R6 for the indirect transfer
+EXT	LDA #R11	; SETZ will use R11 for the indirect transfer
 	STA R14H
 	ASL
 	TAX
 	LDY #1		; point to high byte of transfer address
 	JSR SETZ
-	JMP (r6)	; implement your 6502 extension to Sweet16 here!
+	JMP (r11)	; implement your 6502 extension to Sweet16 here!
 PULL	BPL PULLZ	; bra
 PUSH	JSR getpstack	; get PETTIL stack pointer
 	JSR slip	; push TOS -> Forth data stack (DUP in Forth)
@@ -411,7 +411,8 @@ PUSH	JSR getpstack	; get PETTIL stack pointer
 	JMP ST
 PULLZ	JSR getpstack	; get PETTIL stack pointer
 	JSR slide	; remove item from Forth data stack (DROP in Forth)
-	JMP putpstack	; update PETTIL stack pointer
+	JSR putpstack	; update PETTIL stack pointer
+	RTS
 
 ; return the parameter stack pointer in X
 getpstack	tsx
@@ -441,17 +442,51 @@ slip		dex			; slip something onto the stack
 		sta stackl,x
 		rts
 
+; returns just the low 6 bits of a length byte
+;inputs
+;	N0 (R5) = address
+;returns
+;	R11 = low bits of length byte at (N0+2)
+wordlen16	sty r11+1		; clear high byte
+		ldy #2
+		lda (n),y
+		and #$3f
+		sta r11			; R11 = length
+		rts
+
+;inputs
+;	TOS (R1) = addr-2 of a counted string
+;	N0 (R5) = current LFA in the dictionary chain (initially the last LFA)
+;	R7 = length of words
+;returns
+;	C = true if the strings match
+strcomp16	ldy n+2		; the length
+		iny
+		iny
+strcomp16a	lda (n),y
+		eor (tos),y
+		asl		; ignore bit7
+		bne strcomp16b	; different? outtie fail
+		dey
+		cpy #2
+		bne strcomp16a	; C flag is set on successful strcmp
+		sec		; success!
+		.byt $24	; BIT zp instruction
+strcomp16b	clc		; fail
+		rol R14H	; tell Sweet16 about the C flag
+		rts
 
 ; compares the counted string at TOS vs
 ; the strings in the dictionary pointed 
-; to by N0 (originally 2OS) 
+; to by N0 
 ;inputs
 ;	TOS (R1) = address of the counted string we are searching for, -2
 ;	N0 (R5) = current LFA in the dictionary chain (initially the last LFA)
 ;returns
-;	N1 (R6) =	0 if not a match
-;			1 if found immediate word
-;			-1 if found non-immediate word
+;	R11 =	0 if not a match
+;		1 if found immediate word
+;		-1 if found non-immediate word
+;	N2 (R7) = length of word, if match found
 ;	R14H prior result register points to R6
 ;	R14H carry bit (lsb) is clear if word in dictionary is longer
 ;		than the word being searched for, indicating the word
@@ -475,30 +510,23 @@ strcmp16	;ldy #0		; unneeded because EXT clears Y
 		;sec		; unneeded because carry is already set
 		adc #1		; effectively add 2 (C flag was set)
 		tay		; pointer to last character
-strcmp16b	lda (n),y
+strcmp16a	lda (n),y
 		eor (tos),y
 		asl		; ignore bit7
 		bne strcmp16d	; different? outtie fail
 		dey
 		cpy #2
-		bne strcmp16b	; C flag is set on successful strcmp
+		bne strcmp16a	; C flag is set on successful strcmp
 				; winner winner!
-		; put the CFA into N0
-		ldy n+4
-		iny
-		iny
-		tya
-		adc n
-		sta n
-		bcc strcmp16a
-		inc n+1
-strcmp16a	sec
-		ldy #1
-		bit n+5		; immediate bit in V flag
-		bvs strcmp16c	; return 1 if immediate
-		dec n+3
-		ldy #$ff	; return -1 non-immediate
-strcmp16c	sty n+2		; Y = 1 or Y = -1
+		ldy #0
+		sty r11+1	; leave the length in R11
+		bit n+5		; test whether immediate word
+		bvs strcmp16b
+		dey
+		sty r11+1
+		.byt $24	; BIT zp instruction
+strcmp16b	iny
+strcmp16c	sty r11		; Y = 1 or Y = -1
 strcmp16d	rol R14H	; tell Sweet16 about the C flag
 		rts
 
