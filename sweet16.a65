@@ -439,30 +439,43 @@ slip		dex			; slip something onto the stack
 		rts
 
 
-; compares the counted string at TOS
-; vs the counted string pointed to by
-; N0 and returns Z flag = true if the
-; strings match, otherwise Z is false
-; returns C flag = true iff the word in
-; dictionary is longer than string it is
-; being compared to, used for early
-; exit when the chain is sorted by size
-; in the core source
+; compares the counted string at TOS vs
+; the strings in the dictionary pointed 
+; to by N0 (originally 2OS) 
+; returns  Z = true the strings match
+;	Z = false they don't
+;	C = true word in dictionary is longer (early exit in root vocab)
+;	C = false word in dictionary is same length or <
 strcmp16	ldy #2
-		lda (r0),y
+		lda (n),y	; dictionary
+		sta n+5
+		and #$3f
+		sta n+4
+		and #bit5	; dictionary is smudged? fail
+		bne strcmp16d	
+		lda (tos),y	; counted string to search for
 		and #$1f
-		sta n
-		lda (tos),y
-		and #$1f
-		sta n+1		; ~wut?
-		cmp n
-		bcc strcmp16d	; longer? fail - only works on 
-				; size-sorted chains
-		bne strcmp16d	; different length? (shorter) hop
-		lda n
-		and #bit5
-		bne strcmp16d	; smudged? hop
-
-strcmp16d	rol r14+1
+		cmp n+4
+		bne strcmp16d	; different length? fail
+		adc #1		; effectively add 2 (C flag was set)
+		tay		; pointer to last character
+strcmp16b	lda (n),y
+		eor (tos),y
+		asl		; ignore bit7
+		bne strcmp16d	; different? outtie fail
+		dey
+		cpy #2
+		bne strcmp16b	; C flag is set on successful strcmp
+		php		; preserve status; Y contains 2
+		bit n+5		; immediate bit in V flag
+		bvs strcmp16c	; return 1 if immediate
+		dec n+3
+		ldy #0		; return -1 non-immediate
+strcmp16c	dey		; Y = 1 or Y = -1
+		sty n+2
+		plp
+strcmp16d	php
+		rol r14+1	; tell Sweet16 about the C flag
+		plp		; without upsetting the Z flag
 		rts
 

@@ -614,17 +614,22 @@ digit03		tya
 ;		.byt (pfind-*-1)|bit7
 ;		.asc "(FIND",")"|bit7
 npfind		brk
+		.byt sub | R0		; ACC = 0
+		.byt st | N1		; assume failure
 		.byt ld | TOS
-npfind02	.byt st | N0		; N0=LFA of dictionary string
 		.byt pull		; TOS=addr of counted search-for string-2
+npfind02	.byt st | N0		; N0=LFA of dictionary string
 		.byt ext
-		.word strcmp16
-		.byt bc, <(npfind01-*-2)
-		.byt bz, <(npfind01-*-2)
-		.byt ldd | N0
-		.byt br
-		.byt <(npfind02-*-2)
-npfind01	.byt rtn
+		.word strcmp16		; uses TOS and N0
+		.byt bnc , <(npfind01-*-2)	; no matches in this chain? exit
+		.byt bz , <(npfind04-*-2)	; match? exit true
+		.byt ldd | N0			; hop
+		.byt br , <(npfind02-*-2)
+npfind04	.byt ld | N0
+		.byt st | TOS
+npfind01	.byt ld | N1
+		.byt push
+		.byt rtn
 
 
 
@@ -732,7 +737,7 @@ pfind01		lda (tos),y
 		lda n+4			; just right
 		and #bit5		; what about the smudge bit?
 		bne pfind04		; hop if smudged
-		lda n+3			; or n+2... doesn't matter ~wut?
+		lda n+3			; or n+2... doesn't matter
 		adc #1			; adds 2 with carry already set
 		tay
 pfind02		lda (tos),y		; compare strings back-to-front
@@ -883,10 +888,10 @@ keylfa		.byt $de,$ad
 		.byt (key-*-1)|bit7
 		.asc "KE","Y"|bit7
 key		jmp keyvector
-keyvector	stx n
+keyvector	stx storex
 key01		jsr GETIN
-		beq key01
-		ldx n
+		beq key01	; busy wait? ~wut?
+		ldx storex
 		ldy #0
 		jmp pushya
 
@@ -4773,7 +4778,7 @@ _trychain
 		.word qbranch
 		.word trychain01
 #include "pad.i65"			; ( name-2 LFA )
-		.word pfind		; ( addr flag )
+		.word npfind		; ( addr flag )
 #include "page.i65"
 		.word branch
 		.word trychain03
@@ -4791,7 +4796,7 @@ trychain01	.word dup		; ( name-2 name-2 )
 #include "pad.i65"			; ( name-2 hash1 )
 		.word dhashfetch	; ( name-2 LFA )
 #include "page.i65"
-		.word pfind		; ( addr flag )
+		.word npfind		; ( addr flag )
 #include "page.i65"
 		.word branch
 		.word trychain03
@@ -4885,8 +4890,6 @@ _find
 		.word find02
 #include "pad.i65"			; ( name-2  current )
 find01		.word drop
-#include "page.i65"
-		.word twoplus		; ( name false )
 #include "page.i65"
 		.word false		; ( name false )
 #include "page.i65"
