@@ -79,7 +79,7 @@ w1		.byt $c0,$de		; (for when you just need a W register)
 ; using ROM tape I/O drops to BASIC if there's a problem.
 ; we'd like the user to be able to type RUN and pick up
 ; more or less at the dropping off point if this happens.
-; this subroutine performs that BASIC/PETTIL context switch
+; this subroutine performs that BASIC/PETTIL zp switch
 ; between $00-$8C inclusive. 
 swapzp		stx storex	; preserve Forth data stack pointer
 		ldx #TIME	; everything below the jiffy clock
@@ -156,7 +156,7 @@ setup01		lda stackl,x
 ; and is pointed to by the UP (user pointer)
 userarea
 userup		.word uarea				; W
-usersp0		.word bos+1				; A
+usersp0		.word bos+1		; =2		; A
 userrp0		.word $01ff				; R
 userwidth	.word 31				; M
 userwarning	.word -1				; .
@@ -611,7 +611,7 @@ digit03		tya
 ;pfindlfa	.byt $de,$ad
 ;		.byt (pfind-*-1)|bit7
 ;		.asc "(FIND",")"|bit7
-opfind		brk
+pfind		brk
 		.byt sub | R0
 		.byt st | N3
 		.byt ld | TOS
@@ -624,19 +624,19 @@ opfind		brk
 		.byt ld | R11		; set search length
 		.byt st | N1
 		.byt ld | N2
-opfind02	.byt st | N0
+pfind02	.byt st | N0
 		.byt ext
 		.word wordlen16
 		.byt ld | N1		; search length
 		.byt cpr | R11		; dict length
-		.byt bnc , <(opfind06-*-2)	; we went past it.  outtie
-		.byt bnz , <(opfind03-*-2)	; different lengths, skip
+		.byt bnc , <(pfind06-*-2)	; we went past it.  outtie
+		.byt bnz , <(pfind03-*-2)	; different lengths, skip
 		.byt ext
 		.word strcomp16
-		.byt bc , <(opfind04-*-2)
-opfind03	.byt ldd | N0			; hop
-		.byt br , <(opfind02-*-2)
-opfind04	;winner!
+		.byt bc , <(pfind04-*-2)
+pfind03	.byt ldd | N0			; hop
+		.byt br , <(pfind02-*-2)
+pfind04	;winner!
 		.byt ldd | N0		; add 2 to the LFA
 		.byt ld | N0		; now it's an NFA
 		.byt add | N1		; add the length
@@ -648,10 +648,10 @@ opfind04	;winner!
 		.word $80
 		.byt dcr | N3		; assume it's a normal word
 		.byt cpr | N0
-		.byt bz , <(opfind06-*-2)
+		.byt bz , <(pfind06-*-2)
 		.byt inr | N3
 		.byt inr | N3
-opfind06	.byt push
+pfind06	.byt push
 		.byt ld | N3
 		.byt st | TOS
 		.byt rtn
@@ -1144,7 +1144,7 @@ spstorelfa	.byt $de,$ad
 spstore		ldy #usersp0-userarea
 		lda (up),y
 		tax
-		dex		; because it's stored 1+ for ?STACK
+		dex		; because it's 1> to make ?stack faster
 		jmp next
 
 ;--------------------------------------------------------------
@@ -3400,7 +3400,7 @@ _status
 
 ;--------------------------------------------------------------
 ;
-;	(ABORT")   ( -- )
+;	(ABORT")   ( flag -- )
 ;
 ; * outer interpreter headerless
 ;
@@ -3411,7 +3411,7 @@ _status
 ;pabortqlfa	.byt $de,$ad
 ;		.byt (_pabortq-*-1)|bit7
 ;		.asc "(ABORT",'"',")"|bit7
-_pabortq
+_pabortq	
 #include "enter.i65"
 		.word rfrom
 #include "page.i65"
@@ -3445,13 +3445,13 @@ pabortq01
 
 ;--------------------------------------------------------------
 ;
-;	ABORT"
+;	ABORT"   ( flag -- ) ( -- ; compiling ) 
 ;
-; * 83 compiler
+; * 83 compiler immediate
 ;
 ; ~ handle page boundary crossings
 abortqlfa	.byt $de,$ad
-		.byt (_abortq-*-1)|bit7
+		.byt (_abortq-*-1)|bit7|bit6
 		.asc "ABORT",'"'|bit7
 _abortq
 #include "enter.i65"
@@ -3474,23 +3474,21 @@ _abortq
 qstacklfa	.byt $de,$ad
 		.byt (qstack-*-1)|bit7
 		.asc "?STAC","K"|bit7
-qstack		txa
+qstack		ldy #usersp0-userarea		; 2 = stack full
+		txa
 		bmi qstack02	; stack full
-		ldy #usersp0-userarea
 		cmp (up),y
+		dey				; 1 = stack empty
 		bcs qstack01	; stack empty
 		jmp next
-qstack01	lda #28
-		.byt $2c	; BIT instruction fall-through trick
-qstack02	lda #29
-		sta tos
+qstack01	sty tos
 		lda #0
 		sta tos+1
-		lda #<_pabortq
-		sta ip
-		lda #>_pabortq
-		sta ip+1
-		jmp nexto
+#include "toforth.i65"
+		.word _pabortq
+		.byt (qstack02-*-1)
+		.asc "STACK ERROR"
+qstack02
 
 ;--------------------------------------------------------------
 ;
@@ -3508,7 +3506,7 @@ _qcomp
 		.word zeq
 #include "page.i65"
 #if (((*&$ff)+3+35)=$ff)
-	.word next
+	.word next		; ~wut?
 	.word next
 #endif
 		.word _pabortq
@@ -4645,7 +4643,7 @@ _trychain
 		.word qbranch
 		.word trychain01
 #include "pad.i65"			; ( name-2 LFA )
-		.word opfind		; ( addr flag )
+		.word pfind		; ( addr flag )
 #include "page.i65"
 		.word branch
 		.word trychain03
@@ -4663,7 +4661,7 @@ trychain01	.word dup		; ( name-2 name-2 )
 #include "pad.i65"			; ( name-2 hash1 )
 		.word dhashfetch	; ( name-2 LFA )
 #include "page.i65"
-		.word opfind		; ( addr flag )
+		.word pfind		; ( addr flag )
 #include "page.i65"
 		.word branch
 		.word trychain03
@@ -6860,10 +6858,11 @@ roll02		inx
 depthlfa	.byt $de,$ad
 		.byt (depth-*-1)|bit7
 		.asc "DEPT","H"|bit7
-depth		stx n
-		lda #<bos
+depth	
+		txa
+		eor #$ff
 		sec
-		sbc n
+		adc #<bos
 		ldy #0
 		jmp pushya
 
@@ -7745,7 +7744,25 @@ forgetfence
 barlfa		.byt $de,$ad
 		.byt (bar-*-1)|bit7
 		.asc "BA","R"|bit7
-bar
+bar		ldy #2
+		sty storex
+		ldy #0
+bar01		lda $8000,y
+		eor #$80
+		sta $8000,y
+		lda $8100,y
+		eor #$80
+		sta $8100,y
+		lda $8200,y
+		eor #$80
+		sta $8200,y
+		lda $8300,y
+		eor #$80
+		sta $8300,y
+		iny
+		bne bar01
+		dec storex
+		bne bar01
 		jmp next
 
 
