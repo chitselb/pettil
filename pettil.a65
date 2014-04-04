@@ -128,42 +128,33 @@ zpnextx					;15 cycles total
 ; if #DEBUG is on, add enough padding between NEXT and TIME
 		.dsb TIME-(*-zpbuf),$69	; more cowbell
 
-; pops up to 4 words from the split stack to N area
+; pops up to 4 words from the split stack to N area, backwards
+; used for setting up primitives that consume multiple arguments
 ; Y = how many words to pop (valid range 1-4)
 ; returns
 ; Y = 0
 ; TOS unchanged
-; 2OS-->N0; 3OS-->N1; 4OS-->N2; 5OS-->N3
-; Y     1         2         3         4
 ;
-; this is shorter - it inverts the order in the N area, so all
-;	callers need to be changed for Y>1
-;setup		tya
-;		asl
-;		tay
-;setup01	lda stackh,x
-;		dey
-;		sta n,y
-;		lda stackl,x
-;		inx
-;		dey
-;		sta n,y
-;		bne setup01
-;		rts		 
-
-setup		sty storex
-		ldy #0
-setup01		lda stackl,x
+; Y     1         2         3         4
+; 2OS-->N0
+; 2OS-->N1; 3OS-->N0
+; 2OS-->N2; 3OS-->N1; 4OS-->N0
+; 2OS-->N3; 3OS-->N2; 4OS-->N1; 5OS-->N0
+;
+; this is shorter but it inverts the order in the N area, so all
+; callers need to be changed for Y>1
+setup		tya
+		asl	; doubled, now Y is a countdown index
+		tay
+setup01		lda stackh,x
+		dey
 		sta n,y
-		lda stackh,x
-		sta n+1,y
-		iny
-		iny
+		lda stackl,x
 		inx
-		dec storex
+		dey
+		sta n,y
 		bne setup01
-		ldy #0		; ~wut?
-		rts
+		rts		 
 
 ;--------------------------------------------------------------
 ; user area initialization data
@@ -732,34 +723,34 @@ skip		lda #$d0		; BNE intruction
 skipscan	ldy #2
 		jsr setup		; size1 -> N0; addr1 -> N1
 		stx storex
-		ldx n			; sizelo
+		ldx n+2			; sizelo
 skip01		txa
-		ora n+1			; sizehi
+		ora n+3			; sizehi
 		beq skip05
-		lda (n+2),y		; addr1,y
+		lda (n),y		; addr1,y
 		eor tos
 		asl			; ignore bit7
 skip02		bne skip05
 		iny
 		bne skip03
-		inc n+3
+		inc n+1
 skip03		txa
 		bne skip04
-		dec n+1
+		dec n+3
 skip04		dex
 		jmp skip01
-skip05		stx n
+skip05		stx n+2
 		ldx storex
 		clc
 		tya
-		adc n+2
+		adc n
 		sta tos
-		ldy n+3
+		ldy n+1
 		bcc skip06
 		iny
 skip06		sty tos+1
-		ldy n+1
-		lda n
+		ldy n+3
+		lda n+2
 		jmp pushya
 
 ;--------------------------------------------------------------
@@ -770,10 +761,12 @@ skip06		sty tos+1
 ; to count1 bytes are skipped *UNTIL* they match char.  Returns
 ; addr2 as the address of the first non-matching character and
 ; count2 as the remaining number of bytes in the buffer.
+; ~wut? self-modifying code is a no-no if I'm ever ROMing this
+; considering Sweet16
 scanlfa		.byt $de,$ad
 		.byt (scan-*-1)|bit7
 		.asc "SCA","N"|bit7
-scan		lda #$f0		; BNE intruction
+scan		lda #$f0		; BEQ intruction
 		sta skip02
 		jmp skipscan
 
@@ -807,6 +800,8 @@ emit01		lda tos
 ;	KEY
 ;
 ; * 83 device
+;
+; ~wut? this should maybe use CHRIN not GETIN?
 ;
 keylfa		.byt $de,$ad
 		.byt (key-*-1)|bit7
@@ -882,8 +877,8 @@ cmove		ldy #2
 		inc tos+1
 		ldx tos
 		beq cmove03
-cmove01		lda (n+2),y
-		sta (n),y
+cmove01		lda (n),y
+		sta (n+2),y
 		iny
 		bne cmove02
 		inc n+1
@@ -911,31 +906,31 @@ cmovegtlfa	.byt $de,$ad
 		.byt (cmovegt-*-1)|bit7
 		.asc "CMOVE",">"|bit7
 cmovegt		ldy #2
-		jsr setup		; to -> N0; from -> N1
+		jsr setup		; from -> N0; to -> N1
 		stx storex
 		lda tos+1
 		pha
 		clc
-		adc n+3
-		sta n+3
-		pla
-		clc
 		adc n+1
 		sta n+1
+		pla
+		clc
+		adc n+3
+		sta n+3
 		ldy tos
 		beq cmovegt02
 cmovegt01	dey
-		lda (n+2),y
-		sta (n),y
+		lda (n),y
+		sta (n+2),y
 		cpy #0
 		bne cmovegt01
 cmovegt02	ldx tos+1
 		beq cmovegt05
-cmovegt03	dec n+3
-		dec n+1
+cmovegt03	dec n+1
+		dec n+3
 cmovegt04	dey
-		lda (n+2),y
-		sta (n),y
+		lda (n),y
+		sta (n+2),y
 		cpy #0
 		bne cmovegt04
 		dex
@@ -954,24 +949,22 @@ filllfa		.byt $de,$ad
 		.byt (fill-*-1)|bit7
 		.asc "FIL","L"|bit7
 fill		ldy #2
-		jsr setup	; howmany -> N0; addr -> N1
+		jsr setup	; addr -> N0; howmany -> N1
 		stx storex
+		inc n+3		; high byte of howmany
 		lda tos
-		ldx n+1
-		beq fill02	; last page?
-fill01		sta (n+2),y	; fill from here to end of this page
+		;ldy #0		; Y = 0 from setup
+		ldx n+2
+		beq fill02
+fill01		sta (n),y
 		iny
+		bne fill02
+		inc n+1
+fill02		dex
 		bne fill01
-		inc n+3
-		dex
+		dec n+3
 		bne fill01
-fill02		ldx n
-		beq fill04
-fill03		sta (n+2),y
-		iny
-		dex
-		bne fill03
-fill04		ldx storex
+		ldx storex
 		jmp next
 
 ;"~ check http://6502.org/source/ for multiply and divide and stuff
