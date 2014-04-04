@@ -1,4 +1,4 @@
-; pettil.a65
+#8FFF1D; pettil.a65
 ;
 ; PETTIL
 ; Personal Electronics Transactor Threaded Interpreted Language
@@ -136,21 +136,6 @@ zpnextx					;15 cycles total
 ; 2OS-->N0; 3OS-->N1; 4OS-->N2; 5OS-->N3
 ; Y     1         2         3         4
 ;
-; this is shorter - it inverts the order in the N area, so all
-;	callers need to be changed for Y>1
-;setup		tya
-;		asl
-;		tay
-;setup01	lda stackh,x
-;		dey
-;		sta n,y
-;		lda stackl,x
-;		inx
-;		dey
-;		sta n,y
-;		bne setup01
-;		rts		 
-
 setup		sty storex
 		ldy #0
 setup01		lda stackl,x
@@ -189,16 +174,31 @@ uservidbuf	.word $7c00				; .
 ; for "soft" user variables, e.g. #OUT 
 uarea		.dsb *-userarea+32,0
 
-; error messages for FAIL
-errptr		.word msg01,msg02
-msg01		.byt msg02-*-1
-		.asc "STACK EMPTY"
-msg02		.byt msg03-*-1
-		.asc "STACK FULL"
-msg03
-
-rootlfa		.word 0
-		.byt 31			; longest word in the dictionary ~wut?
+;--------------------------------------------------------------
+; Jump up to high-level Forth from inline 6502
+;
+; Page boundary crossing is handled by the compiler inserting 'page'
+; when the DP gets to $xxFD or $xxFE.  IP = $xxFF is never supposed
+; to occur, and indicates an error in the compiler.
+;
+; Pad is used by LITERAL and string routines to offset IP at runtime
+;
+;~" todo: make an ASSEMBLER vocabulary word >FORTH to insert the call
+; and handle pagination properly like the "toforth.i65" include file
+toforth		pla
+		sta ip
+		pla
+		sta ip+1
+		lda #1
+pad		clc			; pass A = offset added to IP
+		adc ip
+		bcs pagen		; check for page boundary crossing
+		cmp #$ff
+		bne pado		; check for xxFF at end of page
+page		lda #0
+pagen		inc ip+1		; cross the page
+pado		sta ip
+		jmp nexto
 
 ;--------------------------------------------------------------
 ; Drop down from high-level Forth to inline 6502
@@ -214,6 +214,20 @@ to6502		lda ip
 		iny
 to650201	sty n+1
 		jmp (n)
+
+;--------------------------------------------------------------
+; set the BRK vector
+; pass - Y = user area pointer to new vector
+setbrk		lda (up),y
+		sta CBINV
+		iny
+		lda (up),y
+		sta CBINV+1
+		rts
+mon		ldy #(usermlmon-userarea)
+		.byt $2c	; BIT instruction
+sw16		ldy #(usersw16-userarea)
+		bne setbrk
 
 ;--------------------------------------------------------------
 		; negate the double at n0..n3
@@ -232,6 +246,12 @@ dnegaten	ldy #0
 		sbc n+1
 		sta n+1		; high order byte
 		rts
+
+
+
+rootlfa		.word 0
+		.byt 31			; longest word in the dictionary ~wut?
+
 
 ;--------------------------------------------------------------
 ;
@@ -547,83 +567,6 @@ pqleave		lda tos
 		plp
 		bne pleave
 		jmp bump
-
-;--------------------------------------------------------------
-;
-;	?STACK
-;
-; inspect data stack pointer for sanity, abort if trouble
-qstacklfa	.byt $de,$ad
-		.byt (qstack-*-1)|bit7
-		.asc "?STAC","K"|bit7
-qstack		ldy #usersp0-userarea		; 2 = stack full
-		txa
-		bmi error
-		cmp (up),y
-		dey				; 1 = stack empty
-		bcs error	; stack empty
-		jmp next
-
-;--------------------------------------------------------------
-; Jump up to high-level Forth from inline 6502
-;
-; Page boundary crossing is handled by the compiler inserting 'page'
-; when the DP gets to $xxFD or $xxFE.  IP = $xxFF is never supposed
-; to occur, and indicates an error in the compiler.
-;
-; Pad is used by LITERAL and string routines to offset IP at runtime
-;
-;~" todo: make an ASSEMBLER vocabulary word >FORTH to insert the call
-; and handle pagination properly like the "toforth.i65" include file
-;
-; also a general-purpose error handler to print a string and abort
-; pass in the error # in Y
-;	1 stack empty
-;	2 stack full
-error		sty tos
-		ldy #0
-		sty tos+1
-		lda #>(fail)
-		pha
-		lda #<(fail)	; transfer control to fail, which
-				; prints a numbered error and aborts
-		pha
-toforth		pla
-		sta ip
-		pla
-		sta ip+1
-		lda #1
-pad		clc			; pass A = offset added to IP
-		adc ip
-		bcs pagen		; check for page boundary crossing
-		cmp #$ff
-		bne pado		; check for xxFF at end of page
-page		lda #0
-pagen		inc ip+1		; cross the page
-pado		sta ip
-		jmp nexto
-
-;--------------------------------------------------------------
-;
-;	MON    ( char base -- digit true | false )
-;
-monlfa		.byt $de,$ad
-		.byt (mon-*-1)|bit7
-		.asc "MO","N"|bit7
-; sets the BRK vector to either TIM or Sweet16
-; (TIM exits to BASIC)
-mon		jsr swapzp	; restore BASIC zpage 
-		ldy #(usermlmon-userarea)
-		.byt $2c	; BIT instruction to skip two bytes
-		ldy #(usersw16-userarea)
-		lda (up),y
-		sta CBINV
-		iny
-		lda (up),y
-		sta CBINV+1
-		brk		; either break to TIM
-		.byt rtn	; or do nothing in Sweet16 mode
-		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -1618,7 +1561,7 @@ store		ldy #0
 
 ;--------------------------------------------------------------
 ;
-;	C!   ( 8b addr -- 
+;	C!   ( 8b addr -- )
 ;
 ; * 83 nucleus
 ;
@@ -3457,24 +3400,6 @@ _status
 
 ;--------------------------------------------------------------
 ;
-;	FAIL    ( err# -- )
-faillfa		.byt $de,$ad
-		.byt (fail-*-1)|bit7
-		.asc "FAI","L"|bit7
-fail
-#include "enter.i65"
-		.word twostar
-#include "page.i65"
-		.word _literal
-		.word errptr
-#include "pad.i65"
-		.word plus
-#include "page.i65"
-		.word branch
-		.word pabortq02
-
-;--------------------------------------------------------------
-;
 ;	(ABORT")   ( flag -- )
 ;
 ; * outer interpreter headerless
@@ -3499,7 +3424,7 @@ _pabortq
 		.word qbranch
 		.word pabortq01
 #include "pad.i65"
-pabortq02	.word cmdoff
+		.word cmdoff
 ;#include "page.i65"
 ;		.word _where
 ;#include "page.i65"
@@ -3540,6 +3465,30 @@ _abortq
 #include "page.i65"
 		.word _commadollar
 		.word exit
+
+;--------------------------------------------------------------
+;
+;	?STACK
+;
+; inspect data stack pointer for sanity, abort if trouble
+qstacklfa	.byt $de,$ad
+		.byt (qstack-*-1)|bit7
+		.asc "?STAC","K"|bit7
+qstack		ldy #usersp0-userarea		; 2 = stack full
+		txa
+		bmi qstack02	; stack full
+		cmp (up),y
+		dey				; 1 = stack empty
+		bcs qstack01	; stack empty
+		jmp next
+qstack01	sty tos
+		lda #0
+		sta tos+1
+#include "toforth.i65"
+		.word _pabortq
+		.byt (qstack02-*-1)
+		.asc "STACK ERROR"
+qstack02
 
 ;--------------------------------------------------------------
 ;
@@ -5179,11 +5128,11 @@ warm02		lda userarea,y
 		dey
 		bpl warm02
 		cld
-ml		jsr CLRCHN
+		ldy #(usersw16-userarea)
+		jsr setbrk		; call Sweet16 on BRK
+		jsr CLRCHN
 		jsr CLALL
 #include "toforth.i65"
-		.word sw16		; set up BRK vector to Sweet16
-#include "page.i65"
 		.word rpstore		; and we're off
 #include "page.i65"
 		.word spstore
@@ -7877,3 +7826,6 @@ bar01		lda $8000,y
 ;--------------------------------------------------------------
 
 endofile
+
+
+
