@@ -38,7 +38,6 @@
 #include cbm.def
 #include pettil.def
 
-
 ;==============================================================
 ;====BASIC cold start and Sweet16, with some ML subroutines====
 ;==============================================================
@@ -52,6 +51,8 @@
 		.asc "1037",0			; $040f
 basend		.word 0
 		jmp ice
+brktoggle	.word TIMBRK^SW16
+		.word 0
 
 ;--------------------------------------------------------------
 ;
@@ -63,18 +64,14 @@ basend		.word 0
 ; consecutive in memory, with bloom first so RETHREAD won't break
 pearson		.byt 150,191,252,0,194,202,129,7
 pearsonx
-bloom		.dsb 8,0	; 64-bit, used by hash2
-bloomx
-lfalist		.dsb 32,0	; heads of link threads for root vocabulary
+bloom		.dsb 8,$b1	; 64-bit, used by hash2
+bloomx		; bloom filter
+lfalist		.word $efbe,$efbe,$efbe,$efbe,$efbe,$efbe,$efbe,$efbe
+		.word $efbe,$efbe,$efbe,$efbe,$efbe,$efbe,$efbe,$efbe
+		; heads of link threads for root vocabulary
 
 ; powers of 2 in a lookup table
 power2		.byt $01,$02,$04,$08,$10,$20,$40,$80
-
-; Unlike FIG Forth, PETTIL uses a direct-threaded model for
-; greater efficiency (both speed and memory).  So there's
-; no W register in the inner interpreter.
-w1		.byt $c0,$de		; (for when you just need a W register)
-		.word exit		; 'fragment secondary' used by EXECUTE
 
 ; using ROM tape I/O drops to BASIC if there's a problem.
 ; we'd like the user to be able to type RUN and pick up
@@ -104,10 +101,10 @@ swapzp01	lda $ff,x
 ; this is an image of PETTIL zeropage at cold start.  Swapping it
 ; with the BASIC zeropage makes hopping back and forth possible
 ;
-zpbuf		.word $0000,$0101,$0202,$0303
-		.word $0404,$0505,$0606,$0707	; PETTIL registers
-		.word $0808,$0909,$0a0a,$0b0b	; and
-		.word $0c0c,$0d0d,$0e0e,$0f0f	; Sweet16 registers 
+zpbuf		.word $0000,$1001,$2002,$3003
+		.word $4004,$5005,$6006,$7007	; PETTIL registers
+		.word $8008,$9009,$a00a,$b00b	; and
+		.word $c00c,$d00d,$e00e,$f00f	; Sweet16 registers 
 		.dsb bos,$aa			; low stack
 		.dsb bos,$bb			; high stack
 ;
@@ -128,7 +125,7 @@ zpnextx					;15 cycles total
 ; if #DEBUG is on, add enough padding between NEXT and TIME
 		.dsb TIME-(*-zpbuf),$69	; more cowbell
 
-; pops up to 4 words from the split stack to N area, backwards
+; pops up to 4 words from the split stack to N, backwards
 ; used for setting up primitives that consume multiple arguments
 ; Y = how many words to pop (valid range 1-4)
 ; returns
@@ -141,7 +138,7 @@ zpnextx					;15 cycles total
 ; 2OS-->N2; 3OS-->N1; 4OS-->N0
 ; 2OS-->N3; 3OS-->N2; 4OS-->N1; 5OS-->N0
 ;
-; this is shorter but it inverts the order in the N area, so all
+; this is shorter but it inverts the order in the N, so all
 ; callers need to be changed for Y>1
 setup		tya
 		asl	; doubled, now Y is a countdown index
@@ -157,28 +154,42 @@ setup01		lda stackh,x
 		rts		 
 
 ;--------------------------------------------------------------
-; user area initialization data
-; this gets copied to the cassette buffer
+; userarea initialization data
+; this gets copied to the uarea
 ; and is pointed to by the UP (user pointer)
 userarea
-userup		.word uarea				; W
-usersp0		.word bos+1		; =2		; A
-userrp0		.word $01ff				; R
-userwidth	.word 31				; M
-userwarning	.word -1				; .
-uservmbuf	.word $7b00				; .
+userup		.word uarea				; WARM
+usersp0		.word bos+1		; =2		; 
+userrp0		.word $01ff				; 
 userwarm
-userfence	.word forgetfence			; C
-userdp		.word endofile				; O
-uservoclink	.word lastvoc				; L
-userviewquery	.word 2					; D
-usermlmon	.word TIMBRK				; .
-usersw16	.word SW16				; .
-uservidbuf	.word $7c00				; .
+userfence	.word forgetfence			; COLD
+userdp		.word endofile				; 
+usercold
+userblk		= usercold				; SOFT
+usertoin	= usercold+2				;
+usernumout	= usercold+4				;
+userscr		= usercold+6				;
+useroffset	= usercold+8				;
+usercontext	= usercold+10				;
+usercurrent	= usercold+12				;
+userstate	= usercold+14				;
+userbase	= usercold+16				;
+usercsp		= usercold+18				;
+userspan	= usercold+20				;
+userdpl		= usercold+22				;
+userrsharp	= usercold+24				;
+userhld		= usercold+26				;
+usertib		= usercold+28				;
+userline	= usercold+30				;
+; live userarea has 2 bytes for each initializer
+; extra memory beyond warm/cold initialized user variables
+; is reserved for "soft" user variables
+; e.g. STATE 
+uarea		.dsb usercold-userarea+40,0
 
-; live userarea has 2 bytes for each initializer plus 32 bytes
-; for "soft" user variables, e.g. #OUT 
-uarea		.dsb *-userarea+32,0
+;--------------------------------------------------------------
+w1		.word $dead		; (for when you just need a W register)
+		.word exit		; 'fragment secondary' used by EXECUTE
 
 ; error messages for FAIL
 errptr		.word msg01,msg02
@@ -332,13 +343,12 @@ pqdo		ldy #1
 		sta n+2
 		lda tos+1
 		eor n+1
-		ora n+2
-		tay			; Y=0 means no loop
-		beq pqdo02
+		ora n+2			; are begin and end loop indices the same?
+		beq pqdo02		; yes, nada
 		ldy #3
 pqdo01		lda zi,y		; set up for a loop
 		pha
-		lda tos,y		; tos & n must be adjacent in zeropage
+		lda tos,y		; tos & n must be adjacent in zeropage ~wut?
 		sta zi,y
 		dey
 		bpl pqdo01		; Y=FF means perform the loop
@@ -617,21 +627,17 @@ monlfa		.byt $de,$ad
 		.asc "MO","N"|bit7
 ; sets the BRK vector to either TIM or Sweet16
 ; (TIM exits to BASIC)
-mon		ldy #(usermlmon-userarea)
-		jsr setbrk
-		jsr swapzp	; restore BASIC zpage 
-		jmp mon01
-sw16		ldy #(usersw16-userarea)
-		jsr setbrk
-mon01		brk		; either break to TIM
-		.byt rtn	; or do nothing in Sweet16 mode
+;~wut? this only works the first time
+mon		jsr swapzp	; restore BASIC zpage 
+sw16		ldy #2
+		lda brktoggle-1,y
+		eor CBINV-1,y
+		sta CBINV-1,y
+		dey
+		bne sw16+2
+		brk
+		.byt rtn
 		jmp next
-setbrk		lda (up),y
-		sta CBINV
-		iny
-		lda (up),y
-		sta CBINV+1
-		rts
 
 ;--------------------------------------------------------------
 ;
@@ -689,7 +695,7 @@ pfind		brk
 		.byt ld | R11		; set search length
 		.byt st | N1
 		.byt ld | N2
-pfind02	.byt st | N0
+pfind02		.byt st | N0
 		.byt ext
 		.word wordlen16
 		.byt ld | N1		; search length
@@ -699,7 +705,7 @@ pfind02	.byt st | N0
 		.byt ext
 		.word strcomp16
 		.byt bc , <(pfind04-*-2)
-pfind03	.byt ldd | N0			; hop
+pfind03		.byt ldd | N0			; hop
 		.byt br , <(pfind02-*-2)
 pfind04	;winner!
 		.byt ldd | N0		; add 2 to the LFA
@@ -716,7 +722,7 @@ pfind04	;winner!
 		.byt bz , <(pfind06-*-2)
 		.byt inr | N3
 		.byt inr | N3
-pfind06	.byt push
+pfind06		.byt push
 		.byt ld | N3
 		.byt st | TOS
 		.byt rtn
@@ -889,7 +895,7 @@ cmovelfa	.byt $de,$ad
 		.byt (cmove-*-1)|bit7
 		.asc "CMOV","E"|bit7
 cmove		ldy #2
-		jsr setup	; to -> N0; from -> N1
+		jsr setup	; from -> N0; to -> N1
 		stx storex
 		inc tos+1
 		ldx tos
@@ -909,7 +915,7 @@ cmove03		dec tos+1
 
 ;--------------------------------------------------------------
 ;
-;	CMOVE>   ( addr1 addr2 u -- )
+;	CMOVE>   ( from to howmany -- )
 ;
 ; * 83 nucleus
 ;
@@ -919,12 +925,16 @@ cmove03		dec tos+1
 ; and proceeds to successively lower addresses
 ; for u bytes.  If u is zero nothing is moved.
 ; Useful for sliding a string towards higher addresses.
+;~wut? this is inefficient, rewrite
 cmovegtlfa	.byt $de,$ad
 		.byt (cmovegt-*-1)|bit7
 		.asc "CMOVE",">"|bit7
 cmovegt		ldy #2
 		jsr setup		; from -> N0; to -> N1
 		stx storex
+		lda tos+1
+		ora tos
+		beq cmovegt05
 		lda tos+1
 		pha
 		clc
@@ -961,7 +971,7 @@ cmovegt05	ldx storex
 ;
 ; * 83 nucleus
 ;
-; ~ check this for howmany > 255
+; ~wut? debug this
 filllfa		.byt $de,$ad
 		.byt (fill-*-1)|bit7
 		.asc "FIL","L"|bit7
@@ -975,14 +985,16 @@ fill		ldy #2
 		beq fill02
 fill01		sta (n),y
 		iny
-		bne fill02
-		inc n+1
-fill02		dex
+		beq fill02
+fill03		dex
 		bne fill01
 		dec n+3
 		bne fill01
 		ldx storex
-		jmp next
+		jmp pops
+
+fill02		inc n+1
+		bne fill03
 
 ;--------------------------------------------------------------
 ;
@@ -1779,234 +1791,235 @@ createlfa	.byt $de,$ad
 		.asc "CREAT","E"|bit7
 _create
 #include "enter.i65"
-		.word 0; _ltbcq
-#include "page.i65"
-		.word here
-#include "page.i65"
-		.word width
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word twoplus
-#include "page.i65"
-		.word twoplus
-#include "page.i65"
-		.word viewq
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word plus
-#include "page.i65"
-		.word plus
-#include "page.i65"
-		.word ult
-#include "page.i65"
-#if (((*&$ff)+3+15)=$ff)
-	.word next
-	.word next
-#endif
-		.word _pabortq
-		.byt create01-*-1
-		.asc	"DICTIONARY FULL"
-			;123456789.12345
-create01
-#include "page.i65"
-		.word _existsq
-#include "page.i65"
-		.word over
-#include "page.i65"
-		.word eq
-#include "page.i65"
-#if (((*&$ff)+3+13)=$ff)
-	.word next
-	.word next
-#endif
-		.word _pabortq
-		.byt create02-*-1
-		.asc	"NAME REQUIRED"
-			;123456789.123
-create02
-#include "page.i65"
-		.word warning
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word andx
-#include "page.i65"
-		.word qbranch
-		.word create04
-#include "page.i65"
-		.word _toname
-#include "page.i65"
-		.word cr
-#include "page.i65"
-		.word clit
-		.byt $12	; rvs
-#include "pad.i65"
-		.word emit
-#include "page.i65"
-		.word _iddot
-#include "page.i65"
-		.word clit
-		.byt $92	; off
-#include "pad.i65"
-		.word emit
-#include "page.i65"
-		.word _pdq
-		.byt create03-*-1
-		.asc	" ALREADY EXISTS "
-			;1234567869.12345
-create03
-#include "pad.i65"
-		.word branch
-		.word create05
-#include "page.i65"
-create04	.word drop
-#include "page.i65"
-create05	.word here
-#include "page.i65"
-		.word dup
-#include "page.i65"
-		.word cfetch
-#include "page.i65"
-		.word over
-#include "page.i65"
-		.word twoplus
-#include "page.i65"
-		.word viewq
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word plus
-#include "page.i65"
-		.word dup
-#include "page.i65"
-		.word tor
-#include "page.i65"
-		.word swap
-#include "page.i65"
-		.word oneplus
-#include "page.i65"
-		.word cmovegt
-#include "page.i65"
-		.word rfrom
-#include "page.i65"
-		.word dup
-#include "page.i65"
-		.word cfetch
-#include "page.i65"
-		.word width
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word _min
-#include "page.i65"
-		.word oneplus
-#include "page.i65"
-		.word _twodup
-#include "page.i65"
-		.word plus
-#include "page.i65"
-		.word clit
-		.byt $ff
-#include "pad.i65"
-		.word andx
-#include "page.i65"
-		.word clit
-		.byt $ff
-#include "pad.i65"
-		.word eq
-#include "page.i65"
-
-		.word qbranch
-		.word create06
-#include "page.i65"
-		.word _twodup
-#include "page.i65"
-		.word swap
-#include "page.i65"
-		.word dup
-#include "page.i65"
-		.word oneplus
-#include "page.i65"
-		.word rot
-#include "page.i65"
-		.word cmovegt
-#include "page.i65"
-		.word clit
-		.byt $ea
-#include "pad.i65"
-		.word _ccomma
-#include "page.i65"
-		.word swap
-#include "page.i65"
-		.word oneplus
-#include "page.i65"
-		.word swap
-#include "page.i65"
-create06	.word twoplus
-#include "page.i65"
-		.word viewq
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word plus
-#include "page.i65"
-		.word _allot
-#include "page.i65"
-		.word dup
-#include "page.i65"
-		.word clit
-		.byt $80
-#include "pad.i65"
-		.word toggle
-#include "page.i65"
-		.word here
-#include "page.i65"
-		.word oneminus
-#include "page.i65"
-		.word clit
-		.byt $80
-#include "pad.i65"
-		.word toggle
-#include "page.i65"
-		.word _latest
-#include "page.i65"
-		.word over
-#include "page.i65"
-		.word twominus
-#include "page.i65"
-		.word store
-#include "page.i65"
-		.word viewq
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word qbranch
-		.word create07
-#include "page.i65"
-		.word blk
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word over
-#include "page.i65"
-		.word twominus
-#include "page.i65"
-		.word twominus
-#include "page.i65"
-		.word store
-#include "page.i65"
-create07	.word two
-#include "page.i65"
-		.word _allot
-#include "page.i65"
-		.word current
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word store
-		.word _psemi
+		.word exit
+;		0; _ltbcq
+;#include "page.i65"
+;		.word here
+;#include "page.i65"
+;		.word width
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word twoplus
+;#include "page.i65"
+;		.word twoplus
+;#include "page.i65"
+;		.word viewq
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word plus
+;#include "page.i65"
+;		.word plus
+;#include "page.i65"
+;		.word ult
+;#include "page.i65"
+;#if (((*&$ff)+3+15)=$ff)
+;	.word next
+;	.word next
+;#endif
+;		.word _pabortq
+;		.byt create01-*-1
+;		.asc	"DICTIONARY FULL"
+;			;123456789.12345
+;create01
+;#include "page.i65"
+;		.word _existsq
+;#include "page.i65"
+;		.word over
+;#include "page.i65"
+;		.word eq
+;#include "page.i65"
+;#if (((*&$ff)+3+13)=$ff)
+;	.word next
+;	.word next
+;#endif
+;		.word _pabortq
+;		.byt create02-*-1
+;		.asc	"NAME REQUIRED"
+;			;123456789.123
+;create02
+;#include "page.i65"
+;		.word warning
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word andx
+;#include "page.i65"
+;		.word qbranch
+;		.word create04
+;#include "page.i65"
+;		.word _toname
+;#include "page.i65"
+;		.word cr
+;#include "page.i65"
+;		.word clit
+;		.byt $12	; rvs
+;#include "pad.i65"
+;		.word emit
+;#include "page.i65"
+;		.word _iddot
+;#include "page.i65"
+;		.word clit
+;		.byt $92	; off
+;#include "pad.i65"
+;		.word emit
+;#include "page.i65"
+;		.word _pdq
+;		.byt create03-*-1
+;		.asc	" ALREADY EXISTS "
+;			;1234567869.12345
+;create03
+;#include "pad.i65"
+;		.word branch
+;		.word create05
+;#include "page.i65"
+;create04	.word drop
+;#include "page.i65"
+;create05	.word here
+;#include "page.i65"
+;		.word dup
+;#include "page.i65"
+;		.word cfetch
+;#include "page.i65"
+;		.word over
+;#include "page.i65"
+;		.word twoplus
+;#include "page.i65"
+;		.word viewq
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word plus
+;#include "page.i65"
+;		.word dup
+;#include "page.i65"
+;		.word tor
+;#include "page.i65"
+;		.word swap
+;#include "page.i65"
+;		.word oneplus
+;#include "page.i65"
+;		.word cmovegt
+;#include "page.i65"
+;		.word rfrom
+;#include "page.i65"
+;		.word dup
+;#include "page.i65"
+;		.word cfetch
+;#include "page.i65"
+;		.word width
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word _min
+;#include "page.i65"
+;		.word oneplus
+;#include "page.i65"
+;		.word _twodup
+;#include "page.i65"
+;		.word plus
+;#include "page.i65"
+;		.word clit
+;		.byt $ff
+;#include "pad.i65"
+;		.word andx
+;#include "page.i65"
+;		.word clit
+;		.byt $ff
+;#include "pad.i65"
+;		.word eq
+;#include "page.i65"
+;
+;		.word qbranch
+;		.word create06
+;#include "page.i65"
+;		.word _twodup
+;#include "page.i65"
+;		.word swap
+;#include "page.i65"
+;		.word dup
+;#include "page.i65"
+;		.word oneplus
+;#include "page.i65"
+;		.word rot
+;#include "page.i65"
+;		.word cmovegt
+;#include "page.i65"
+;		.word clit
+;		.byt $ea
+;#include "pad.i65"
+;		.word _ccomma
+;#include "page.i65"
+;		.word swap
+;#include "page.i65"
+;		.word oneplus
+;#include "page.i65"
+;		.word swap
+;#include "page.i65"
+;create06	.word twoplus
+;#include "page.i65"
+;		.word viewq
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word plus
+;#include "page.i65"
+;		.word _allot
+;#include "page.i65"
+;		.word dup
+;#include "page.i65"
+;		.word clit
+;		.byt $80
+;#include "pad.i65"
+;		.word toggle
+;#include "page.i65"
+;		.word here
+;#include "page.i65"
+;		.word oneminus
+;#include "page.i65"
+;		.word clit
+;		.byt $80
+;#include "pad.i65"
+;		.word toggle
+;#include "page.i65"
+;		.word _latest
+;#include "page.i65"
+;		.word over
+;#include "page.i65"
+;		.word twominus
+;#include "page.i65"
+;		.word store
+;#include "page.i65"
+;		.word viewq
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word qbranch
+;		.word create07
+;#include "page.i65"
+;		.word blk
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word over
+;#include "page.i65"
+;		.word twominus
+;#include "page.i65"
+;		.word twominus
+;#include "page.i65"
+;		.word store
+;#include "page.i65"
+;create07	.word two
+;#include "page.i65"
+;		.word _allot
+;#include "page.i65"
+;		.word current
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word store
+;		.word _psemi
 docreate	pla
 		clc
 		adc #1
@@ -2217,51 +2230,18 @@ rp0		jsr uservar
 ;
 ;	WIDTH
 ;
-widthlfa	.byt $de,$ad
-		.byt (width-*-1)|bit7
-		.asc "WIDT","H"|bit7
-width		jsr uservar
-		.byt userwidth-userarea
-
-;--------------------------------------------------------------
+;WIDTH         ---  addr                          U
+;        In fig-FORTH, a user variable containing the maximum number of
+;        letters saved in the compilation of a definitions' name. It must be
+;        1 thru 31, with a default value of 31. The name character count and
+;       its natural characters are saved, up to the value in WIDTH. The
+;        value may be changed at any time within the above limits.
 ;
-;	WARNING
-;
-warninglfa	.byt $de,$ad
-		.byt (warning-*-1)|bit7
-		.asc "WARNIN","G"|bit7
-warning		jsr uservar
-		.byt userwarning-userarea
-
-;--------------------------------------------------------------
-;
-;	VMBUF   ( -- addr )
-;
-; User variable storing the address of the next available 256-byte
-; page for tape virtual memory.  VMBUF grows downward in memory beginning
-; at $7a00 until it hits the top of the dictionary (PAD).  There is a 
-; page above it ($7b00) for the in-memory screen index, and a 2K buffer
-; from $7c00-$7fff for compression/decompression 
-;
-vmbuflfa	.byt $de,$ad
-		.byt (vmbuf-*-1)|bit7
-		.asc "VMBU","F"|bit7
-vmbuf		jsr uservar
-		.byt uservmbuf-userarea
-
-;--------------------------------------------------------------
-;
-;	VIDBUF   ( -- addr )
-;
-; User variable storing the address of a 1024-byte region of memory
-; used by the RLENCODE, RLDECODE and SHAMROCK compression routines.
-; currently top-of-RAM - $0400 ($7c00)
-;
-vidbuflfa	.byt $de,$ad
-		.byt (vidbuf-*-1)|bit7
-		.asc "VIDBU","F"|bit7
-vidbuf		jsr uservar
-		.byt uservidbuf-userarea
+;widthlfa	.byt $de,$ad
+;		.byt (width-*-1)|bit7
+;		.asc "WIDT","H"|bit7
+;width		jsr uservar
+;		.byt userwidth-userarea
 
 ; ^ warm
 ; |
@@ -2293,38 +2273,21 @@ dp		jsr uservar
 ;
 ;	VOC-LINK
 ;
-voclinklfa	.byt $de,$ad
-		.byt (voclink-*-1)|bit7
-		.asc "VOC-LIN","K"|bit7
-voclink		jsr uservar
-		.byt uservoclink-userarea
+;voclinklfa	.byt $de,$ad
+;		.byt (voclink-*-1)|bit7
+;		.asc "VOC-LIN","K"|bit7
+;voclink		jsr uservar
+;		.byt uservoclink-userarea
 
 ;--------------------------------------------------------------
 ;
 ;	VIEW?
 ;
-viewqlfa	.byt $de,$ad
-		.byt (viewq-*-1)|bit7
-		.asc "VIEW","?"|bit7
-viewq		jsr uservar
-		.byt userviewquery-userarea
-
-;--------------------------------------------------------------
-;
-;	MLMON   ( -- addr )
-;
-; The address of a variable to store the location of the ML monitor.
-; COLD sets this from the contents of BRK vector at $0092, then
-; points BRK vector to SW16.  The MON primitive sets BRK vector
-; back to its original state before exiting to TIM (or TIM's
-; replacement e.g. Micromon).  Exiting the ML monitor with
-; "G" will reestablish Sweet16 as the BRK instruction target.
-;
-mlmonlfa	.byt $de,$ad
-		.byt (mlmon-*-1)|bit7
-		.asc "MLMO","N"|bit7
-mlmon		jsr uservar
-		.byt usermlmon-userarea
+;viewqlfa	.byt $de,$ad
+;		.byt (viewq-*-1)|bit7
+;		.asc "VIEW","?"|bit7
+;viewq		jsr uservar
+;		.byt userviewquery-userarea
 
 ; ^ cold
 ; |
@@ -2351,7 +2314,7 @@ blklfa		.byt $de,$ad
 		.byt (blk-*-1)|bit7
 		.asc "BL","K"|bit7
 blk		jsr uservar
-		.byt uarea-userarea
+		.byt userblk-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2368,7 +2331,7 @@ toinlfa		.byt $de,$ad
 		.byt (toin-*-1)|bit7
 		.asc ">I","N"|bit7
 toin		jsr uservar
-		.byt uarea-userarea+2
+		.byt usertoin-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2378,7 +2341,7 @@ numoutlfa	.byt $de,$ad
 		.byt (numout-*-1)|bit7
 		.asc "#OU","T"|bit7
 numout		jsr uservar
-		.byt uarea-userarea+4
+		.byt usernumout-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2391,7 +2354,7 @@ scrlfa		.byt $de,$ad
 		.byt (scr-*-1)|bit7
 		.asc "SC","R"|bit7
 scr		jsr uservar
-		.byt uarea-userarea+6
+		.byt userscr-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2402,7 +2365,7 @@ offsetlfa	.byt $de,$ad
 		.byt (offset-*-1)|bit7
 		.asc "OFFSE","T"|bit7
 offset		jsr uservar
-		.byt uarea-userarea+8
+		.byt useroffset-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2412,7 +2375,7 @@ contextlfa	.byt $de,$ad
 		.byt (context-*-1)|bit7
 		.asc "CONTEX","T"|bit7
 context		jsr uservar
-		.byt uarea-userarea+10
+		.byt usercontext-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2422,7 +2385,7 @@ currentlfa	.byt $de,$ad
 		.byt (current-*-1)|bit7
 		.asc "CURREN","T"|bit7
 current		jsr uservar
-		.byt uarea-userarea+12
+		.byt usercurrent-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2440,7 +2403,7 @@ statelfa	.byt $de,$ad
 		.byt (state-*-1)|bit7
 		.asc "STAT","E"|bit7
 state		jsr uservar
-		.byt uarea-userarea+14
+		.byt userstate-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2452,7 +2415,7 @@ baselfa		.byt $de,$ad
 		.byt (base-*-1)|bit7
 		.asc "BAS","E"|bit7
 base		jsr uservar
-		.byt uarea-userarea+16
+		.byt userbase-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2462,7 +2425,7 @@ dpllfa		.byt $de,$ad
 		.byt (dpl-*-1)|bit7
 		.asc "DP","L"|bit7
 dpl		jsr uservar
-		.byt uarea-userarea+18
+		.byt userdpl-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2474,7 +2437,7 @@ dpl		jsr uservar
 ; contains the count of characters received and
 ; stored by the most recent execution of EXPECT .
 span		jsr uservar
-		.byt uarea-userarea+20
+		.byt userspan-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2484,7 +2447,7 @@ csplfa		.byt $de,$ad
 		.byt (csp-*-1)|bit7
 		.asc "CS","P"|bit7
 csp		jsr uservar
-		.byt uarea-userarea+22
+		.byt usercsp-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2494,7 +2457,7 @@ rsharplfa	.byt $de,$ad
 		.byt (rsharp-*-1)|bit7
 		.asc "R","#"|bit7
 rsharp		jsr uservar
-		.byt uarea-userarea+24
+		.byt userrsharp-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2504,7 +2467,7 @@ hldlfa		.byt $de,$ad
 		.byt (hld-*-1)|bit7
 		.asc "HL","D"|bit7
 hld		jsr uservar
-		.byt uarea-userarea+26
+		.byt userhld-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2519,7 +2482,7 @@ numtiblfa	.byt $de,$ad
 		.byt (numtib-*-1)|bit7
 		.asc "#TI","B"|bit7
 numtib		jsr uservar
-		.byt uarea-userarea+28
+		.byt usertib-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -2529,7 +2492,7 @@ numlinelfa	.byt $de,$ad
 		.byt (numline-*-1)|bit7
 		.asc "#LIN","E"|bit7
 numline		jsr uservar
-		.byt uarea-userarea+30
+		.byt userline-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -3923,6 +3886,7 @@ _does
 #include "pad.i65"
 		.word exit
 ; I've got a pretzel in my brain!
+; ~wut? at least comment what's going on here
 dodoes		pla
 		sta n
 		pla
@@ -4490,7 +4454,6 @@ _punctq
 		.word _ppunctq
 		.word exit
 
-
 ;--------------------------------------------------------------
 ;
 ;	CONVERT
@@ -4814,8 +4777,10 @@ _find
 #include "page.i65"
 		.word branch
 		.word find02
-#include "pad.i65"			; ( name-2  current )
-find01		.word drop
+#include "pad.i65"
+find01		.word drop		; ( name-2 )
+#include "page.i65"
+		.word twoplus		; ( name )
 #include "page.i65"
 		.word false		; ( name false )
 #include "page.i65"
@@ -4823,7 +4788,7 @@ find02		.word exit		; ( addr flag )
 
 ;--------------------------------------------------------------
 ;
-;	EXISTS?
+;	EXISTS?   ( -- addr flag )
 ;
 existsqlfa	.byt $de,$ad
 		.byt (_existsq-*-1)|bit7
@@ -4834,7 +4799,7 @@ _existsq
 #include "page.i65"
 		.word _word		; ( nfa )
 #include "page.i65"
-		.word _find		; ( nfa true | here false )
+		.word _find		; ( nfa -1|+1 | here false )
 		.word exit
 
 ;--------------------------------------------------------------
@@ -5037,7 +5002,6 @@ _immediate
 ; * 83 compiler
 ;
 ; see FD-V05N3 p. 5
-
 vocabularylfa	.byt $de,$ad
 		.byt (_vocabulary-*-1)|bit7
 		.asc "VOCABULAR","Y"|bit7
@@ -5045,27 +5009,30 @@ _vocabulary
 #include "enter.i65"
 		.word _create
 #include "page.i65"
-		.word current
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word twoplus
-#include "page.i65"
-		.word _comma
-#include "page.i65"
-		.word here
-#include "page.i65"
-		.word voclink
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word _comma
-#include "page.i65"
-		.word voclink
-#include "page.i65"
-		.word store
-#include "page.i65"
-		.word _psemi
+		.word exit
+
+;#include "page.i65"
+;		.word current
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word twoplus
+;#include "page.i65"
+;		.word _comma
+;#include "page.i65"
+;		.word here
+;#include "page.i65"
+;		.word voclink
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word _comma
+;#include "page.i65"
+;		.word voclink
+;#include "page.i65"
+;		.word store
+;#include "page.i65"
+;		.word _psemi
 vocabdoes	jsr dodoes
 		.word context
 #include "page.i65"
@@ -5166,6 +5133,12 @@ startup		jsr docreate
 ;reset data and return stack
 
 ice		jsr swapzp
+		lda CBINV
+		eor #<SW16
+		sta brktoggle
+		lda CBINV+1
+		eor #>SW16
+		sta brktoggle+1
 		bne cold		; bra
 coldlfa		.byt $de,$ad
 		.byt (cold-*-1)|bit7
@@ -5173,12 +5146,7 @@ coldlfa		.byt $de,$ad
 cold		ldy #uarea-userarea-1
 		bne warm01		; bra
 
-warm		lda #>warm05		; ~wut? this probably isn't doing what I think it does
-		sta w1+1
-		lda #<warm05
-		sta w1
-
-		ldy #userwarm-userarea-1
+warm		ldy #userwarm-userarea-1
 
 warm01		lda userup
 		sta up
@@ -7708,95 +7676,97 @@ ntop		.byt (_forget-*-1)|bit7
 		.asc "FORGE","T"|bit7
 _forget
 #include "enter.i65"
-		.word _tick
-#include "page.i65"
-		.word _toname
-		.word dup
-#include "page.i65"
-		.word fence
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word ult
-#if (((*&$ff)+3+23)=$ff)
-	.word next
-
-	.word next
-#endif
-		.word _pabortq
-		.byt forget01-*-1
-		.asc	"IN PROTECTED DICTIONARY"
-			;123456789.123456789.123
-forget01	.word tor
-#include "page.i65"
-		.word voclink
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-forget02	.word rfetch
-#include "page.i65"
-		.word over
-#include "page.i65"
-		.word ult
-#include "page.i65"
-		.word qbranch
-		.word forget03
-#include "page.i65"
-		.word forth
-#include "page.i65"
-		.word _definitions
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word branch
-		.word forget02
-#include "page.i65"
-forget03	.word dup
-#include "page.i65"
-		.word voclink
-#include "page.i65"
-		.word store
-#include "page.i65"
-forget04	.word dup
-#include "page.i65"
-		.word twominus
-#include "page.i65"
-forget05	.word _ntolink
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word dup
-#include "page.i65"
-		.word rfetch
-#include "page.i65"
-		.word ult
-#include "page.i65"
-		.word qbranch
-		.word forget05
-#include "pad.i65"
-		.word over
-#include "page.i65"
-		.word twominus
-#include "page.i65"
-		.word twominus
-#include "page.i65"
-		.word store
-#include "page.i65"
-		.word fetch
-#include "page.i65"
-		.word qdup
-#include "page.i65"
-		.word zeq
-#include "page.i65"
-		.word qbranch
-		.word forget04
-#include "pad.i65"
-		.word rfrom
-#include "page.i65"
-		.word dp
-#include "page.i65"
-		.word store
 		.word exit
+;#include "page.i65"
+;		.word _tick
+;#include "page.i65"
+;		.word _toname
+;		.word dup
+;#include "page.i65"
+;		.word fence
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word ult
+;#if (((*&$ff)+3+23)=$ff)
+;	.word next
+;
+;	.word next
+;#endif
+;		.word _pabortq
+;		.byt forget01-*-1
+;		.asc	"IN PROTECTED DICTIONARY"
+;			;123456789.123456789.123
+;forget01	.word tor
+;#include "page.i65"
+;		.word voclink
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;forget02	.word rfetch
+;#include "page.i65"
+;		.word over
+;#include "page.i65"
+;		.word ult
+;#include "page.i65"
+;		.word qbranch
+;		.word forget03
+;#include "page.i65"
+;		.word forth
+;#include "page.i65"
+;		.word _definitions
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word branch
+;		.word forget02
+;#include "page.i65"
+;forget03	.word dup
+;#include "page.i65"
+;		.word voclink
+;#include "page.i65"
+;		.word store
+;#include "page.i65"
+;forget04	.word dup
+;#include "page.i65"
+;		.word twominus
+;#include "page.i65"
+;forget05	.word _ntolink
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word dup
+;#include "page.i65"
+;		.word rfetch
+;#include "page.i65"
+;		.word ult
+;#include "page.i65"
+;		.word qbranch
+;		.word forget05
+;#include "pad.i65"
+;		.word over
+;#include "page.i65"
+;		.word twominus
+;#include "page.i65"
+;		.word twominus
+;#include "page.i65"
+;		.word store
+;#include "page.i65"
+;		.word fetch
+;#include "page.i65"
+;		.word qdup
+;#include "page.i65"
+;		.word zeq
+;#include "page.i65"
+;		.word qbranch
+;		.word forget04
+;#include "pad.i65"
+;		.word rfrom
+;#include "page.i65"
+;		.word dp
+;#include "page.i65"
+;		.word store
+;		.word exit
 forgetfence
 		
 ;==============================================================
