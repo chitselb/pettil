@@ -378,19 +378,19 @@ branch		ldy #3		; [2]
 		sta ip+1	; [3] (IP+2) -> IP
 		jmp nexto	; [3]	[30]
 
- ldy #2
- lda (ip),y
- bmi +
- ldy #0
- .byt $2c ;BIT instruction
-+ ldy #$ff
- clc
- adc ip
- sta ip
- tya
- adc ip+1
- sta ip+1
- jmp nexto
+; ldy #2
+; lda (ip),y
+; bmi +
+; ldy #0
+; .byt $2c ;BIT instruction
+;+ ldy #$ff
+; clc
+; adc ip
+; sta ip
+; tya
+; adc ip+1
+; sta ip+1
+; jmp nexto
 
 ;--------------------------------------------------------------
 ;
@@ -617,18 +617,21 @@ monlfa		.byt $de,$ad
 		.asc "MO","N"|bit7
 ; sets the BRK vector to either TIM or Sweet16
 ; (TIM exits to BASIC)
-mon		jsr swapzp	; restore BASIC zpage 
-		ldy #(usermlmon-userarea)
-		.byt $2c	; BIT instruction to skip two bytes
-		ldy #(usersw16-userarea)
-		lda (up),y
+mon		ldy #(usermlmon-userarea)
+		jsr setbrk
+		jsr swapzp	; restore BASIC zpage 
+		jmp mon01
+sw16		ldy #(usersw16-userarea)
+		jsr setbrk
+mon01		brk		; either break to TIM
+		.byt rtn	; or do nothing in Sweet16 mode
+		jmp next
+setbrk		lda (up),y
 		sta CBINV
 		iny
 		lda (up),y
 		sta CBINV+1
-		brk		; either break to TIM
-		.byt rtn	; or do nothing in Sweet16 mode
-		jmp next
+		rts
 
 ;--------------------------------------------------------------
 ;
@@ -6863,13 +6866,11 @@ _question
 picklfa		.byt $de,$ad
 		.byt (pick-*-1)|bit7
 		.asc "PIC","K"|bit7
-pick		stx storex
-		ldx tos
-		lda stackl,x
+pick		ldy tos
+		lda stackl,y
 		sta tos
-		lda stackh,x
+		lda stackh,y
 		sta tos+1
-		ldx storex
 		jmp next
 
 ;--------------------------------------------------------------
@@ -6900,7 +6901,7 @@ roll01		cpx n
 		beq roll02
 		lda stackh+$ff,x
 		sta stackh,x
-		lda stackl+$ff,x	; ~ probably not work!
+		lda stackl+$ff,x	; ~wut? probably not work!
 		sta stackl,x
 		dex
 		bne roll01
