@@ -315,7 +315,7 @@ lithi		sta tos+1
 ;		.byt (qbranch-*-1)|bit7
 ;		.asc "?BRANC","H"|bit7
 qbranch		lda tos
-		ora tos+1
+		ora tos+1	; check the flag
 		ldy stackl,x
 		sty tos
 		ldy stackh,x
@@ -323,7 +323,7 @@ qbranch		lda tos
 		inx		; drop
 		tay		; to set the Z flag
 		beq branch
-bump		lda #4
+bump		lda #3
 		jmp pad
 
 ;--------------------------------------------------------------
@@ -377,16 +377,30 @@ pqdo02		jsr slide
 ;		.byt (branch-*-1)|bit7
 ;		.asc "BRANC","H"|bit7
 ; IP = address of 'branch' (you are here)
-; IP+2 = absolute address of the target
-branch		ldy #3		; [2]
+; IP+2 = relative address of the target, same as for 6502 branches
+branch		ldy #2		; [2]
 		lda (ip),y	; [5]
-		pha		; [3]
-		dey		; [2]
-		lda (ip),y	; [5]
+		bmi branch01	; [2|3]
+		ldy #0		; [2]
+		.byt $2c	; [4]
+branch01	ldy #$ff	; [2]
+		sec		; [2]
+		adc ip		; [3]
 		sta ip		; [3]
-		pla		; [4]
-		sta ip+1	; [3] (IP+2) -> IP
-		jmp nexto	; [3]	[30]
+		tya		; [2]
+		adc ip+1	; [3]
+		sta ip+1	; [3]
+		jmp nexto	; [3]   [34 forward |31 backward]
+		
+;branch		ldy #3		; [2]
+;		lda (ip),y	; [5]
+;		pha		; [3]
+;		dey		; [2]
+;		lda (ip),y	; [5]
+;		sta ip		; [3]
+;		pla		; [4]
+;		sta ip+1	; [3] (IP+2) -> IP
+;		jmp nexto	; [3]	[30]
 
 ; ldy #2
 ; lda (ip),y
@@ -3019,8 +3033,8 @@ traverse01	.word over
 		.word lt
 #include "page.i65"
 		.word qbranch
-		.word traverse01
-#include "page.i65"
+		.byt <(traverse01-*+1)
+#include "pad.i65"
 		.word swap
 #include "page.i65"
 		.word drop
@@ -3444,7 +3458,7 @@ fail
 		.word plus
 #include "page.i65"
 		.word branch
-		.word pabortq02
+		.byt <(pabortq02-*+1)
 
 ;--------------------------------------------------------------
 ;
@@ -3470,7 +3484,7 @@ _pabortq
 		.word rot
 #include "page.i65"
 		.word qbranch
-		.word pabortq01
+		.byt <(pabortq01-*+1)
 #include "pad.i65"
 pabortq02	.word cmdoff
 ;#include "page.i65"
@@ -3654,7 +3668,7 @@ _qchar
 		.word rfrom
 #include "page.i65"
 		.word qbranch
-		.word qchar02
+		.byt <(qchar02-*+1)
 #include "pad.i65"
 		.word rfrom
 #include "page.i65"
@@ -3741,22 +3755,22 @@ rbracket01	.word qstack
 		.word dup
 #include "page.i65"
 		.word qbranch
-		.word rbracket03
+		.byt <(rbracket03-*+1)
 #include "pad.i65"
 		.word zlt
 #include "page.i65"
 		.word qbranch
-		.word rbracket02
+		.byt <(rbracket02-*+1)
 #include "pad.i65"
 		.word _comma
 #include "page.i65"
 		.word branch
-		.word rbracket05
+		.byt <(rbracket05-*+1)
 #include "pad.i65"
 rbracket02	.word execute
 #include "page.i65"
 		.word branch
-		.word rbracket05
+		.byt <(rbracket05-*+1)
 #include "pad.i65"
 rbracket03	.word drop
 #include "page.i65"
@@ -3769,12 +3783,12 @@ rbracket03	.word drop
 		.word oneplus
 #include "page.i65"
 		.word qbranch
-		.word rbracket04
+		.byt <(rbracket04-*+1)
 #include "pad.i65"
 		.word _dliteral
 #include "page.i65"
 		.word branch
-		.word rbracket05
+		.byt <(rbracket05-*+1)
 #include "pad.i65"
 rbracket04	.word drop
 #include "page.i65"
@@ -3785,7 +3799,7 @@ rbracket05	.word true
 		.word _quitq
 #include "page.i65"
 		.word qbranch
-		.word rbracket01
+		.byt <(rbracket01-*+1)
 #include "pad.i65"
 		.word exit
 
@@ -4104,6 +4118,7 @@ _query
 		.word toin
 #include "page.i65"
 		.word off
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -4232,15 +4247,15 @@ _tickstream
 		.word qdup		; ( 0 | blk blk )
 #include "page.i65"
 		.word qbranch		; if
-		.word tickstream01
-#include "page.i65"
+		.byt <(tickstream01-*+1)
+#include "pad.i65"
 		.word 0; _block		; ( addr )
 #include "page.i65"
 		.word bperbuf		; ( addr b/buf )
 #include "page.i65"
 		.word branch		; else
-		.word tickstream02
-#include "page.i65"
+		.byt <(tickstream02-*+1)
+#include "pad.i65"
 tickstream01	.word tib		; ( tib )
 #include "page.i65"
 		.word numtib
@@ -4480,8 +4495,8 @@ convert01	.word oneplus
 		.word digit
 #include "page.i65"
 		.word qbranch
-		.word convert03
-#include "page.i65"
+		.byt <(convert03-*+1)
+#include "pad.i65"
 		.word swap
 #include "page.i65"
 		.word base
@@ -4509,8 +4524,8 @@ convert01	.word oneplus
 		.word oneplus
 #include "page.i65"
 		.word qbranch
-		.word convert02
-#include "page.i65"
+		.byt <(convert02-*+1)
+#include "pad.i65"
 		.word one
 #include "page.i65"
 		.word dpl
@@ -4520,8 +4535,8 @@ convert01	.word oneplus
 convert02	.word rfrom
 #include "page.i65"
 		.word branch
-		.word convert01
-#include "page.i65"
+		.byt <(convert01-*+1)
+#include "pad.i65"
 convert03	.word rfrom
 		.word exit
 
@@ -4551,7 +4566,7 @@ _number
 		.word swap
 #include "page.i65"
 		.word pqdo
-		.word number03
+		.byt <(number03-*+1)
 #include "pad.i65"
 number01	.word i
 #include "page.i65"
@@ -4564,8 +4579,8 @@ number01	.word i
 		.word digit
 #include "page.i65"
 		.word qbranch
-		.word number02
-#include "page.i65"
+		.byt <(number02-*+1)
+#include "pad.i65"
 		.word twodrop
 #include "page.i65"
 		.word false
@@ -4574,8 +4589,8 @@ number01	.word i
 		.word number03
 #include "page.i65"
 number02	.word ploop
-		.word number01
-#include "page.i65"
+		.byt <(number01-*+1)
+#include "pad.i65"
 number03	.word _qfind
 #include "page.i65"
 		.word zero
@@ -4614,15 +4629,15 @@ number04	.word _convert
 		.word _punctq
 #include "page.i65"
 		.word qbranch
-		.word number05
-#include "page.i65"
+		.byt <(number05-*+1)
+#include "pad.i65"
 		.word dpl
 #include "page.i65"
 		.word off
 #include "page.i65"
 		.word branch
-		.word number04
-#include "page.i65"
+		.byt <(number04-*+1)
+#include "pad.i65"
 number05	.word cfetch
 #include "page.i65"
 		.word bl
@@ -4634,8 +4649,8 @@ number05	.word cfetch
 		.word rfrom
 #include "page.i65"
 		.word qbranch
-		.word number06
-#include "page.i65"
+		.byt <(number06-*+1)
+#include "pad.i65"
 		.word dnegate
 number06	.word exit
 
@@ -4665,12 +4680,12 @@ _trychain
 		.word qdup		; ( name-2 LFA LFA | name-2 false )
 #include "page.i65"
 		.word qbranch
-		.word trychain01
+		.byt <(trychain01-*+1)
 #include "pad.i65"			; ( name-2 LFA )
 		.word pfind		; ( addr flag )
 #include "page.i65"
 		.word branch
-		.word trychain03
+		.byt <(trychain03-*+1)
 #include "pad.i65"
 trychain01	.word dup		; ( name-2 name-2 )
 #include "page.i65"
@@ -4681,14 +4696,14 @@ trychain01	.word dup		; ( name-2 name-2 )
 		.word bloomfetch	; ( name-2 hash1 flag )
 #include "page.i65"
 		.word qbranch
-		.word trychain02
+		.byt <(trychain02-*+1)
 #include "pad.i65"			; ( name-2 hash1 )
 		.word dhashfetch	; ( name-2 LFA )
 #include "page.i65"
 		.word pfind		; ( addr flag )
 #include "page.i65"
 		.word branch
-		.word trychain03
+		.byt <(trychain03-*+1)
 #include "pad.i65"			; ( name-2 hash1 )
 trychain02	.word drop
 #include "page.i65"			; ( name-2 )
@@ -4756,7 +4771,7 @@ _find
 		.word zeq		; ( addr flag false | name-2 true )
 #include "page.i65"
 		.word qbranch
-		.word find02
+		.byt <(find02-*+1)
 #include "pad.i65"			; ( name-2 )
 		.word current		; ( name-2 current )
 #include "page.i65"
@@ -4771,12 +4786,12 @@ _find
 		.word ne		; ( name-2 current flag )
 #include "page.i65"
 		.word qbranch
-		.word find01
+		.byt <(find01-*+1)
 #include "pad.i65"			; ( name-2 current )
 		.word _trychain		; ( addr flag )
 #include "page.i65"
 		.word branch
-		.word find02
+		.byt <(find02-*+1)
 #include "pad.i65"
 find01		.word drop		; ( name-2 )
 #include "page.i65"
@@ -4884,16 +4899,16 @@ _literal
 		.word ult
 #include "page.i65"
 		.word qbranch
-		.word literal01
-#include "page.i65"
+		.byt <(literal01-*+1)
+#include "pad.i65"
 		.word _compile
 		.word clit
 #include "page.i65"
 		.word _ccomma
 #include "page.i65"
 		.word branch
-		.word literal02
-#include "page.i65"
+		.byt <(literal02-*+1)
+#include "pad.i65"
 literal01	.word _compile
 		.word plit
 #include "page.i65"
@@ -4945,13 +4960,13 @@ interpret01	.word qstack		; ( )
 		.word _existsq		; ( addr flag )
 #include "page.i65"
 		.word qbranch
-		.word interpret02
-#include "page.i65"
+		.byt <(interpret02-*+1)
+#include "pad.i65"
 		.word execute
 #include "page.i65"
 		.word branch
-		.word interpret03
-#include "page.i65"
+		.byt <(interpret03-*+1)
+#include "pad.i65"
 interpret02	.word _number
 #include "page.i65"
 		.word dpl
@@ -4963,8 +4978,8 @@ interpret02	.word _number
 		.word zeq
 #include "page.i65"
 		.word qbranch
-		.word interpret03
-#include "page.i65"
+		.byt <(interpret03-*+1)
+#include "pad.i65"
 		.word drop
 #include "page.i65"
 interpret03	.word false
@@ -4972,7 +4987,7 @@ interpret03	.word false
 		.word _quitq
 #include "page.i65"
 		.word qbranch
-		.word interpret01
+		.byt <(interpret01-*+1)
 #include "pad.i65"
 		.word exit
 
@@ -5225,16 +5240,16 @@ quit01		.word rpstore
 		.word zeq
 #include "page.i65"
 		.word qbranch
-		.word quit02
-#include "page.i65"
+		.byt <(quit03-*+1)
+#include "pad.i65"
 		.word _pdq
 		.byt (quit02-*-1)
 		.asc	" OK"
 			;123
 quit02
 #include "pad.i65"
-		.word branch
-		.word quit01
+quit03		.word branch
+		.byt <(quit01-*+1)
 
 ;--------------------------------------------------------------
 ;
@@ -5291,7 +5306,7 @@ _min
 		.word gt
 #include "page.i65"
 		.word qbranch
-		.word min01
+		.byt <(min01-*+1)
 #include "pad.i65"
 		.word swap
 #include "page.i65"
@@ -5314,7 +5329,7 @@ _max
 		.word lt
 #include "page.i65"
 		.word qbranch
-		.word max01
+		.byt <(max01-*+1)
 #include "pad.i65"
 		.word swap
 #include "page.i65"
@@ -5815,7 +5830,7 @@ _latestq
 		.word eq
 #include "page.i65"
 		.word qbranch
-		.word latestq01
+		.byt <(latestq01-*+1)
 #include "pad.i65"
 		.word drop
 #include "page.i65"
@@ -5873,7 +5888,7 @@ absentq01	.word _twodup
 		.word eq
 #include "page.i65"
 		.word qbranch
-		.word absentq02
+		.byt <(absentq02-*+1)
 #include "pad.i65"
 		.word dup
 #include "page.i65"
@@ -5924,7 +5939,7 @@ absentq02	.word clit
 		.word plus
 #include "page.i65"
 		.word ploop
-		.word absentq01
+		.byt <(absentq01-*+1)
 #include "pad.i65"
 absentq03	.word twoplus
 #include "page.i65"
@@ -5935,6 +5950,7 @@ absentq03	.word twoplus
 		.word drop
 #include "page.i65"
 		.word swap
+#include "page.i65"
 		.word exit
 #endif
 
@@ -6021,8 +6037,8 @@ _qtoresolve
 qtoresolve01	.word qdup
 #include "page.i65"
 		.word qbranch
-		.word qtoresolve02
-#include "page.i65"
+		.byt <(qtoresolve02-*+1)
+#include "pad.i65"
 		.word dup
 #include "page.i65"
 		.word fetch
@@ -6034,7 +6050,8 @@ qtoresolve01	.word qdup
 		.word store
 #include "page.i65"
 		.word branch
-		.word qtoresolve01
+		.byt <(qtoresolve01-*+1)
+#include "pad.i65"
 qtoresolve02	.word exit
 
 ;--------------------------------------------------------------
@@ -6077,7 +6094,8 @@ addtomark01	.word one
 		.word eq
 #include "page.i65"
 		.word qbranch
-		.word addtomark01
+		.byt <(addtomark01-*+1)
+#include "pad.i65"
 		.word drop
 #include "page.i65"
 		.word _qtomark
@@ -6091,8 +6109,8 @@ addtomark02	.word rfrom
 		.word eq
 #include "page.i65"
 		.word qbranch
-		.word addtomark02
-#include "page.i65"
+		.byt <(addtomark02-*+1)
+#include "pad.i65"
 		.word drop
 		.word exit
 
@@ -6167,7 +6185,7 @@ _qdo
 #include "page.i65"
 		.word _compile
 		.word pqdo
-#include "page.i65"
+#include "pad.i65"
 		.word _qtomark
 #include "page.i65"
 		.word _qfrommark
@@ -6177,6 +6195,7 @@ _qdo
 		.word swap
 #include "page.i65"
 		.word three
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6198,6 +6217,7 @@ _loop
 		.word ploop
 #include "pad.i65"
 		.word _qltresolve
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6219,6 +6239,7 @@ _plusloop
 		.word pploop
 #include "pad.i65"
 		.word _qltresolve
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6234,7 +6255,7 @@ _leave
 #include "enter.i65"
 		.word _compile
 		.word pleave
-#include "page.i65"
+#include "pad.i65"
 		.word three
 #include "page.i65"
 		.word _addtomark
@@ -6274,7 +6295,7 @@ _until
 #include "page.i65"
 		.word _compile
 		.word qbranch
-#include "page.i65"
+#include "pad.i65"
 		.word _qltresolve
 		.word exit
 
@@ -6293,7 +6314,9 @@ _again
 #include "page.i65"
 		.word _compile
 		.word branch
+#include "pad.i65"
 		.word _qltresolve
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6327,9 +6350,11 @@ _if
 #include "page.i65"
 		.word _compile
 		.word qbranch
+#include "pad.i65"
 		.word _qtomark
 #include "page.i65"
 		.word two
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6349,6 +6374,7 @@ _else
 #include "page.i65"
 		.word _compile
 		.word branch
+#include "pad.i65"
 		.word swap
 #include "page.i65"
 		.word _qtomark
@@ -6377,9 +6403,11 @@ _while
 #include "enter.i65"
 		.word _compile
 		.word qbranch
+#include "pad.i65"
 		.word one
 #include "page.i65"
 		.word _addtomark
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6400,11 +6428,13 @@ _spaces
 		.word zero
 #include "page.i65"
 		.word pqdo
-		.word spaces02
+		.byt <(spaces02-*+1)
+#include "pad.i65"
 spaces01	.word _space
 #include "page.i65"
 		.word ploop
-		.word spaces01
+		.byt <(spaces01-*+1)
+#include "pad.i65"
 spaces02	.word exit
 
 ;--------------------------------------------------------------
@@ -6466,12 +6496,13 @@ _sign
 		.word zlt
 #include "page.i65"
 		.word qbranch
-		.word sign01
+		.byt <(sign01-*+1)
 #include "pad.i65"
 		.word clit
 		.byt '-'
 #include "pad.i65"
 		.word _hold
+#include "page.i65"
 sign01		.word exit
 
 ;--------------------------------------------------------------
@@ -6513,6 +6544,7 @@ _sharp
 		sta tos			; ( d char )
 #include "toforth.i65"
 		.word _hold		; ( d )
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6533,7 +6565,8 @@ sharps01	.word _sharp		; ( d )
 		.word dzeq		; ( d flag )
 #include "page.i65"
 		.word qbranch
-		.word sharps01
+		.byt <(sharps01-*+1)
+#include "pad.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6552,6 +6585,7 @@ _pudot
 		.word _sharps
 #include "page.i65"
 		.word _sharpgt
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6570,6 +6604,7 @@ _udot
 		.word type
 #include "page.i65"
 		.word _space
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6600,6 +6635,7 @@ _udotr
 		.word _spaces
 #include "page.i65"
 		.word type
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6626,6 +6662,7 @@ _pdot
 		.word _sign
 #include "page.i65"
 		.word _sharpgt
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6646,6 +6683,7 @@ _dot
 		.word type		; ( )
 #include "page.i65"
 		.word _space		; ( )
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6670,6 +6708,7 @@ _dotr
 		.word _spaces
 #include "page.i65"
 		.word type
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6702,6 +6741,7 @@ _uddot
 		.word type
 #include "page.i65"
 		.word _space
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6726,6 +6766,7 @@ _uddotr
 		.word _spaces
 #include "page.i65"
 		.word type
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6752,6 +6793,7 @@ _pddot
 		.word _sign
 #include "page.i65"
 		.word _sharpgt
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -6806,6 +6848,7 @@ _question
 		.word fetch
 #include "page.i65"
 		.word _dot
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7053,6 +7096,7 @@ _twovariable
 		.byt 4
 #include "pad.i65"
 		.word _allot
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7164,6 +7208,7 @@ _dgt
 		.word twoswap
 #include "page.i65"
 		.word dlt
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7182,11 +7227,12 @@ _dmin
 		.word _dgt
 #include "page.i65"
 		.word qbranch
-		.word dmin01
-#include "page.i65"
+		.byt <(dmin01-*+1)
+#include "pad.i65"
 		.word twoswap
 #include "page.i65"
 dmin01		.word twodrop
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7205,11 +7251,12 @@ _dmax
 		.word dlt
 #include "page.i65"
 		.word qbranch
-		.word dmax01
+		.byt <(dmax01-*+1)
 #include "pad.i65"
 		.word twoswap
 #include "page.i65"
 dmax01		.word twodrop
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7538,7 +7585,7 @@ dhashstore06	.byt ld   | N0
 ;	until ;
 ;
 ;rethreadlfa	.byt $de,$ad
-;		.byt (_rethread-*-1)|bit7
+;		.byt (_rethread-*+1)|bit7
 ;		.asc "RETHREA","D"|bit7
 _rethread
 #include "enterx.i65"
@@ -7559,8 +7606,8 @@ rethread01	.word boyd		; begin boyd ?dup while ... repeat
 		.word qdup
 #include "page.i65"
 		.word qbranch
-		.word rethread02
-#include "page.i65"
+		.byt <(rethread02-*+1)
+#include "pad.i65"
 		.word dup		; ( lfa lfa )
 #include "page.i65"
 		.word dup		; ( lfa lfa lfa )
@@ -7574,7 +7621,7 @@ rethread01	.word boyd		; begin boyd ?dup while ... repeat
 		.word dhashstore	; ( lfa )
 #include "page.i65"
 		.word branch
-		.word rethread01
+		.byt <(rethread01-*+1)
 #include "pad.i65"
 rethread02	.word exit
 
@@ -7622,7 +7669,7 @@ unthread02	.word dup
 		.word fetch
 #include "page.i65"
 		.word qbranch
-		.word unthread03
+		.byt <(unthread03-*+1)
 #include "pad.i65"
 		.word plit
 		.byt $de,$ad
@@ -7632,7 +7679,7 @@ unthread02	.word dup
 		.word store
 #include "page.i65"
 		.word branch
-		.word unthread02
+		.byt <(unthread02-*+1)
 #include "page.i65"
 unthread03	.word drop
 #include "page.i65"
@@ -7643,8 +7690,8 @@ unthread03	.word drop
 		.word dhashstore
 #include "page.i65"
 		.word ploop
-		.word unthread01
-#include "page.i65"
+		.byt <(unthread01-*+1)
+#include "pad.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7695,8 +7742,8 @@ _forget
 ;		.word ult
 ;#include "page.i65"
 ;		.word qbranch
-;		.word forget03
-;#include "page.i65"
+;		.byt <(forget03-*+1)
+;#include "pad.i65"
 ;		.word forth
 ;#include "page.i65"
 ;		.word _definitions
@@ -7704,8 +7751,8 @@ _forget
 ;		.word fetch
 ;#include "page.i65"
 ;		.word branch
-;		.word forget02
-;#include "page.i65"
+;		.byt <(forget02-*+1)
+;#include "pad.i65"
 ;forget03	.word dup
 ;#include "page.i65"
 ;		.word voclink
@@ -7727,7 +7774,7 @@ _forget
 ;		.word ult
 ;#include "page.i65"
 ;		.word qbranch
-;		.word forget05
+;		.byt <(forget05-*+1)
 ;#include "pad.i65"
 ;		.word over
 ;#include "page.i65"
@@ -7744,7 +7791,7 @@ _forget
 ;		.word zeq
 ;#include "page.i65"
 ;		.word qbranch
-;		.word forget04
+;		.byt <(forget04-*+1)
 ;#include "pad.i65"
 ;		.word rfrom
 ;#include "page.i65"
