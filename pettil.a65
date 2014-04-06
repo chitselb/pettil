@@ -4414,7 +4414,7 @@ _word					; ( char )
 		.word cmove		; ( )
 #include "page.i65"
 		.word here		; ( here )
-#include "page.i65"			; the following may be unnecessary ~
+#include "page.i65"			; the following may be unnecessary ~wut?
 		.word bl		; ( here bl )
 #include "page.i65"
 		.word over		; ( here bl here )
@@ -5617,94 +5617,79 @@ udslashmodlfa	.byt $de,$ad
 		.byt (udslashmod-*-1)|bit7
 		.asc "UD/MO","D"|bit7
 udslashmod	ldy #2
-		jsr setup		; udhi -> N0; udlo -> N1
-		jsr divmod		; unsigned u32/u16 -> 32quo rem16
+		jsr setup		; udlo -> N0; udhi -> N1
+		jsr divmod		; (unsigned) u31/u16 -> quo31 rem16
 		dex
-		lda n+2
-		sta stackl,x
-		lda n+3
-		sta stackh,x		; remainder
-		lda n+7
+		lda n+1
+		sta stackh,x
+		lda n
+		sta stackl,x		; remainder
+		lda n+9
 		sta tos+1
-		lda n+6
+		lda n+8
 		sta tos
-		ldy n+5
-		lda n+4
+		ldy n+11
+		lda n+10
 		jmp pushya
-divmod
-		lda zi+1
-		pha
-		lda zi
-		pha
-		lda zi+3
-		pha
-		lda zi+2
-		pha
-		sty zi+1
-		sty zi			; zero the divisor
-		sty zi+3
-		sty zi+2
-		sty n+5
-		sty n+4
-		sty n+7
-		sty n+6			; zero the quotient
-		ldy #33
+
+divmod		stx storex
+		ldx #7
+divmod00	sty n+4,x		; zero the divisor & quotient
+		dex
+		bpl divmod00
+		ldx storex
+
 		lda tos+1
 		ora tos
 		beq divmod05		; error division by zero
+
+		ldy #33
 divmod01	lsr tos+1
-		ror tos
-		ror zi+1
-		ror zi
-		ror zi+3
-		ror zi+2
+		ror tos			; divisor = divisor/2
+		ror n+7
+		ror n+6			; shift it in until we hit zero
+		ror n+5
+		ror n+4
 		dey
 		lda tos+1
 		ora tos
 		bne divmod01
-divmod02	asl n+6
-		rol n+7
-		rol n+4
-		rol n+5			; double the quotient here
+divmod02	asl n+8
+		rol n+9			; quotient low
+		rol n+10
+		rol n+11		; double the quotient here
 		sec
-		lda n+2
-		sbc zi+2
-		pha
-		lda n+3
-		sbc zi+3
-		pha
 		lda n
-		sbc zi
+		sbc n+4
 		pha
 		lda n+1
-		sbc zi+1
+		sbc n+5
+		pha
+		lda n+2
+		sbc n+6
+		pha
+		lda n+3
+		sbc n+7
 		bcc divmod03
-		sta n+1
-		pla
-		sta n
-		pla
 		sta n+3
 		pla
 		sta n+2
-		inc n+6			; add 1 to quotient
+		pla
+		sta n+1
+		pla
+		sta n
+		inc n+8			; add 1 to quotient
 		bcs divmod04		; bra
 divmod03	pla
 		pla
 		pla			; discard result of subtraction
-divmod04	lsr zi+1
-		ror zi
-		ror zi+3
-		ror zi+2
+divmod04	lsr n+7
+		ror n+6
+		ror n+5
+		ror n+4			; divisor /2
 		dey
 		bne divmod02
-		pla
-		sta zi+4
-		pla
-		sta zi+3
-		pla
-		sta zi
-		pla
-		sta zi+1
+
 divmod05	rts
 
 ;--------------------------------------------------------------
