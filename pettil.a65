@@ -160,7 +160,7 @@ setup01		lda stackh,x
 userarea
 userup		.word uarea				; WARM
 usersp0		.word bos+1		; =2		; 
-userrp0		.word $01ff				; 
+userrp0		.word $01fe				; 
 userwarm
 userfence	.word forgetfence			; COLD
 userdp		.word endofile				; 
@@ -192,12 +192,22 @@ w1		.word $dead		; (for when you just need a W register)
 		.word exit		; 'fragment secondary' used by EXECUTE
 
 ; error messages for FAIL
-errptr		.word msg01,msg02
+errptr		.word msg01,msg02,msg03,msg04,msg05,msg06,msg07,msg08
 msg01		.byt msg02-*-1
 		.asc "STACK EMPTY"
 msg02		.byt msg03-*-1
 		.asc "STACK FULL"
-msg03
+msg03		.byt msg04-*-1
+		.asc "NOT FOUND"
+msg04		.byt msg05-*-1
+		.asc "DEFINITION UNFINISHED"
+msg05		.byt msg06-*-1
+		.asc "COMPILATION ONLY"
+msg06		.byt msg07-*-1
+		.asc "UNPAIRED CONDITIONALS"
+msg07		.byt msg08-*-1
+		.asc "VOCABULARIES UNIMPLEMENTED"
+msg08
 
 rootlfa		.word 0
 		.byt 31			; longest word in the dictionary ~wut?
@@ -379,7 +389,7 @@ pqdo02		jsr slide
 ; IP = address of 'branch' (you are here)
 ; IP+2 = relative address of the target, same as for 6502 branches
 branch		ldy #2		; [2]
-		lda (ip),y	; [5]
+		lda (ip),y	; [5]   get the offset
 		bmi branch01	; [2|3]
 		ldy #0		; [2]
 		.byt $2c	; [4]
@@ -391,30 +401,6 @@ branch01	ldy #$ff	; [2]
 		adc ip+1	; [3]
 		sta ip+1	; [3]
 		jmp nexto	; [3]   [34 forward |31 backward]
-		
-;branch		ldy #3		; [2]
-;		lda (ip),y	; [5]
-;		pha		; [3]
-;		dey		; [2]
-;		lda (ip),y	; [5]
-;		sta ip		; [3]
-;		pla		; [4]
-;		sta ip+1	; [3] (IP+2) -> IP
-;		jmp nexto	; [3]	[30]
-
-; ldy #2
-; lda (ip),y
-; bmi +
-; ldy #0
-; .byt $2c ;BIT instruction
-;+ ldy #$ff
-; clc
-; adc ip
-; sta ip
-; tya
-; adc ip+1
-; sta ip+1
-; jmp nexto
 
 ;--------------------------------------------------------------
 ;
@@ -657,6 +643,10 @@ sw16		ldy #2
 ;
 ;	DIGIT    ( char base -- digit true | false )
 ;
+; Converts a single character to a digit using the current number
+; base.  A flag on TOS indicates whether the conversion succeeded.
+;~wut? possible to code golf this down with BCD tricks?
+;"http://www.6502.org/tutorials/decimal_mode.html
 digitlfa	.byt $de,$ad
 		.byt (digit-*-1)|bit7
 		.asc "DIGI","T"|bit7
@@ -679,6 +669,24 @@ digit01		cmp tos
 digit02		inx
 digit03		tya
 		jmp put
+
+;digit		ldy #$ff	; assume success
+;		lda stackl,x	; get the character
+;		sec
+;		sbc #'0'
+;		bcc digit02	; char was < '0'? not a digit, fail
+;		cmp #10
+;		bcc digit01	; digit is in the range 00-09
+;		sbc #7		; no? alphabet adjust 'A' --> $0a
+;digit01		cmp tos		; compare to current number base
+;		bcs digit02	; not in current number base? fail
+;		sta stackl,x	; digit in the current number base
+;		.byt $2c	; BIT xxyy, skip the next two bytes
+;digit02		iny		; fail, set flag to 0
+;		inx		; drop the stack
+;
+;		tya		; ya = flag word $0000 or $ffff
+;		jmp put		; next!
 
 ;--------------------------------------------------------------
 ;
@@ -1269,6 +1277,11 @@ spstore		ldy #usersp0-userarea
 ;
 ;	RP!   ( -- )
 ;
+; Ordinarily the 6502 machine stack (aka PETTIL return stack) is
+; initialized to $01ff by BASIC, but the value stored at RP0 defaults
+; to $01fe instead.  This is because the PET ROM stores a line of 
+; input at $0200 (where TIB points) and INTERPRET will be storing a
+; count of the first word on the line at $01ff
 rpstorelfa	.byt $de,$ad
 		.byt (rpstore-*-1)|bit7
 		.asc "RP","!"|bit7
@@ -1785,263 +1798,12 @@ _commadollar
 ;
 ; * 83 compiler
 ;
-;" ~ this 'CREATE' from Blazin' is um... kinda "busy."  Refactor
-;" : create <bcq here width @ 2+ 2+ view?
-;"	@ + + u< (abort") dictionary full exists?
-;"	over (lit) 6017 = (abort") name required
-;"	warning @ and ?branch 41 >name cr
-;"	18 emit id. 146 emit (.") already exists
-;"	branch 4 drop here dup c@
-;"	over 2+ view? @ + dup >r swap 1+ cmove>
-;"	r> dup c@ width @ min 1+ 2dup + 255
-;"	and 255 = ?branch 25 2dup swap
-;"	dup 1+ rot cmove> 234 c, swap 1+
-;"	swap 2+ view? @ + allot dup 128 toggle
-;"	here 1- 128 toggle latest over
-;"	2- ! view? @ ?branch 14 blk @ over 2-
-;"	2- ! 2 allot current @ ! (;code)
-;".C:1b0b	18		CLC
-;".C:1b0c	A5 87		LDA $87
-;".C:1b0e	69 02		ADC #$02
-;".C:1b10	48		PHA
-;".C:1b11	98		TYA
-;".C:1b12	65 88		ADC $88
-;".C:1b14	4C 4A 08	JMP $084A
-;
 createlfa	.byt $de,$ad
 		.byt (_create-*-1)|bit7
 		.asc "CREAT","E"|bit7
 _create
 #include "enter.i65"
 		.word exit
-;		0; _ltbcq
-;#include "page.i65"
-;		.word here
-;#include "page.i65"
-;		.word width
-;#include "page.i65"
-;		.word fetch
-;#include "page.i65"
-;		.word twoplus
-;#include "page.i65"
-;		.word twoplus
-;#include "page.i65"
-;		.word viewq
-;#include "page.i65"
-;		.word fetch
-;#include "page.i65"
-;		.word plus
-;#include "page.i65"
-;		.word plus
-;#include "page.i65"
-;		.word ult
-;#include "page.i65"
-;#if (((*&$ff)+3+15)=$ff)
-;	.word next
-;	.word next
-;#endif
-;		.word _pabortq
-;		.byt create01-*-1
-;		.asc	"DICTIONARY FULL"
-;			;123456789.12345
-;create01
-;#include "page.i65"
-;		.word _existsq
-;#include "page.i65"
-;		.word over
-;#include "page.i65"
-;		.word eq
-;#include "page.i65"
-;#if (((*&$ff)+3+13)=$ff)
-;	.word next
-;	.word next
-;#endif
-;		.word _pabortq
-;		.byt create02-*-1
-;		.asc	"NAME REQUIRED"
-;			;123456789.123
-;create02
-;#include "page.i65"
-;		.word warning
-;#include "page.i65"
-;		.word fetch
-;#include "page.i65"
-;		.word andx
-;#include "page.i65"
-;		.word qbranch
-;		.word create04
-;#include "page.i65"
-;		.word _toname
-;#include "page.i65"
-;		.word cr
-;#include "page.i65"
-;		.word clit
-;		.byt $12	; rvs
-;#include "pad.i65"
-;		.word emit
-;#include "page.i65"
-;		.word _iddot
-;#include "page.i65"
-;		.word clit
-;		.byt $92	; off
-;#include "pad.i65"
-;		.word emit
-;#include "page.i65"
-;		.word _pdq
-;		.byt create03-*-1
-;		.asc	" ALREADY EXISTS "
-;			;1234567869.12345
-;create03
-;#include "pad.i65"
-;		.word branch
-;		.word create05
-;#include "page.i65"
-;create04	.word drop
-;#include "page.i65"
-;create05	.word here
-;#include "page.i65"
-;		.word dup
-;#include "page.i65"
-;		.word cfetch
-;#include "page.i65"
-;		.word over
-;#include "page.i65"
-;		.word twoplus
-;#include "page.i65"
-;		.word viewq
-;#include "page.i65"
-;		.word fetch
-;#include "page.i65"
-;		.word plus
-;#include "page.i65"
-;		.word dup
-;#include "page.i65"
-;		.word tor
-;#include "page.i65"
-;		.word swap
-;#include "page.i65"
-;		.word oneplus
-;#include "page.i65"
-;		.word cmovegt
-;#include "page.i65"
-;		.word rfrom
-;#include "page.i65"
-;		.word dup
-;#include "page.i65"
-;		.word cfetch
-;#include "page.i65"
-;		.word width
-;#include "page.i65"
-;		.word fetch
-;#include "page.i65"
-;		.word _min
-;#include "page.i65"
-;		.word oneplus
-;#include "page.i65"
-;		.word _twodup
-;#include "page.i65"
-;		.word plus
-;#include "page.i65"
-;		.word clit
-;		.byt $ff
-;#include "pad.i65"
-;		.word andx
-;#include "page.i65"
-;		.word clit
-;		.byt $ff
-;#include "pad.i65"
-;		.word eq
-;#include "page.i65"
-;
-;		.word qbranch
-;		.word create06
-;#include "page.i65"
-;		.word _twodup
-;#include "page.i65"
-;		.word swap
-;#include "page.i65"
-;		.word dup
-;#include "page.i65"
-;		.word oneplus
-;#include "page.i65"
-;		.word rot
-;#include "page.i65"
-;		.word cmovegt
-;#include "page.i65"
-;		.word clit
-;		.byt $ea
-;#include "pad.i65"
-;		.word _ccomma
-;#include "page.i65"
-;		.word swap
-;#include "page.i65"
-;		.word oneplus
-;#include "page.i65"
-;		.word swap
-;#include "page.i65"
-;create06	.word twoplus
-;#include "page.i65"
-;		.word viewq
-;#include "page.i65"
-;		.word fetch
-;#include "page.i65"
-;		.word plus
-;#include "page.i65"
-;		.word _allot
-;#include "page.i65"
-;		.word dup
-;#include "page.i65"
-;		.word clit
-;		.byt $80
-;#include "pad.i65"
-;		.word toggle
-;#include "page.i65"
-;		.word here
-;#include "page.i65"
-;		.word oneminus
-;#include "page.i65"
-;		.word clit
-;		.byt $80
-;#include "pad.i65"
-;		.word toggle
-;#include "page.i65"
-;		.word _latest
-;#include "page.i65"
-;		.word over
-;#include "page.i65"
-;		.word twominus
-;#include "page.i65"
-;		.word store
-;#include "page.i65"
-;		.word viewq
-;#include "page.i65"
-;		.word fetch
-;#include "page.i65"
-;		.word qbranch
-;		.word create07
-;#include "page.i65"
-;		.word blk
-;#include "page.i65"
-;		.word fetch
-;#include "page.i65"
-;		.word over
-;#include "page.i65"
-;		.word twominus
-;#include "page.i65"
-;		.word twominus
-;#include "page.i65"
-;		.word store
-;#include "page.i65"
-;create07	.word two
-;#include "page.i65"
-;		.word _allot
-;#include "page.i65"
-;		.word current
-;#include "page.i65"
-;		.word fetch
-;#include "page.i65"
-;		.word store
-;		.word _psemi
 docreate	pla
 		clc
 		adc #1
@@ -2151,7 +1913,6 @@ _constant
 		.word _comma
 #include "page.i65"
 		.word _psemi
-; 09/15/10 cah
 doconst		pla
 		sta n
 		pla
@@ -3558,14 +3319,14 @@ _qcomp
 #include "page.i65"
 		.word zeq
 #include "page.i65"
-#if (((*&$ff)+3+35)=$ff)
-	.word next		; ~wut?
-	.word next
-#endif
-		.word _pabortq
-		.byt qcomp01-*-1
-		.asc	"COMPILATION ONLY, USE IN DEFINITION"
-			;123456789.123456789.123456789.12345
+		.word qbranch
+		.byt <(qcomp01-*+1)
+#include "pad.i65"
+		.word clit
+		.byt 5
+#include "page.i65"
+		.word fail
+#include "page.i65"
 qcomp01		.word exit
 
 ;--------------------------------------------------------------
@@ -3577,14 +3338,13 @@ qfindlfa	.byt $de,$ad
 		.asc "?FIN","D"|bit7
 _qfind
 #include "enter.i65"
-#if (((*&$ff)+3+27)=$ff)
-	.word next
-	.word next
-#endif
-		.word _pabortq
-		.byt qfind01-*-1
-		.asc	"NOT IN CURRENT SEARCH ORDER"
-			;123456789.123456789.1234567
+		.word qbranch
+		.byt <(qfind01-*+1)
+#include "pad.i65"
+		.word three
+#include "page.i65"
+		.word fail
+#include "page.i65"
 qfind01		.word exit
 
 ;--------------------------------------------------------------
@@ -3598,14 +3358,14 @@ _qpairs
 #include "enter.i65"
 		.word minus
 #include "page.i65"
-#if (((*&$ff)+3+23)=$ff)
-	.word next
-	.word next
-#endif
-		.word _pabortq
-		.byt qpairs01-*-1
-		.asc	"CONDITIONALS NOT PAIRED"
-			;123456789.123456789.123
+		.word qbranch
+		.byt <(qpairs01-*+1)
+#include "pad.i65"
+		.word clit
+		.byt 6
+#include "pad.i65"
+		.word fail
+#include "page.i65"
 qpairs01	.word exit
 
 ;--------------------------------------------------------------
@@ -3625,14 +3385,14 @@ _qcsp
 #include "page.i65"
 		.word ne
 #include "page.i65"
-#if (((*&$ff)+3+23)=$ff)
-	.word next
-	.word next
-#endif
-		.word _pabortq
-		.byt qcsp01-*-1
-		.asc	"DEFINITION NOT FINISHED"
-			;123456789.123456789.123
+		.word qbranch
+		.byt <(qcsp01-*+1)
+#include "pad.i65"
+		.word clit
+		.byt 4
+#include "pad.i65"
+		.word fail
+#include "page.i65"
 qcsp01		.word exit
 
 ;--------------------------------------------------------------
@@ -4559,7 +4319,7 @@ convert03	.word rfrom
 ;
 ;	NUMBER    ( addr -- d )
 ;
-; Convert the count and character string at addr, to a signed
+; Convert the counted string at addr, to a signed
 ; 32-bit integer, using the value of BASE .  If numeric
 ; conversion is not possible, an error condition exists.  The
 ; string may contain a preceding minus sign.
@@ -4568,30 +4328,30 @@ numberlfa	.byt $de,$ad
 		.asc "NUMBE","R"|bit7
 _number
 #include "enter.i65"
-		.word true
+		.word true	; ( addr true ) 
 #include "page.i65"
-		.word over
+		.word over	; ( addr true addr )
 #include "page.i65"
-		.word count
+		.word count	; ( addr true addr+1 length ) 
 #include "page.i65"
-		.word over
+		.word over	; ( addr true addr+1 length addr+1 )
 #include "page.i65"
-		.word plus
+		.word plus	; ( addr true addr+1 addr+length+1 )
 #include "page.i65"
-		.word swap
+		.word swap	; ( addr true addr+length+1 addr+1 )
 #include "page.i65"
-		.word pqdo
+		.word pqdo	; ( addr true )
 		.byt <(number03-*+1)
 #include "pad.i65"
-number01	.word i
+number01	.word i		; ( addr true i )
 #include "page.i65"
-		.word cfetch
+		.word cfetch	; ( addr true char )
 #include "page.i65"
-		.word base
+		.word base	; ( addr true char baseaddr )
 #include "page.i65"
-		.word fetch
+		.word fetch	; ( addr true char base )
 #include "page.i65"
-		.word digit
+		.word digit	; ( addr true  digit true | false )
 #include "page.i65"
 		.word qbranch
 		.byt <(number02-*+1)
@@ -4601,8 +4361,8 @@ number01	.word i
 		.word false
 #include "page.i65"
 		.word pleave
-		.word number03
-#include "page.i65"
+		.byt <(number03-*+1)
+#include "pad.i65"
 number02	.word ploop
 		.byt <(number01-*+1)
 #include "pad.i65"
@@ -4671,155 +4431,102 @@ number06	.word exit
 
 ;--------------------------------------------------------------
 ;
-;	TRYCHAIN   ( name-2 vocabptr -- addr flag )
-;
-;": trychain ( name vocabulary -- addr flag )
-;	@ @ ?dup			( name-2 head head | name-2 0 )
-;	if	(find)			( addr flag ; result of vocab search )
-;	else	dup 2+ dhash		( name-2 hash1 hash2 )
-;		bloom@			( name-2 hash1 flag )
-;		if	dhash@ (find)	( lfa flag ; result of FORTH search )
-;		else	drop false	( name-2 false ; bloom filter skip )
-;		then
-;	then ;
-;
-;trychainlfa	.byt $de,$ad
-;		.byt (_trychain-*-1)|bit7
-;		.asc "TRYCHAI","N"|bit7
-_trychain
-#include "enter.i65"
-		.word fetch		; ( name-2 vocabulary )
-#include "page.i65"
-		.word fetch		; ( name-2 LFA|0 )
-#include "page.i65"
-		.word qdup		; ( name-2 LFA LFA | name-2 false )
-#include "page.i65"
-		.word qbranch
-		.byt <(trychain01-*+1)
-#include "pad.i65"			; ( name-2 LFA )
-		.word pfind		; ( addr flag )
-#include "page.i65"
-		.word branch
-		.byt <(trychain03-*+1)
-#include "pad.i65"
-trychain01	.word dup		; ( name-2 name-2 )
-#include "page.i65"
-		.word twoplus		; ( name-2 name )
-#include "page.i65"
-		.word dhash		; ( name-2 hash1 hash2 )
-#include "page.i65"
-		.word bloomfetch	; ( name-2 hash1 flag )
-#include "page.i65"
-		.word qbranch
-		.byt <(trychain02-*+1)
-#include "pad.i65"			; ( name-2 hash1 )
-		.word dhashfetch	; ( name-2 LFA )
-#include "page.i65"
-		.word pfind		; ( addr flag )
-#include "page.i65"
-		.word branch
-		.byt <(trychain03-*+1)
-#include "pad.i65"			; ( name-2 hash1 )
-trychain02	.word drop
-#include "page.i65"			; ( name-2 )
-		.word twoplus
-#include "page.i65"
-		.word false		; ( here false )
-#include "page.i65"
-trychain03	.word exit		; ( addr flag )
-
-;--------------------------------------------------------------
-;
-;	FIND   ( addr1 -- addr2 n )
+;	FIND   ( addr1 -- addr2 flag )
 ;
 ; * 83 interpreter
 ;
-; addr1 is the address of a counted string.  The string
-; contains a word name to be located in the currently active
-; search order.  If the word is not found, addr2 is the string
-; address addr1, and n is zero.  If the word is found, addr2
-; is the compilation address and n is set to one of two non-
-; zero values.  If the word found has the immediate attribute,
-; n is set to one.  If the word is non-immediate, n is set to
-; minus one (true).
+; addr1 is the address of a counted string, which is the word to look
+; up in the dictionary.
 ;
-;": find  ( name -- addr flag )
-;	2- context trychain		( addr -1|1 | name false )
-;	?dup 0=				( addr -1|1 false | name true )
-;	if				( not found ) 
-;		current			( name current )
-;		dup @ context @ <>	( name current flag )
-;		if	trychain	( addr flag )
-;		else	drop 2+ false	( name 0 )
-;		then
+; if not found, addr2 is the original addr1, and flag = 0
+; if found, addr2 is the code field address of the word,
+; and flag = -1 for normal words, +1 for immediate words
+;
+;" : find   ( name -- addr flag )
+;	context @ @
+;	if
+;	else
+;		7 fail			// vocabularies unimplemented
+;	then
+;	2- dup 2+			( name-2 name )
+;	dhash				( name-2 thread# bloombit )
+;	bloom@				( name-2 thread# bloomflag )
+;	if 				( name-2 thread# )
+;		dhash@			( name-2 LFA )
+;		(find)
+;	else				( name-2 thread# )
+;		drop			( name-2 )
+;		2+ false		( name 0 )
 ;	then ;
-;
-; the FORTH vocabulary is special.  It has 16 threads.  Other
-; vocabularies are single-thread linked lists
-;
-; something like...
-;
-; ( addr1 ) 
-; 0 ( still looking )
-; begin  
-;	context @ ( context = 0 means we're at the FORTH vocabulary ) 
-;	swap 0=
-;	and
-; ?dup  ( context | 0 )
-; while
-;	search-thread
-; repeat
 ;
 findlfa		.byt $de,$ad
 		.byt (_find-*-1)|bit7
 		.asc "FIN","D"|bit7
 _find
 #include "enter.i65"			; ( name )
-		.word twominus		; ( name-2 ) adjust to look like LFA
+		.word xyzzy
 #include "page.i65"
-		.word context		; ( name-2 context )
+		.word context		; ( name context )
 #include "page.i65"
-		.word _trychain		; ( addr flag )
+		.word fetch		; ( name vocabulary )
 #include "page.i65"
-		.word qdup		; ( addr flag flag | name-2 0 )
-#include "page.i65"
-		.word zeq		; ( addr flag false | name-2 true )
-#include "page.i65"
-		.word qbranch
-		.byt <(find02-*+1)
-#include "pad.i65"			; ( name-2 )
-		.word current		; ( name-2 current )
-#include "page.i65"
-		.word dup		; ( name-2 current current )
-#include "page.i65"
-		.word fetch		; ( name-2 current vocab )
-#include "page.i65"
-		.word context		; ( name-2 current vocab context )
-#include "page.i65"
-		.word fetch		; ( name-2 current vocab vocab )
-#include "page.i65"
-		.word ne		; ( name-2 current flag )
+		.word fetch		; ( name LFA|0 )
 #include "page.i65"
 		.word qbranch
 		.byt <(find01-*+1)
-#include "pad.i65"			; ( name-2 current )
-		.word _trychain		; ( addr flag )
+#include "pad.i65"			; ( name LFA )
+		.word clit
+		.byt 7
+#include "pad.i65"
+		.word fail		; vocabularies unimplemented
 #include "page.i65"
-		.word branch
+find01					; ( name )
+		.word twominus		; ( name-2 )
+#include "page.i65"
+		.word dup		; ( name-2 name-2 )
+#include "page.i65"
+		.word twoplus		; ( name-2 name )
+#include "page.i65"
+		.word dhash		; ( name hash1 hash2 )
+#include "page.i65"
+		.word bloomfetch	; ( name hash1 flag )
+#include "page.i65"
+		.word qbranch		; IF
 		.byt <(find02-*+1)
 #include "pad.i65"
-find01		.word drop		; ( name-2 )
+		.word dhashfetch	; ( name-2 hash1 -- name-2 LFA )
 #include "page.i65"
+		.word pfind		; ( addr flag )
+#include "page.i65"
+		.word qdup
+#include "page.i65"
+		.word zeq		; found it?
+#include "page.i65"
+		.word qbranch
+		.byt <(find03-*+1)
+#include "pad.i65"
 		.word twoplus		; ( name )
 #include "page.i65"
-		.word false		; ( name false )
+		.word false		; ( here false )
 #include "page.i65"
-find02		.word exit		; ( addr flag )
+		.word branch
+		.byt <(find03-*+1)
+#include "pad.i65"
+find02					; ELSE
+					; ( name hash1 )
+		.word drop
+#include "page.i65"			; ( name )
+		.word false		; ( here false )
+#include "page.i65"
+find03					; THEN
+		.word exit		; ( addr flag )
 
 ;--------------------------------------------------------------
 ;
 ;	EXISTS?   ( -- addr flag )
 ;
+; scans ahead in the input stream for the next blank-delimited word,
+; and returns either
 existsqlfa	.byt $de,$ad
 		.byt (_existsq-*-1)|bit7
 		.asc "EXISTS","?"|bit7
@@ -4830,6 +4537,7 @@ _existsq
 		.word _word		; ( nfa )
 #include "page.i65"
 		.word _find		; ( nfa -1|+1 | here false )
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -4875,6 +4583,7 @@ _iddot
 		.word andx
 #include "page.i65"
 		.word type
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -4893,6 +4602,7 @@ _bcompile
 		.word _tick
 #include "page.i65"
 		.word _comma
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -4928,6 +4638,7 @@ literal01	.word _compile
 		.word plit
 #include "page.i65"
 		.word _comma
+#include "page.i65"
 literal02	.word exit
 
 ;--------------------------------------------------------------
@@ -4944,6 +4655,7 @@ _dliteral
 		.word _literal
 #include "page.i65"
 		.word _literal
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -4982,7 +4694,8 @@ interpret01	.word qstack		; ( )
 		.word branch
 		.byt <(interpret03-*+1)
 #include "pad.i65"
-interpret02	.word _number
+interpret02
+		.word _number
 #include "page.i65"
 		.word dpl
 #include "page.i65"
@@ -5005,6 +4718,8 @@ interpret03	.word false
 		.byt <(interpret01-*+1)
 #include "pad.i65"
 		.word exit
+
+xyzzy		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -5124,6 +4839,7 @@ _lparen
 		.word _qchar
 #include "page.i65"
 		.word twodrop
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -5200,7 +4916,8 @@ ml		jsr CLRCHN
 		.byt (warm03-*-1)
 		.asc	CLR,"FORTH FOR THE COMMODORE PET 2001",CR
 		.asc	"HTTP:","/","/GITHUB.COM/CHITSELB/PETTIL",CR
-		.asc	"VERSION PRE-ALPHA 2014-03-31",CR
+		.asc	"VERSION PRE-ALPHA 2014-04-07",CR
+		.asc	"50TH ANNIVERSARY OF IBM'S SYSTEM/360.",CR
 warm03
 #include "pad.i65"
 		.word _rethread
@@ -5221,12 +4938,18 @@ warm04
 		.word fetch
 #include "page.i65"
 		.word execute
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
 ;
 ;	QUIT
 ;
+;"This is the infinite outer interpreter loop:
+;	- resets the return stack (RP!)
+;	- outputs a carriage return (CR)
+;	- waits for a line of user input (QUERY)
+;	- interprets that line
 ; * 83 interpreter outer
 ;
 quitlfa		.byt $de,$ad
@@ -5238,7 +4961,7 @@ _quit
 #include "page.i65"
 		.word off
 #include "page.i65"
-		.word _lbracket
+		.word _lbracket		; STATE OFF
 #include "page.i65"
 quit01		.word rpstore
 #include "page.i65"
@@ -5265,6 +4988,8 @@ quit02
 #include "pad.i65"
 quit03		.word branch
 		.byt <(quit01-*+1)
+#include "pad.i65"
+		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -5947,7 +5672,7 @@ absentq01	.word _twodup
 		.word _tobcq
 #include "page.i65"
 		.word pleave
-		.word absentq03
+		.byt <(absentq03-*+1)
 #include "pad.i65"
 absentq02	.word clit
 		.byt 6
@@ -6186,6 +5911,7 @@ _do
 		.word _qfrommark
 #include "page.i65"
 		.word three
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -7363,58 +7089,71 @@ dhash		stx storex
 		iny		;	hash2	hash1
 dhash01		dey				;[2]
 		beq dhash02			;[2]
+		; the pearson hash should return an evenly distributed
+		; value between $00-$0f based on the wordset in the
+		; core dictionary.  In other words, all 16 threads 
+		; are initially balanced with the same number of words, 
+		; to reduce searches to (on average) 1/16th of the
+		; dictionary.
 		lda (tos),y			;[5]
 		sec				;[2]
-		sbc #$20			;[2]
+		sbc #$20			;[2] control chars
 		and #(pearsonx-pearson-1)	;[2]
 		tax				;[2]
 		lda n				;[3]
 		eor pearson,x			;[4]
 		sta n				;[3]
+		; the bloom filter hash tries to answer the question,
+		; 'is this a number or does it contain numbers?'
+		; returning zero (no digits present) or the sum (mod64)
+		; of all digits in this word
 		lda (tos),y		;[5]
-		and #$7f		;[2]
+		and #$7f		;[2]	; ignore bit7
 		clc			;[2]
 		adc #$FF-('9')		;[2]
-		adc #'9'-'0'+1		;[2]
-		bcc dhash01			;[3]  [12]hash2 [27]hash1	
+		adc #'9'-'0'+1		;[2]	; carry is set only 
+						; for digits '0'-'9'
+		bcc dhash01		;[3]  [12]hash2 [27]hash1	
 		adc n+1			; 0> -1 0 1 2 3 0= 0< 0<> sp0 rp0
 		sta n+1			; 1+ 1- 2+ 2- 2/ 2* forth-83 dr0 dr1 
 		jmp dhash01		; 2drop 2dup 2over 2rot 2swap 2! 2@
 					; 2constant 2variable d0= d2/ d2* 
 dhash02		lda n
 		lsr
-		lsr
-		lsr
+		lsr			; xor the pearson hash byte
+		lsr			; into a single nybble
 		lsr			; - - - - [ 7 6 5 4 ]
 		eor n			; 7 6 5 4 [ 3 2 1 0 ]
 		and #$0f		; - - - - [4bit hash]
-		;jsr debug
+;#ifdef DEBUG
+;		jsr debug		; print out some entertainment
+;#endif
 		sta tos
-		sty tos+1
+		sty tos+1	; for both hashes, high byte always 0
 		lda n+1		; sum of all digits 0..9	
 		ldx storex
 		jmp pushya
 
-#ifdef DEBUG
-;~debug hex dump the byte in A
-debug	pha
-	pha
-	and #$0f
-	jsr print
-	pla
-	lsr
-	lsr
-	lsr
-	lsr
+;#ifdef DEBUG
+	; hex dump the byte in A
+;debug	pha
+;	pha
+;	and #$0f
+;	jsr print
+;	pla
+;	lsr
+;	lsr
+;	lsr
+;	lsr
 	;jsr print
-	pla
-dbout	rts
-print	sed
-	cmp #10
-	adc #'0'
-	cld
-	jmp CHROUT
-#endif ;/DEBUG
+;	pla
+;dbout	rts
+;print	sed
+;	cmp #10
+;	adc #'0'
+;	cld
+;	jmp CHROUT
+;#endif ;/DEBUG
 
 ;--------------------------------------------------------------
 ;
@@ -7467,7 +7206,10 @@ bloomstore	lda tos			; set bloom filter bit for hash2
 ;	BLOOM@   ( hash -- flag )
 ;
 ; test a bit in the filter
-; hash indexes a single bit in the bloom2 filter
+; hash indexes a single bit in the bloom filter
+; input value is in the range 0-63, representing which bit to test
+;
+; flag values
 ; false = it can't be in there (bit was clear)
 ; true = it might be in there (bit was set)
 ;bloomfetchlfa	.byt $de,$ad
