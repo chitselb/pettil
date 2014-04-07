@@ -4004,10 +4004,16 @@ _hold
 
 ;--------------------------------------------------------------
 ;
-;	PAD
+;	PAD   ( -- addr )
 ;
 ; * 83 interpreter
 ;
+; The lower address of a scratch area used to hold data for
+; intermediate processing.  The address or contents of PAD may
+; change and the data lost if the address of the next
+; available dictionary location is changed.  The minimum
+; capacity of PAD is 84 characters.
+               
 padlfa		.byt $de,$ad
 		.byt (_pad-*-1)|bit7
 		.asc "PA","D"|bit7
@@ -4043,23 +4049,27 @@ _tickstream
 #include "page.i65"
 		.word qdup		; ( 0 | blk blk )
 #include "page.i65"
-		.word qbranch		; if
+		.word qbranch		; IF
 		.byt <(tickstream01-*+1)
 #include "pad.i65"
-		.word 0; _block		; ( addr )
+		.word xyzzy
 #include "page.i65"
-		.word bperbuf		; ( addr b/buf )
-#include "page.i65"
-		.word branch		; else
+		; this is where the BLOCK i/o goes
+		; _block bperbuf	; ( addr )
+		.word branch		; ELSE
 		.byt <(tickstream02-*+1)
 #include "pad.i65"
-tickstream01	.word tib		; ( tib )
+		.word bperbuf		; ( addr b/buf )
 #include "page.i65"
-		.word numtib
+tickstream01
+		.word tib		; ( tib )
+#include "page.i65"
+		.word numtib		; ( tib #tib.uarea ) 
 #include "page.i65"
 		.word fetch		; ( tib #tib )
-#include "page.i65"			; then
-tickstream02	.word toin		; ( buf size >in )
+#include "page.i65"			; THEN
+tickstream02
+		.word toin		; ( buf size >in )
 #include "page.i65"
 		.word fetch		; ( buf size offset )
 #include "page.i65"
@@ -4128,28 +4138,14 @@ tickstream02	.word toin		; ( buf size >in )
 ;
 ; The counted string returned by WORD may reside in the "free"
 ; dictionary area at HERE or above.  Note that the text
-;"interpreter may also use this area.  See: "input stream"
+;"interpreter may also use this area.  
+;"See: http://forth.sourceforge.net/std/fst83/fst83-5.htm#input.stream
 ;
 ; fig high level
 ;" : word   ( c -- addr )
 ;	blk @  if  blk @ block  else  tib @  then
 ;	>in @ + swap enclose here 34 blank >in +!
 ;	over - >r r@ here c! + here 1+ r> cmove ;
-;
-; blazin' high level
-;" : 'stream
-;	blk @ ?dup			; ( 0 | blk )
-;	if  block b/buf
-;	else  tib #tib @
-;	then				; ( addr size )
-;	>in @				; ( addr size pointer )
-;	over min			; ( addr pointer )
-;	>r swap				
-;	r@ + swap
-;	r> - ;
-;" : skip
-;
-;" : scan
 ;
 ;" : word   ( c -- nfa )
 ;	>r				; ( -- ) r( c )
@@ -4174,6 +4170,8 @@ wordlfa		.byt $de,$ad
 		.asc "WOR","D"|bit7
 _word					; ( char )
 #include "enter.i65"
+		.word xyzzy		; ( )
+#include "page.i65"
 		.word tor		; ( )
 #include "page.i65"
 		.word _tickstream	; ( addr size )
@@ -4810,7 +4808,8 @@ forthlfa	.byt $de,$ad
 		.asc "FORT","H"|bit7
 forth		jsr vocabdoes
 		.word 0			; flag as root vocabulary
-		.word $a081		; some magic number?
+		.byt 1|bit7
+		.byt ' '|bit7		; $a081
 lastvoc		.word 0			; link to next vocabulary, 0 for last
 
 ;--------------------------------------------------------------
@@ -4831,6 +4830,7 @@ _definitions
 		.word current
 #include "page.i65"
 		.word store
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -4974,7 +4974,8 @@ _quit
 #include "page.i65"
 		.word _lbracket		; STATE OFF
 #include "page.i65"
-quit01		.word rpstore
+quit01					; BEGIN
+		.word rpstore
 #include "page.i65"
 		.word cr
 #include "page.i65"
@@ -4988,16 +4989,15 @@ quit01		.word rpstore
 #include "page.i65"
 		.word zeq
 #include "page.i65"
-		.word qbranch
+		.word qbranch		; IF 
 		.byt <(quit03-*+1)
 #include "pad.i65"
 		.word _pdq
 		.byt (quit02-*-1)
 		.asc	" OK"
-			;123
 quit02
 #include "pad.i65"
-quit03		.word branch
+quit03		.word branch		; THEN AGAIN
 		.byt <(quit01-*+1)
 #include "pad.i65"
 		.word exit
