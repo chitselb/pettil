@@ -116,6 +116,12 @@ zpbuf		.word $0000,$1001,$2002,$3003
 ;		[IP] -> PC
 ;
 ; minimalist NEXT, copied to zeropage by COLD
+#ifdef DEBUG
+		nop			; leave a little room here
+		nop			; because it's annoying when
+		nop			; something underflows the
+		nop			; data stack, overwriting NEXT
+#endif
 zpnext		inc ip			; 5 
 		inc ip			; 5 
 ;ip = *+1
@@ -123,7 +129,7 @@ zpnext		inc ip			; 5
 zpnextx					;15 cycles total
 
 ; if #DEBUG is on, add enough padding between NEXT and TIME
-		.dsb TIME-(*-zpbuf),$69	; more cowbell
+		.dsb TIME-(*-zpbuf),$ea	; more cowbell
 
 ; pops up to 4 words from the split stack to N, backwards
 ; used for setting up primitives that consume multiple arguments
@@ -650,43 +656,43 @@ sw16		ldy #2
 digitlfa	.byt $de,$ad
 		.byt (digit-*-1)|bit7
 		.asc "DIGI","T"|bit7
-digit		ldy #0			; presume failure
-		sec
-		lda stackl,x
-		sbc #'0'
-		bmi digit02		; no num
-		cmp #10
-		bmi digit01		; is num
-		sec
-		sbc #7
-		cmp #10
-		bmi digit02
-digit01		cmp tos
-		bpl digit02
-		sta stackl,x
-		dey
-		bmi digit03
-digit02		inx
-digit03		tya
-		jmp put
-
-;digit		ldy #$ff	; assume success
-;		lda stackl,x	; get the character
+;digit		ldy #0			; presume failure
 ;		sec
+;		lda stackl,x
 ;		sbc #'0'
-;		bcc digit02	; char was < '0'? not a digit, fail
+;		bmi digit02		; no num
 ;		cmp #10
-;		bcc digit01	; digit is in the range 00-09
-;		sbc #7		; no? alphabet adjust 'A' --> $0a
-;digit01		cmp tos		; compare to current number base
-;		bcs digit02	; not in current number base? fail
-;		sta stackl,x	; digit in the current number base
-;		.byt $2c	; BIT xxyy, skip the next two bytes
-;digit02		iny		; fail, set flag to 0
-;		inx		; drop the stack
-;
-;		tya		; ya = flag word $0000 or $ffff
-;		jmp put		; next!
+;		bmi digit01		; is num
+;		sec
+;		sbc #7
+;		cmp #10
+;		bmi digit02
+;digit01		cmp tos
+;		bpl digit02
+;		sta stackl,x
+;		dey
+;		bmi digit03
+;digit02		inx
+;digit03		tya
+;		jmp put
+
+digit		ldy #$ff	; assume success
+		lda stackl,x	; get the character
+		sec
+		sbc #'0'
+		bcc digit02	; char was < '0'? not a digit, fail
+		cmp #10
+		bcc digit01	; digit is in the range 00-09
+		sbc #7		; no? alphabet adjust 'A' --> $0a
+digit01		cmp tos		; compare to current number base
+		bcs digit02	; not in current number base? fail
+		sta stackl,x	; digit in the current number base
+		.byt $2c	; BIT xxyy, skip the next two bytes
+digit02		iny		; fail, set flag to 0
+		inx		; drop the stack
+
+		tya		; ya = flag word $0000 or $ffff
+		jmp put		; next!
 
 ;--------------------------------------------------------------
 ;
@@ -699,7 +705,7 @@ digit03		tya
 ; returns
 ;	( CFA -1 ) if found normal word
 ;	( CFA 1 ) if found immediate word
-;	( name 0 ) if not found
+;	( name 0 ) if not in dictionary
 ;
 ;pfindlfa	.byt $de,$ad
 ;		.byt (pfind-*-1)|bit7
@@ -1842,14 +1848,24 @@ docreate01	lda n
 colonlfa	.byt $de,$ad
 		.byt (_colon-*-1)|bit7
 		.asc ":"|bit7
-_colon		.word _storecsp
+_colon
+#include "enter.i65"
+		.word _storecsp
+#include "page.i65"
 		.word current
+#include "page.i65"
 		.word fetch
+#include "page.i65"
 		.word context
+#include "page.i65"
 		.word store
+#include "page.i65"
 		.word _create
+#include "page.i65"
 		.word _smudge
+#include "page.i65"
 		.word _rbracket
+#include "page.i65"
 		.word _psemi
 ;--------------------------------------------------------------
 ;
@@ -3815,6 +3831,7 @@ _dotp
 		.word _qchar
 #include "page.i65"
 		.word type
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -3923,6 +3940,7 @@ _quitq
 		.word gt
 #include "page.i65"
 		.word orx
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -3937,6 +3955,7 @@ _erase
 		.word zero
 #include "page.i65"
 		.word fill
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -3951,6 +3970,7 @@ _blank
 		.word bl
 #include "page.i65"
 		.word fill
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -3979,6 +3999,7 @@ _hold
 		.word fetch
 #include "page.i65"
 		.word cstore
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -3998,6 +4019,7 @@ _pad
 		.byt 80
 #include "pad.i65"
 		.word plus
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -4058,6 +4080,7 @@ tickstream02	.word toin		; ( buf size >in )
 		.word rfrom		; ( addr size offset )
 #include "page.i65"
 		.word minus		; ( addr remaining )
+#include "page.i65"
 		.word exit
 
 ;		.word to6502
@@ -4135,13 +4158,15 @@ tickstream02	.word toin		; ( buf size >in )
 ;	r@ skip
 ;	over swap
 ;	r> scan
-;	drop over over swap -
+;	drop 2dup swap -
 ;	>r
 ;	rot - 1+
 ;	>in +!
 ;	r> here
-;	over over c!
+;	2dup c!
 ;	1+ swap cmove
+;	here bl over 
+;	count + c! ;
 ;	here dup count +
 ;	bl swap c! ;
 wordlfa		.byt $de,$ad
@@ -4214,6 +4239,7 @@ _word					; ( char )
 		.word plus		; ( here bl here+size+1 )
 #include "page.i65"
 		.word cstore		; ( here )
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
