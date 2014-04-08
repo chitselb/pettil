@@ -766,43 +766,75 @@ pfind06		.byt push
 ; to size1 bytes are skipped *WHILE* they match char.  Returns
 ; addr2 as the address of the first non-matching character and
 ; count2 as the remaining number of bytes in the buffer.
-skiplfa		.byt $de,$ad
-		.byt (skip-*-1)|bit7
-		.asc "SKI","P"|bit7
-skip		lda #$d0		; BNE intruction
-		sta skip02
-skipscan	ldy #2
-		jsr setup		; size1 -> N1; addr1 -> N0
-		stx storex
-		ldx n+2			; sizelo
-skip01		txa
-		ora n+3			; sizehi
-		beq skip05
-		lda (n),y		; (addr1),y
-		eor tos
-		asl			; ignore bit7
-skip02		bne skip05
-		iny
-		bne skip03
-		inc n+1
-skip03		txa
-		bne skip04
-		dec n+3
-skip04		dex
-		jmp skip01
-skip05		stx n+2
-		ldx storex
-		clc
-		tya
-		adc n
-		sta tos
-		ldy n+1
-		bcc skip06
-		iny
-skip06		sty tos+1
-		ldy n+3
-		lda n+2
-		jmp pushya
+;skiplfa		.byt $de,$ad
+;		.byt (skip-*-1)|bit7
+;		.asc "SKI","P"|bit7
+;skip		lda #$d0		; BNE intruction
+;		sta skip02
+;skipscan	ldy #2
+;		jsr setup		; size1 -> N1; addr1 -> N0
+;		stx storex
+;		ldx n+2			; sizelo
+;skip01		txa
+;		ora n+3			; sizehi
+;		beq skip05
+;		lda (n),y		; (addr1),y
+;		eor tos
+;		asl			; ignore bit7 ~wut?
+;skip02		bne skip05
+;		iny
+;		bne skip03
+;		inc n+1
+;skip03		txa
+;		bne skip04
+;		dec n+3
+;skip04		dex
+;		jmp skip01
+;skip05		stx n+2
+;		ldx storex
+;		clc
+;		tya
+;		adc n
+;		sta tos
+;		ldy n+1
+;		bcc skip06
+;		iny
+;skip06		sty tos+1
+;		ldy n+3
+;		lda n+2
+;		jmp pushya
+
+;--------------------------------------------------------------
+;
+;	SKIP   ( addr1 size1 char -- addr2 count2 )
+;
+; * headerless
+;
+; addr1 is the starting address in the input stream where up
+; to size1 bytes are skipped *WHILE* they match char.  Returns
+; addr2 as the address of the first non-matching character and
+; count2 as the remaining number of bytes in the buffer.
+;skiplfa		.byt $de,$ad
+;		.byt (skip-*-1)|bit7
+;		.asc "SKI","P"|bit7
+skip		ldy #2
+		jsr setup	; addr1 -> N0; size1 -> N1
+		brk
+skip01		.byt ld | N1			; # of remaining bytes
+		.byt bz , <(skipscan05-*-2)	; nothing to do?
+		.byt dcr | N1
+		.byt ldi | N0
+		.byt sub | TOS
+		.byt bz , <(skip01-*-2)
+skipscan04	.byt dcr | N0
+		.byt inr | N1
+skipscan05	.byt ld | N0
+		.byt st | TOS
+		.byt push
+		.byt ld | N1
+		.byt st | TOS
+		.byt rtn
+		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -814,12 +846,34 @@ skip06		sty tos+1
 ; count2 as the remaining number of bytes in the buffer.
 ; ~wut? self-modifying code is a no-no if I'm ever ROMing this
 ; considering Sweet16
-scanlfa		.byt $de,$ad
-		.byt (scan-*-1)|bit7
-		.asc "SCA","N"|bit7
-scan		lda #$f0		; BEQ intruction
-		sta skip02
-		jmp skipscan
+;scanlfa		.byt $de,$ad
+;		.byt (scan-*-1)|bit7
+;		.asc "SCA","N"|bit7
+;scan		lda #$f0		; BEQ intruction
+;		sta skip02
+;		jmp skipscan
+
+;--------------------------------------------------------------
+;
+;	SCAN   ( addr count char -- addr count )
+;
+; addr1 is the starting address in the input stream where up
+; to count1 bytes are skipped *UNTIL* they match char.  Returns
+; addr2 as the address of the first non-matching character and
+; count2 as the remaining number of bytes in the buffer.
+;scanlfa		.byt $de,$ad
+;		.byt (scan-*-1)|bit7
+;		.asc "SCA","N"|bit7
+scan		ldy #2
+		jsr setup
+		brk
+scan01		.byt ld | N1
+		.byt bz , <(skipscan05-*-2)
+		.byt dcr | N1
+		.byt ldi | N0
+		.byt sub | TOS
+		.byt bnz , <(scan01-*-2)
+		.byt br , <(skipscan04-*-2)
 
 ;--------------------------------------------------------------
 ;
@@ -3401,7 +3455,7 @@ _qcsp
 #include "page.i65"
 		.word ne
 #include "page.i65"
-		.word qbranch
+		.word qbranch		; IF
 		.byt <(qcsp01-*+1)
 #include "pad.i65"
 		.word clit
@@ -3409,7 +3463,8 @@ _qcsp
 #include "pad.i65"
 		.word fail
 #include "page.i65"
-qcsp01		.word exit
+qcsp01					; THEN
+		.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -4052,16 +4107,15 @@ _tickstream
 		.word qbranch		; IF
 		.byt <(tickstream01-*+1)
 #include "pad.i65"
-		.word xyzzy
+					; input from block device
+		.word plover		; unimplemented
 #include "page.i65"
 		; this is where the BLOCK i/o goes
 		; _block bperbuf	; ( addr )
 		.word branch		; ELSE
 		.byt <(tickstream02-*+1)
 #include "pad.i65"
-		.word bperbuf		; ( addr b/buf )
-#include "page.i65"
-tickstream01
+tickstream01				; input from terminal
 		.word tib		; ( tib )
 #include "page.i65"
 		.word numtib		; ( tib #tib.uarea ) 
@@ -4170,8 +4224,6 @@ wordlfa		.byt $de,$ad
 		.asc "WOR","D"|bit7
 _word					; ( char )
 #include "enter.i65"
-		.word xyzzy		; ( )
-#include "page.i65"
 		.word tor		; ( )
 #include "page.i65"
 		.word _tickstream	; ( addr size )
@@ -4198,7 +4250,7 @@ _word					; ( char )
 #include "page.i65"
 		.word swap		; ( addr addr2 addr3 addr3 addr2 )
 #include "page.i65"
-		.word minus		; ( addr addr2 addr3 wordsize )
+		.word minus		; ( addr addr2 addr3 wordlen )
 #include "page.i65"
 		.word tor		; ( addr addr2 addr3 )
 #include "page.i65"
@@ -4216,27 +4268,21 @@ _word					; ( char )
 #include "page.i65"
 		.word here		; ( addr2 size here )
 #include "page.i65"
-		.word _twodup		; ( addr2 size here size here )
+		.word twoplus		; ( addr2 size here+2 )
 #include "page.i65"
-		.word cstore		; ( addr2 size here )
+		.word _twodup		; ( addr2 size here+2 size here+2 )
 #include "page.i65"
-		.word oneplus		; ( addr2 size here+1 )
+		.word cstore		; ( addr2 size here+2 )
 #include "page.i65"
-		.word swap		; ( addr2 here+1 size )
+		.word oneplus		; ( addr2 size here+3 )
+#include "page.i65"
+		.word swap		; ( addr2 here+3 size )
 #include "page.i65"
 		.word cmove		; ( )
 #include "page.i65"
 		.word here		; ( here )
-#include "page.i65"			; the following may be unnecessary ~wut?
-		.word bl		; ( here bl )
 #include "page.i65"
-		.word over		; ( here bl here )
-#include "page.i65"
-		.word count		; ( here bl here+1 size )
-#include "page.i65"
-		.word plus		; ( here bl here+size+1 )
-#include "page.i65"
-		.word cstore		; ( here )
+		.word twoplus		; ( here+2 )
 #include "page.i65"
 		.word exit
 
@@ -4691,7 +4737,8 @@ interpretlfa	.byt $de,$ad
 		.asc "INTERPRE","T"|bit7
 _interpret
 #include "enter.i65"
-interpret01	.word qstack		; ( )
+interpret01
+		.word qstack		; ( )
 #include "page.i65"
 		.word _existsq		; ( addr flag )
 #include "page.i65"
@@ -4719,7 +4766,8 @@ interpret02
 #include "pad.i65"
 		.word drop
 #include "page.i65"
-interpret03	.word false
+interpret03
+		.word false
 #include "page.i65"
 		.word _quitq
 #include "page.i65"
@@ -4728,7 +4776,8 @@ interpret03	.word false
 #include "pad.i65"
 		.word exit
 
-xyzzy		jmp next
+plover		; if we get here, it's unimplemented
+xyzzy		jmp next	; used as a breakpoint in secondaries
 
 ;--------------------------------------------------------------
 ;
@@ -4997,7 +5046,10 @@ quit01					; BEGIN
 		.asc	" OK"
 quit02
 #include "pad.i65"
-quit03		.word branch		; THEN AGAIN
+quit03					; THEN AGAIN
+		.word xyzzy
+#include "page.i65"
+		.word branch
 		.byt <(quit01-*+1)
 #include "pad.i65"
 		.word exit
