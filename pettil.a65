@@ -370,8 +370,8 @@ pqdo01		lda zi,y		; set up for a loop
 		bpl pqdo01		; Y=FF means perform the loop
 pqdo02		jsr slide
 		tya			; sets the Z flag
-		beq branch		; zero means end = begin (no loop)
-		jmp bump
+		bne bump		; beanie bump!
+;fall through	;beq branch		; zero means end = begin (no loop)
 
 ;--------------------------------------------------------------
 ;
@@ -675,6 +675,32 @@ digitlfa	.byt $de,$ad
 ;digit02		inx
 ;digit03		tya
 ;		jmp put
+;
+; here's how blazin' does DIGIT
+;09e8   38         SEC
+;09e9   B5 02      LDA $02,X
+;09eb   E9 30      SBC #$30
+;09ed   30 17      BMI $0A06
+;09ef   C9 0A      CMP #$0A
+;09f1   30 07      BMI $09FA
+;09f3   38         SEC
+;09f4   E9 07      SBC #$07
+;09f6   C9 0A      CMP #$0A
+;09f8   30 0C      BMI $0A06
+
+;09fa   D5 00      CMP $00,X
+;09fc   10 08      BPL $0A06
+;09fe   95 02      STA $02,X
+;0a00   88         DEY		; true
+;0a01   98         TYA
+;0a02   48         PHA
+;0a03   4C 4C 08   JMP $084C
+
+;0a06   98         TYA		; false
+;0a07   48         PHA
+;0a08   E8         INX		; drop
+;0a09   E8         INX
+;0a0a   4C 4C 08   JMP $084C
 
 digit		ldy #$ff	; assume success
 		lda stackl,x	; get the character
@@ -3411,8 +3437,6 @@ _qfind
 		.word qbranch
 		.byt <(qfind01-*+1)
 #include "pad.i65"
-		.word xyzzy
-#include "page.i65"
 		.word three
 #include "page.i65"
 		.word fail
@@ -4312,6 +4336,7 @@ _ppunctq
 		.byt '.'
 #include "pad.i65"
 		.word eq
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
@@ -4325,14 +4350,27 @@ punctqlfa	.byt $de,$ad
 _punctq
 #include "enter.i65"
 		.word _ppunctq
+#include "page.i65"
 		.word exit
 
 ;--------------------------------------------------------------
 ;
-;	CONVERT
+;	CONVERT   ( addr -- addr )
 ;
 ; * 83 interpreter
 ;
+;": convert
+;	begin
+;		1+ dup >r c@ base @ digit
+;	while
+;		swap base @ um* drop rot base @ um* d+
+;		dpl @ 1+
+;		if
+;			1 dpl +!
+;		then
+;		r> 
+;	repeat
+;	r> ;
 convertlfa	.byt $de,$ad
 		.byt (_convert-*-1)|bit7
 		.asc "CONVER","T"|bit7
@@ -4406,6 +4444,62 @@ convert03	.word rfrom
 ; 32-bit integer, using the value of BASE .  If numeric
 ; conversion is not possible, an error condition exists.  The
 ; string may contain a preceding minus sign.
+;
+;( There is a string that is probably a number stored from addrlow..addrhigh -- caveat -- this probably has some bugs )
+;": NUMBER  ( addr -- d ; convert a counted string to a signed double, keeping track of the decimal )
+;   0 0 ROT COUNT   ( 0 0 addr+1 len )
+;   OVER C@ [ ASCII - ] =   ( leading minus? )
+;   DUP >R  
+;   ( 0 0 addr+1 len ; negative? )
+;   + SWAP  R@ - SWAP
+;   OVER + 1+ SWAP   ( 0 0 addrhigh addrlow )
+;   DPL ON
+;   ?DO
+;      BASE @ >R
+;      I C@  R@  DIGIT   ( doublesubtotal (currdigit) flag )
+;      IF
+;         SWAP R@ UM*
+;         DROP ROT
+;         R@ UM* D+
+;         DPL @ 1+  IF  DPL 1+!  THEN
+;      ELSE
+;         I C@ [ ASCII . ] = 
+;         DPL @ 0<  AND
+;         IF
+;            DPL OFF
+;         ELSE
+;            3 FAIL ( performs "NOT FOUND" ABORT - do not pass go do not collect $200 )
+;         THEN
+;      THEN
+;      R> DROP
+;   LOOP
+;   R>  IF  DNEGATE  THEN ;
+;
+; Blazin' does it like this --
+;": number   ( addr -- double )
+;	true over count over + swap   ( addr true lastchar firstchar )
+;	?do
+;		i c@  base @  digit
+;		if
+;			2drop false leave
+;		then
+;	loop
+;	?find
+;	0 0 rot dup 1+
+;	c@ [ ascii - ] = 
+;	dup >r - 
+;	dpl on
+;	begin
+;		convert dup c@ punct?
+;	while
+;		dpl off
+;	repeat
+;	c@ bl <>
+;	?find  r>
+;	if
+;		dnegate
+;	then ;
+;
 numberlfa	.byt $de,$ad
 		.byt (_number-*-1)|bit7
 		.asc "NUMBE","R"|bit7
@@ -4422,12 +4516,8 @@ _number
 		.word plus	; ( addr true addr+1 addr+length+1 )
 #include "page.i65"
 		.word swap	; ( addr true addr+length+1 addr+1 )
-
-
-; this number01-number03 loop doesn't seem to be working
-
-#include "page.i65"
-		.word xyzzy
+;#include "page.i65"
+;		.word xyzzy
 #include "page.i65"
 		.word pqdo	; ( addr true )
 		.byt <(number03-*+1)
@@ -5103,6 +5193,65 @@ abs		lda tos+1
 		bpl abs01
 		jmp negate
 abs01		jmp next
+
+;--------------------------------------------------------------
+;
+;	SGN   ( n -- -1|0|1 )
+;
+; return the sign of n
+;
+sgnlfa		.byt $de,$ad
+		.byt (sgn-*-1)|bit7
+		.asc "SG","N"|bit7
+sgn		ldy #$ff
+		lda tos+1
+		bmi sgn01	; negative
+		iny
+		ora tos
+		beq sgn01	; zero
+		lda #1		; positive
+		.byt $24	; BIT zp to skip over tya
+sgn01		tya
+		jmp put
+
+;--------------------------------------------------------------
+;
+;	1+!   ( n -- )
+;
+; increments the word addressed by n
+;
+oneplusstorelfa	.byt $de,$ad
+		.byt (oneplusstore-*-1)|bit7
+		.asc "1+","!"|bit7
+oneplusstore	ldy #$FF
+		lda #0
+		sec
+oneplusstore01	iny
+		adc (tos),y
+		sta (tos),y
+		tya
+		beq oneplusstore01
+		jmp pops
+
+;--------------------------------------------------------------
+;
+;	1-!   ( n -- )
+;
+; decrements the word addressed by n
+;
+oneminusstorelfa
+		.byt $de,$ad
+		.byt (oneminusstore-*-1)|bit7
+		.asc "1-","!"|bit7
+oneminusstore	ldy #$ff
+		clc
+oneminusstore01	iny
+		lda (tos),y
+		sbc #0
+		sta (tos),y
+		tya
+		beq oneminusstore01
+		jmp pops
 
 ;--------------------------------------------------------------
 ;
