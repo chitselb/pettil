@@ -39,7 +39,7 @@
 #include pettil.def
 
 ;==============================================================
-;====BASIC cold start and Sweet16, with some ML subroutines====
+;==== BASIC bootstrap                                      ====
 ;==============================================================
 #define		basic		$0400
 		.word basic+1			; this will be the load address
@@ -51,7 +51,15 @@
 		.asc "1037",0			; $040f
 basend		.word 0
 		jmp ice
+
+;==============================================================
+;==== various things to align Sweet16                      ====
+;==============================================================
+
+; to switch between Sweet16 and TIM
 brktoggle	.word TIMBRK^SW16
+
+; unused, necessary for aligning Sweet16
 		.word 0
 
 ;--------------------------------------------------------------
@@ -93,11 +101,15 @@ swapzp01	lda $ff,x
 ; Sweet16.  PETTIL's Sweet16 is *mostly* stock Woz. I have made 
 ; some small adaptations. For example, I call it with BRK instead
 ; of JSR.  
+;==============================================================
+;==== SET and PUSH must be on the same page!               ====
+;==============================================================
 #include sweet16.a65
 ; everything above this line puts SET = $0501 and PUSH = $05fc
 ;==============================================================
-;==========SET and PUSH must be on the same page!==============
+;==== zeropage copy and user area                          ====
 ;==============================================================
+;
 ; this is an image of PETTIL zeropage at cold start.  Swapping it
 ; with the BASIC zeropage makes hopping back and forth possible
 ;
@@ -130,36 +142,7 @@ zpnextx					;15 cycles total
 
 ; if #DEBUG is on, add enough padding between NEXT and TIME
 		.dsb TIME-(*-zpbuf),$ea	; more cowbell
-
-; pops up to 4 words from the split stack to N, backwards
-; used for setting up primitives that consume multiple arguments
-; Y = how many words to pop (valid range 1-4)
-; returns
-; Y = 0
-; TOS unchanged
-;
-; Y     1         2         3         4
-; 2OS-->N0
-; 2OS-->N1; 3OS-->N0
-; 2OS-->N2; 3OS-->N1; 4OS-->N0
-; 2OS-->N3; 3OS-->N2; 4OS-->N1; 5OS-->N0
-;
-; this is shorter but it inverts the order in the N, so all
-; callers need to be changed for Y>1
-setup		tya
-		asl	; doubled, now Y is a countdown index
-		tay
-setup01		lda stackh,x
-		dey
-		sta n,y
-		lda stackl,x
-		inx
-		dey
-		sta n,y
-		bne setup01
-		rts		 
-
-;--------------------------------------------------------------
+;==============================================================
 ; userarea initialization data
 ; this gets copied to the uarea
 ; and is pointed to by the UP (user pointer)
@@ -192,12 +175,9 @@ userline	= usercold+30				;
 ; is reserved for "soft" user variables
 ; e.g. STATE 
 uarea		.dsb usercold-userarea+40,0
-
-;--------------------------------------------------------------
-w1		.word $dead		; (for when you just need a W register)
-		.word exit		; 'fragment secondary' used by EXECUTE
-
-; error messages for FAIL
+;==============================================================
+;==== Error messages                                       ====
+;==============================================================
 errptr		.word msg01,msg02,msg03,msg04,msg05,msg06,msg07,msg08
 msg01		.byt msg02-*-1
 		.asc "STACK EMPTY"
@@ -215,8 +195,42 @@ msg07		.byt msg08-*-1
 		.asc "VOCABULARIES UNIMPLEMENTED"
 msg08
 
-rootlfa		.word 0
-		.byt 31			; longest word in the dictionary ~wut?
+;==============================================================
+;==== W register, used by EXECUTE                          ====
+;==============================================================
+w1		.word $dead		; (for when you just need a W register)
+		.word exit		; 'fragment secondary' used by EXECUTE
+
+;==============================================================
+;==== 6502 subroutines                                     ====
+;==============================================================
+; pops up to 4 words from the split stack to N, backwards
+; used for setting up primitives that consume multiple arguments
+; Y = how many words to pop (valid range 1-4)
+; returns
+; Y = 0
+; TOS unchanged
+;
+; Y     1         2         3         4
+; 2OS-->N0
+; 2OS-->N1; 3OS-->N0
+; 2OS-->N2; 3OS-->N1; 4OS-->N0
+; 2OS-->N3; 3OS-->N2; 4OS-->N1; 5OS-->N0
+;
+; inverts the order in the N area from what was on the stack
+;
+setup		tya
+		asl	; doubled, now Y is a countdown index
+		tay
+setup01		lda stackh,x
+		dey
+		sta n,y
+		lda stackl,x
+		inx
+		dey
+		sta n,y
+		bne setup01
+		rts		 
 
 ;--------------------------------------------------------------
 ; Drop down from high-level Forth to inline 6502
@@ -250,7 +264,15 @@ dnegaten	ldy #0
 		sbc n+1
 		sta n+1		; high order byte
 		rts
-
+;==============================================================
+;==== PETTIL dictionary                                    ====
+;==============================================================
+rootlfa		.word 0
+		.byt 31			; longest word in the dictionary
+;
+; The dictionary root is 31 characters long so it will be at the
+; end of the linked list, which is ordered by word name length
+;
 ;--------------------------------------------------------------
 ;
 ;	EXECUTE

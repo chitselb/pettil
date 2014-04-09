@@ -1,26 +1,172 @@
- 7 6 5 4 3 2 1 0  bit
+PETTIL dictionary word structure
 +---------------+
-|   link[lo]    |  +0 link field address
-+-             -+
-|   link[hi]    |  +1
-+-+-+-+---------+
-|1|I|S| length  |  +2 length,immediate,smudge
-+-+-+-+---------+
-|0| name[first] |  +3 name field address
-|-+            -+
-|0|         ... |    
-|-+            -+
-|1| name[last]  |    
+|   link[low]   |  +0      Link field
+|   link[high]  |
++-+-+-+-+-+-+-+-+
+[1]   [   len   ]  +2      Length field
+| [I]           |          Immediate bit
+|   [S]         |          Smudge bit
++-+-+-+-+-+-+-+-+
+|0| name[1]     |  +3      Name field
+|0|         ... |
+|1| name[len]   |
 +-+-------------+
-|   code[first] |     code field address
-+-             -+
-|           ... |    
-+-             -+
-|   code[last]  |     
+| code[1]       |  +4+len  Code field
+|           ... |          (always executable code)
+| code[n]       |
 +---------------+
-|   data[first] |     data field address
-+-             -+
-|           ... |    
-+-             -+
-|   data[last]  |     
+| data[1]       |          Parameter field (optional)
+|           ... |
+| data[n]       |    
 +---------------+
+
+
+PETTIL zero page memory map
++===============================+
+|  Sweet16         PETTIL       |
++---------------+---------------+
+|   R0 ACC      |               | $00-$01
++---------------+---------------+
+|   R1          | User pointer  | $02-$03  up
++---------------+---------------+
+|   R2          | DO-loop index | $04-$05  zi
++---------------+---------------+
+|   R3          | DO-loop limit | $06-$07
++---------------+---------------+
+|   R4          | Top of stack  | $08-$09  tos
++---------------+---------------+
+|   R5          | N0  scratch   | $0a-$0b  n
++---------------+---------------+
+|   R6          | N1   area     | $0c-$0d
++---------------+---------------+
+|   R7          | N2            | $0e-$0f
++---------------+---------------+
+|   R8          | N3            | $10-$11
++---------------+---------------+
+|   R9          |               | $12-$13
++---------------+---------------+
+|   R10         |               | $14-$15
++---------------+---------------+ 
+|   R11 EXT reg |               | $16-$17
++---------------+---------------+
+|   R12 SP      |               | $18-$19
++---------------+---------------+
+|   R13 CPR reg |               | $1a-$1b
++---------------+---------------+
+|   R14 STATUS  |               | $1c-$1d
++---------------+---------------+
+|   R15 PC      |               | $1e-$1f
++---------------+---------------+
+|   Data stack (low bytes)      | $20-$4f  stackl
+|                           ... | 
++-------------------------------+
+|   Data stack (high bytes)     | $50-$7f  stackh
+|                           ... | 
++---------------+---------------+
+|   NOP         |                                 $80-$83  unused
+|   NOP         | 
+|   NOP         | 
+|   NOP         |
++---------------+---------------+
+|   INC           IP            |                 $84-$8a  NEXT
+|   INC           IP            +---------------+ 
+|   JMP(ind)       Instruction    Pointer       |          NEXTO / IP
++---------------+---------------+---------------+
+|   NOP         |                                 $8b-$8c  unused
+|   NOP         |
++===============+===============+===============+================
+Kernel zero page
++===============+===============+===============+================
+|   Jiffy clock (high to low)                   | $8d-$8f  TIME 
++---------------+---------------+---------------+
+|   IRQ vector                  | $90-$91  CINV
++-------------------------------+
+|   BRK vector                  | $92-$93  CBINV
++-------------------------------+
+|   NMI vector                  | $94-$95  NMINV
++-------------------------------+
+| Standard PET  |                 $96-$fe
+| kernel map    | 
+|           ... | 
++---------------+
+|   scratch     |                 $ff      STOREX
++---------------+                
+
+
+PETTIL memory map
++===============================+
+| Zero page / Data stack        | $0000-$00ff
++-------------------------------+
+| 6502 stack / Return stack     | $0100-$01ff  RP
++-------------------------------+
+| Terminal Input Buffer         | $0200-$0250  TIB
++-------------------------------+
+| Standard PET kernel usage     | $0251-$03ff
+=================================
+| BASIC bootstrap program       | $0400-$040c basic
++-------------------------------+
+| JMP ICE cold start vector     | $040d-$040f
++-------------------------------+
+| Various - used to align SW16  | $0410-$045f
++-------------------------------+
+| Sweet16 interpreter           | $0460-$0634 SW16
+| Sweet16 extensions            | $0635       wordlen 
++-------------------------------+
+| Lower zero page image         | 141         zpbuf
++-------------------------------+
+| warm start init values        |             userarea
+| cold start init values        |             
++-------------------------------+
+| User variables                |             uarea
++-------------------------------+
+| Error message table           |             errptr
++-------------------------------+
+| W register (for EXECUTE)      | 4           w1   
++-------------------------------+
+| 6502 subroutines              |             setup
++-------------------------------+
+| Dictionary                 |  |             rootlfa
+|                            v  |                     
+|                           ... |             endofile
++===============================+
+| Free memory                   |             HERE
+|                               |                     
+|                           ... | +80         PAD 
++-------------------------------+
+| Editor buffers,            ^  | 1024
+| including screen           |  |
+| line wrap table           ... | $7fff       top of RAM (32K)
++===============================+
+| PET Screen memory (25x40)     | $8000-$83ff VIDRAM
+|                           ... | 
++-------------------------------+
+| unused ROM area               | $9000-$9fff     
++-------------------------------+
+| unused ROM area               | $a000-$afff     
++-------------------------------+
+| BASIC ROM                     | $b000-$dfff     
+|                           ... | 
++-------------------------------+
+| Screen Editor ROM             | $e000           
+|                           ... | $e7ff           
++-------------------------------+
+| I/O chips                     | $e800-$efff     
+| PIA1                          | $e810           
+| PIA2                          | $e820           
+| VIA                           | $e840           
+|                           ... |           
++-------------------------------+
+| Kernel ROM                    | $f000-$ffff
+|                           ... |
++===============================+
+
+NOTES: 
+
+Programs should be careful not to overwrite Sweet16 R1 / UP
+
+$ff may be used by primitives for stashing the X register
+(data stack pointer)
+
+Labels from http://zimmers.net/cbmpics/cbm/PETx/petmem.txt
+
+
