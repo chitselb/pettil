@@ -4538,8 +4538,6 @@ _number
 		.word plus	; ( addr true addr+1 addr+length+1 )
 #include "page.i65"
 		.word swap	; ( addr true addr+length+1 addr+1 )
-;#include "page.i65"
-;		.word xyzzy
 #include "page.i65"
 		.word pqdo	; ( addr true )
 		.byt <(number03-*+1)
@@ -5112,8 +5110,8 @@ ml		jsr CLRCHN
 		.byt (warm03-*-1)
 		.asc	CLR,"FORTH FOR THE COMMODORE PET 2001",CR
 		.asc	"HTTP:","/","/GITHUB.COM/CHITSELB/PETTIL",CR
-		.asc	"VERSION PRE-ALPHA 2014-04-07",CR
-		.asc	"50TH ANNIVERSARY OF IBM'S SYSTEM/360.",CR
+		.asc	"VERSION PRE-ALPHA 2014-04-11",CR
+		.asc	"1976 THE APPLE I IS CREATED",CR
 warm03
 #include "pad.i65"
 		.word _rethread
@@ -7842,24 +7840,80 @@ bar01		lda $8000,y
 		jmp next
 
 ;--------------------------------------------------------------
+;
+;	EVENT   ( -- ) 
+;
+; Create a new dictionary header for the following word in the
+; input stream.  The child word is an IRQ event handler, preceded
+; by the address of its code
+;
+eventlfa	.byt $de,$ad
+		.byt (event-*-1)|bit7
+		.asc "EVEN","T"|bit7
+event
+#include "enter.i65"
+		.word exit
+; create , code ;code
+; create a new word
+; enclose PFA+2 in the dictionary, that's the IRQ vector
+; invoke the assember
+; the created word does this -->
+;setirq		pla
+;		sta n
+;		pla
+;		sta n+1
+;		sei           ; disable interrupts
+;		brk
+;		.byt inr | N0 ; bump the RTS address
+;		.byt ldd | N0 ; retrieve the word
+;		.byt set | N0 ; IRQ vector
+;		.word $0090
+;		.byt std | N0 ; set the new IRQ vector
+;		.byt rtn      ; done
+;		cli           ; enable interrupts
+;		rts
+ 
+;--------------------------------------------------------------
+;
+;	FOO ( -- )
+;
+; hooks/unhooks the IRQ
+;
+;
 foolfa		.byt $de,$ad
 		.byt (foo-*-1)|bit7
 		.asc "FO","O"|bit7
 foo
 #include "enter.i65"
-		.word zero
+		.word plit
+		.word foostash		; ( new )
+#include "pad.i65"
+		.word dup		; ( new new )
 #include "page.i65"
-		.word pdo
+		.word fetch		; ( new newirq )
 #include "page.i65"
-foo01		.word i
+		.word clit
+		.byt $90		; ( new newirq live )
+#include "pad.i65"
+		.word fetch		; ( new newirq liveirq )
+#include "page.i65"
+		.word rot		; ( newirq liveirq new )
+#include "page.i65"
+		.word store		; ( newirq )
+#include "pad.i65"
+		.word setirq
 #include "page.i65"
 		.word drop
 #include "page.i65"
-		.word ploop
-		.byt <(foo01-*+1)
-#include "pad.i65"
 		.word exit
-
+foostash	.word fooirq
+fooirq		ldy #2
+fooirq01	lda TIME,y
+		sta VIDRAM+37,y
+		dey
+		bpl fooirq01
+		jmp (foostash)
+		
 ;--------------------------------------------------------------
 ;
 ;	WHEAD   ( device -- )

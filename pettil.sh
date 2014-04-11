@@ -13,6 +13,7 @@ echo "disable 3">>pettil.lab
 echo break .disp2>>pettil.lab	# debugging sweet16
 echo "disable 4">>pettil.lab
 echo break .xyzzy>>pettil.lab
+echo break .fooirq>>pettil.lab
 
 #echo break ._convert>>pettil.lab
 #echo break ._number>>pettil.lab
