@@ -665,7 +665,8 @@ sw16		ldy #2
 		bne sw16+2
 		brk
 		.byt rtn
-		jmp next
+plover		; if we get here, it's unimplemented
+xyzzy		jmp next	; used as a breakpoint in secondaries
 
 ;--------------------------------------------------------------
 ;
@@ -1258,6 +1259,95 @@ rrot		ror			;shift partial product right
 
 ;--------------------------------------------------------------
 ;
+;	UD/MOD   ( d1 n1 -- n2 d2 )
+;
+; * divstar
+;
+; d2 is the double quotient of d1/n1.  n2 is the remainder.  All
+; values are unsigned.
+; ~ make this 32-bit divisor?
+; ~ fix for /0
+udslashmodlfa	.byt $de,$ad
+		.byt (udslashmod-*-1)|bit7
+		.asc "UD/MO","D"|bit7
+udslashmod	ldy #2
+		jsr setup		; udlo -> N0; udhi -> N1
+		jsr divmod		; (unsigned) u31/u16 -> quo31 rem16
+		dex
+		lda n+1
+		sta stackh,x
+		lda n
+		sta stackl,x		; remainder
+		lda n+9
+		sta tos+1
+		lda n+8
+		sta tos
+		ldy n+11
+		lda n+10
+		jmp pushya
+
+divmod		stx storex
+		ldx #7
+divmod00	sty n+4,x		; zero the divisor & quotient
+		dex
+		bpl divmod00
+		ldx storex
+
+		lda tos+1
+		ora tos
+		beq divmod05		; error division by zero
+
+		ldy #33
+divmod01	lsr tos+1
+		ror tos			; divisor = divisor/2
+		ror n+7
+		ror n+6			; shift it in until we hit zero
+		ror n+5
+		ror n+4
+		dey
+		lda tos+1
+		ora tos
+		bne divmod01
+divmod02	asl n+8
+		rol n+9			; quotient low
+		rol n+10
+		rol n+11		; double the quotient here
+		sec
+		lda n
+		sbc n+4
+		pha
+		lda n+1
+		sbc n+5
+		pha
+		lda n+2
+		sbc n+6
+		pha
+		lda n+3
+		sbc n+7
+		bcc divmod03
+		sta n+3
+		pla
+		sta n+2
+		pla
+		sta n+1
+		pla
+		sta n
+		inc n+8			; add 1 to quotient
+		bcs divmod04		; bra
+divmod03	pla
+		pla
+		pla			; discard result of subtraction
+divmod04	lsr n+7
+		ror n+6
+		ror n+5
+		ror n+4			; divisor /2
+		dey
+		bne divmod02
+
+divmod05	rts
+
+;--------------------------------------------------------------
+;
 ;	UM/MOD   ( ud u -- rem quot )
 ;
 ; * 83 nucleus divstar
@@ -1275,17 +1365,6 @@ _umslashmod
 #include "page.i65"
 		.word exit
 		
-;		ldy #2
-;		jsr setup	; udhi -> N0; udlo -> N1
-;		jsr divmod
-;		lda n+3
-;		sta tos+1
-;		lda n+2		; remainder
-;		sta tos
-;		ldy n+5
-;		lda n+4
-;		jmp pushya	; quotient
-
 ;--------------------------------------------------------------
 ;
 ;	AND   ( n1 n2 -- n1&n2 )
@@ -1911,6 +1990,110 @@ createlfa	.byt $de,$ad
 		.asc "CREAT","E"|bit7
 _create
 #include "enter.i65"
+		.word bl
+#include "page.i65"
+		.word _word
+#include "page.i65"
+		.word dup
+#include "page.i65"
+		.word _find
+#include "page.i65"
+		.word swap
+#include "page.i65"
+		.word drop
+#include "page.i65"
+		.word qbranch
+		.byt <(create03-*+1)
+#include "pad.i65"
+		.word xyzzy
+#include "page.i65"
+		.word clit
+		.byt RVSON
+#include "pad.i65"
+		.word emit
+#include "page.i65"
+		.word dup
+#include "page.i65"
+		.word count
+#include "page.i65"
+		.word type
+#include "page.i65"
+		.word clit
+		.byt RVSOFF
+#include "pad.i65"
+		.word emit
+#include "page.i65"
+		.word _pdq
+		.byt create02-*-1
+		.asc	" EXISTS"
+create02
+#include "pad.i65"
+create03
+		.word xyzzy
+#include "page.i65"
+		.word tor		; pointer to new NFA ( -- )
+#include "page.i65"
+		.word clit
+		.byt $80
+#include "page.i65"
+		.word rfetch		; ( $80 nfa )
+#include "page.i65"
+		.word cfetch		; ( $80 len )
+#include "page.i65"
+		.word _twodup		; ( $80 len $80 len )
+#include "page.i65"
+		.word orx		; ( $80 len len|bit7 )
+#include "page.i65"
+		.word rfetch		; ( $80 len len|bit7 nfa )
+#include "page.i65"
+		.word cstore		; ( $80 len )
+#include "page.i65"
+		.word rfetch		; ( $80 len nfa )
+#include "page.i65"
+		.word plus		; ( $80 end )
+#include "page.i65"
+		.word dup		; ( $80 end end )
+#include "page.i65"
+		.word cfetch		; ( $80 end last )
+#include "page.i65"
+		.word rot		; ( end last $80 )
+#include "page.i65"
+		.word orx		; ( end last|bit7 )
+#include "page.i65"
+		.word over		; ( end last|bit7 end )
+#include "page.i65"
+		.word cstore		; ( end )
+#include "page.i65"
+		.word oneplus		; ( new here )
+#include "page.i65"
+		.word dp
+#include "page.i65"
+		.word store		; move here
+#include "page.i65"
+		.word clit
+		.byt $20		; JSR instruction
+#include "pad.i65"
+		.word _ccomma
+#include "page.i65"
+		.word plit
+		.word docreate
+#include "pad.i65"
+		.word _comma
+#include "page.i65"
+		.word rfetch
+#include "page.i65"
+		.word dhash
+#include "page.i65"
+		.word bloomstore
+#include "page.i65"
+		.word rfrom
+#include "page.i65"
+		.word twominus
+#include "page.i65"
+		.word swap
+#include "page.i65"
+		.word dhashstore
+#include "page.i65"
 		.word exit
 docreate	pla
 		clc
@@ -4910,9 +5093,6 @@ interpret03
 #include "pad.i65"
 		.word exit
 
-plover		; if we get here, it's unimplemented
-xyzzy		jmp next	; used as a breakpoint in secondaries
-
 ;--------------------------------------------------------------
 ;
 ;	IMMEDIATE
@@ -5485,7 +5665,7 @@ star		jsr mult
 ; condition results if the divisor is zero or if
 ; the quotient falls outside the range {-32,768
 ; ... 32,676}.
-;
+; ~wut? should probably use ud/mod and then set signs
 slashmodlfa	.byt $de,$ad
 		.byt (slashmod-*-1)|bit7
 		.asc "/MO","D"|bit7
@@ -5611,95 +5791,6 @@ starslash	jsr dostarslashmod
 	;	lda stack+1,x
 	;	sta stack+3,x
 		jmp pops
-
-;--------------------------------------------------------------
-;
-;	UD/MOD   ( d1 n1 -- n2 d2 )
-;
-; * divstar
-;
-; d2 is the double quotient of d1/n1.  n2 is the remainder.  All
-; values are unsigned.
-; ~ make this 32-bit divisor?
-; ~ fix for /0
-udslashmodlfa	.byt $de,$ad
-		.byt (udslashmod-*-1)|bit7
-		.asc "UD/MO","D"|bit7
-udslashmod	ldy #2
-		jsr setup		; udlo -> N0; udhi -> N1
-		jsr divmod		; (unsigned) u31/u16 -> quo31 rem16
-		dex
-		lda n+1
-		sta stackh,x
-		lda n
-		sta stackl,x		; remainder
-		lda n+9
-		sta tos+1
-		lda n+8
-		sta tos
-		ldy n+11
-		lda n+10
-		jmp pushya
-
-divmod		stx storex
-		ldx #7
-divmod00	sty n+4,x		; zero the divisor & quotient
-		dex
-		bpl divmod00
-		ldx storex
-
-		lda tos+1
-		ora tos
-		beq divmod05		; error division by zero
-
-		ldy #33
-divmod01	lsr tos+1
-		ror tos			; divisor = divisor/2
-		ror n+7
-		ror n+6			; shift it in until we hit zero
-		ror n+5
-		ror n+4
-		dey
-		lda tos+1
-		ora tos
-		bne divmod01
-divmod02	asl n+8
-		rol n+9			; quotient low
-		rol n+10
-		rol n+11		; double the quotient here
-		sec
-		lda n
-		sbc n+4
-		pha
-		lda n+1
-		sbc n+5
-		pha
-		lda n+2
-		sbc n+6
-		pha
-		lda n+3
-		sbc n+7
-		bcc divmod03
-		sta n+3
-		pla
-		sta n+2
-		pla
-		sta n+1
-		pla
-		sta n
-		inc n+8			; add 1 to quotient
-		bcs divmod04		; bra
-divmod03	pla
-		pla
-		pla			; discard result of subtraction
-divmod04	lsr n+7
-		ror n+6
-		ror n+5
-		ror n+4			; divisor /2
-		dey
-		bne divmod02
-
-divmod05	rts
 
 ;--------------------------------------------------------------
 ;
@@ -6858,7 +6949,10 @@ _question
 picklfa		.byt $de,$ad
 		.byt (pick-*-1)|bit7
 		.asc "PIC","K"|bit7
-pick		ldy tos
+pick		txa
+		clc
+		adc tos
+		tay
 		lda stackl,y
 		sta tos
 		lda stackh,y
@@ -7707,6 +7801,60 @@ unthread03	.word drop
 
 ;--------------------------------------------------------------
 ;
+;	.S ( -- )
+;
+; Output the data stack
+dotslfa		.byt $de,$ad
+		.byt (_dots-*-1)|bit7
+		.asc ".","S"|bit7
+_dots
+#include "enter.i65"
+		.word depth
+#include "page.i65"
+		.word qdup
+#include "page.i65"
+		.word qbranch
+		.byt <(dots02-*+1)
+#include "pad.i65"
+		.word zero
+#include "page.i65"
+		.word pdo
+#include "page.i65"
+dots01
+		.word depth
+#include "page.i65"
+		.word i
+#include "page.i65"
+		.word minus
+#include "page.i65"
+		.word oneminus
+#include "page.i65"
+		.word pick
+#include "page.i65"
+		.word clit
+		.byt 7
+#include "pad.i65"
+		.word _udotr
+#include "page.i65"
+		.word _space
+#include "page.i65"
+		.word ploop
+		.byt <(dots01-*+1)
+#include "page.i65"
+		.word branch
+		.byt <(dots03-*+1)
+#include "pad.i65"
+dots02
+		.word _pdq
+		.byt dots04-*-1
+		.asc "STACK EMPTY"
+dots04
+#include "pad.i65"
+dots03
+		.word exit
+
+;--------------------------------------------------------------
+;
 ;	FORGET
 ;
 ; * 83 interpreter
@@ -7815,6 +7963,129 @@ forgetfence
 ;==============================================================
 
 ;--------------------------------------------------------------
+evquelfa	.byt $de,$ad
+		.byt (evque-*-1)|bit7
+		.asc "EVQU","E"|bit7
+evque		.dsb 5*10,0
+
+;--------------------------------------------------------------
+;
+;	EVENT ( n -- ; word )
+;
+; after n jiffies, perform word
+; e.g. 300 EVENT BLINK
+;
+;" : event
+;	10 0 do
+;		i 5 *  evque + dup @  0=
+;		?dup  if  leave then
+;	loop
+;	bl word find
+;	over !  2+  swap dup 0
+;	$8f c@
+;	$8e c@ 256 * + 0 d+
+;	swap rot !
+;	$8d c@ + swap 1+ c!
+;	;
+eventlfa	.byt $de,$ad
+		.byt (_event-*-1)|bit7
+		.asc "EVEN","T"|bit7
+_event
+#include "enter.i65"
+		.word clit
+		.byt 10
+#include "pad.i65"
+		.word zero
+#include "page.i65"
+		.word pdo
+#include "page.i65"
+event01
+		.word i
+#include "page.i65"
+		.word dup
+#include "page.i65"
+		.word twostar
+#include "page.i65"
+		.word twostar
+#include "page.i65"
+		.word plus
+#include "page.i65"
+		.word evque
+#include "page.i65"
+		.word plus
+#include "page.i65"
+		.word dup
+#include "page.i65"
+		.word fetch
+#include "page.i65"
+		.word zeq
+#include "page.i65"
+		.word qdup
+#include "page.i65"
+		.word qbranch
+		.byt <(event02-*+1)
+#include "pad.i65"
+		.word pleave
+		.byt <(event03-*+1)
+#include "page.i65"
+event02
+		.word ploop
+		.byt <(event01-*+1)
+#include "pad.i65"
+event03
+		.word bl
+#include "page.i65"
+		.word _word
+#include "page.i65"
+		.word _find
+#include "page.i65"
+		.word over
+#include "page.i65"
+		.word store
+#include "page.i65"
+		.word twoplus
+#include "page.i65"
+		.word swap
+#include "page.i65"
+		.word dup
+#include "page.i65"
+		.word clit
+		.byt $8f
+#include "pad.i65"
+		.word cfetch
+#include "page.i65"
+		.word clit
+		.byt $8e
+#include "pad.i65"
+		.word cfetch
+#include "page.i65"
+		.word plit
+		.word 256
+#include "pad.i65"
+		.word star
+#include "page.i65"
+		.word plus
+#include "page.i65"
+		.word zero
+#include "page.i65"
+		.word rot
+#include "page.i65"
+		.word dplus
+#include "page.i65"
+		.word oneplus
+#include "page.i65"
+		.word clit
+		.byt $8d
+#include "pad.i65"
+		.word cfetch
+#include "page.i65"
+		.word swap
+#include "page.i65"
+		.word cstore
+#include "page.i65"
+		.word exit
+
+;--------------------------------------------------------------
 barlfa		.byt $de,$ad
 		.byt (bar-*-1)|bit7
 		.asc "BA","R"|bit7
@@ -7839,40 +8110,6 @@ bar01		lda $8000,y
 		bne bar01
 		jmp next
 
-;--------------------------------------------------------------
-;
-;	EVENT   ( -- ) 
-;
-; Create a new dictionary header for the following word in the
-; input stream.  The child word is an IRQ event handler, preceded
-; by the address of its code
-;
-eventlfa	.byt $de,$ad
-		.byt (event-*-1)|bit7
-		.asc "EVEN","T"|bit7
-event
-#include "enter.i65"
-		.word exit
-; create , code ;code
-; create a new word
-; enclose PFA+2 in the dictionary, that's the IRQ vector
-; invoke the assember
-; the created word does this -->
-;setirq		pla
-;		sta n
-;		pla
-;		sta n+1
-;		sei           ; disable interrupts
-;		brk
-;		.byt inr | N0 ; bump the RTS address
-;		.byt ldd | N0 ; retrieve the word
-;		.byt set | N0 ; IRQ vector
-;		.word $0090
-;		.byt std | N0 ; set the new IRQ vector
-;		.byt rtn      ; done
-;		cli           ; enable interrupts
-;		rts
- 
 ;--------------------------------------------------------------
 ;
 ;	FOO ( -- )
@@ -7913,7 +8150,206 @@ fooirq01	lda TIME,y
 		dey
 		bpl fooirq01
 		jmp (foostash)
+
+;--------------------------------------------------------------
+;
+;	BAZ ( -- )
+;
+; draw some beer
+;
+;
+bazlfa		.byt $de,$ad
+		.byt (baz-*-1)|bit7
+		.asc "BA","Z"|bit7
+baz		sei
+		lda #<baz02
+		sta $90
+		lda #>baz02
+		sta $91
+		cli
+		lda #$a0
+		sta VIDRAM+19*40+17
+		sta VIDRAM+20*40+17
+		jmp next
+countdown	.byt 17
+baz02		lda TIME+2
+		and #$03f
+		bne baz05		; every 64 ticks
+bazoo		dec countdown
+		beq baz04
+		lda countdown
+		cmp #8
+		bcc baz03
+		sbc #8
+		;sec
+baz03		tay
+		lda bevlvl,y
+		bcs baz01
+		ldy #40
+		.byt $2c
+baz01		ldy #0
+		sta VIDRAM+19*40+17,y
+baz05		jmp $e455
 		
+baz04		lda #17
+		sta countdown
+		lda #$a0
+		sta VIDRAM+19*40+17
+		sta VIDRAM+20*40+17
+		bne baz05
+
+bevlvl		.byt $20,$64,$6f,$79,$62,$f8,$f7,$e3,$a0
+
+;--------------------------------------------------------------
+;
+;	BLETCH ( -- )
+;
+; 
+;
+;
+bletchlfa	.byt $de,$ad
+		.byt (bletch-*-1)|bit7
+		.asc "BLETC","H"|bit7
+bletch
+#include "enter.i65"
+		.word plit
+		.word 64000
+#include "pad.i65"
+		.word zero
+#include "page.i65"
+		.word pdo
+#include "page.i65"
+bletch01
+		.word i
+#include "page.i65"
+		.word zero
+#include "page.i65"
+		.word clit
+		.byt 40
+#include "pad.i65"
+		.word _umslashmod
+#include "page.i65"
+		.word _udot
+#include "page.i65"
+		.word _udot
+#include "page.i65"
+		.word cr
+#include "page.i65"
+		.word ploop
+		.byt <(bletch01-*+1)
+#include "pad.i65"
+		.word exit
+
+r50special	.byt ',','-','?'
+
+;--------------------------------------------------------------
+;
+;	R50CHAR   ( d -- d2 c )
+;
+; Unpack and translate a single character in radix-50
+;
+r50charlfa	.byt $de,$ad
+;		.byt (r50char-*-1)|bit7
+;		.asc "RAD5","0"|bit7
+_r50char
+#include "enter.i65"
+		.word clit
+		.byt 40
+#include "pad.i65"
+		.word starslashmod
+#include "page.i65"
+		.word qbranch
+		.byt <(r50char01-*+1)
+#include "pad.i65"
+		.word bl
+#include "page.i65"
+		.word branch
+		.byt <(r50char06-*+1)
+#include "pad.i65"
+r50char01
+		.word clit
+		.byt 10
+#include "pad.i65"
+		.word minus
+#include "page.i65"
+		.word dup
+#include "page.i65"
+		.word zlt
+#include "page.i65"
+		.word qbranch
+		.byt <(r50char02-*+1)
+#include "pad.i65"
+		.word clit
+		.byt '0'+9
+#include "pad.i65"
+		.word plus
+#include "page.i65"
+		.word qbranch
+		.byt <(r50char02-*+1)
+#include "pad.i65"
+r50char02
+		.word clit
+		.byt 26
+#include "pad.i65"
+		.word minus
+#include "page.i65"
+		.word dup
+#include "page.i65"
+		.word zlt
+#include "page.i65"
+		.word qbranch
+		.byt <(r50char03-*+1)
+#include "pad.i65"
+		.word clit
+		.byt '@'+26
+#include "pad.i65"
+		.word plus
+#include "page.i65"
+		.word qbranch
+		.byt <(r50char02-*+1)
+#include "pad.i65"
+r50char03
+		.word plit
+		.word r50special
+#include "pad.i65"
+		.word plus
+#include "page.i65"
+		.word cfetch
+#include "page.i65"
+r50char06
+		.word exit
+
+;--------------------------------------------------------------
+;
+;	RAD50   ( r -- c1 c2 c3 )
+;
+;"http://en.wikipedia.org/wiki/DEC_Radix-50
+; Unpack a rad-50 (base 40) encoded word into three characters
+; space, 0, 1, 2, 3, 4, 5, 6,
+; 7, 8, 9, a, b, c, d, e
+; f, g, h, i, j, k, l, m,
+; n, o, p, q, r, s, t, u,
+; v, w, x, y, z, comma, dash, question
+;
+rad50lfa	.byt $de,$ad
+		.byt (_rad50-*-1)|bit7
+		.asc "RAD5","0"|bit7
+_rad50
+#include "enter.i65"
+		.word _r50char
+#include "page.i65"
+		.word tor
+#include "page.i65"
+		.word _r50char
+#include "page.i65"
+		.word tor
+#include "page.i65"
+		.word rfrom
+#include "page.i65"
+		.word rfrom
+#include "page.i65"
+		.word exit
+
 ;--------------------------------------------------------------
 ;
 ;	WHEAD   ( device -- )
