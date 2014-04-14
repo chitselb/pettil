@@ -113,13 +113,10 @@ swapzp01	lda $ff,x
 ; this is an image of PETTIL zeropage at cold start.  Swapping it
 ; with the BASIC zeropage makes hopping back and forth possible
 ;
-; R12 is initialized to $0100.  R12 is the upward-growing Sweet16
-; BS/RS stack pointer
-;
 zpbuf		.word $0000,$1001,$2002,$3003
 		.word $4004,$5005,$6006,$7007	; PETTIL registers
 		.word $8008,$9009,$a00a,$b00b	; and
-		.word $0100,$d00d,$e00e,$f00f	; Sweet16 registers 
+		.word $c00c,$d00d,$e00e,$f00f	; Sweet16 registers 
 		.dsb bos,$aa			; low stack
 		.dsb bos,$bb			; high stack
 ;
@@ -869,24 +866,24 @@ pfind06		.byt push
 ;skiplfa		.byt $de,$ad
 ;		.byt (skip-*-1)|bit7
 ;		.asc "SKI","P"|bit7
-skip		ldy #2
-		jsr setup	; addr1 -> N0; size1 -> N1
-		brk
-skip01		.byt ld | N1			; # of remaining bytes
-		.byt bz , <(skipscan05-*-2)	; nothing to do?
-		.byt dcr | N1
-		.byt ldi | N0
-		.byt sub | TOS
-		.byt bz , <(skip01-*-2)
-skipscan04	.byt dcr | N0
-		.byt inr | N1
-skipscan05	.byt ld | N0
-		.byt st | TOS
-		.byt push
-		.byt ld | N1
-		.byt st | TOS
-		.byt rtn
-		jmp next
+;skip		ldy #2
+;		jsr setup	; addr1 -> N0; size1 -> N1
+;		brk
+;skip01		.byt ld | N1			; # of remaining bytes
+;		.byt bz , <(skipscan05-*-2)	; nothing to do?
+;		.byt dcr | N1
+;		.byt ldi | N0
+;		.byt sub | TOS
+;		.byt bz , <(skip01-*-2)
+;skipscan04	.byt dcr | N0
+;		.byt inr | N1
+;skipscan05	.byt ld | N0
+;		.byt st | TOS
+;		.byt push
+;		.byt ld | N1
+;		.byt st | TOS
+;		.byt rtn
+;		jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -916,16 +913,62 @@ skipscan05	.byt ld | N0
 ;scanlfa		.byt $de,$ad
 ;		.byt (scan-*-1)|bit7
 ;		.asc "SCA","N"|bit7
-scan		ldy #2
-		jsr setup
-		brk
-scan01		.byt ld | N1
-		.byt bz , <(skipscan05-*-2)
-		.byt dcr | N1
-		.byt ldi | N0
-		.byt sub | TOS
-		.byt bnz , <(scan01-*-2)
-		.byt br , <(skipscan04-*-2)
+;scan		ldy #2
+;		jsr setup
+;		brk
+;scan01		.byt ld | N1
+;		.byt bz , <(skipscan05-*-2)
+;		.byt dcr | N1
+;		.byt ldi | N0
+;		.byt sub | TOS
+;		.byt bnz , <(scan01-*-2)
+;		.byt br , <(skipscan04-*-2)
+
+
+
+
+skipscan01
+	.byt ld | TOS	; char
+	.byt st | N0
+	.byt pull
+	.byt ld | TOS	; count
+	.byt st | N1
+	.byt pull		; addr
+	.byt rs
+skipscan02
+	.byt dcr | N1
+	.byt bm1 , <(skipscan03-*-2)	; leave if count = 0
+	.byt ldi | N0
+	.byt sub | TOS
+	.byt rs
+skip
+	brk
+	.byt bs, <(skipscan01-*-2)	; setup
+skip01
+	.byt bs, <(skipscan02-*-2)	; next char
+	.byt bnz, <(skip01-*-2)
+	.byt br, <(skipscan04-*-2)	; exit
+scan
+	brk
+	.byt bs, <(skipscan01-*-2)	; setup
+scan01
+	.byt bs, <(skipscan02-*-2)	; next char
+	.byt bz, <(scan01-*-2)		; fall through
+skipscan04
+	.byt std | R12			; push junk on the BS stack
+skipscan03
+	.byt popd | R12	; drop the BS return
+	.byt ld | N0
+	.byt st | TOS
+	.byt push
+	.byt ld | N1
+	.byt st | TOS
+	.byt rtn
+	jmp next
+
+
+
+
 
 ;--------------------------------------------------------------
 ;
@@ -4342,7 +4385,7 @@ _tickstream
 		.word qbranch		; IF
 		.byt <(tickstream01-*+1)
 #include "pad.i65"
-					; input from block device unimplemented
+					; input from block device
 		.word plover		; unimplemented
 #include "page.i65"
 		; this is where the BLOCK i/o goes
