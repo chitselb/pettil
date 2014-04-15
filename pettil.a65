@@ -34,7 +34,7 @@
 ; e.g. only a 48-cell stack so the bytes line up visually 
 #define DEBUG
 #define PET_ROM4		; target machine
-;#define BRANCH
+#define BRANCH
 
 #include cbm.def
 #include pettil.def
@@ -808,113 +808,6 @@ pfind06		.byt push
 		.byt rtn
 		jmp next
 
-#ifndef BRANCH
-;skiplfa		.byt $de,$ad
-;		.byt (skip-*-1)|bit7
-;		.asc "SKI","P"|bit7
-;skip		lda #$d0		; BNE intruction
-;		sta skip02
-;skipscan	ldy #2
-;		jsr setup		; size1 -> N1; addr1 -> N0
-;		stx storex
-;		ldx n+2			; sizelo
-;skip01		txa
-;		ora n+3			; sizehi
-;		beq skip05
-;		lda (n),y		; (addr1),y
-;		eor tos
-;		asl			; ignore bit7 ~wut?
-;skip02		bne skip05
-;		iny
-;		bne skip03
-;		inc n+1
-;skip03		txa
-;		bne skip04
-;		dec n+3
-;skip04		dex
-;		jmp skip01
-;skip05		stx n+2
-;		ldx storex
-;		clc
-;		tya
-;		adc n
-;		sta tos
-;		ldy n+1
-;		bcc skip06
-;		iny
-;skip06		sty tos+1
-;		ldy n+3
-;		lda n+2
-;		jmp pushya
-
-;--------------------------------------------------------------
-;
-;	SKIP   ( addr1 size1 char -- addr2 count2 )
-;
-; * headerless
-;
-; addr1 is the starting address in the input stream where up
-; to size1 bytes are skipped *WHILE* they match char.  Returns
-; addr2 as the address of the first non-matching character and
-; count2 as the remaining number of bytes in the buffer.
-;skiplfa		.byt $de,$ad
-;		.byt (skip-*-1)|bit7
-;		.asc "SKI","P"|bit7
-skip		ldy #2
-		jsr setup	; addr1 -> N0; size1 -> N1
-		brk
-skip01		.byt ld | N1			; # of remaining bytes
-		.byt bz , <(skipscan05-*-2)	; nothing to do?
-		.byt dcr | N1
-		.byt ldi | N0
-		.byt sub | TOS
-		.byt bz , <(skip01-*-2)
-skipscan04	.byt dcr | N0
-		.byt inr | N1
-skipscan05	.byt ld | N0
-		.byt st | TOS
-		.byt push
-		.byt ld | N1
-		.byt st | TOS
-		.byt rtn
-		jmp next
-
-;--------------------------------------------------------------
-;
-;	SCAN   ( addr count char -- addr count )
-;
-; addr1 is the starting address in the input stream where up
-; to count1 bytes are skipped *UNTIL* they match char.  Returns
-; addr2 as the address of the first non-matching character and
-; count2 as the remaining number of bytes in the buffer.
-; ~wut? self-modifying code is a no-no if I'm ever ROMing this
-; considering Sweet16
-;scanlfa		.byt $de,$ad
-;		.byt (scan-*-1)|bit7
-;		.asc "SCA","N"|bit7
-;scan		lda #$f0		; BEQ intruction
-;		sta skip02
-;		jmp skipscan
-
-
-;scanlfa		.byt $de,$ad
-;		.byt (scan-*-1)|bit7
-;		.asc "SCA","N"|bit7
-scan		ldy #2
-		jsr setup
-		brk
-scan01		.byt ld | N1
-		.byt bz , <(skipscan05-*-2)
-		.byt dcr | N1
-		.byt ldi | N0
-		.byt sub | TOS
-		.byt bnz , <(scan01-*-2)
-		.byt br , <(skipscan04-*-2)
-
-
-#else
-
-
 ;--------------------------------------------------------------
 ;
 ;	SKIP   ( addr1 size1 char -- addr2 count2 )
@@ -966,6 +859,8 @@ skipscan02
 	.byt rs
 skipscan03
 	.byt popd | R12	; drop the BS return
+	.byt inr | TOS	; adjust return values only at end of line
+	.byt dcr | N0	; we only get here after scan
 skipscan04
 	.byt dcr | TOS
 	.byt inr | N0
@@ -973,10 +868,6 @@ skipscan04
 	lda n
 	ldy n+1
 	jmp pushya
-#endif
-
-
-
 
 ;--------------------------------------------------------------
 ;
@@ -3770,9 +3661,9 @@ _qchar
 #include "page.i65"
 		.word rfetch
 #include "page.i65"
-		.word xyzzy
-#include "page.i65"
 		.word scan
+#include "page.i65"
+		.word xyzzy
 #include "page.i65"
 		.word drop
 #include "page.i65"
@@ -4522,9 +4413,9 @@ _word					; ( char )
 #include "page.i65"
 		.word rfetch		; ( addr addr size char )
 #include "page.i65"
-		.word xyzzy
-#include "page.i65"
 		.word skip		; ( addr addr2 size )
+#include "page.i65"
+		.word xyzzy
 #include "page.i65"
 		.word over		; ( addr addr2 size addr2 )
 #include "page.i65"
@@ -4532,9 +4423,9 @@ _word					; ( char )
 #include "page.i65"
 		.word rfrom		; ( addr addr2 addr2 size char )
 #include "page.i65" 
-		.word xyzzy
-#include "page.i65"
 		.word scan		; ( addr addr2 addr3 size )
+#include "page.i65"
+		.word xyzzy
 #include "page.i65"
 		.word drop		; ( addr addr2 addr3 )
 #include "page.i65"
