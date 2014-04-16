@@ -12,7 +12,12 @@ echo break .disp1>>pettil.lab	# debugging sweet16
 echo "disable 3">>pettil.lab
 echo break .disp2>>pettil.lab	# debugging sweet16
 echo "disable 4">>pettil.lab
-echo break .boyd>>pettil.lab
+echo break .disp3>>pettil.lab	# debugging sweet16
+echo "disable 5">>pettil.lab
+echo "watch 1c">>pettil.lab	# R14L
+echo "watch store 2 3">>pettil.lab	# UP
+#echo break .boyd>>pettil.lab
+#echo break .TOBR>>pettil.lab
 echo break .fooirq>>pettil.lab
 #echo break .SET>>pettil.lab
 #echo break .RTN>>pettil.lab
@@ -52,7 +57,6 @@ echo break .fooirq>>pettil.lab
 #echo break ._rethread>>pettil.lab
 #echo break .qbranch>>pettil.lab
 #echo break ._sharp>>pettil.lab
-echo "watch store 2 3">>pettil.lab
 #echo break ._rethread>>pettil.lab
 #echo break .strcmp16>>pettil.lab
 #echo break .opfind>>pettil.lab

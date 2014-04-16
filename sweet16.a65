@@ -64,50 +64,50 @@
 ; return to 6502 mode
 #define	rtn		$00
 
-; branch always, offset		R15 <-- R15 +/- offset
-#define	br		$01
-
-; branch if no carry, offset	R15 <-- R15 +/- offset if R14L bit 1 is clear
-#define	bnc		$02
-
-; branch if carry, offset	R15 <-- R15 +/- offset if R14L bit 1 is set
-#define	bc		$03
-
-; branch if plus, offset	R15 <-- R15 +/- offset if prior result is positive
-#define	bp		$04
-
-; branch if minus, offset	R15 <-- R15 +/- offset if prior result is negative
-#define	bm		$05
-
-; branch if zero, offset	R15 <-- R15 +/- offset if prior result is 0
-#define	bz		$06
-
-; branch if not zero, offset	R15 <-- R15 +/- offset if prior result is not 0
-#define	bnz		$07
-
-; branch if -1, offset		R15 <-- R15 +/- offset if prior result is -1
-#define	bm1		$08
-
-; branch if not -1, offset	R15 <-- R15 +/- offset if prior result is not -1
-#define	bnm1		$09
+; return from subroutine	R15 <-- (R12--); R12--
+#define	rs		$01
 
 ; next				leave Sweet16 and jmp next
-#define	nxt		$0A
-
-; return from subroutine	R15 <-- (R12--); R12--
-#define	rs		$0B
-
-; branch to subroutine, offset	(R12++) <-- R15; R12++ ; R15 <-- R15 +/- offset
-#define	bs		$0C
-
-; extension, address		jumps via R8 to native 6502 code, ended by RTS
-#define	ext		$0D
-
-; pull TOS from the Forth data stack
-#define	pull		$0E
+#define	nxt		$02
 
 ; push R0 to the Forth data stack
-#define	push		$0F
+#define	push		$03
+
+; pull TOS from the Forth data stack
+#define	pull		$04
+
+; extension, address		jumps via R8 to native 6502 code, ended by RTS
+#define	ext		$05
+
+; branch always, offset		R15 <-- R15 +/- offset
+#define	br		$06
+
+; branch to subroutine, offset	(R12++) <-- R15; R12++ ; R15 <-- R15 +/- offset
+#define	bs		$07
+
+; branch if no carry, offset	R15 <-- R15 +/- offset if R14H bit 1 is clear
+#define	bnc		$08
+
+; branch if carry, offset	R15 <-- R15 +/- offset if R14H bit 1 is set
+#define	bc		$09
+
+; branch if plus, offset	R15 <-- R15 +/- offset if prior result is positive
+#define	bp		$0a
+
+; branch if minus, offset	R15 <-- R15 +/- offset if prior result is negative
+#define	bm		$0b
+
+; branch if zero, offset	R15 <-- R15 +/- offset if prior result is 0
+#define	bz		$0c
+
+; branch if not zero, offset	R15 <-- R15 +/- offset if prior result is not 0
+#define	bnz		$0d
+
+; branch if -1, offset		R15 <-- R15 +/- offset if prior result is -1
+#define	bm1		$0e
+
+; branch if not -1, offset	R15 <-- R15 +/- offset if prior result is not -1
+#define	bnm1		$0f
 
 #define R0		$0
 r0	=		2*R0	; ACC
@@ -154,7 +154,8 @@ r15	=		2*R15	; Sweet16 PC
 
 #define	R0L		$0
 #define	R0H		R0L+$1
-#define	R14H		R0L+$1d
+#define	R14L		R0L+$1c	; prior register
+#define	R14H		R0L+$1d	; carry flag
 #define	R15L		R0L+$1e
 #define	R15H		R0L+$1f
 
@@ -166,26 +167,32 @@ LD	LDA R0L,X
 	LDA R0H,X	;MOVE RX TO R0
 	STA R0H
 	RTS
+	
 ST	LDA R0L
 	STA R0L,X	;MOVE R0 TO RX
 	LDA R0H
 	STA R0H,X
 	RTS
+	
 STAT	LDA R0L
 STAT2	STA (R0L,X)	;STORE BYTE INDIRECT
 	LDY #0
-STAT3	STY R14H	;INDICATE R0 IS RESULT NEG
+STAT3	STY R14L	;INDICATE R0 IS PRIOR RESULT REG
+
 INR	INC R0L,X
 	BNE INR2	;INCR RX
 	INC R0H,X
 INR2	RTS
+
 LDAT	LDA (R0L,X)	;LOAD INDIRECT (RX)
 	STA R0L		;TO R0
 	LDY #0
 	STY R0H		;ZERO HIGH ORDER R0 BYTE
 	BEQ STAT3	;ALWAYS TAKEN
+	
 POP	LDY #0		;HIGH ORDER BYTE = 0
 	BEQ POP2	;ALWAYS TAKEN
+	
 POPD	JSR DCR		;DECR RX
 	LDA (R0L,X)	;POP HIGH ORDER BYTE @RX
 	TAY		;SAVE IN Y REG
@@ -194,26 +201,78 @@ POP2	JSR DCR		;DECR RX
 	STA R0L		;TO R0
 	STY R0H
 POP3	LDY #0		;INDICATE R0 AS LAST RESULT REG
-	STY R14H
+	STY R14L
 	RTS
+
+BS	ldx #R12*2
+	LDA R15L	;NOTE X REG IS 12*2!
+	JSR STAT2	;PUSH LOW PC BYTE VIA R12
+	LDA R15H
+	JSR STAT2	;PUSH HIGH ORDER PC BYTE
+
+BR	CLC
+
+BNC	BCS BNC2	;NO CARRY TEST
+BR1	LDA (R15L),Y	;DISPLACEMENT BYTE
+	BPL BR2
+	DEY
+BR2	ADC R15L	;ADD TO PC
+	STA R15L
+	TYA
+	ADC R15H
+	STA R15H
+BNC2	RTS
+
+BC	BCS BR
+	RTS
+
 LDDAT	JSR LDAT	;LOW ORDER BYTE TO R0, INCR RX
 	LDA (R0L,X)	;HIGH ORDER BYTE TO R0
 	STA R0H
 	JMP INR		;INCR RX
+
 STDAT	JSR STAT	;STORE INDIRECT LOW ORDER
 	LDA R0H		;BYTE AND INCR RX. THEN
 	STA (R0L,X)	;STORE HIGH ORDER BYTE.
 	JMP INR		;INCR RX AND RETURN
+
 STPAT	JSR DCR		;DECR RX
 	LDA R0L
 	STA (R0L,X)	;STORE R0 LOW BYTE @RX
 	JMP POP3	;INDICATE R0 AS LAST RESULT REG
+
 DCR	LDA R0L,X
 	BNE DCR2	;DECR RX
 	DEC R0H,X
 DCR2	DEC R0L,X
 	RTS
+
+BP	BPL BR1		;BRANCH IF SO
+	RTS
+
+BM	BMI BR1
+	RTS
+
+BZ	ORA R0L,X	;(BOTH BYTES)
+	BEQ BR1		;BRANCH IF SO
+	RTS
+
+BNZ	ORA R0L,X	;(BOTH BYTES)
+	BNE BR1		;BRANCH IF SO
+	RTS
+
+BM1	AND R0L,X	;FOR $FF (MINUS 1)
+	EOR #$FF
+	BEQ BR1		;BRANCH IF SO
+	RTS
+
+BNM1	AND R0L,X	;CHECK BOTH BYTES FOR NO $FF
+	EOR #$FF
+	BNE BR1		;BRANCH IF NOT MINUS 1
+	RTS
+
 SUB	LDY #0		;RESULT TO R0
+
 CPR	SEC		;NOTE Y REG = 13*2 FOR CPR
 	LDA R0L
 	SBC R0L,X
@@ -225,6 +284,7 @@ SUB2	STA R0H,Y
 	ADC #0		;CARRY TO LSB
 	STA R14H
 	RTS
+
 ADD	LDA R0L
 	ADC R0L,X
 	STA R0L		;R0+RX TO R0
@@ -232,91 +292,16 @@ ADD	LDA R0L
 	ADC R0H,X
 	LDY #0		;R0 FOR RESULT
 	BEQ SUB2	;FINISH ADD
-BS	LDA R15L	;NOTE X REG IS 12*2!
-	JSR STAT2	;PUSH LOW PC BYTE VIA R12
-	LDA R15H
-	JSR STAT2	;PUSH HIGH ORDER PC BYTE
-BR	CLC
-BNC	BCS BNC2	;NO CARRY TEST
-BR1	LDA (R15L),Y	;DISPLACEMENT BYTE
-	BPL BR2
-	DEY
-BR2	ADC R15L	;ADD TO PC
-	STA R15L
-	TYA
-	ADC R15H
-	STA R15H
-BNC2	RTS
-BC	BCS BR
-	RTS
-BP	ASL		;DOUBLE RESULT-REG INDEX
-	TAX		;TO X REG FOR INDEXING
-	LDA R0H,X	;TEST FOR PLUS
-	BPL BR1		;BRANCH IF SO
-	RTS
-BM	ASL		;DOUBLE RESULT-REG INDEX
-	TAX
-	LDA R0H,X	;TEST FOR MINUS
-	BMI BR1
-	RTS
-BZ	ASL		;DOUBLE RESULT-REG INDEX
-	TAX
-	LDA R0L,X	;TEST FOR ZERO
-	ORA R0H,X	;(BOTH BYTES)
-	BEQ BR1		;BRANCH IF SO
-	RTS
-BNZ	ASL		;DOUBLE RESULT-REG INDEX
-	TAX
-	LDA R0L,X	;TEST FOR NON-ZERO
-	ORA R0H,X	;(BOTH BYTES)
-	BNE BR1		;BRANCH IF SO
-	RTS
-BM1	ASL		;DOUBLE RESULT-REG INDEX
-	TAX
-	LDA R0L,X	;CHECK BOTH BYTES
-	AND R0H,X	;FOR $FF (MINUS 1)
-	EOR #$FF
-	BEQ BR1		;BRANCH IF SO
-	RTS
-BNM1	ASL		;DOUBLE RESULT-REG INDEX
-	TAX
-	LDA R0L,X
-	AND R0H,X	;CHECK BOTH BYTES FOR NO $FF
-	EOR #$FF
-	BNE BR1		;BRANCH IF NOT MINUS 1
-	RTS
-EXT	LDA #R11	; SETZ will use R11 for the indirect transfer
-	STA R14H
+
+EXT	LDA #R13	; SETZ will use R11 for the indirect transfer
+	STA R14L
 	ASL
 	TAX
 	LDY #1		; point to high byte of transfer address
-	JSR SETZ
-	JMP (r11)	; implement your 6502 extension to Sweet16 here!
-SET	BMI SETZ	; bra (N flag based on low byte of RTS vector) 
-PULL	BPL PULLZ	; bra (N flag based on prior result register)
-PUSH	BPL PUSHZ
-NXT	BPL NXTZ
-RS	BPL RSZ
-RTN	BPL RTNZ
+	JSR SET
+	JMP (r13)	; implement your 6502 extension to Sweet16 here!
 
-NXTZ	lda #<next
-	sta R15L
-	lda #>next
-	sta R15H
-RTNZ	pla
-	pla
-	tsx
-	lda R15L
-	sta $0105,x
-	lda R15H
-	sta $0106,x
-	PLA
-	TAY
-	PLA
-	TAX
-	PLA
-	RTI
-SETZ	LDA (R15L),Y	;HIGH ORDER BYTE OF CONSTANT
+SET	LDA (R15L),Y	;HIGH ORDER BYTE OF CONSTANT
 	STA R0H,X
 	DEY
 	LDA (R15L),Y	;LOW ORDER BYTE OF CONSTANT
@@ -328,6 +313,29 @@ SETZ	LDA (R15L),Y	;HIGH ORDER BYTE OF CONSTANT
 	BCC SET2
 	INC R15H
 SET2	RTS
+
+PULL	BPL PULLZ	; bra (N flag based on prior result register)
+
+PUSH	BPL PUSHZ
+
+RS	BPL RSZ
+
+NXT	lda #<next
+	ldy #>next
+	bne RTN2
+RTN	pla
+	pla
+	tsx
+	lda R15L
+	ldy R15H
+RTN2	sta $0105,x
+	sty $0106,x
+	PLA
+	TAY
+	PLA
+	TAX
+	PLA
+	RTI
 RSZ	LDX #$18	;12*2 FOR R12 AS STACK POINTER
 	JSR DCR		;DECR STACK POINTER
 	LDA (R0L,X)	;POP HIGH RETURN ADDRESS TO PC
@@ -336,19 +344,27 @@ RSZ	LDX #$18	;12*2 FOR R12 AS STACK POINTER
 	LDA (R0L,X)
 	STA R15L
 	RTS
-PULLZ	JSR getpstack	; get PETTIL stack pointer
+; return the parameter stack pointer in X
+
+; set the parameter stack pointer on return from X
+
+PULLZ	tsx
+	lda $0104,x
+	tax		; get PETTIL stack pointer
 	JSR slide	; remove item from Forth data stack (DROP in Forth)
-	JSR putpstack	; update PETTIL stack pointer
-			;(do not optimize out this JSR/RTS! because stack)
-	RTS
-PUSHZ	JSR getpstack	; get PETTIL stack pointer
+	txa
+	sta $0104,x	; update PETTIL stack pointer
+	rts
+PUSHZ	tsx
+	lda $0104,x
+	tax		; get PETTIL stack pointer
 	JSR slip	; push TOS -> Forth data stack (DUP in Forth)
+	txa
+	sta $0104,x
+	rts
 	JSR putpstack	; update PETTIL stack pointer
 	LDX #tos
 	JMP ST
-
-
-
 
 SW16	ldy $0106,x	;INIT SWEET16 PC
 	lda $0105,x	;ADDRESS
@@ -388,9 +404,15 @@ TOBR	CPX #$1C
 	INC R15H
 TOBR2	LDA BRTBL,X	;LOW ORDER ADR BYTE
 	PHA		;ONTO STACK FOR NON-REG OP
-	LDA R14H	;"PRIOR RESULT REG" INDEX
+	BMI TOBR3
+	LDA R14H
+	AND #$FE
+	TAX
+	LDA R0H,X	;prepare register for BP, BM, BZ, BNZ, BM1, BNM1
+disp2	RTS
+TOBR3	LDA R14H
 	LSR		;PREPARE CARRY FOR BC, BNC.
-disp2	RTS		;GOTO NON-REG OP ROUTINE
+disp3	RTS		;GOTO NON-REG OP ROUTINE
 
 OPTBL	.BYT <SET-1	;1X
 BRTBL	.BYT <RTN-1	;0
@@ -424,18 +446,6 @@ BRTBL	.BYT <RTN-1	;0
 	.BYT <PULL-1	;E
 	.BYT 0		;UNUSED
 	.BYT <PUSH-1	;F
-
-; return the parameter stack pointer in X
-getpstack	tsx
-		lda $0106,x
-		tax
-		rts
-
-; set the parameter stack pointer on return from X
-putpstack	txa
-		tsx
-		sta $0106,x
-		rts
 
 ; pop the stack
 slide		lda stackh,x		; slide something off of the stack
