@@ -223,7 +223,7 @@ SW16D	LDA #>SET	;COMMON HIGH BYTE FOR ALL ROUTINES
 	PHA		;ONTO STACK
 disp1	RTS		;GOTO REG-OP ROUTINE
 TOBR	CPX #$1C
-	BCS TOBR2	;0E, 0F instructions are single byte
+	BCS TOBR2	;0E, 0F, 00, 0A, 0B instructions are single byte
 	INC R15L
 	BNE TOBR2	;INCR PC
 	INC R15H
@@ -233,6 +233,10 @@ TOBR2	LDA BRTBL,X	;LOW ORDER ADR BYTE
 	LSR		;PREPARE CARRY FOR BC, BNC.
 disp2	RTS		;GOTO NON-REG OP ROUTINE
 
+NXTZ	lda #<next
+	sta R15L
+	lda #>next
+	sta R15H
 RTNZ	pla
 	pla
 	tsx
@@ -266,11 +270,26 @@ RSZ	LDX #$18	;12*2 FOR R12 AS STACK POINTER
 	LDA (R0L,X)
 	STA R15L
 	RTS
+PULLZ	JSR getpstack	; get PETTIL stack pointer
+	JSR slide	; remove item from Forth data stack (DROP in Forth)
+	JSR putpstack	; update PETTIL stack pointer
+			;(do not optimize out this JSR/RTS! because stack)
+	RTS
+PUSHZ	JSR getpstack	; get PETTIL stack pointer
+	JSR slip	; push TOS -> Forth data stack (DUP in Forth)
+	JSR putpstack	; update PETTIL stack pointer
+	LDX #tos
+	JMP ST
 
 ;* FOLLOWING CODE MUST BE
 ;* CONTAINED ON A SINGLE PAGE!
 
 SET	BPL SETZ	;ALWAYS TAKEN
+PULL	BPL PULLZ	; bra
+PUSH	BPL PUSHZ
+NXT	BPL NXTZ
+RS	BPL RSZ
+RTN	BPL RTNZ
 LD	LDA R0L,X
 	STA R0L
 	LDA R0H,X	;MOVE RX TO R0
@@ -394,9 +413,7 @@ BNM1	ASL		;DOUBLE RESULT-REG INDEX
 	AND R0H,X	;CHECK BOTH BYTES FOR NO $FF
 	EOR #$FF
 	BNE BR1		;BRANCH IF NOT MINUS 1
-NXT	RTS
-RS	JMP RSZ
-RTN	JMP RTNZ
+	RTS
 EXT	LDA #R11	; SETZ will use R11 for the indirect transfer
 	STA R14H
 	ASL
@@ -404,17 +421,6 @@ EXT	LDA #R11	; SETZ will use R11 for the indirect transfer
 	LDY #1		; point to high byte of transfer address
 	JSR SETZ
 	JMP (r11)	; implement your 6502 extension to Sweet16 here!
-PULL	BPL PULLZ	; bra
-PUSH	JSR getpstack	; get PETTIL stack pointer
-	JSR slip	; push TOS -> Forth data stack (DUP in Forth)
-	JSR putpstack	; update PETTIL stack pointer
-	LDX #tos
-	JMP ST
-PULLZ	JSR getpstack	; get PETTIL stack pointer
-	JSR slide	; remove item from Forth data stack (DROP in Forth)
-	JSR putpstack	; update PETTIL stack pointer
-			;(do not optimize out this JSR/RTS! because stack)
-	RTS
 
 ; return the parameter stack pointer in X
 getpstack	tsx
