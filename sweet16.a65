@@ -145,12 +145,6 @@ LD
     LDA R0H,X       ;MOVE RX TO R0
     STA R0H
     RTS
-ST
-    LDA R0L
-    STA R0L,X       ;MOVE R0 TO RX
-    LDA R0H
-    STA R0H,X
-    RTS
 STAT
     LDA R0L
 STAT2
@@ -187,43 +181,64 @@ POP3
     STY R14L
     RTS
 BP
-    BPL BR         ;BRANCH IF SO
+    BPL BR1        ;BRANCH IF SO
     RTS
 BM
-    BMI BR
+    BMI BR1
     RTS
 BZ
     ORA R0L,X       ;(BOTH BYTES)
-    BEQ BR         ;BRANCH IF SO
+    BEQ BR1        ;BRANCH IF SO
     RTS
 BNZ
     ORA R0L,X       ;(BOTH BYTES)
-    BNE BR         ;BRANCH IF SO
+    BNE BR1        ;BRANCH IF SO
     RTS
 BM1
     AND R0L,X       ;FOR $FF (MINUS 1)
     EOR #$FF
-    BEQ BR         ;BRANCH IF SO
+    BEQ BR1         ;BRANCH IF SO
     RTS
 BNM1
     AND R0L,X       ;CHECK BOTH BYTES FOR NO $FF
     EOR #$FF
-    BNE BR         ;BRANCH IF NOT MINUS 1
+    BNE BR1         ;BRANCH IF NOT MINUS 1
     RTS
 BS
-    ;LDX #R12*2    ; already R12 because x=opcode*2
-    LDA R15L       ;NOTE X REG IS 12*2!
-    JSR STAT2      ;PUSH LOW PC BYTE VIA R12
+    ;LDX #R12*2     ; already R12 because x=opcode*2
+    LDA R15L        ;NOTE X REG IS 12*2!
+    JSR STAT2       ;PUSH LOW PC BYTE VIA R12
     LDA R15H
-    JSR STAT2      ;PUSH HIGH ORDER PC BYTE
+    JSR STAT2       ;PUSH HIGH ORDER PC BYTE
     ;LDY #0
-    CLC            ;bra
+BR
+    CLC             ;bra
 BNC
-    BCC BR        ;NO CARRY TEST
+    BCS BNC2        ;NO CARRY TEST
+BR1
+    ;LDY #0
+    ;CLC
+    LDA (R15L),Y    ;DISPLACEMENT BYTE
+    BPL BR2
+    DEY
+BR2
+    ADC R15L        ;ADD TO PC
+    STA R15L
+    TYA
+    ADC R15H
+    STA R15H
+BNC2
     RTS
 BC
     BCS BR
     RTS
+ST
+    LDA R0L
+    STA R0L,X       ;MOVE R0 TO RX
+    LDA R0H
+    STA R0H,X
+    RTS
+;--------------- middle of page ---------------
 LDDAT
     JSR LDAT        ;LOW ORDER BYTE TO R0, INCR RX
     LDA (R0L,X)     ;HIGH ORDER BYTE TO R0
@@ -239,21 +254,14 @@ EXT
     STX R14L
     LDY #2          ; point to high byte of transfer address
     JSR SET
+    ; A = R15L
+    ; X = opcode*2
+    ; Y = 1
+    ; N = 0
+    ; Z = 1
+    ; C = ?
     JMP (r11)       ; implement your 6502 extension to Sweet16 here
                     ; reuse R11 as a return value
-BR
-    ;LDY #0
-    LDA (R15L),Y   ;DISPLACEMENT BYTE
-    BPL BR2
-    DEY
-BR2
-    ADC R15L       ;ADD TO PC
-    STA R15L
-    TYA
-    ADC R15H
-    STA R15H
-BNC2
-    RTS
 STPAT
     JSR DCR         ;DECR RX
     LDA R0L
@@ -323,10 +331,10 @@ SET
     LDA (R15L),Y    ;LOW ORDER BYTE OF CONSTANT
     STA R0L,X
     TYA
-    SEC
+    SEC             ;ADD 2 to R15
     ADC R15L
     STA R15L
-    BCS SET2
+    BCS SET2        ;usually 2 clocks
     RTS
 SET2
     INC R15H
@@ -428,6 +436,7 @@ TOBR2
     ; N = sign? prior result[high]
     ; Z = zero? prior result[high]
     ; C = 0
+disp2
     RTS
 TOBR3
     LDA R14H
@@ -441,6 +450,7 @@ TOBR3
     ; Z = ?
     ; C = from prior result
 TOBR4
+disp3
     RTS
 TOBR5
     INC R15H
@@ -500,22 +510,22 @@ slip
 
 ; returns just the low 6 bits of a length byte
 ;inputs
-;    N0 (R5) = address
+;    N0 (R5) = LFA(-ish) address (two below a counted string)
 ;returns
-;    R11 = low bits of length byte at (N0+2)
+;    R11 = low bits of length byte at (N0),2 includes smudge bit 0-63
 wordlen16
-    ;ldy #0         ; SET did this for us
-    sty r11+1       ; clear high byte
-    ldy #2
+    lda #0
+    sta r11+1       ; clear high byte
+    iny             ;Y=2
     lda (n),y
     and #$3f
     sta r11         ; R11 = length
     rts
 
 ;inputs
-;    TOS (R1) = addr-2 of a counted string
+;    TOS (R4) = addr-2 of a counted string
 ;    N0 (R5) = current LFA in the dictionary chain (initially the last LFA)
-;    R6 = length of words
+;    N1 (R6) = length of words
 ;returns
 ;    C = true if the strings match
 strcomp16    
