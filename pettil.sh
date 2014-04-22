@@ -16,6 +16,7 @@ echo break .disp3>>pettil.lab	# debugging sweet16
 echo "disable 5">>pettil.lab
 echo "watch 1c">>pettil.lab	# R14L
 echo "watch store 2 3">>pettil.lab	# UP
+echo break +1036>>pettil.lab	# debugging sweet16
 #echo break .boyd>>pettil.lab
 #echo break .TOBR>>pettil.lab
 echo break .SW16>>pettil.lab
