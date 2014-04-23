@@ -9,7 +9,7 @@ echo "disable 1">>pettil.lab
 echo break .exit>>pettil.lab	# debugging secondaries
 echo "disable 2">>pettil.lab
 #echo "watch store 2 3">>pettil.lab	# UP
-echo break ._sharp>>pettil.lab
+echo break .error>>pettil.lab
 #echo break .boyd>>pettil.lab
 #echo break .TOBR>>pettil.lab
 #echo break .SW16>>pettil.lab
