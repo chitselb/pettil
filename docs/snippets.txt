@@ -1,81 +1,262 @@
-skipscan01
-	.byt ld | TOS	; char
-	.byt st | N0
-	.byt pull
-	.byt ld | TOS	; count
-	.byt st | N1
-	.byt pull		; addr
-	.byt rs
-skipscan02
-	.byt ld | N1
-	.byt bz , <(skipscan03-*-2)	; leave if count = 0
-	.byt dcr | N1
-	.byt ldi | N0
-	.byt sub | TOS
-	.byt rs
-skip
-	brk
-	.byt bs, <(skipscan01-*-2)	; setup
-skip01
-	.byt bs, <(skipscan02-*-2)	; next char
-	.byt bnz, <(skip01-*-2)
-	.byt br, <(skipscan03-*-2)	; exit
-scan
-	brk
-	.byt bs, <(skipscan01-*-2)	; setup
-scan01
-	.byt bs, <(skipscan02-*-2)	; next char
-	.byt bz, <(scan01-*-2)		; fall through
-skipscan03
-	.byt popd | R12	; drop the BS return
-	.byt ld | N0
-	.byt st | TOS
-	.byt push
-	.byt ld | N1
-	.byt st | TOS
-	.byt rtn
-	jmp next
-skipscan03
-	.byt rs
+; xor of two vectors, to switch between Sweet16 and TIM
+brktoggle       .word TIMBRK^SW16
+    
+;--------------------------------------------------------------
+;
+;       MON    ( -- )
+;
+monlfa
+    .byt $de,$ad
+    .byt (mon-*-1)|bit7
+    .asc "MO","N"|bit7
+; sets the BRK vector to either TIM or Sweet16
+; (TIM exits to BASIC)
+;~wut? this only works the first time
+mon
+    jsr swapzp      ; restore BASIC zpage
+sw16
+    ldy #2
+    lda brktoggle-1,y
+    eor CBINV-1,y
+    sta CBINV-1,y
+    dey
+    bne sw16+2
+    brk
+    .byt rtn
+plover          ; if we get here, it's unimplemented
+xyzzy
+    jmp next        ; used as a breakpoint in secondaries
 
 
-;16-bit multiply with 32-bit product 
-;from 6502.org
 
-multiplier = $f7 
-multiplicand = $f9 
-product = $fb 
 
-mult16 lda #$00
-sta product+2 ; clear upper bits of product
-sta product+3 
-ldx #$10 ; set binary count to 16 
-shift_r lsr multiplier+1 ; divide multiplier by 2 
-ror multiplier
-bcc rotate_r 
-lda product+2 ; get upper half of product and add multiplicand
-clc
-adc multiplicand
-sta product+2
-lda product+3 
-adc multiplicand+1
-rotate_r ror ; rotate partial product 
-sta product+3 
-ror product+2
-ror product+1 
-ror product 
-dex
-bne shift_r 
-rts
+;--------------------------------------------------------------
+;
+;       SETIRQ   ( newirq -- oldirq )
+;
+; Safely changes the IRQ vector at $90-$91 to the new value,
+; leaving the previous value on the stack
+setirqlfa
+    .byt $de,$ad
+    .byt (setirq-*-1)|bit7
+    .asc "SETIR","Q"|bit7
+setirq
+    sei
+    ldy 1+CINV
+    lda CINV                ; old IRQ --> ya
+    pha
+    lda tos+1
+    sta 1+CINV
+    lda tos
+    sta CINV                ; tos --> IRQ
+    pla
+    cli
+    jmp put
 
-: (")  r@ dup c@ r> + 1+ >r ; ( runtime of " )
 
-: "    ( compile or move to pad a string literal )
-	ascii " ?char
-	state @  if  compile (") ,$
-		else dup pad c! pad 1+ swap cmove
-                    pad
-               then ; immediate
+
+;--------------------------------------------------------------
+;
+;       FOO ( -- )
+;
+; hooks/unhooks the IRQ
+;
+;
+foolfa   
+    .byt $de,$ad
+    .byt (foo-*-1)|bit7
+    .asc "FO","O"|bit7
+foo
+#include "enter.i65"
+    .word plit
+    .word foostash          ; ( new )
+#include "pad.i65"
+    .word dup               ; ( new new )
+#include "page.i65"
+    .word fetch             ; ( new newirq )
+#include "page.i65"
+    .word clit
+    .byt $90                ; ( new newirq live )
+#include "pad.i65"
+    .word fetch             ; ( new newirq liveirq )
+#include "page.i65"
+    .word rot               ; ( newirq liveirq new )
+#include "page.i65"
+    .word store             ; ( newirq )
+#include "pad.i65"
+    .word setirq
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word exit
+foostash  
+    .word fooirq
+fooirq    
+    ldy #2
+fooirq01  
+    lda TIME,y
+    sta VIDRAM+37,y
+    dey
+    bpl fooirq01
+    jmp (foostash)
+
+
+;--------------------------------------------------------------
+;
+;       TOGGLEIRQ   ( eorvalue $90|$92 -- )
+;
+toggleirq
+    sei
+    brk
+    .byt ld | TOS
+    .byt st | N0        ; make a copy of the vector address
+    .byt ldd | TOS      ; fetch the current target
+    .byt pull           ; get the delta
+    .byt ext
+    .word xor16
+    .byt std | N0
+    .byt rtn
+    cli
+    jmp pops            ; [15]
+
+
+;--------------------------------------------------------------
+;
+;       TOGGLEIRQ   ( eorvalue $90|$92 -- )
+;
+    sei
+    jsr toforth
+    .word dup
+    .word tor
+    .word fetch
+    .word xor
+    .word rfrom
+    .word store
+    .word to6502
+    cli
+    jmp next            ; [22]
+
+
+
+
+;--------------------------------------------------------------
+;
+;       TOGGLEIRQ   ( eorvalue $90|$92 -- )
+;
+toggleirq
+    sei
+    ldy #0
+    lda (tos),y
+    eor stackl,x
+    sta (tos),y
+    iny
+    lda (tos),y
+    eor stackh,x
+    sta (tos),y
+    cli
+    jmp poptwo          ; [20]
+
+;--------------------------------------------------------------
+;
+;       TOGGLEIRQ   ( eorvalue $90|$92 -- )
+;
+toggleirq
+    ldy #1
+    jsr setup       ; eorvalue to N0
+    sei
+    iny             ; Y=1
+toggleirq01
+    lda (tos),y
+    eor n,y
+    sta (tos),y
+    dey
+    bpl toggleirq01
+    cli
+    jmp pops          ; [21]
+
+;--------------------------------------------------------------
+;
+;       TOGGLEIRQ   ( eorvalue $90|$92 -- )
+;
+toggleirq
+    sei
+    brk
+    .byt ld | TOS
+    .byt st | N0
+    .byt ldd | TOS
+    .byt pull
+    .byt rtn
+    ldy #1
+toggleirq01
+    lda r0,y
+    eor tos,y
+    sta (n),y
+    dey
+    bpl toggleirq01
+    cli
+    jmp pops            ; [24]
+
+
+
+;--------------------------------------------------------------
+;
+;       SETIRQ   ( newvalue -- )
+;
+    sei
+    lda tos
+    sta $90
+    lda tos+1
+    sta $91
+    cli
+    jmp nxt             ; [13]
+
+;--------------------------------------------------------------
+;
+;       SETIRQ   ( newvalue -- )
+;
+    sei
+    brk
+    .byt set | N0
+    .word $90
+    .byt ld | tos
+    .byt std | N0
+    .byt rtn
+    cli
+    jmp next            ; [12]
+
+
+
+
+;--------------------------------------------------------------
+;
+;       EDITQ   ( -- )
+;
+; editor quit
+;
+;editqlfa
+;    .byt $de,$ad
+;    .byt (editq-*-1)|bit7
+;    .asc "EDIT","?"|bit7
+editq
+    ldx storex      ; restore data stack pointer
+    lda #$55
+    sta $90
+    lda #$e4
+    sta $91         ; restore factory IRQ
+    dex
+    lda #8
+    sta stackl,x
+    ldy #0
+    sty stackh,x
+
+    lda #<fail
+    sta tos
+    lda #>fail
+    sta tos+1
+    cli
+    jmp execute     ; drop out to Forth
+
+
 
 memory move routine (west p. 355)
 .C:b357  38          SEC
