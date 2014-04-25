@@ -699,110 +699,134 @@ EROM IRQ routine
 
 ;--------------------------------------------------------------
 ;
-;       EDIT   ( -- )
+;       $INDEX   ( addr char -- index|0 )
 ;
-editlfa
+; returns the position of char within the counted string at addr
+; otherwise returns 0
+dolindexlfa
     .byt $de,$ad
-    .byt (edit-*-1)|bit7
-    .asc "EDI","T"|bit7
-_edit
-#include "enter.i65"
-    .word plit
-    .word MAINIRQ^edit02
-#include "pad.i65"
-    .word clit
-    .byt <CINV       ; $90
-#include "pad.i65"
-    .word toggleirq
-#include "page.i65"
-    .word to6502
-    stx storex
-edit01
-    lda #$0d
-    jsr CHROUT      ; print a carriage return
-    jsr CHRIN       ; blink the cursor, wait for input, etc... 
-    jmp edit01      ; ...forever
-
-edit02              ; this is edit's IRQ hook
-    lda $9b
-    cmp #$ef        ; test STOP key
-    beq edit04
-edit03
-    jmp $e455       ; not yet?  perform normal IRQ
-edit04              ; looks like someone pressed stop
-    lda $cd         ; nonzero is quotes mode
-    ora $dc         ; number of inserts pending
-    bne edit03      ; not so fast.  Are we in quotes or inserts?
-
-
-    lda #$55
-    sta $90
-    lda #$e4
-    sta $91         ; restore factory IRQ
-    cli
-edit05
-    jsr GETIN
-    beq edit05      ; busywait for next keypress
-    cmp #3
-    beq edit05      ; stop hitting stop
-    cmp #'Q'
-    bne edit06
-    jmp editq
-edit06
-    ldx storex
-    bne edit
-
-
+    .byt (dolindex-*-1)|bit7
+    .asc "$INDE","X"|bit7
+dolindex
+    brk
+    .byt sub | ACC
+    .byt st | N2
+    .byt ld | TOS
+    .byt st | N0
+    .byt pull
+    .byt ldi | TOS
+    .byt st | N1
+dolindex01
+    .byt inr | N2
+    .byt ldi | TOS
+    .byt sub | N0
+    .byt bz, <(dolindex02-*-2)	; winner
+    .byt dcr | N1
+    .byt bnz, <(dolindex01-*-2)
+    .byt ld | N1
+    .byt st | N2
+dolindex02
+    .byt ld | N2
+    .byt st | TOS
+    .byt nxt
+    
 ;--------------------------------------------------------------
 ;
-;       EDIT   ( -- )
+;       $INDEX   ( addr char -- index|0 )
 ;
-editlfa
+; returns the position of char within the counted string at addr
+; otherwise returns 0
+dolindexlfa
     .byt $de,$ad
-    .byt (edit-*-1)|bit7
-    .asc "EDI","T"|bit7
-edit
-    stx storex      ; stash the data stack pointer
-    sei
-    lda #<edit02
-    sta $90
-    lda #>edit02
-    sta $91         ; hook in the editor IRQ
-    cli
-    bne edit01a     ; bra
-edit01
-    lda #$0d
-    jsr CHROUT      ; print a carriage return
-edit01a
-    jsr CHRIN       ; blink the cursor, wait for input, etc... 
-    jmp edit01      ; ...forever
+    .byt (dolindex-*-1)|bit7
+    .asc "$INDE","X"|bit7
+dolindex
+    brk
+    .byt ld | TOS
+    .byt st | N0                ; char
+    .byt pull
+    .byt ld | TOS               ; addr
+    .byt st | N1                ; make a copy
+    .byt ldi | N1
+    .byt st | N2                ; count
+dolindex01
+    .byt ldi | N1
+    .byt cpr | N0
+    .byt bz, <(dolindex02-*-2)	; winner
+    .byt dcr | N2
+    .byt bnz, <(dolindex01-*-2)
+    .byt ld | TOS
+    .byt st | N1
+dolindex02
+    .byt ld | N1
+    .byt sub | TOS
+    .byt st | TOS
+    .byt nxt
+    
+;--------------------------------------------------------------
+;
+;       $INDEX   ( addr char -- index|0 )
+;
+; returns the position of char within the counted string at addr
+; otherwise returns 0
+dolindexlfa
+    .byt $de,$ad
+    .byt (dolindex-*-1)|bit7
+    .asc "$INDE","X"|bit7
+dolindex
+    ldy #1
+    jsr setup
+    sty n+2
+    lda (n),y
+    tay
+dolindex01
+    lda (n),y
+    eor tos
+    beq dolindex02
+    dey
+    bne dolindex01
+dolindex02
+    sty tos
+    jmp next
+    
+    .byt ld | TOS
+    .byt st | N0                ; char
+    .byt pull
+    .byt ld | TOS               ; addr
+    .byt st | N1                ; make a copy
+    .byt ldi | N1
+    .byt st | N2                ; count
+dolindex01
+    .byt ldi | N1
+    .byt cpr | N0
+    .byt bz, <(dolindex02-*-2)	; winner
+    .byt dcr | N2
+    .byt bnz, <(dolindex01-*-2)
+    .byt ld | TOS
+    .byt st | N1
+dolindex02
+    .byt ld | N1
+    .byt sub | TOS
+    .byt st | TOS
+    .byt nxt
+    
+>C:00e0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 02   ................
+>C:00f0  82 02 82 82  83 83 83 83  83 00 00 3d  29 ff ff 30   ...........=)..0
 
-edit02              ; this is edit's IRQ hook
-    lda $9b
-    cmp #$ef        ; test STOP key
-    beq edit04
-edit03
-    jmp $e455       ; not yet?  perform normal IRQ
-edit04              ; looks like someone pressed stop
-    lda $cd         ; nonzero is quotes mode
-    ora $dc         ; number of inserts pending
-    bne edit03      ; not so fast.  Are we in quotes or inserts?
+scrolled 40 off the top
+>C:00e0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 02 82   ................
+>C:00f0  02 82 82 82  83 83 83 83  83 00 00 3d  29 ff ff 30   ...........=)..0
 
+scrolled 40 off the top again
+>C:00e0  80 80 80 80  80 80 80 81  81 81 81 81  81 02 82 02   ................
+>C:00f0  82 82 82 82  83 83 83 83  83 00 00 3d  29 ff ff 30   ...........=)..0
 
-    lda #$55
-    sta $90
-    lda #$e4
-    sta $91         ; restore factory IRQ
-    cli
-edit05
-    jsr GETIN
-    beq edit05      ; busywait for next keypress
-    cmp #3
-    beq edit05      ; stop hitting stop
-    cmp #'Q'
-    bne edit06
-    jmp editq
-edit06
-    ldx storex
-    bne edit
+scrolled 40 off the top again
+>C:00e0  80 80 80 80  80 80 80 81  81 81 81 81  01 82 02 82   ................
+>C:00f0  82 82 82 82  83 83 83 83  83 00 00 3d  29 ff ff 30   ...........=)..0
 
+changed top to 80
+>C:00e0  80 00 80 80  80 80 80 81  81 81 81 81  01 82 02 82   ................
+>C:00f0  82 82 82 82  83 83 83 83  83 00 00 3d  29 ff ff 30   ...........=)..0
+
+scrolled 80 off the top
