@@ -295,3 +295,514 @@ memory move routine (west p. 355)
 .C:b390  D0 F2       BNE $B384
 .C:b392  60          RTS
 
+
+
+EROM IRQ routine
+.C:e442  48          PHA
+.C:e443  8A          TXA
+.C:e444  48          PHA
+.C:e445  98          TYA
+.C:e446  48          PHA
+.C:e447  BA          TSX
+.C:e448  BD 04 01    LDA $0104,X
+.C:e44b  29 10       AND #$10
+.C:e44d  F0 03       BEQ $E452
+.C:e44f  6C 92 00    JMP (.CBINV)
+.C:e452  6C 90 00    JMP ($0090)
+.C:e455  20 68 F7    JSR $F768      ; bump jiffy clock
+; cursor blink
+.C:e458  A5 A7       LDA $A7
+.C:e45a  D0 18       BNE $E474      ; is cursor winking?
+.C:e45c  C6 A8       DEC $A8        ; cursor flash countdown
+.C:e45e  D0 14       BNE $E474
+.C:e460  A9 14       LDA #$14
+.C:e462  85 A8       STA $A8        ; reset cursor blink countdown
+.C:e464  A4 C6       LDY $C6        ; position of cursor along line
+.C:e466  46 AA       LSR $AA        ; cursor blink toggle
+.C:e468  B1 C4       LDA ($C4),Y    ; pointer to screen char
+.C:e46a  B0 04       BCS $E470
+.C:e46c  E6 AA       INC $AA        ; cursor in blink phase =1, else 0
+.C:e46e  85 A9       STA $A9        ; true character at cursor position
+.C:e470  49 80       EOR #$80       ; blink it
+.C:e472  91 C4       STA ($C4),Y
+
+.C:e474  A2 FF       LDX #$FF
+.C:e476  86 A6       STX $A6        ; copy of keypress #ff=no key
+.C:e478  E8          INX            ; x=0
+.C:e479  86 98       STX $98        ; shift key pressed? 0 = no
+.C:e47b  A2 50       LDX #$50
+.C:e47d  AD 10 E8    LDA .PIA1PORTA
+.C:e480  29 F0       AND #$F0
+.C:e482  8D 10 E8    STA .PIA1PORTA
+.C:e485  A0 00       LDY #$00
+.C:e487  AD 10 E8    LDA .PIA1PORTA
+.C:e48a  0A          ASL A
+.C:e48b  0A          ASL A
+.C:e48c  0A          ASL A
+.C:e48d  10 06       BPL $E495      ; check cassette #1 sense
+.C:e48f  84 F9       STY $F9        ; cassette #1 flags
+.C:e491  A9 3D       LDA #$3D
+.C:e493  D0 06       BNE $E49B
+.C:e495  A5 F9       LDA $F9
+.C:e497  D0 05       BNE $E49E
+.C:e499  A9 35       LDA #$35
+.C:e49b  8D 13 E8    STA .PIA1CRB   ; tape motor #1
+.C:e49e  90 09       BCC $E4A9
+.C:e4a0  84 FA       STY $FA
+.C:e4a2  AD 40 E8    LDA .VIAORB
+.C:e4a5  09 10       ORA #$10
+.C:e4a7  D0 09       BNE $E4B2
+.C:e4a9  A5 FA       LDA $FA
+.C:e4ab  D0 08       BNE $E4B5
+.C:e4ad  AD 40 E8    LDA .VIAORB
+.C:e4b0  29 EF       AND #$EF
+.C:e4b2  8D 40 E8    STA .VIAORB    ; tape motor #2
+;keyboard scanner loop
+.C:e4b5  A0 08       LDY #$08
+.C:e4b7  AD 12 E8    LDA .PIA1PORTB
+.C:e4ba  CD 12 E8    CMP .PIA1PORTB
+.C:e4bd  D0 F6       BNE $E4B5
+.C:e4bf  4A          LSR A
+.C:e4c0  B0 1C       BCS $E4DE
+.C:e4c2  48          PHA
+.C:e4c3  BD 0A E6    LDA $E60A,X    ; keyboard decoding table (e60b)
+.C:e4c6  D0 06       BNE $E4CE
+.C:e4c8  A9 01       LDA #$01
+.C:e4ca  85 98       STA $98        ; set shift key pressed
+.C:e4cc  D0 0F       BNE $E4DD
+.C:e4ce  C9 FF       CMP #$FF
+.C:e4d0  F0 0B       BEQ $E4DD
+.C:e4d2  C9 3C       CMP #$3C
+.C:e4d4  D0 05       BNE $E4DB
+.C:e4d6  2C 11 E8    BIT .PIA1CRA
+.C:e4d9  30 02       BMI $E4DD
+.C:e4db  86 A6       STX $A6
+.C:e4dd  68          PLA
+.C:e4de  CA          DEX
+.C:e4df  F0 08       BEQ $E4E9
+.C:e4e1  88          DEY
+.C:e4e2  D0 DB       BNE $E4BF
+.C:e4e4  EE 10 E8    INC .PIA1PORTA ; next keyboard row
+.C:e4e7  D0 CC       BNE $E4B5
+
+.C:e4e9  A5 A6       LDA $A6        ; copy of keypress or #ff
+.C:e4eb  C5 97       CMP $97
+.C:e4ed  F0 1C       BEQ $E50B
+.C:e4ef  85 97       STA $97        ; new key pressed
+.C:e4f1  AA          TAX
+.C:e4f2  30 17       BMI $E50B
+.C:e4f4  BD 0A E6    LDA $E60A,X
+.C:e4f7  46 98       LSR $98        ; check shift key
+.C:e4f9  90 02       BCC $E4FD
+.C:e4fb  09 80       ORA #$80
+.C:e4fd  A6 9E       LDX $9E        ; number of characters in keyboard buffer
+.C:e4ff  9D 6F 02    STA $026F,X    ; add new key to keyboard buffer
+.C:e502  E8          INX
+.C:e503  E0 0A       CPX #$0A       ; maximum size 9 characters
+.C:e505  D0 02       BNE $E509
+.C:e507  A2 00       LDX #$00       ; clear keyboard buffer on wraparound
+.C:e509  86 9E       STX $9E        ; set keyboard buffer size
+.C:e50b  4C 00 E6    JMP $E600
+
+.C:e600  68          PLA
+.C:e601  A8          TAY
+.C:e602  68          PLA
+.C:e603  AA          TAX
+.C:e604  68          PLA
+.C:e605  40          RTI
+
+.C:e606  A4 C6       LDY $C6
+.C:e608  91 C4       STA ($C4),Y
+.C:e60a  60          RTS
+
+
+.C:f768  E6 99       INC $99
+.C:f76a  A5 99       LDA $99
+.C:f76c  D0 02       BNE $F770
+.C:f76e  E6 9A       INC $9A
+.C:f770  C9 6F       CMP #$6F
+.C:f772  D0 06       BNE $F77A
+.C:f774  A5 9A       LDA $9A
+.C:f776  C9 02       CMP #$02
+.C:f778  F0 21       BEQ $F79B
+.C:f77a  E6 8F       INC $8F
+.C:f77c  D0 06       BNE $F784
+.C:f77e  E6 8E       INC $8E
+.C:f780  D0 02       BNE $F784
+.C:f782  E6 8D       INC $8D
+.C:f784  A2 00       LDX #$00
+.C:f786  B5 8D       LDA .TIME,X
+.C:f788  DD AC F7    CMP $F7AC,X
+.C:f78b  90 14       BCC $F7A1
+.C:f78d  E8          INX
+.C:f78e  E0 03       CPX #$03
+.C:f790  D0 F4       BNE $F786
+.C:f792  A9 00       LDA #$00
+.C:f794  95 8C       STA $8C,X
+.C:f796  CA          DEX
+.C:f797  D0 FB       BNE $F794
+.C:f799  F0 06       BEQ $F7A1
+.C:f79b  A9 00       LDA #$00
+.C:f79d  85 99       STA $99
+.C:f79f  85 9A       STA $9A
+.C:f7a1  AD 12 E8    LDA .PIA1PORTB
+.C:f7a4  CD 12 E8    CMP .PIA1PORTB
+.C:f7a7  D0 F8       BNE $F7A1
+.C:f7a9  85 9B       STA $9B
+.C:f7ab  60          RTS
+(C:$f7ac) m f7ac
+>C:f7ac  4f 1a 01 
+
+; initialize I/O on PIAs, VIA, set clock to 0, set cursor, etc
+.C:e000  A9 7F       LDA #$7F
+.C:e002  8D 4E E8    STA .VIAIER
+.C:e005  A2 6D       LDX #$6D
+.C:e007  A9 00       LDA #$00
+.C:e009  95 8D       STA .TIME,X
+.C:e00b  CA          DEX
+.C:e00c  10 FB       BPL $E009
+.C:e00e  A9 55       LDA #$55
+.C:e010  85 90       STA $90
+.C:e012  A9 E4       LDA #$E4
+.C:e014  85 91       STA $91
+.C:e016  A9 03       LDA #$03
+.C:e018  85 B0       STA $B0
+.C:e01a  A9 0F       LDA #$0F
+.C:e01c  8D 10 E8    STA .PIA1PORTA
+.C:e01f  0A          ASL A
+.C:e020  8D 40 E8    STA .VIAORB
+.C:e023  8D 42 E8    STA .VIAPDRB
+.C:e026  8E 22 E8    STX .PIA2PORTB
+.C:e029  8E 45 E8    STX .VIAT1CH
+.C:e02c  A9 3D       LDA #$3D
+.C:e02e  8D 13 E8    STA .PIA1CRB
+.C:e031  2C 12 E8    BIT .PIA1PORTB
+.C:e034  A9 3C       LDA #$3C
+.C:e036  8D 21 E8    STA .PIA2CRA
+.C:e039  8D 23 E8    STA .PIA2CRB
+.C:e03c  8D 11 E8    STA .PIA1CRA
+.C:e03f  8E 22 E8    STX .PIA2PORTB
+.C:e042  A9 0C       LDA #$0C
+.C:e044  8D 4C E8    STA .VIAPCR
+.C:e047  85 A8       STA $A8
+.C:e049  85 A7       STA $A7
+; clear screen
+.C:e04b  A0 83       LDY #$83
+.C:e04d  A2 18       LDX #$18
+.C:e04f  94 E0       STY $E0,X      ; line wrap table $e0-$f8
+.C:e051  E0 14       CPX #$14
+.C:e053  F0 08       BEQ $E05D
+.C:e055  E0 0D       CPX #$0D
+.C:e057  F0 04       BEQ $E05D
+.C:e059  E0 07       CPX #$07
+.C:e05b  D0 01       BNE $E05E
+.C:e05d  88          DEY
+.C:e05e  CA          DEX
+.C:e05f  10 EE       BPL $E04F
+.C:e061  84 C5       STY $C5        ; top line of screen high byte
+.C:e063  E8          INX
+.C:e064  86 9F       STX $9F        ; screen reverse flag 0=normal 12=reversed
+.C:e066  86 C4       STX $C4        ; top left corner of screen
+.C:e068  A9 20       LDA #$20
+.C:e06a  9D 00 80    STA .VIDRAM,X
+.C:e06d  9D 00 81    STA $8100,X
+.C:e070  9D 00 82    STA $8200,X
+.C:e073  9D 00 83    STA $8300,X
+.C:e076  CA          DEX
+.C:e077  D0 F1       BNE $E06A
+.C:e079  A0 00       LDY #$00
+.C:e07b  84 C6       STY $C6        ; position of cursor along line
+.C:e07d  84 D8       STY $D8        ; screen line of cursor
+.C:e07f  A6 D8       LDX $D8
+.C:e081  B5 E0       LDA $E0,X
+.C:e083  09 80       ORA #$80
+.C:e085  85 C5       STA $C5
+.C:e087  BD 5B E6    LDA $E65B,X    ; table of linewrap low bytes for left edge
+.C:e08a  85 C4       STA $C4
+.C:e08c  A9 27       LDA #$27
+.C:e08e  85 D5       STA $D5
+.C:e090  E0 18       CPX #$18
+.C:e092  F0 08       BEQ $E09C
+.C:e094  B5 E1       LDA $E1,X
+.C:e096  30 04       BMI $E09C
+.C:e098  A9 4F       LDA #$4F
+.C:e09a  85 D5       STA $D5
+.C:e09c  A5 C6       LDA $C6
+.C:e09e  C9 28       CMP #$28
+.C:e0a0  90 04       BCC $E0A6
+.C:e0a2  E9 28       SBC #$28
+.C:e0a4  85 C6       STA $C6
+.C:e0a6  60          RTS
+.C:e0a7  AC 6F 02    LDY $026F
+.C:e0aa  A2 00       LDX #$00
+.C:e0ac  BD 70 02    LDA $0270,X
+.C:e0af  9D 6F 02    STA $026F,X
+.C:e0b2  E8          INX
+.C:e0b3  E4 9E       CPX $9E
+.C:e0b5  D0 F5       BNE $E0AC
+.C:e0b7  C6 9E       DEC $9E
+.C:e0b9  98          TYA
+.C:e0ba  58          CLI
+.C:e0bb  60          RTS
+.C:e0bc  20 02 E2    JSR $E202
+.C:e0bf  A5 9E       LDA $9E
+.C:e0c1  85 A7       STA $A7
+.C:e0c3  F0 FA       BEQ $E0BF
+.C:e0c5  78          SEI
+.C:e0c6  A5 AA       LDA $AA
+.C:e0c8  F0 09       BEQ $E0D3
+.C:e0ca  A5 A9       LDA $A9
+.C:e0cc  A0 00       LDY #$00
+.C:e0ce  84 AA       STY $AA
+.C:e0d0  20 06 E6    JSR $E606
+.C:e0d3  20 A7 E0    JSR $E0A7
+.C:e0d6  C9 83       CMP #$83
+.C:e0d8  D0 10       BNE $E0EA
+.C:e0da  78          SEI
+.C:e0db  A2 09       LDX #$09
+.C:e0dd  86 9E       STX $9E
+.C:e0df  BD 73 E6    LDA $E673,X
+.C:e0e2  9D 6E 02    STA $026E,X
+.C:e0e5  CA          DEX
+.C:e0e6  D0 F7       BNE $E0DF
+.C:e0e8  F0 D5       BEQ $E0BF
+.C:e0ea  C9 0D       CMP #$0D
+.C:e0ec  D0 CE       BNE $E0BC
+.C:e0ee  A4 D5       LDY $D5
+.C:e0f0  84 AC       STY $AC
+.C:e0f2  B1 C4       LDA ($C4),Y
+.C:e0f4  C9 20       CMP #$20
+.C:e0f6  D0 03       BNE $E0FB
+.C:e0f8  88          DEY
+.C:e0f9  D0 F7       BNE $E0F2
+.C:e0fb  C8          INY
+.C:e0fc  84 A1       STY $A1
+.C:e0fe  A0 00       LDY #$00
+.C:e100  84 C6       STY $C6
+.C:e102  84 CD       STY $CD
+.C:e104  A5 A3       LDA $A3
+.C:e106  30 16       BMI $E11E
+.C:e108  C5 D8       CMP $D8
+.C:e10a  D0 12       BNE $E11E
+.C:e10c  A5 A4       LDA $A4
+.C:e10e  85 C6       STA $C6
+.C:e110  C5 A1       CMP $A1
+.C:e112  90 0A       BCC $E11E
+.C:e114  B0 2B       BCS $E141
+.C:e116  98          TYA
+.C:e117  48          PHA
+.C:e118  8A          TXA
+.C:e119  48          PHA
+.C:e11a  A5 AC       LDA $AC
+.C:e11c  F0 A1       BEQ $E0BF
+.C:e11e  A4 C6       LDY $C6
+.C:e120  B1 C4       LDA ($C4),Y
+.C:e122  85 D9       STA $D9
+.C:e124  29 3F       AND #$3F
+.C:e126  06 D9       ASL $D9
+.C:e128  24 D9       BIT $D9
+.C:e12a  10 02       BPL $E12E
+.C:e12c  09 80       ORA #$80
+.C:e12e  90 04       BCC $E134
+.C:e130  A6 CD       LDX $CD
+.C:e132  D0 04       BNE $E138
+.C:e134  70 02       BVS $E138
+.C:e136  09 40       ORA #$40
+.C:e138  E6 C6       INC $C6
+.C:e13a  20 67 E1    JSR $E167
+.C:e13d  C4 A1       CPY $A1
+.C:e13f  D0 17       BNE $E158
+.C:e141  A9 00       LDA #$00
+.C:e143  85 AC       STA $AC
+.C:e145  A9 0D       LDA #$0D
+.C:e147  A6 AF       LDX $AF
+.C:e149  E0 03       CPX #$03
+.C:e14b  F0 06       BEQ $E153
+.C:e14d  A6 B0       LDX $B0
+.C:e14f  E0 03       CPX #$03
+.C:e151  F0 03       BEQ $E156
+.C:e153  20 02 E2    JSR $E202
+.C:e156  A9 0D       LDA #$0D
+.C:e158  85 D9       STA $D9
+.C:e15a  68          PLA
+.C:e15b  AA          TAX
+.C:e15c  68          PLA
+.C:e15d  A8          TAY
+.C:e15e  A5 D9       LDA $D9
+.C:e160  C9 DE       CMP #$DE
+.C:e162  D0 02       BNE $E166
+.C:e164  A9 FF       LDA #$FF
+.C:e166  60          RTS
+.C:e167  C9 22       CMP #$22
+.C:e169  D0 08       BNE $E173
+.C:e16b  A5 CD       LDA $CD
+.C:e16d  49 01       EOR #$01
+.C:e16f  85 CD       STA $CD
+.C:e171  A9 22       LDA #$22
+.C:e173  60          RTS
+.C:e174  09 40       ORA #$40
+.C:e176  A6 9F       LDX $9F
+.C:e178  F0 02       BEQ $E17C
+.C:e17a  09 80       ORA #$80
+.C:e17c  A6 DC       LDX $DC
+.C:e17e  F0 02       BEQ $E182
+.C:e180  C6 DC       DEC $DC
+.C:e182  20 06 E6    JSR $E606
+.C:e185  E6 C6       INC $C6
+.C:e187  A4 D5       LDY $D5
+.C:e189  C4 C6       CPY $C6
+.C:e18b  B0 19       BCS $E1A6
+.C:e18d  A6 D8       LDX $D8
+.C:e18f  C0 4F       CPY #$4F
+.C:e191  D0 0C       BNE $E19F
+.C:e193  20 B3 E1    JSR $E1B3
+.C:e196  20 43 E3    JSR $E343
+.C:e199  A9 00       LDA #$00
+.C:e19b  85 C6       STA $C6
+.C:e19d  F0 07       BEQ $E1A6
+.C:e19f  E0 18       CPX #$18
+.C:e1a1  D0 1B       BNE $E1BE
+.C:e1a3  20 C4 E1    JSR $E1C4
+.C:e1a6  68          PLA
+.C:e1a7  A8          TAY
+.C:e1a8  A5 DC       LDA $DC
+.C:e1aa  F0 02       BEQ $E1AE
+.C:e1ac  46 CD       LSR $CD
+.C:e1ae  68          PLA
+.C:e1af  AA          TAX
+.C:e1b0  68          PLA
+.C:e1b1  58          CLI
+.C:e1b2  60          RTS
+.C:e1b3  E0 17       CPX #$17
+.C:e1b5  B0 06       BCS $E1BD
+.C:e1b7  B5 E2       LDA $E2,X
+.C:e1b9  09 80       ORA #$80
+.C:e1bb  95 E2       STA $E2,X
+.C:e1bd  60          RTS
+.C:e1be  20 CD E1    JSR $E1CD
+.C:e1c1  4C A6 E1    JMP $E1A6
+.C:e1c4  20 69 E3    JSR $E369
+.C:e1c7  C6 A3       DEC $A3
+.C:e1c9  C6 D8       DEC $D8
+.C:e1cb  A6 D8       LDX $D8
+.C:e1cd  16 E1       ASL $E1,X
+.C:e1cf  56 E1       LSR $E1,X
+.C:e1d1  20 B3 E1    JSR $E1B3
+.C:e1d4  A5 C6       LDA $C6
+.C:e1d6  48          PHA
+.C:e1d7  20 7F E0    JSR $E07F
+.C:e1da  68          PLA
+.C:e1db  85 C6       STA $C6
+.C:e1dd  60          RTS
+.C:e1de  A0 27       LDY #$27
+(C:$e1e0) 
+
+;--------------------------------------------------------------
+;
+;       EDIT   ( -- )
+;
+editlfa
+    .byt $de,$ad
+    .byt (edit-*-1)|bit7
+    .asc "EDI","T"|bit7
+_edit
+#include "enter.i65"
+    .word plit
+    .word MAINIRQ^edit02
+#include "pad.i65"
+    .word clit
+    .byt <CINV       ; $90
+#include "pad.i65"
+    .word toggleirq
+#include "page.i65"
+    .word to6502
+    stx storex
+edit01
+    lda #$0d
+    jsr CHROUT      ; print a carriage return
+    jsr CHRIN       ; blink the cursor, wait for input, etc... 
+    jmp edit01      ; ...forever
+
+edit02              ; this is edit's IRQ hook
+    lda $9b
+    cmp #$ef        ; test STOP key
+    beq edit04
+edit03
+    jmp $e455       ; not yet?  perform normal IRQ
+edit04              ; looks like someone pressed stop
+    lda $cd         ; nonzero is quotes mode
+    ora $dc         ; number of inserts pending
+    bne edit03      ; not so fast.  Are we in quotes or inserts?
+
+
+    lda #$55
+    sta $90
+    lda #$e4
+    sta $91         ; restore factory IRQ
+    cli
+edit05
+    jsr GETIN
+    beq edit05      ; busywait for next keypress
+    cmp #3
+    beq edit05      ; stop hitting stop
+    cmp #'Q'
+    bne edit06
+    jmp editq
+edit06
+    ldx storex
+    bne edit
+
+
+;--------------------------------------------------------------
+;
+;       EDIT   ( -- )
+;
+editlfa
+    .byt $de,$ad
+    .byt (edit-*-1)|bit7
+    .asc "EDI","T"|bit7
+edit
+    stx storex      ; stash the data stack pointer
+    sei
+    lda #<edit02
+    sta $90
+    lda #>edit02
+    sta $91         ; hook in the editor IRQ
+    cli
+    bne edit01a     ; bra
+edit01
+    lda #$0d
+    jsr CHROUT      ; print a carriage return
+edit01a
+    jsr CHRIN       ; blink the cursor, wait for input, etc... 
+    jmp edit01      ; ...forever
+
+edit02              ; this is edit's IRQ hook
+    lda $9b
+    cmp #$ef        ; test STOP key
+    beq edit04
+edit03
+    jmp $e455       ; not yet?  perform normal IRQ
+edit04              ; looks like someone pressed stop
+    lda $cd         ; nonzero is quotes mode
+    ora $dc         ; number of inserts pending
+    bne edit03      ; not so fast.  Are we in quotes or inserts?
+
+
+    lda #$55
+    sta $90
+    lda #$e4
+    sta $91         ; restore factory IRQ
+    cli
+edit05
+    jsr GETIN
+    beq edit05      ; busywait for next keypress
+    cmp #3
+    beq edit05      ; stop hitting stop
+    cmp #'Q'
+    bne edit06
+    jmp editq
+edit06
+    ldx storex
+    bne edit
+

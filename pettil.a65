@@ -248,9 +248,7 @@ msg06 .byt msg07-*-1
     .asc "UNPAIRED CONDITIONALS"
 msg07 .byt msg08-*-1
     .asc "VOCABULARIES UNIMPLEMENTED"
-msg08 .byt msg09-*-1
-    .asc CR,"LEAVING EDITOR"
-msg09
+msg08
 
 ;--------------------------------------------------------------
 ; Drop down from high-level Forth to inline 6502
@@ -1015,7 +1013,7 @@ qterminallfa
 qterminal
     ldy #0
     lda $9b
-    cmp #$ef		; check STOP key
+    cmp #$ef            ; check STOP key
     bne qterminal01
     dey
 qterminal01
@@ -8375,27 +8373,31 @@ event03
     .word exit
 
 ;--------------------------------------------------------------
-barlfa 
+;
+;       FLIPSCR ( -- )
+;
+; invert the entire screen
+flipscrlfa 
     .byt $de,$ad
-    .byt (bar-*-1)|bit7
-    .asc "BA","R"|bit7
-bar
+    .byt (flipscr-*-1)|bit7
+    .asc "FLIPSC","R"|bit7
+flipscr
     ldy #0
-bar01 
-    lda $8000,y
+flipscr01 
+    lda VIDRAM,y            ; [4]
+    eor #$80                ; [2]
+    sta VIDRAM,y            ; [5]
+    lda VIDRAM+$100,y
     eor #$80
-    sta $8000,y
-    lda $8100,y
+    sta VIDRAM+$100,y
+    lda VIDRAM+$200,y
     eor #$80
-    sta $8100,y
-    lda $8200,y
+    sta VIDRAM+$200,y
+    lda VIDRAM+$300,y
     eor #$80
-    sta $8200,y
-    lda $8300,y
-    eor #$80
-    sta $8300,y
-    iny
-    bne bar01
+    sta VIDRAM+$300,y
+    iny                     ; [2]
+    bne flipscr01           ; [3] 49 * 256 = 12544 clocks
     jmp next
 
 ;--------------------------------------------------------------
@@ -8655,44 +8657,44 @@ _rad50
 
 ;--------------------------------------------------------------
 ;
-;       EDIT?   ( -- )
+;       TOGGLEIRQ   ( eorvalue $90|$92 -- )
 ;
-; editor help
-;
-;edithlfa
-;    .byt $de,$ad
-;    .byt (_edith-*-1)|bit7
-;    .asc "EDIT","?"|bit7
-_edith
+toggleirqlfa
+    .byt $de,$ad
+    .byt (toggleirq-*-1)|bit7
+    .asc "TOGGLEIR","Q"|bit7
+toggleirq
+    sei
+    ldy #0
+    lda (tos),y
+    eor stackl,x
+    sta (tos),y
+    iny
+    lda (tos),y
+    eor stackh,x
+    sta (tos),y
+    cli
+    jmp poptwo          ; [20]
 
 ;--------------------------------------------------------------
 ;
-;       EDITQ   ( -- )
+;       EDITIRQTOGGLE   ( -- )
 ;
-; editor quit
-;
-;editqlfa
+;editirqtogglelfa
 ;    .byt $de,$ad
-;    .byt (editq-*-1)|bit7
-;    .asc "EDIT","?"|bit7
-editq
-    ldx storex      ; restore data stack pointer
-    lda #$55
-    sta $90
-    lda #$e4
-    sta $91         ; restore factory IRQ
-    dex
-    lda #8
-    sta stackl,x
-    ldy #0
-    sty stackh,x
-
-    lda #<fail
-    sta tos
-    lda #>fail
-    sta tos+1
-    cli
-    jmp execute     ; drop out to Forth
+;    .byt (editirqtoggle-*-1)|bit7
+;    .asc "EDITIRQTOGGL","E"|bit7
+_editirqtoggle
+#include "enter.i65"
+    .word plit
+    .word (MAINIRQ^edit02)
+#include "pad.i65"
+    .word clit
+    .byt <CINV       ; $90
+#include "pad.i65"
+    .word toggleirq
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -8700,51 +8702,67 @@ editq
 ;
 editlfa
     .byt $de,$ad
-    .byt (edit-*-1)|bit7
+    .byt (_edit-*-1)|bit7
     .asc "EDI","T"|bit7
-edit
-    stx storex      ; stash the data stack pointer
-    sei
-    lda #<edit02
-    sta $90
-    lda #>edit02
-    sta $91         ; hook in the editor IRQ
-    cli
-edit01
-    lda #$0d
-    jsr CHROUT      ; print a carriage return
-    jsr CHRIN       ; blink the cursor, wait for input, etc... 
-    jmp edit01      ; ...forever
+_edit
+#include "enter.i65"
+    .word cr
+#include "page.i65"
+edit00              ; reentry to editor here
+    .word _editirqtoggle   ; enable STOP key trap
+#include "page.i65"
+    .word to6502
+    stx storex      ; preserve Forth data stack pointer
+    tsx
+    stx n           ; preserve machine stack frame pointer
 
-edit02              ; this is edit's IRQ hook
-    lda $9b
+edit01              ; PET screen editor forever loop
+    jsr CHRIN       ; Kernel - blink the cursor, wait for a line of input, ignore it
+    lda #$0d        ; don't just leave the cursor two characters past end of line
+    jsr CHROUT      ; Kernel - so echo the carriage return
+    jmp edit01      ; ... do this forever
+
+edit02              ; this is edit's IRQ handler, enabled/disabled by _editirqtoggle
+    lda $9b         ; copy of contents of PIA1 Port B for testing STOP key, etc...
     cmp #$ef        ; test STOP key
-    beq edit04
-edit03
-    jmp $e455       ; not yet?  perform normal IRQ
-edit04              ; looks like someone pressed stop
+    bne edit03
+                    ; looks like someone pressed STOP. Exit the editor
+                    ; but not so fast!  Are we in quotes or inserts?
     lda $cd         ; nonzero is quotes mode
     ora $dc         ; number of inserts pending
-    bne edit03      ; not so fast.  Are we in quotes or inserts?
+    beq edit04
+edit03
+    jmp MAINIRQ     ; not yet?  perform normal system IRQ
 
+; if we get here, clean up from cursor wink and bail out of the IRQ
+edit04
+    jsr UDTIM       ; keep the clock running even if someone leans on STOP
+    ;sec            ; because f7a1 debounce loop always sets carry
+    lda $a9         ; true character at cursor position
+    jsr FIX_CHR     ; ROM $E606 on 40-column BASIC4 PET
 
-    lda #$55
-    sta $90
-    lda #$e4
-    sta $91         ; restore factory IRQ
-    cli
-edit05
-    jsr GETIN
-    beq edit05      ; busywait for next keypress
-    cmp #3
-    beq edit05      ; stop hitting stop
-    cmp #'Q'
-    bne edit06
-    jmp editq
-edit06
-    ldx storex
-    bne edit
-    
+    ldx n
+    txs             ; reset stack frame
+    ldx storex      ; restore Forth stack pointer
+#include "toforth.i65"
+    .word _editirqtoggle	; disable STOP key trap, also does CLI
+#include "page.i65"
+    .word flipscr
+#include "page.i65"
+    .word key
+#include "page.i65"
+    .word flipscr
+#include "page.i65"
+    .word clit
+    .byt 'Q'
+#include "pad.i65"
+    .word eq
+#include "page.i65"
+    .word qbranch
+    .byt <(edit00-*+1)
+#include "page.i65"
+    .word exit
+
 ;--------------------------------------------------------------
 ;
 ;       QUE
@@ -8756,8 +8774,8 @@ quelfa
 que
     jsr docreate
     .word 2
-    .word bar
-    .word bar
+    .word flipscr
+    .word flipscr
 
 
 ;--------------------------------------------------------------
