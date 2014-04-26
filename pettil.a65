@@ -8765,13 +8765,7 @@ editzilch
 #include "enter.i65"
     .word _pad
 #include "page.i65"
-    .word dup
-#include "page.i65"
     .word off
-#include "page.i65"
-    .word editbuf
-#include "page.i65"
-    .word store
 #include "page.i65"
     .word exit
 
@@ -8931,29 +8925,20 @@ editquit
 ;
 ; append a copy of the current line to the paste buffer
 ;
-editcopylinelfa
-    .byt $de,$ad
-    .byt (editcopyline-*-1)|bit7
-    .asc "EDITCOPYLIN","E"|bit7
+; D5 has the length of the current line (39 or 79)
+; C4 is the address of the start of the line
+; _pad is the start of the paste buffer
+;
+;editcopylinelfa
+;    .byt $de,$ad
+;    .byt (editcopyline-*-1)|bit7
+;    .asc "EDITCOPYLIN","E"|bit7
 editcopyline
 #include "enter.i65"
+    .word _pad
     .word xyzzy
 #include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-;
-;       EDITBUF   ( -- addr )
-;
-; a variable used to hold the paste buffer address (initially PAD)
-;
-;editbuflfa
-;    .byt $de,$ad
-;    .byt (editbuf-*-1)|bit7
-;    .asc "EDITBU","F"|bit7
-editbuf
-    jsr docreate
-    .word 0
 
 ;--------------------------------------------------------------
 ;
@@ -8989,7 +8974,7 @@ editinit
 
 ;--------------------------------------------------------------
 ;
-;       EDITMENU   ( -- addr )
+;      f EDITMENU   ( -- addr )
 ;
 ; returns the address of a counted string of menu commands
 ;
@@ -8999,24 +8984,11 @@ editmenulfa
     .asc "EDITMEN","U"|bit7
 editmenu
      jsr docreate
-     .byt editmenu01-*-1
-     .asc "QISLVZRDCP"
+     .byt editmenu01-*-1        ; number of menu items = 16
+     .asc "QISLVZRDCP"          ; command keys
      .byt DELETE, INSERT, HOME, CLR, CRSRDOWN, CRSRUP
 editmenu01
-
-;--------------------------------------------------------------
-;
-;       EDITCFA   ( -- addr )
-;
-; returns the address of an array of CFAs corresponding to editmenu chars
-;
-editcfalfa
-    .byt $de,$ad
-    .byt (editcfa-*-1)|bit7
-    .asc "EDITCF","A"|bit7
-editcfa
-     jsr docreate
-     .word editquit
+     .word editquit             ; CFA of corresponding Forth word
      .word editindex
      .word editsave
      .word _editload
@@ -9072,32 +9044,38 @@ dolindex02
 ;    .asc "EDITCM","D"|bit7
 _editcmd
 #include "enter.i65"
-    .word editmenu
+    .word editmenu              ; ( editmenu )
 #include "page.i65"
     .word flipscr
 #include "page.i65"
-    .word key
+    .word key                   ; ( editmenu char )
 #include "page.i65"
     .word flipscr
 #include "page.i65"
-    .word dolindex
+    .word dolindex              ; ( index|0 )
 #include "page.i65"
-    .word qdup
+    .word qdup                  ; ( index index | 0 )
 #include "page.i65"
     .word qbranch               ; IF
     .byt <(editcmd01-*+1)
 #include "pad.i65"
-    .word oneminus
+    .word twostar               ; ( 2*index )
 #include "page.i65"
-    .word twostar
+    .word editmenu              ; ( 2*index editmenu ) 
 #include "page.i65"
-    .word editcfa
+    .word dup                   ; ( 2*index editmenu editmenu ) 
 #include "page.i65"
-    .word plus
+    .word cfetch                ; ( 2*index editmenu #items ) 
 #include "page.i65"
-    .word fetch
+    .word plus                  ; ( 2*index editmenu+#items ) 
 #include "page.i65"
-    .word execute
+    .word plus                  ; ( 2*index+editmenu+#items ) 
+#include "page.i65"
+    .word oneminus              ; ( 2*index+editmenu+#items-1 ) 
+#include "page.i65"
+    .word fetch                 ; ( editcmdcfa )
+#include "page.i65"
+    .word execute               ; ( )
 #include "page.i65"
 editcmd01                       ; THEN
 #include "page.i65"
