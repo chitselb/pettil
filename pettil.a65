@@ -8689,6 +8689,54 @@ _editirqtoggle
 #include "page.i65"
     .word exit
 
+;--------------------------------------------------------------
+;
+;       PASTEBUF   ( -- addr )
+;
+; returns the address of the end of the paste buffer (marked by 0)
+; The paste buffer consists of a series of lines in the format
+; length byte (39 or 79).  
+; that many bytes of screen code
+;
+; The length is off-by-one but this is what the ROM gives us.
+;pastebuflfa
+;    .byt $de,$ad
+;    .byt (pastebuf-*-1)|bit7
+;    .asc "PASTEBU","F"|bit7
+;": pastebuf
+;    pad                     ( pad )
+;    begin
+;        dup c@              ( addr len )
+;        qdup                ( addr 0 | addr len len )
+;    while
+;                            ( addr len )
+;        1+                  ( addr len+1 )
+;        +                   ( newaddr )
+;    repeat                  ( addr )
+;
+_pastebuf
+#include "enter.i65"
+    .word _pad
+#include "page.i65"
+pastebuf01                      ; BEGIN
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch               ; WHILE
+    .byt <(pastebuf02-*+1)
+#include "pad.i65"
+    .word oneplus
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word branch               ; REPEAT
+    .byt <(pastebuf01-*+1)
+#include "pad.i65"
+pastebuf02
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -8921,6 +8969,38 @@ editquit
 
 ;--------------------------------------------------------------
 ;
+;       EDITCURRLINE   ( -- addr 40|80 )
+;
+; return the starting address of the line at the cursor, and its length
+;
+;" : editcurrline   ( -- addr 40|80 )
+;    c4 @  d5 c@ 1+ ;
+;editcurrlinelfa
+;    .byt $de,$ad
+;    .byt (editcurrline-*-1)|bit7
+;    .asc "EDITCURRLIN","E"|bit7
+_editcurrline
+#include "enter.i65"
+    .word clit
+    .byt $c4
+#include "pad.i65"
+    .word fetch
+#include "page.i65"
+    .word clit
+    .byt $d5
+#include "pad.i65"
+    .word cfetch
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word exit
+
+: editcopyline
+    editcurrline pastebuf 2dup c!
+    1+ swap cmove ;
+
+;--------------------------------------------------------------
+;
 ;       EDITCOPYLINE   ( -- )
 ;
 ; append a copy of the current line to the paste buffer
@@ -8935,10 +9015,26 @@ editquit
 ;    .asc "EDITCOPYLIN","E"|bit7
 editcopyline
 #include "enter.i65"
-    .word _pad
     .word xyzzy
 #include "page.i65"
-    .word exit
+    .word _editcurrline
+#include "page.i65"
+    .word pastebuf
+    brk
+    .byt set | N0           ; pointer to length
+    .word $d5
+    .byt set | N1           ; pointer to start of line
+    .word $c4
+    .byt ldi | N0           ; ACC = length
+    .byt sti | TOS          ; put it in the buffer
+    .byt st | N2            ; make a copy for countdown
+editcopyline01
+    .byt ldi | N1           ; get each screencode
+    .byt sti | TOS
+    .byt dcr | N2
+    .byt bnm1 , <(editcopyline01-*-2)
+    .byt pull
+    .byt nxt                ; [18]
 
 ;--------------------------------------------------------------
 ;
@@ -8974,7 +9070,7 @@ editinit
 
 ;--------------------------------------------------------------
 ;
-;      f EDITMENU   ( -- addr )
+;       EDITMENU   ( -- addr )
 ;
 ; returns the address of a counted string of menu commands
 ;

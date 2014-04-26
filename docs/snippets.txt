@@ -831,6 +831,18 @@ changed top to 80
 
 scrolled 80 off the top
 
+: pastebuf
+    pad                     ( pad )
+    begin
+        dup c@              ( addr len )
+        qdup                ( addr 0 | addr len len )
+    while
+                            ( addr len )
+        1+                  ( addr len+1 )
+        +                   ( newaddr )
+    repeat
+                            ( addr )
+
 ;--------------------------------------------------------------
 ;
 ;       EDITCOPYLINE   ( -- )
@@ -847,19 +859,196 @@ scrolled 80 off the top
 ;    .asc "EDITCOPYLIN","E"|bit7
 editcopyline
 #include "enter.i65"
-    .word _pad
+    .word _pastebuf
+#include "page.i65"
+    .word to6502
+    lda $d5
+    sta n
+    ldy #0
+editcopyline01
+    sta (tos),y
+    tax
+    lda ($c4),y
+    sta (tos),y
+    iny
+    dec n
+    bpl editcopyline01
+    jmp pops                ; [25]
+
+editcopyline
+#include "enter.i65"
+    .word _pastebuf
+#include "page.i65"
+    .word to6502
+    brk
+    .byt set | N0           ; pointer to length
+    .word $d5
+    .byt set | N1           ; pointer to start of line
+    .word $c4
+    .byt ldi | N0           ; ACC = length
+    .byt sti | TOS          ; put it in the buffer
+    .byt st | N2            ; make a copy for countdown
+editcopyline01
+    .byt ldi | N1           ; get each screencode
+    .byt sti | TOS
+    .byt dcr | N2
+    .byt bnm1 , <(editcopyline01-*-2)
+    .byt pull
+    .byt nxt                ; [18]
+
+;--------------------------------------------------------------
+;
+;       EDITCOPYLINE   ( -- )
+;
+; append a copy of the current line to the paste buffer
+;
+; D5 has the length of the current line (39 or 79)
+; C4 is the address of the start of the line
+; _pad is the start of the paste buffer
+;
+;editcopylinelfa
+;    .byt $de,$ad
+;    .byt (editcopyline-*-1)|bit7
+;    .asc "EDITCOPYLIN","E"|bit7
+editcopyline
+#include "enter.i65"
+    .word _pastebuf
+#include "page.i65"
+    .word clit
+    .byt $d5
+#include "page.i65"
+    .word clit
+    .byt $c4
+#include "page.i65"
+    .word to6502
+    brk
+
+: editcurrline   ( -- addr 40|80 )
+    c4 @  d5 c@ 1+ ;
+
+: editcopyline
+    editcurrline pastebuf 2dup c!
+    1+ swap cmove ;
+
+c4 @  d5 c@  pastebuf 1+ 2dup 1- c! swap cmove
+
+pastebuf 1+
+d5 c@ 1+ over 1- c!
+
+d5 c@ 1+ dup pastebuf c!
+
+;--------------------------------------------------------------
+;
+;       EDITCOPYLINE   ( -- )
+;
+; append a copy of the current line to the paste buffer
+;
+; D5 has the length of the current line (39 or 79)
+; C4 is the address of the start of the line
+; _pad is the start of the paste buffer
+;
+;editcopylinelfa
+;    .byt $de,$ad
+;    .byt (editcopyline-*-1)|bit7
+;    .asc "EDITCOPYLIN","E"|bit7
+editcopyline
+#include "enter.i65"
+    .word _pastebuf
+#include "page.i65"
+    .word clit
+    .byt $d5
+#include "page.i65"
+    .word clit
+    .byt $c4
+#include "page.i65"
+    .word to6502
+    brk
+
+;--------------------------------------------------------------
+;
+;       EDITCOPYLINE   ( -- )
+;
+; append a copy of the current line to the paste buffer
+;
+; D5 has the length of the current line (39 or 79)
+; C4 is the address of the start of the line
+; _pad is the start of the paste buffer
+;
+;editcopylinelfa
+;    .byt $de,$ad
+;    .byt (editcopyline-*-1)|bit7
+;    .asc "EDITCOPYLIN","E"|bit7
+editcopyline
+#include "enter.i65"
+    .word _pastebuf
+#include "page.i65"
+    .word clit
+    .byt $d5
+#include "page.i65"
+    .word clit
+    .byt $c4
+#include "page.i65"
+    .word to6502
+    brk
+
+;--------------------------------------------------------------
+;
+;       EDITCURRLINE   ( -- addr 40|80 )
+;
+; return the starting address of the line at the cursor, and its length
+;
+;" : editcurrline   ( -- addr 40|80 )
+;    c4 @  d5 c@ 1+ ;
+;editcurrlinelfa
+;    .byt $de,$ad
+;    .byt (editcurrline-*-1)|bit7
+;    .asc "EDITCURRLIN","E"|bit7
+editcurrline
+    brk
+    .byt set | N0
+    .word $c4d5
+    .byt 
+    lda $c4
+    sta tos
+    lda $c5
+    sta tos+1
+    lda $d5
+    ldy #0
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       EDITCOPYLINE   ( -- )
+;
+; append a copy of the current line to the paste buffer
+;
+; D5 has the length of the current line (39 or 79)
+; C4 is the address of the start of the line
+; _pad is the start of the paste buffer
+;
+;editcopylinelfa
+;    .byt $de,$ad
+;    .byt (editcopyline-*-1)|bit7
+;    .asc "EDITCOPYLIN","E"|bit7
+editcopyline
+#include "enter.i65"
     .word xyzzy
 #include "page.i65"
-    .word exit
-
-: pastebuf
-    pad                     ( pad )
-    begin
-        dup c@              ( addr len )
-        qdup                ( addr 0 | addr len len )
-    while
-                            ( addr len )
-        1+                  ( addr len+1 )
-        +                   ( newaddr )
-    repeat
-                            ( addr )
+    .word _editcurrline
+#include "page.i65"
+    .word pastebuf
+    brk
+    .byt set | N0           ; pointer to length
+    .word $d5
+    .byt set | N1           ; pointer to start of line
+    .word $c4
+    .byt ldi | N0           ; ACC = length
+    .byt sti | TOS          ; put it in the buffer
+    .byt st | N2            ; make a copy for countdown
+editcopyline01
+    .byt ldi | N1           ; get each screencode
+    .byt sti | TOS
+    .byt dcr | N2
+    .byt bnm1 , <(editcopyline01-*-2)
+    .byt pull
+    .byt nxt                ; [18]
