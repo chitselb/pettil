@@ -1755,11 +1755,14 @@ dplus
     sta stackh+2,x
     lda tos
     adc stackl+1,x
-    sta stackl+1,x
+    pha
     lda tos+1
     adc stackh+1,x
-    sta stackh+1,x
-    jmp poptwo
+    tay
+    pla
+    inx
+    inx
+    jmp put            ; [29]
 
 ;--------------------------------------------------------------
 ;
@@ -1967,11 +1970,11 @@ fetchlfa
 fetch
     ldy #0
     lda (tos),y
-    sta n
+    pha
     iny
     lda (tos),y
     sta tos+1
-    lda n
+    pla
     sta tos
     jmp next
 
@@ -3661,6 +3664,29 @@ setirq
     pla
     cli
     jmp put
+
+;--------------------------------------------------------------
+;
+;       JIFFY@   ( --  djiffyclock )
+;
+; returns number of jiffies since powerup or midnight as a double
+;
+jiffyfetchlfa
+    .byt $de,$ad
+    .byt (jiffyfetch-*-1)|bit7
+    .asc "JIFFY","@"|bit7
+jiffyfetch
+jiffyfetch01
+    sei
+    jsr slip
+    lda TIME+2
+    sta tos
+    lda TIME+1
+    sta tos+1
+    ldy #0
+    lda TIME
+    cli
+    jmp pushya
 
 ;--------------------------------------------------------------
 ;
@@ -7434,8 +7460,9 @@ _twovariable
 dminuslfa       .byt $de,$ad
     .byt (dminus-*-1)|bit7
     .asc "D","-"|bit7
-dminus  ;       jsr dnegate
-    jmp dplus+2
+dminus
+    jsr dodnegate
+    jmp dplus
 
 ;--------------------------------------------------------------
 ;
@@ -8652,6 +8679,10 @@ _rad50
 ;
 ;       TOGGLEIRQ   ( eorvalue $90|$92 -- )
 ;
+; Apply a difference value to the interrupt vector, pointing
+; it to a new destination.  The same difference value restores the
+; original target.
+;
 toggleirqlfa
     .byt $de,$ad
     .byt (toggleirq-*-1)|bit7
@@ -8673,6 +8704,9 @@ toggleirq
 ;
 ;       EDITIRQTOGGLE   ( -- )
 ;
+; Enable or disable the IRQ handler within EDIT that checks for
+; the STOP key in the screen editor.
+;
 ;editirqtogglelfa
 ;    .byt $de,$ad
 ;    .byt (editirqtoggle-*-1)|bit7
@@ -8691,34 +8725,147 @@ _editirqtoggle
 
 ;--------------------------------------------------------------
 ;
-;       PASTEBUF   ( -- addr )
+;       EDITWRAP!   ( d startline -- )
 ;
-; returns the address of the end of the paste buffer (marked by 0)
-; The paste buffer consists of a series of lines in the format
-; length byte (39 or 79).  
-; that many bytes of screen code
+; Updates a portion of the linewrap table at $E0 to reflect the bits
+; stored in d, beginning at startline to end of the screen
+; e.g. -1 -1 18 editwrap! would set lines 18-24 as 40-column
+; line 1 is *always* $80, never a continuation line, so only 24 bits
+; are used, not 25.  Put another way, 2 <= startline <= 25
 ;
-; The length is off-by-one but this is what the ROM gives us.
-;pastebuflfa
+editwrapstore
+    ldy #2
+    jsr setup
+    stx storex
+    ldx #24
+editwrapstore01
+    asl $e0,x
+    lsr n+2
+    ror n+1
+    ror n
+    ror $e0,x
+    dex
+    cpx tos
+    bne editwrapstore01
+    ldx storex
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       EDITWRAP@   ( d startline -- d )
+;
+; Reads (a portion of) the linewrap table in $E0, nondestructively
+; shift the high bits into a double, beginning at startline.
+; e.g. 9 editwrap@ would return 
+;
+editwrapfetch
+    ldy #2
+    jsr setup
+    stx storex
+    ldx tos
+editwrapfetch01
+    asl $e0,x
+    rol n
+    rol n+1
+    rol n+2
+    lsr $e0,x
+    inx
+    cpx #24
+    bne editwrapfetch01
+    lda n
+    sta tos
+    lda n+1
+    sta tos+1
+    lda n+2
+    ldy n+3
+    ldx storex
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       EDITWRAPTOP@   ( -- d )
+;
+; Reads (a portion of) the linewrap table above the current physical
+; line (stored at $D8) up to but not including the current line.  
+; Returns a right-aligned double with those high bits
+;
+; $D8 = Current Cursor Physical Line Number
+;
+editwraptopfetch
+    jsr slip
+    stx storex
+    ldx #1
+editwraptopfetch01
+    cpx $d8
+    beq editwraptopfetch02  ; done
+    asl $e0,x
+    rol tos
+    rol tos+1
+    rol n
+    lsr $e0,x
+    inx
+    bne editwraptopfetch01  ; bra
+editwraptopfetch02
+    ldx storex
+    lda n
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       EDITCURRLINE   ( -- addr 40|80 )
+;
+; return the starting address of the line at the cursor, and its length
+;
+;" : editcurrline   ( -- addr 40|80 )
+;    c4 @  d5 c@ 1+ ;
+;
+;editcurrlinelfa
+;    .byt $de,$ad
+;    .byt (editcurrline-*-1)|bit7
+;    .asc "EDITCURRLIN","E"|bit7
+_editcurrline
+#include "enter.i65"
+    .word clit
+    .byt $c4
+#include "pad.i65"
+    .word fetch
+#include "page.i65"
+    .word clit
+    .byt $d5
+#include "pad.i65"
+    .word cfetch
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       EDITPASTEBUF   ( -- addr )
+;
+; Return the address of the end of the paste buffer (marked by 0)
+; The paste buffer consists of zero or more screen lines, stored as
+; a length (40|80) followed by that many screen codes
+;
+;editpastebuflfa
 ;    .byt $de,$ad
 ;    .byt (pastebuf-*-1)|bit7
 ;    .asc "PASTEBU","F"|bit7
-;": pastebuf
+;": editpastebuf
 ;    pad                     ( pad )
 ;    begin
 ;        dup c@              ( addr len )
 ;        qdup                ( addr 0 | addr len len )
-;    while
-;                            ( addr len )
+;    while                   ( addr len )
 ;        1+                  ( addr len+1 )
 ;        +                   ( newaddr )
 ;    repeat                  ( addr )
 ;
-_pastebuf
+_editpastebuf
 #include "enter.i65"
     .word _pad
 #include "page.i65"
-pastebuf01                      ; BEGIN
+editpastebuf01                      ; BEGIN
     .word dup
 #include "page.i65"
     .word cfetch
@@ -8726,23 +8873,23 @@ pastebuf01                      ; BEGIN
     .word qdup
 #include "page.i65"
     .word qbranch               ; WHILE
-    .byt <(pastebuf02-*+1)
+    .byt <(editpastebuf02-*+1)
 #include "pad.i65"
     .word oneplus
 #include "page.i65"
     .word plus
 #include "page.i65"
     .word branch               ; REPEAT
-    .byt <(pastebuf01-*+1)
+    .byt <(editpastebuf01-*+1)
 #include "pad.i65"
-pastebuf02
+editpastebuf02
     .word exit
 
 ;--------------------------------------------------------------
 ;
 ;       EDITINDEX   ( -- )
 ;
-; display an index screen and let the user select one.  Edit that page
+; STOP-I   Present an index screen and let the user select one to edit
 ;
 ;editindexlfa
 ;    .byt $de,$ad
@@ -8750,13 +8897,15 @@ pastebuf02
 ;    .asc "EDITINDE","X"|bit7
 editindex
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
 ;
 ;       EDITSAVE   ( -- )
 ;
-; save all buffers to a PRG file
+; STOP-S   Save all buffers to a PRG file
 ;
 ;editsavelfa
 ;    .byt $de,$ad
@@ -8764,13 +8913,15 @@ editindex
 ;    .asc "EDITSAV","E"|bit7
 editsave
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
 ;
 ;       EDITLOAD   ( -- )
 ;
-; load a group of buffers from a PRG file
+; STOP-L   Load a group of buffers from a PRG file
 ;
 ;editloadlfa
 ;    .byt $de,$ad
@@ -8783,13 +8934,15 @@ _editload
     .asc    CLR,"LOADING"
 editload02
 #include "pad.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
 ;
 ;       EDITVERIFY   ( -- )
 ;
-; verify a buffer file vs. memory
+; STOP-V   Verify a buffer file vs. memory
 ;
 ;editverifylfa
 ;    .byt $de,$ad
@@ -8803,7 +8956,7 @@ editverify
 ;
 ;       EDITZILCH   ( -- )
 ;
-; zilch the paste buffer
+; STOP-Z   Zilch the paste buffer
 ;
 editzilchlfa
     .byt $de,$ad
@@ -8821,7 +8974,7 @@ editzilch
 ;
 ;       EDITRESTORE   ( -- )
 ;
-; restore the current screen from the buffer
+; STOP-R   Restore the current screen from the buffer
 ;
 editrestorelfa
     .byt $de,$ad
@@ -8829,6 +8982,8 @@ editrestorelfa
     .asc "EDITRESTOR","E"|bit7
 editrestore
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -8843,6 +8998,8 @@ editrestore
 ;    .asc "EDITDELLIN","E"|bit7
 editdelline
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -8857,6 +9014,8 @@ editpastelfa
     .asc "EDITPAST","E"|bit7
 editpaste
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -8871,6 +9030,8 @@ editpaste
 ;    .asc "EDITDELSC","R"|bit7
 editdelscr
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -8885,6 +9046,8 @@ editdelscr
 ;    .asc "EDITINSSC","R"|bit7
 editinsscr
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -8899,6 +9062,8 @@ edittopscrlfa
     .asc "EDITTOP","R"|bit7
 edittopscr
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -8913,6 +9078,8 @@ edittopscr
 ;    .asc "EDITNOWRA","P"|bit7
 editnowrap
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -8927,6 +9094,8 @@ editnextscrlfa
     .asc "EDITNEXTSC","R"|bit7
 editnextscr
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -8941,13 +9110,15 @@ editprevscrlfa
     .asc "EDITPREVSC","R"|bit7
 editprevscr
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
 ;
 ;       EDITQUIT   ( -- )
 ;
-; leave the editor
+; STOP-Q   Quit the editor
 ;
 ;editquitlfa
 ;    .byt $de,$ad
@@ -8969,45 +9140,17 @@ editquit
 
 ;--------------------------------------------------------------
 ;
-;       EDITCURRLINE   ( -- addr 40|80 )
-;
-; return the starting address of the line at the cursor, and its length
-;
-;" : editcurrline   ( -- addr 40|80 )
-;    c4 @  d5 c@ 1+ ;
-;editcurrlinelfa
-;    .byt $de,$ad
-;    .byt (editcurrline-*-1)|bit7
-;    .asc "EDITCURRLIN","E"|bit7
-_editcurrline
-#include "enter.i65"
-    .word clit
-    .byt $c4
-#include "pad.i65"
-    .word fetch
-#include "page.i65"
-    .word clit
-    .byt $d5
-#include "pad.i65"
-    .word cfetch
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word exit
-
-: editcopyline
-    editcurrline pastebuf 2dup c!
-    1+ swap cmove ;
-
-;--------------------------------------------------------------
-;
 ;       EDITCOPYLINE   ( -- )
 ;
-; append a copy of the current line to the paste buffer
+; STOP-C   Copy current line to end of paste buffer
 ;
 ; D5 has the length of the current line (39 or 79)
 ; C4 is the address of the start of the line
 ; _pad is the start of the paste buffer
+;
+;": editcopyline
+;    editcurrline pastebuf 2dup c!
+;    1+ swap cmove ;
 ;
 ;editcopylinelfa
 ;    .byt $de,$ad
@@ -9015,26 +9158,27 @@ _editcurrline
 ;    .asc "EDITCOPYLIN","E"|bit7
 editcopyline
 #include "enter.i65"
-    .word xyzzy
+    .word _editcurrline    ; ( addr size )
 #include "page.i65"
-    .word _editcurrline
+    .word _editpastebuf        ; ( addr size buf )
 #include "page.i65"
-    .word pastebuf
-    brk
-    .byt set | N0           ; pointer to length
-    .word $d5
-    .byt set | N1           ; pointer to start of line
-    .word $c4
-    .byt ldi | N0           ; ACC = length
-    .byt sti | TOS          ; put it in the buffer
-    .byt st | N2            ; make a copy for countdown
-editcopyline01
-    .byt ldi | N1           ; get each screencode
-    .byt sti | TOS
-    .byt dcr | N2
-    .byt bnm1 , <(editcopyline01-*-2)
-    .byt pull
-    .byt nxt                ; [18]
+    .word _twodup          ; ( addr size buf size buf )
+#include "page.i65"
+    .word cstore           ; ( addr size buf )
+#include "page.i65"
+    .word oneplus          ; ( addr size buf+1 )
+#include "page.i65"
+    .word swap             ; ( addr buf+1 size )
+#include "page.i65"
+    .word _twodup          ; ( addr buf+1 size buf+1 size )
+#include "page.i65"
+    .word plus             ; ( addr buf+1 size buf+1+size )
+#include "page.i65"
+    .word off              ; ( addr buf+1 size )
+#include "page.i65"
+    .word cmove            ; ( )
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 ;

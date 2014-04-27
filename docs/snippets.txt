@@ -1004,17 +1004,14 @@ editcopyline
 ;    .byt (editcurrline-*-1)|bit7
 ;    .asc "EDITCURRLIN","E"|bit7
 editcurrline
-    brk
-    .byt set | N0
-    .word $c4d5
-    .byt 
-    lda $c4
-    sta tos
-    lda $c5
+    ldy #1
+    lda ($c4),y
     sta tos+1
+    dey
+    lda ($c4),y
+    sta tos
     lda $d5
-    ldy #0
-    jmp pushya
+    jmp pushya                  ; [16]
 
 ;--------------------------------------------------------------
 ;
@@ -1092,6 +1089,43 @@ editcopyline
 
 ;--------------------------------------------------------------
 ;
+;       EDITCOPYLINE   ( -- )
+;
+; append a copy of the current line to the paste buffer
+;
+; D5 has the length of the current line (39 or 79)
+; C4 is the address of the start of the line
+; _pad is the start of the paste buffer
+;
+;editcopylinelfa
+;    .byt $de,$ad
+;    .byt (editcopyline-*-1)|bit7
+;    .asc "EDITCOPYLIN","E"|bit7
+editcopyline
+#include "enter.i65"
+    .word xyzzy
+#include "page.i65"
+    .word _editcurrline
+#include "page.i65"
+    .word pastebuf
+    brk
+    .byt set | N0           ; pointer to length
+    .word $d5
+    .byt set | N1           ; pointer to start of line
+    .word $c4
+    .byt ldi | N0           ; ACC = length
+    .byt sti | TOS          ; put it in the buffer
+    .byt st | N2            ; make a copy for countdown
+editcopyline01
+    .byt ldi | N1           ; get each screencode
+    .byt sti | TOS
+    .byt dcr | N2
+    .byt bnm1 , <(editcopyline01-*-2)
+    .byt pull
+    .byt nxt                ; [18]
+    
+;--------------------------------------------------------------
+;
 ;       RLEPACK   ( from to howmany -- )
 ;
 ;
@@ -1108,4 +1142,350 @@ rlepack
     .byt st | N1
     .byt pull
     
+
+rlepack
+
+	.export _rle_pack, rle_pack
+
+
+	.import rle_store, rle_read
+	.importzp src, dest
+	.import lastbyte
+	.import destlen
+
+	.import popax
+
+
+	.bss
+
+srclen:		.res 2		; length of source data
+
+
+	.code
+
+
+; cc65 interface to rle_pack
+; unsigned int __fastcall__ rle_pack(unsigned char *dest, unsigned char *src, unsigned int length);
+_rle_pack:
+	sta srclen		; save length arg
+	stx srclen + 1
+	jsr popax		; get src arg
+	sta src
+	stx src + 1
+	jsr popax		; get dest arg
+	sta dest
+	stx dest + 1
+	jsr rle_pack		; execute
+	lda destlen		; return length
+	ldx destlen + 1
+	rts
+
+
+; run length encode a stream
+rle_pack:
+	ldy #0
+	sty destlen		; reset the byte counter
+	sty destlen + 1
+	jsr rle_read		; read the first byte
+	sta lastbyte		; save for reference
+	jsr rle_store		; store it
+	jsr @decsrclen		; decrease source count
+	beq @end		; if you're trying to pack a single byte, this the end
+@pack:
+	jsr rle_read		; grab a byte
+	cmp lastbyte		; same as last byte?
+	beq @rle		; then count bytes and store run length
+	sta lastbyte		; save for reference
+	jsr rle_store		; store byte
+	jsr @decsrclen		; decrease source count
+	bne @pack		; next
+@end:
+	lda lastbyte		; store last byte...
+	jsr rle_store
+	lda #0			; ...with a 0 count as the terminator
+	jsr rle_store
+	rts			; done
+@rle:
+	ldx #1			; start with a count of 1
+	jsr @decsrclen
+	beq @rleend
+@rlenext:
+	jsr rle_read		; grab a byte
+	cmp lastbyte		; make sure it's the same
+	bne @newbyte		; no, then terminate
+	inx 			; inc counter
+	beq @stop		; overflow?
+	jsr @decsrclen		; check for end of data
+	bne @rlenext
+@rleend:			; end of data
+	lda lastbyte		; store double byte
+	jsr rle_store
+	txa			; and counter
+	jsr rle_store
+	jmp @end
+@stop:	    			; overflow
+	lda lastbyte		; store the double byte
+	jsr rle_store
+	lda #$ff		; $ff as the byte count
+	jsr rle_store
+	inx			; start over with a counter of 1
+	jsr @decsrclen
+	beq @rleend
+	bne @rlenext
+@newbyte:			; new byte detected
+	pha			; save
+	lda lastbyte		; store double byte
+	jsr rle_store
+	txa			; and counter
+	jsr rle_store
+	pla			; restore new byte
+	sta lastbyte		; save for reference
+	jsr rle_store		; store it
+	jsr @decsrclen		; data left?
+	bne @pack		; yep, pack
+	beq @end		; nope, end
+; decrease number of bytes left, return 0 when done
+@decsrclen:
+	lda srclen
+	bne :+
+	dec srclen + 1
+:	sec
+	sbc #1
+	sta srclen
+	ora srclen + 1
+	rts
+    
+    
+    
+	.export _rle_unpack, rle_unpack
+
+
+	.import rle_store, rle_read
+	.importzp src, dest
+	.import lastbyte
+	.import destlen
+
+	.import popax
+
+
+	.code
+
+
+; cc65 interface to rle_unpack
+; unsigned int __fastcall__ rle_unpack(unsigned char *dest, unsigned char *src);
+_rle_unpack:
+	sta src			; save src arg
+	stx src + 1
+	jsr popax		; get dest arg
+	sta dest
+	stx dest + 1
+	jsr rle_unpack		; execute
+	lda destlen		; return length
+	ldx destlen + 1
+	rts
+
+
+; unpack a run length encoded stream
+rle_unpack:
+	ldy #0
+	sty destlen		; reset byte counter
+	sty destlen + 1
+	jsr rle_read		; read the first byte
+	sta lastbyte		; save as last byte
+	jsr rle_store		; store
+@unpack:
+	jsr rle_read		; read next byte
+	cmp lastbyte		; same as last one?
+	beq @rle		; yes, unpack
+	sta lastbyte		; save as last byte
+	jsr rle_store		; store
+	jmp @unpack		; next
+@rle:
+	jsr rle_read		; read byte count
+	tax
+	beq @end		; 0 = end of stream
+	lda lastbyte
+@read:
+	jsr rle_store		; store X bytes
+	dex
+	bne @read
+	beq @unpack		; next
+@end:
+	rts
+    
+jiffyfetch
+    sei
+    brk
+    .byt set | N0
+    .word TIME
+    .byt ldd | N0
+    .byt push
+    .byt st | TOS
+    .byt ldi | N0
+    .byt push
+    .byt st | TOS
+    .byt rtn
+    cli
+    jmp next        ; [16]
+
+jiffyfetch
+    sei
+    jsr slip
+    lda TIME
+    sta tos
+    lda TIME+1
+    sta tos+1
+    ldy #0
+    lda TIME+2
+    cli
+    jmp pushya      ; [20]
+
+;--------------------------------------------------------------
+;
+;       D+   ( d1 d2 -- d1+d2 )
+;
+; * 83 nucleus
+;
+dpluslfa
+    .byt $de,$ad
+    .byt (dplus-*-1)|bit7
+    .asc "D","+"|bit7
+dplus           ; ~wut? should be possible to tighten this, inx inx not poptwo
+    clc
+    lda stackl,x
+    adc stackl+2,x
+    sta stackl+2,x
+    lda stackh,x
+    adc stackh+2,x
+    sta stackh+2,x
+    lda tos
+    adc stackl+1,x
+    sta stackl+1,x
+    lda tos+1
+    adc stackh+1,x
+    sta stackh+1,x
+    jmp poptwo          ; [28]
+    
+    clc
+    lda stackl,x
+    adc stackl+2,x
+    sta stackl+2,x
+    lda stackh,x
+    adc stackh+2,x
+    sta stackh+2,x
+    lda tos
+    adc stackl+1,x
+    sta tos
+    lda tos+1
+    adc stackh+1,x
+    sta tos+1
+    inx
+    inx
+    jmp next            ; [30]
+    
+    clc
+    lda stackl,x
+    adc stackl+2,x
+    sta stackl+2,x
+    lda stackh,x
+    adc stackh+2,x
+    sta stackh+2,x
+    lda tos
+    adc stackl+1,x
+    pha
+    lda tos+1
+    adc stackh+1,x
+    tay
+    pla
+    inx
+    inx
+    jmp put            ; [29]
+
+;--------------------------------------------------------------
+;
+;       EDITWRAP!   ( d startline -- )
+;
+; Updates a portion of the linewrap table at $E0 to reflect the bits
+; stored in d, beginning at startline to end of the screen
+; e.g. -1 -1 18 editwrap! would set lines 18-24 as 40-column
+; line 1 is *always* $80, never a continuation line, so only 24 bits
+; are used, not 25.  Put another way, 2 <= startline <= 25
+;
+editwrapstore
+    ldy #2
+    jsr setup
+    stx storex
+    ldx #24
+editwrapstore01
+    asl $e0,x
+    lsr n+2
+    ror n+1
+    ror n
+    ror $e0,x
+    dex
+    cpx tos
+    bne editwrapstore01
+    ldx storex
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       EDITWRAP@   ( d startline -- d )
+;
+; Reads (a portion of) the linewrap table in $E0, nondestructively
+; shift the high bits into a double, beginning at startline.
+; e.g. 9 editwrap@ would return 
+;
+editwrapfetch
+    ldy #2
+    jsr setup
+    stx storex
+    ldx tos
+editwrapfetch01
+    asl $e0,x
+    rol n
+    rol n+1
+    rol n+2
+    lsr $e0,x
+    inx
+    cpx #24
+    bne editwrapfetch01
+    lda n
+    sta tos
+    lda n+1
+    sta tos+1
+    lda n+2
+    ldy n+3
+    ldx storex
+    jmp pushya
+
+    
+;--------------------------------------------------------------
+;
+;       EDITWRAPTOP@   ( -- d )
+;
+; Reads (a portion of) the linewrap table above the current physical
+; line (stored at $D8) up to but not including the current line.  
+; Returns a right-aligned double with those high bits
+;
+; $D8 = Current Cursor Physical Line Number
+;
+editwraptopfetch
+    jsr slip
+    stx storex
+    ldx #1
+editwraptopfetch01
+    cpx $d8
+    beq editwraptopfetch02  ; done
+    asl $e0,x
+    rol tos
+    rol tos+1
+    rol n
+    lsr $e0,x
+    inx
+    bne editwraptopfetch01  ; bra
+editwraptopfetch02
+    ldx storex
+    lda n
+    jmp pushya
 
