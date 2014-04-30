@@ -84,18 +84,14 @@ wrapbelow02
 ;       WRAPABOVE   ( -- d )
 ;
 ; Reads (a portion of) the linewrap table above the current physical
-; line (stored at $D8) up to but not including the current line.  
+; line (stored at $d8) up to but not including the current line.  
 ; Returns a right-aligned double with copies of those high bit values
 ;
-; $D8 = Current Cursor Physical Line Number
+; $d8 = Current Cursor Physical Line Number
 ;
-;   tos = lsb
-;   tos+1 = 2sb
-;   n   = 3sb
-;   n+1 = msb
 wrapabove
-    jsr slip
-    stx storex
+    jsr slip        ; make room on the stack for the low half
+    stx storex      ; preserve Forth data stack pointer
     ldx #0
     stx tos+1
     stx n
@@ -103,20 +99,20 @@ wrapabove
     inx             ; When this bit makes its way to the 4th byte, that
     stx tos         ; indicates we have rotated in 24 bits ("full")
 wrapabove01
-    cpx $d8
-    beq wrapabove02  ; done
-    lda $e0,x
-    asl
+    cpx $d8         ; are we there yet?
+    beq wrapabove02 ; leave if done
+    lda $e0,x 
+    asl             ; nondestructively
     rol tos
     rol tos+1
     rol n
-    rol n+1
+    rol n+1         ; append the next high bit to the double
     inx
-    bne wrapabove01  ; bra
+    bne wrapabove01 ; bra
 wrapabove02
     lda n
-    ldy n+1
-    ldx storex
+    ldy n+1         ; high half of the double is going on the stack
+    ldx storex      ; restore Forth data stack pointer
     jmp pushya
 
 ;--------------------------------------------------------------
@@ -127,33 +123,33 @@ wrapabove02
 ; bits in the  double. 
 ;
 wrapfill
-    ldy #$ff
-    lda stackh,x
+    ldy #$ff        ; true flag
+    lda stackh,x    ; inspect the 4th byte to see if we're full yet
     bne wrapfill01
-    iny
-    lsr tos
+    iny             ; false flag
+    lsr tos         ; all even numbers are "0", all odd numbers are "1"
     rol stackl+1,x
     rol stackh+1,x
     rol stackl,x
-    rol stackh,x
+    rol stackh,x    ; shift in a single bit from the right
 wrapfill01
     tya
     jmp put
 
 ;--------------------------------------------------------------
 ;
-;       EDITCURRLINE   ( -- addr 40|80 )
+;       CURRLINE   ( -- addr 40|80 )
 ;
 ; return the starting address of the line at the cursor, and its length
 ;
-;" : editcurrline   ( -- addr 40|80 )
+;" : currline   ( -- addr 40|80 )
 ;    c4 @  d5 c@ 1+ ;
 ;
-;editcurrlinelfa
+;currlinelfa
 ;    .byt $de,$ad
-;    .byt (editcurrline-*-1)|bit7
-;    .asc "EDITCURRLIN","E"|bit7
-_editcurrline
+;    .byt (currline-*-1)|bit7
+;    .asc "CURRLIN","E"|bit7
+_currline
 #include "enter.i65"
     .word clit
     .byt $c4
@@ -171,13 +167,14 @@ _editcurrline
 
 ;--------------------------------------------------------------
 ;
-;       EDITPASTEBUF   ( -- addr )
+;       PASTEBUF   ( -- addr )
 ;
 ; Return the address of the end of the paste buffer (marked by 0)
-; The paste buffer consists of zero or more screen lines, stored as
-; a length (40|80) followed by that many screen codes
+; The paste buffer consists of zero or more screen lines, stored 
+; as a length (40|80) followed by that many screen codes.
+; Each record is 41 or 81 bytes long.
 ;
-;editpastebuflfa
+;pastebuflfa
 ;    .byt $de,$ad
 ;    .byt (pastebuf-*-1)|bit7
 ;    .asc "PASTEBU","F"|bit7
@@ -191,28 +188,79 @@ _editcurrline
 ;        +                   ( newaddr )
 ;    repeat                  ( addr )
 ;
-_editpastebuf
+;": pastebuf
+;    pad                     ( pad )
+;    0                       ( pad 0 )
+;    begin
+;        over                ( addr subtot pad )
+;        c@                  ( addr subtot len )
+;        ?dup                ( addr subtot 0 | addr subtot len len ) 
+;    while                   ( addr subtot len )
+;        dup                 ( addr subtot len len )
+;        rot                 ( addr len len subtot )
+;        +                   ( addr len subtot )
+;        lrot                ( subtot addr len )
+;        1+                  ( subtot addr len+1 )
+;        +                   ( subtot addr )
+;        swap                ( addr subtot )
+;    repeat                  ( addr total )
+;_pastebuf
+;#include "enter.i65"
+;    .word _pad
+;#include "page.i65"
+;pastebuf01                      ; BEGIN
+;    .word dup
+;#include "page.i65"
+;    .word cfetch
+;#include "page.i65"
+;    .word qdup
+;#include "page.i65"
+;    .word qbranch               ; WHILE
+;    .byt <(pastebuf02-*+1)
+;#include "pad.i65"
+;    .word oneplus
+;#include "page.i65"
+;    .word plus
+;#include "page.i65"
+;    .word branch               ; REPEAT
+;    .byt <(pastebuf01-*+1)
+;#include "pad.i65"
+;pastebuf02
+;    .word exit
+_pastebuf
 #include "enter.i65"
     .word _pad
 #include "page.i65"
-editpastebuf01                      ; BEGIN
-    .word dup
+    .word zero
+#include "page.i65"
+pastebuf01                      ; BEGIN
+    .word over
 #include "page.i65"
     .word cfetch
 #include "page.i65"
     .word qdup
 #include "page.i65"
     .word qbranch               ; WHILE
-    .byt <(editpastebuf02-*+1)
+    .byt <(pastebuf02-*+1)
 #include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word lrot
+#include "page.i65"
     .word oneplus
 #include "page.i65"
     .word plus
 #include "page.i65"
-    .word branch               ; REPEAT
-    .byt <(editpastebuf01-*+1)
-#include "pad.i65"
-editpastebuf02
+    .word swap
+#include "page.i65"
+    .word branch                ; REPEAT
+    .byt <(pastebuf01-*+1)
+#include "pad.i65"              ; ( addr total )
+pastebuf02
     .word exit
 
 ;--------------------------------------------------------------
@@ -318,7 +366,7 @@ editrestore
 
 ;--------------------------------------------------------------
 ;
-;       EDITCOPYLINE   ( -- )
+;       EDITCOPY   ( -- )
 ;
 ; STOP-C   Copy current line to end of paste buffer
 ;
@@ -326,35 +374,37 @@ editrestore
 ; C4 is the address of the start of the line
 ; _pad is the start of the paste buffer
 ;
-;": editcopyline
-;    editcurrline pastebuf 2dup c!
+;": editcopy
+;    currline pastebuf 2dup c!
 ;    1+ swap cmove ;
 ;
-;editcopylinelfa
+;editcopylfa
 ;    .byt $de,$ad
-;    .byt (editcopyline-*-1)|bit7
-;    .asc "EDITCOPYLIN","E"|bit7
-editcopyline
+;    .byt (_editcopy-*-1)|bit7
+;    .asc "EDITCOP","Y"|bit7
+_editcopy
 #include "enter.i65"
-    .word _editcurrline    ; ( addr size )
+    .word _currline     ; ( addr size )
 #include "page.i65"
-    .word _editpastebuf        ; ( addr size buf )
+    .word _pastebuf         ; ( addr size buf buflen )
 #include "page.i65"
-    .word _twodup          ; ( addr size buf size buf )
+    .word drop              ; ( addr size buf )
 #include "page.i65"
-    .word cstore           ; ( addr size buf )
+    .word _twodup           ; ( addr size buf size buf )
 #include "page.i65"
-    .word oneplus          ; ( addr size buf+1 )
+    .word cstore            ; ( addr size buf )
 #include "page.i65"
-    .word swap             ; ( addr buf+1 size )
+    .word oneplus           ; ( addr size buf+1 )
 #include "page.i65"
-    .word _twodup          ; ( addr buf+1 size buf+1 size )
+    .word swap              ; ( addr buf+1 size )
 #include "page.i65"
-    .word plus             ; ( addr buf+1 size buf+1+size )
+    .word _twodup           ; ( addr buf+1 size buf+1 size )
 #include "page.i65"
-    .word off              ; ( addr buf+1 size )
+    .word plus              ; ( addr buf+1 size buf+1+size )
 #include "page.i65"
-    .word cmove            ; ( )
+    .word off               ; ( addr buf+1 size )
+#include "page.i65"
+    .word cmove             ; ( )
 #include "page.i65"
     .word exit
 
@@ -375,14 +425,14 @@ nextphysline
 
 ;--------------------------------------------------------------
 ;
-;       EDITDELLINE   ( -- )
+;       EDITDEL   ( -- )
 ;
 ; delete the current line, appending it to the paste buffer
 ;
-;": editdelline
-;    editcopyline 
+;": editdel
+;    editcopy
 ;    wrapabove  nextphysline wrapbelow  begin  1 wrapfill  until
-;    editcurrline
+;    currline
 ;    2dup + dup 2swap >r 33768 dup >r rot - cmove r> r@ - r> blank
 ;    wrap!
 ;
@@ -394,13 +444,13 @@ nextphysline
 ; erase the last 40 or 80 characters, same size as currline
 ; write the new linewrap table to $e0
 ;
-;editdellinelfa
+;editdellfa
 ;    .byt $de,$ad
-;    .byt (editdelline-*-1)|bit7
-;    .asc "EDITDELLIN","E"|bit7
-editdelline
+;    .byt (editdel-*-1)|bit7
+;    .asc "EDITDE","L"|bit7
+_editdel
 #include "enter.i65"
-    .word editcopyline
+    .word _editcopy
 #include "page.i65"
     .word wrapabove
 #include "page.i65"
@@ -416,7 +466,7 @@ editdelline01
     .word qbranch
     .byt <(editdelline01-*+1)
 #include "pad.i65"
-    .word _editcurrline         ; ( d currline len )
+    .word _currline         ; ( d currline len )
 #include "page.i65"
     .word _twodup               ; ( d currline len currline len )
 #include "page.i65"
@@ -461,13 +511,13 @@ editdelline01
 ;
 ;       EDITPASTE   ( -- )
 ;
-; insert the paste buffer at the cursor position
+; insert the paste buffer before the current line
 ;
 editpastelfa
     .byt $de,$ad
-    .byt (editpaste-*-1)|bit7
+    .byt (_editpaste-*-1)|bit7
     .asc "EDITPAST","E"|bit7
-editpaste
+_editpaste
 #include "enter.i65"
     .word xyzzy
 #include "page.i65"
@@ -648,9 +698,9 @@ editmenu01
      .word editverify
      .word editzilch
      .word editrestore
-     .word editdelline
-     .word editcopyline
-     .word editpaste
+     .word _editdel
+     .word _editcopy
+     .word _editpaste
      .word editdelscr
      .word editinsscr
      .word edittopscr
