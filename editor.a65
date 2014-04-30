@@ -23,63 +23,65 @@ _editirqtoggle
 
 ;--------------------------------------------------------------
 ;
-;       EDITWRAP!   ( d startline -- )
+;       WRAP!   ( d -- )
 ;
-; Updates a portion of the linewrap table at $E0 to reflect the bits
-; stored in d, beginning at startline to end of the screen
-; e.g. -1 -1 18 editwrap! would set lines 18-24 as 40-column
-; line 1 is *always* $80, never a continuation line, so only 24 bits
-; are used, not 25.  Put another way, 2 <= startline <= 25
+; Updates the linewrap table at $E0 to reflect the bits
+; stored in d.  Since line 1 is *always* $80, never a continuation 
+; line, only 24 bits are required, not 25.
 ;
-editwrapstore
-    ldy #2
+wrapstore
+    ldy #1
     jsr setup
     stx storex
     ldx #24
-editwrapstore01
+wrapstore01
     asl $e0,x
-    lsr n+2
+    lsr tos+1
+    ror tos
     ror n+1
     ror n
     ror $e0,x
     dex
-    cpx tos
-    bne editwrapstore01
+    bne wrapstore01
     ldx storex
     jmp pops
 
 ;--------------------------------------------------------------
 ;
-;       EDITWRAP@   ( d startline -- d )
+;       WRAPBELOW   ( d startline -- d )
 ;
 ; Reads (a portion of) the linewrap table in $E0, nondestructively
-; shifting the high bits into a double, beginning at startline.
-; e.g. 9 editwrap@ would return 
+; shifting the high bits into a double, beginning at startline
 ;
-editwrapfetch
+wrapbelow
     ldy #2
     jsr setup
-    ldy tos
-editwrapfetch01
-    asl $e0,y
+    stx storex
+    ldx tos
+wrapbelow01
+    cpx #25
+    beq wrapbelow02
+    lda $e0,x
+    asl
     rol n
     rol n+1
     rol n+2
-    lsr $e0,y
+    rol n+3
     inx
-    cpx #24
-    bne editwrapfetch01
+    bne wrapbelow01
+wrapbelow02
     lda n
     sta tos
     lda n+1
     sta tos+1
     lda n+2
     ldy n+3
+    ldx storex
     jmp pushya
 
 ;--------------------------------------------------------------
 ;
-;       EDITWRAPTOP@   ( -- d )
+;       WRAPABOVE   ( -- d )
 ;
 ; Reads (a portion of) the linewrap table above the current physical
 ; line (stored at $D8) up to but not including the current line.  
@@ -87,23 +89,56 @@ editwrapfetch01
 ;
 ; $D8 = Current Cursor Physical Line Number
 ;
-editwraptopfetch
+;   tos = lsb
+;   tos+1 = 2sb
+;   n   = 3sb
+;   n+1 = msb
+wrapabove
     jsr slip
-    iny
-editwraptopfetch01
-    cpy $d8
-    beq editwraptopfetch02  ; done
-    asl $e0,y
+    stx storex
+    ldx #0
+    stx tos+1
+    stx n
+    stx n+1         ; set least significant bit of the double to 1.  
+    inx             ; When this bit makes its way to the 4th byte, that
+    stx tos         ; indicates we have rotated in 24 bits ("full")
+wrapabove01
+    cpx $d8
+    beq wrapabove02  ; done
+    lda $e0,x
+    asl
     rol tos
     rol tos+1
     rol n
-    lsr $e0,y
-    iny
-    bne editwraptopfetch01  ; bra
-editwraptopfetch02
+    rol n+1
+    inx
+    bne wrapabove01  ; bra
+wrapabove02
     lda n
-    ; high byte will be ignored
+    ldy n+1
+    ldx storex
     jmp pushya
+
+;--------------------------------------------------------------
+;
+;       WRAPFILL   ( d 0|1 -- d flag )
+;
+; Appends the bit to the double and returns true if there are 24
+; bits in the  double. 
+;
+wrapfill
+    ldy #$ff
+    lda stackh,x
+    bne wrapfill01
+    iny
+    lsr tos
+    rol stackl+1,x
+    rol stackh+1,x
+    rol stackl,x
+    rol stackh,x
+wrapfill01
+    tya
+    jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -323,23 +358,20 @@ editcopyline
 #include "page.i65"
     .word exit
 
+;--------------------------------------------------------------
+;
+;       NEXTPHYSLINE   ( --  n )
+;
+; return the physical cursor line (1..24) after current logical line
+;
 nextphysline
-    ldy $d8 ; cursor physical line 0..24
-    ldy d8
-    lda $e0,y
-    iny
-    bmi +
-    iny
-    tya
-    jmp pushya
-    
-; move everything below this line up to here
-
+    ldy $d8 ; current physical line 0..24
     lda #4
     cmp $e0+1,y ; 00 01 02 03=set carry 80 81 82 83=clear carry
     tya
     adc #1
-    jmp pushya  ; [15]
+    ldy #0
+    jmp pushya  ; [14]
 
 ;--------------------------------------------------------------
 ;
@@ -349,26 +381,17 @@ nextphysline
 ;
 ;": editdelline
 ;    editcopyline 
-;    editcurrline dup   ( lineaddr 40|80 40|80 )
-80 = negate   ( lineaddr 40|80 0|1 )
-;    editwraptop@   ( lineaddr 40|80 0|1 d )
-;    d8 c@ editwrap@   ( lineaddr 40|80 0|1 d )
-rot -1 do
-  d2* 1 m+
-  loop   >r >r
-  2dup + lrot cmove
-  
-;    d8 c@ over 40 / +    ( d lineaddr 40|80 (d8)++ )
-;    swap >r 0 do  ( d -- ; r; lineaddr )
-;    
-;    editcurrline pastebuf 2dup c!
-;    1+ swap cmove ;
+;    wrapabove  nextphysline wrapbelow  begin  1 wrapfill  until
+;    editcurrline
+;    2dup + dup 2swap >r 33768 dup >r rot - cmove r> r@ - r> blank
+;    wrap!
 ;
 ; copy the current line
 ; copy linewrap table above this line
 ; append linewrap table below this line
-; roll in 1 or 2 40-column bits
-; move everything below this line up to here
+; roll in 1 bits until there are 24 linewrap bits
+; move everything below this line to end of screen up to here
+; erase the last 40 or 80 characters, same size as currline
 ; write the new linewrap table to $e0
 ;
 ;editdellinelfa
@@ -377,7 +400,60 @@ rot -1 do
 ;    .asc "EDITDELLIN","E"|bit7
 editdelline
 #include "enter.i65"
+    .word editcopyline
+#include "page.i65"
+    .word wrapabove
+#include "page.i65"
+    .word nextphysline
+#include "page.i65"
+    .word wrapbelow
+#include "page.i65"
+editdelline01
+    .word one
+#include "page.i65"
+    .word wrapfill
+#include "page.i65"
+    .word qbranch
+    .byt <(editdelline01-*+1)
+#include "pad.i65"
+    .word _editcurrline         ; ( d currline len )
+#include "page.i65"
+    .word _twodup               ; ( d currline len currline len )
+#include "page.i65"
+    .word plus                  ; ( d currline len from )
+#include "page.i65"
+    .word dup                   ; ( d currline len from from )
+#include "page.i65"
+    .word twoswap               ; ( d from from currline len )
+#include "page.i65"
+    .word tor                   ; ( d from from currline /r/ len )
+#include "page.i65"
+    .word plit                  ; ( d from from currline 83e8 /r/ len )
+    .word VIDRAM+1000
+#include "pad.i65"
+    .word dup                   ; ( d from from currline 83e8 83e8 /r/ len )
+#include "page.i65"
+    .word tor                   ; ( d from from currline 83e8 /r/ len 83e8 )
+#include "page.i65"
+    .word rot                   ; ( d from currline 83e8 from /r/ len 83e8 )
+#include "page.i65"
+    .word minus                 ; ( d from currline howmany /r/ len 83e8 )
+#include "page.i65"
+    .word cmove                 ; ( d /r/ len 83e8 )
+#include "page.i65"
+    .word rfrom                 ; ( d 83e8 // len )
+#include "page.i65"
+    .word rfetch                ; ( d 83e8 len // len )
+#include "page.i65"
+    .word minus                 ; ( d VIDRAM+1000-len // len )
+#include "page.i65"
+    .word rfrom                 ; ( d VIDRAM+1000-len len )
+#include "page.i65"
+    .word _blank                ; ( d )
+#include "page.i65"
     .word xyzzy
+#include "page.i65"
+    .word wrapstore             ; ( ) 
 #include "page.i65"
     .word exit
 
