@@ -90,26 +90,32 @@ wrapbelow02
 ; $d8 = Current Cursor Physical Line Number
 ;
 wrapabove
-    jsr slip        ; make room on the stack for the low half
+    jsr slip        ; make room on the stack for the low half of the double
     stx storex      ; preserve Forth data stack pointer
-    ldx #0
-    stx tos+1
-    stx n
-    stx n+1         ; set least significant bit of the double to 1.  
-    inx             ; When this bit makes its way to the 4th byte, that
-    stx tos         ; indicates we have rotated in 24 bits ("full")
+    ldx $d8         ; calculate the first physical line of this logical line
+    lda $e0,x
+    bmi wrapabove01 ; we are already on the first line
+    dex
 wrapabove01
-    cpx $d8         ; are we there yet?
-    beq wrapabove02 ; leave if done
+    stx n+2         ; when X reaches this line, we are done
+    ldx #0
+    stx tos
+    stx tos+1
+    stx n           ; set least significant bit of the double to 1.  
+    stx n+1         ; When this bit makes its way to the 4th byte, that
+    inc tos         ; indicates we have rotated in 24 bits ("full")
+wrapabove02
+    inx
+    cpx n+2         ; are we there yet?
+    beq wrapabove03 ; leave if done
     lda $e0,x 
     asl             ; nondestructively
     rol tos
     rol tos+1
     rol n
     rol n+1         ; append the next high bit to the double
-    inx
-    bne wrapabove01 ; bra
-wrapabove02
+    beq wrapabove02 ; this should always take the branch
+wrapabove03
     lda n
     ldy n+1         ; high half of the double is going on the stack
     ldx storex      ; restore Forth data stack pointer
@@ -181,60 +187,20 @@ _currline
 ;": editpastebuf
 ;    pad                     ( pad )
 ;    begin
-;        dup c@              ( addr len )
-;        qdup                ( addr 0 | addr len len )
+;        dup                 ( addr addr )
+;        c@                  ( addr len )
+;        ?dup                ( addr 0 | addr len len )
 ;    while                   ( addr len )
 ;        1+                  ( addr len+1 )
 ;        +                   ( newaddr )
 ;    repeat                  ( addr )
 ;
-;": pastebuf
-;    pad                     ( pad )
-;    0                       ( pad 0 )
-;    begin
-;        over                ( addr subtot pad )
-;        c@                  ( addr subtot len )
-;        ?dup                ( addr subtot 0 | addr subtot len len ) 
-;    while                   ( addr subtot len )
-;        dup                 ( addr subtot len len )
-;        rot                 ( addr len len subtot )
-;        +                   ( addr len subtot )
-;        lrot                ( subtot addr len )
-;        1+                  ( subtot addr len+1 )
-;        +                   ( subtot addr )
-;        swap                ( addr subtot )
-;    repeat                  ( addr total )
-;_pastebuf
-;#include "enter.i65"
-;    .word _pad
-;#include "page.i65"
-;pastebuf01                      ; BEGIN
-;    .word dup
-;#include "page.i65"
-;    .word cfetch
-;#include "page.i65"
-;    .word qdup
-;#include "page.i65"
-;    .word qbranch               ; WHILE
-;    .byt <(pastebuf02-*+1)
-;#include "pad.i65"
-;    .word oneplus
-;#include "page.i65"
-;    .word plus
-;#include "page.i65"
-;    .word branch               ; REPEAT
-;    .byt <(pastebuf01-*+1)
-;#include "pad.i65"
-;pastebuf02
-;    .word exit
 _pastebuf
 #include "enter.i65"
     .word _pad
 #include "page.i65"
-    .word zero
-#include "page.i65"
 pastebuf01                      ; BEGIN
-    .word over
+    .word dup
 #include "page.i65"
     .word cfetch
 #include "page.i65"
@@ -243,23 +209,13 @@ pastebuf01                      ; BEGIN
     .word qbranch               ; WHILE
     .byt <(pastebuf02-*+1)
 #include "pad.i65"
-    .word dup
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word lrot
-#include "page.i65"
     .word oneplus
 #include "page.i65"
     .word plus
 #include "page.i65"
-    .word swap
-#include "page.i65"
-    .word branch                ; REPEAT
+    .word branch               ; REPEAT
     .byt <(pastebuf01-*+1)
-#include "pad.i65"              ; ( addr total )
+#include "pad.i65"
 pastebuf02
     .word exit
 
@@ -513,6 +469,15 @@ editdelline01
 ;
 ; insert the paste buffer before the current line
 ;
+;": editpaste
+;     pastebuf >r
+;     25 nextphysline
+;     do
+;         editdel
+;     loop
+;     wrapabove
+;     r> off ;
+;
 editpastelfa
     .byt $de,$ad
     .byt (_editpaste-*-1)|bit7
@@ -520,6 +485,42 @@ editpastelfa
 _editpaste
 #include "enter.i65"
     .word xyzzy
+#include "page.i65"
+    .word _pastebuf             ; ( addr )
+#include "page.i65"
+    .word tor                   ; ( )
+#include "page.i65"
+    .word clit
+    .byt 25                     ; ( 25 )
+#include "pad.i65"
+    .word nextphysline          ; ( 25 line )
+#include "page.i65"
+    .word pdo                   ; ( )
+#include "page.i65"
+editpaste01
+    .word _editdel              ; ( )
+#include "page.i65"
+    .word ploop
+    .byt <(editpaste01-*+1)
+#include "pad.i65"
+    .word wrapabove             ; ( d )
+#include "page.i65"
+editpaste02                     ; BEGIN
+    .word _pad                  ; ( d pad )
+#include "page.i65"
+    .word dup                   ; ( d pad pad )
+#include "page.i65"
+    .word oneplus               ; ( d pad from )
+#include "page.i65"
+    .word swap                  ; ( d from pad )
+#include "page.i65"
+    .word cfetch                ; ( d from length )
+#include "page.i65"
+    .word twodup                ; ( d from length from length )
+
+    .word rfrom                 ; ( addr )
+#include "page.i65"
+    .word off                   ; ( )
 #include "page.i65"
     .word exit
 
