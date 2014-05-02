@@ -343,8 +343,6 @@ editrestore
 ;    .asc "EDITCOP","Y"|bit7
 _editcopy
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word _currline     ; ( addr size )
 #include "page.i65"
     .word _pastebuf         ; ( addr size buf )
@@ -471,13 +469,19 @@ editdelline01
 ; insert the paste buffer before the current line
 ;
 ;": editpaste   ( -- )
-;     pastebuf >r  25 nextphysline ?do  editdel  loop  wrapabove
+;     pastebuf >r  26 nextphysline ?do  editdel  loop  wrapabove
 ;     currline drop pad 2swap
 ;     begin
 ;         2swap dup c@ >r 1+ swap 2dup r@ cmove
 ;         r@ + swap  r@ + swap
-;         2swap  1 wrapfill  0= r> 80 = and  if  0 wrapfill  then
+;         2swap  1 wrapfill  dup 0= r> 80 = and  if  ( 0 ) wrapfill  then
 ;     until  2swap 2drop  wrap!  r> off ;
+;
+; Cut goes up to line 26 because we actually begin with the current
+; logical line, not the next physical line, so it's off by one.  
+; Worst case scenario is initially empty paste buffer and all 40-column
+; lines below and including currline.  This gets us enough to refill 
+; the screen
 ;
 ;editpastelfa
 ;    .byt $de,$ad
@@ -485,72 +489,82 @@ editdelline01
 ;    .asc "EDITPAST","E"|bit7
 _editpaste
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word _pastebuf             ; ( buftail )
 #include "page.i65"
     .word tor                   ; ( ) ( R; buftail )
 #include "page.i65"
     .word clit
-    .byt 25                     ; ( 25 )
+    .byt 26                     ; ( 26 ) ( R; buftail )
 #include "pad.i65"
-    .word nextphysline          ; ( 25 line )
+    .word nextphysline          ; ( 26 line ) ( R; buftail )
 #include "page.i65"
-    .word pqdo                  ; ( )
-#include "page.i65"
+    .word pqdo                  ; ( ) ( R; buftail )
+    .byt <(editpaste02-*+1)
+#include "pad.i65"
 editpaste01
-    .word _editdel              ; ( )
+    .word _editdel              ; ( ) ( R; buftail )
 #include "page.i65"
     .word ploop
     .byt <(editpaste01-*+1)
 #include "pad.i65"
-    .word wrapabove             ; ( d )
+editpaste02
+    .word wrapabove             ; ( d ) ( R; buftail )
 #include "page.i65"
-    .word _currline
+    .word _currline             ; ( d to linelen ) ( R; buftail )
 #include "page.i65"
-    .word drop
+    .word drop                  ; ( d to ; linelen is irrelevant ) ( R; buftail )
 #include "page.i65"
-    .word _pad
+    .word _pad                  ; ( d to pad ) ( R; buftail )
 #include "page.i65"
-    .word twoswap
+    .word twoswap               ; ( to pad d ) ( R; buftail )
 #include "page.i65"
-editpaste02                     ; BEGIN
-    .word twoswap
+    .word xyzzy
 #include "page.i65"
-    .word dup
+editpaste03                     ; BEGIN
+    .word twoswap               ; ( d to pastebuf ) ( R; buftail )
 #include "page.i65"
-    .word cfetch
+    .word dup                   ; ( d to pastebuf pastebuf ) ( R; buftail )
 #include "page.i65"
-    .word tor
+    .word cfetch                ; ( d to pastebuf len ) ( R; buftail )
 #include "page.i65"
-    .word oneplus
+    .word tor                   ; ( d to pastebuf ) ( R; buftail len )
 #include "page.i65"
-    .word swap
+    .word oneplus               ; ( d to from ) ( R; buftail len )
 #include "page.i65"
-    .word _twodup
+    .word swap                  ; ( d from to ) ( R; buftail len )
 #include "page.i65"
-    .word rfetch
+    .word _twodup               ; ( d from to from to ) ( R; buftail len )
 #include "page.i65"
-;need something before cmove to check for 80 character line pasted to line 25
-    .word cmove
+    .word plit
+    .word VIDRAM+1000           ; ( d from to from to 33768 ) ( R; buftail len )
+#include "pad.i65"
+    .word over                  ; ( d from to from to 33768 to ) ( R; buftail len )
 #include "page.i65"
-    .word rfetch
+    .word minus                 ; ( d from to from to availonscreen ) ( R; buftail len )
 #include "page.i65"
-    .word plus
+    .word rfetch                ; ( d from to from to availonscreen len ) ( R; buftail len )
 #include "page.i65"
-    .word swap
+    .word _min                  ; ( d from to from to howmany ) ( R; buftail len )
 #include "page.i65"
-    .word rfetch
+    .word cmove                 ; ( d from to ) ( R; buftail len )
 #include "page.i65"
-    .word plus
+    .word rfetch                ; ( d from to len ) ( R; buftail len )
 #include "page.i65"
-    .word swap
+    .word plus                  ; ( d from nextline ) ( R; buftail len )
 #include "page.i65"
-    .word twoswap
+    .word swap                  ; ( d nextline from ) ( R; buftail len )
+#include "page.i65"
+    .word rfetch                ; ( d nextline from len ) ( R; buftail len )
+#include "page.i65"
+    .word plus                  ; ( d nextline pastebuf ) ( R; buftail len )
+#include "page.i65"
+    .word twoswap               ; ( nextline pastebuf d ) ( R; buftail len )
 #include "page.i65"
     .word one
 #include "page.i65"
     .word wrapfill
+#include "page.i65"
+    .word dup
 #include "page.i65"
     .word zeq
 #include "page.i65"
@@ -564,15 +578,15 @@ editpaste02                     ; BEGIN
     .word andx
 #include "page.i65"
     .word qbranch               ; IF
-    .byt <(editpaste03-*+1)
+    .byt <(editpaste04-*+1)
 #include "pad.i65"
-    .word zero
-#include "page.i65"
     .word wrapfill
 #include "page.i65"
-editpaste03                     ; THEN
+editpaste04                     ; THEN
+    .word xyzzy
+#include "page.i65"
     .word qbranch               ; UNTIL
-    .byt <(editpaste02-*+1)
+    .byt <(editpaste03-*+1)
 #include "pad.i65"
     .word twoswap
 #include "page.i65"
