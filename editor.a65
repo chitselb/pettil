@@ -26,7 +26,7 @@ _editirqtoggle
 ;       WRAP!   ( d -- )
 ;
 ; Updates the linewrap table at $E0 to reflect the bits
-; stored in d.  Since line 1 is *always* $80, never a continuation 
+; stored in d.  Since line 0 is *always* $80, never a continuation 
 ; line, only 24 bits are required, not 25.
 ;
 wrapstore
@@ -138,11 +138,74 @@ wrapfill
     rol stackh+1,x
     rol stackl,x
     rol stackh,x    ; shift in a single bit from the right
+    beq wrapfill01  ; test again for full
+    dey             ; Y=ff iff full
 wrapfill01
     tya
     jmp put
 
 ;--------------------------------------------------------------
+;
+;       LINEINFO   ( physline -- addr 40|80 )
+;
+; return the starting address of the logical line, and its length
+;
+;lineinfolfa
+;    .byt $de,$ad
+;    .byt (lineinfo-*-1)|bit7
+;    .asc "LINEINF","O"|bit7
+lineinfo
+    stx storex
+    ldx tos
+    inx
+lineinfo01
+    dex
+    lda $e0,x
+    bpl lineinfo01
+    sta tos
+    lda #40
+    cpx #24
+    beq lineinfo02
+    ldy $e1,x
+    bmi lineinfo02
+    asl
+lineinfo02
+    ldy #0
+    ldx storex
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       40/   ( n -- n/40 )
+;
+; n * 52 / 256 >> 3
+;
+fortyslashlfa
+    .byt $de,$ad
+    .byt (fortyslash-*-1)|bit7
+    .asc "40","/"|bit7
+fortyslash
+    lda #0
+    ldy #4
+fortyslash01
+    sta n-1,y
+    dey
+    bne fortyslash01
+     
+;- ;--------------------------------------------------------------
+;
+;       CURRLINE   ( -- addr 40|80 )
+;
+; return the starting address of the line at the cursor, and its length
+;
+;" : currline   ( -- addr 40|80 )
+;    c4 @  d5 c@ 1+ ;
+;
+;currlinelfa
+;    .byt $de,$ad
+;    .byt (currline-*-1)|bit7
+;    .asc "CURRLIN","E"|bit7
+-------------------------------------------------------------
 ;
 ;       CURRLINE   ( -- addr 40|80 )
 ;
@@ -170,6 +233,21 @@ _currline
     .word oneplus
 #include "page.i65"
     .word exit
+
+;--------------------------------------------------------------
+;
+;       NEXTPHYSLINE   ( --  n )
+;
+; return the physical cursor line (1..24) after current logical line
+;
+nextphysline
+    ldy $d8 ; current physical line 0..24
+    lda #4
+    cmp $e0+1,y ; 00 01 02 03=set carry 80 81 82 83=clear carry
+    tya
+    adc #1
+    ldy #0
+    jmp pushya  ; [14]
 
 ;--------------------------------------------------------------
 ;
@@ -343,7 +421,7 @@ editrestore
 ;    .asc "EDITCOP","Y"|bit7
 _editcopy
 #include "enter.i65"
-    .word _currline     ; ( addr size )
+    .word _currline         ; ( addr size )
 #include "page.i65"
     .word _pastebuf         ; ( addr size buf )
 #include "page.i65"
@@ -364,21 +442,6 @@ _editcopy
     .word cmove             ; ( )
 #include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-;
-;       NEXTPHYSLINE   ( --  n )
-;
-; return the physical cursor line (1..24) after current logical line
-;
-nextphysline
-    ldy $d8 ; current physical line 0..24
-    lda #4
-    cmp $e0+1,y ; 00 01 02 03=set carry 80 81 82 83=clear carry
-    tya
-    adc #1
-    ldy #0
-    jmp pushya  ; [14]
 
 ;--------------------------------------------------------------
 ;
