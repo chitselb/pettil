@@ -162,6 +162,8 @@ lineinfo01
     dex
     lda $e0,x
     bpl lineinfo01
+    sta tos+1
+    lda WRAPLO,x
     sta tos
     lda #40
     cpx #24
@@ -180,7 +182,7 @@ lineinfo02
 ;
 ; converts a video memory address to its physical line 0..24
 ;
-    VIDRAM - 40 / ;
+  ;  VIDRAM - 40 / ;
     
 ;": linephys   ( addr -- physline )
 ;     0
@@ -231,9 +233,9 @@ linephys01
 ;
 ; append the line on the screen to the paste buffer 
 ;
-    >r swap r@ over c!   ( screen paste ; 40|80 )
-    1+ 2dup r@ cmove   ( screen paste+1 ) 
-    r@ + swap r> + ;
+;    >r swap r@ over c!   ( screen paste ; 40|80 )
+;    1+ 2dup r@ cmove   ( screen paste+1 ) 
+;    r@ + dup off swap r> + ;
  
  
  
@@ -243,17 +245,37 @@ linephys01
 ;    .asc ">PAST","E"|bit7
 _topaste
 #include "enter.i65"
-    .word rot
+    .word tor
 #include "page.i65"
-    .word _twodup
+    .word swap
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word over
 #include "page.i65"
     .word cstore
 #include "page.i65"
     .word oneplus
 #include "page.i65"
-    .word swap
+    .word _twodup
+#include "page.i65"
+    .word rfetch
 #include "page.i65"
     .word cmove
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plus
 #include "page.i65"
     .word exit
      
@@ -262,13 +284,13 @@ _topaste
 ;       PASTE>   ( paste screen -- paste+ screen+ )
 ;
 ; copy logical line from the paste buffer to screen
-    over c@ >r swap 1+ 2dup swap r@ cmove   ( screen paste+1 )
-    r@ + swap r> + ;   ( paste+ screen+ )
+;    over c@ >r swap 1+ 2dup swap r@ cmove   ( screen paste+1 )
+;    r@ + swap r> + ;   ( paste+ screen+ )
     
 ;topastelfa
 ;    .byt $de,$ad
-;    .byt (_topaste-*-1)|bit7
-;    .asc ">PAST","E"|bit7
+;    .byt (_pastefrom-*-1)|bit7
+;    .asc "PASTE",">"|bit7
 _pastefrom
 #include "enter.i65"
     .word xyzzy
@@ -497,6 +519,8 @@ editrestore
 ;    .asc "EDITCOP","Y"|bit7
 _editcopy
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word _paste
 #include "page.i65"
     .word _currline         ; ( paste screen size )
@@ -536,57 +560,98 @@ _editdel
 #include "page.i65"
     .word _editcopy
 #include "page.i65"
-    .word wrapabove
+    .word _paste
 #include "page.i65"
-    .word nextphysline
+    .word dup
 #include "page.i65"
-    .word wrapbelow
+    .word _currline
 #include "page.i65"
-editdelline01
-    .word one
+    .word plus
 #include "page.i65"
-    .word wrapfill
+    .word _linephys
+#include "page.i65"
+editdel01                       ; BEGIN
+    .word tor
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word clit
+    .byt 25
+#include "pad.i65"
+    .word eq
 #include "page.i65"
     .word qbranch
-    .byt <(editdelline01-*+1)
+    .byt <(editdel02-*+1)       ; WHILE
 #include "pad.i65"
-    .word _currline         ; ( d currline len )
+    .word rfetch
 #include "page.i65"
-    .word _twodup               ; ( d currline len currline len )
+    .word lineinfo
 #include "page.i65"
-    .word plus                  ; ( d currline len from )
+    .word _topaste
 #include "page.i65"
-    .word dup                   ; ( d currline len from from )
+    .word drop
 #include "page.i65"
-    .word twoswap               ; ( d from from currline len )
+    .word rfrom
 #include "page.i65"
-    .word tor                   ; ( d from from currline ) ( R; len )
+    .word oneplus
 #include "page.i65"
-    .word plit                  ; ( d from from currline 83e8 ) ( R; len )
+    .word branch                ; REPEAT
+    .byt <(editdel01-*+1)
+#include "pad.i65"
+    .word rfrom
+#include "page.i65"
+    .word lineinfo
+#include "page.i65"
+    .word plit
     .word VIDRAM+1000
 #include "pad.i65"
-    .word dup                   ; ( d from from currline 83e8 83e8 ) ( R; len )
+    .word over
 #include "page.i65"
-    .word tor                   ; ( d from from currline 83e8 ) ( R; len 83e8 )
+    .word minus
 #include "page.i65"
-    .word rot                   ; ( d from currline 83e8 from ) ( R; len 83e8 )
+    .word _blank
 #include "page.i65"
-    .word minus                 ; ( d from currline howmany ) ( R; len 83e8 )
+    .word _currline
 #include "page.i65"
-    .word cmove                 ; ( d ) ( R; len 83e8 )
+    .word wrapabove
 #include "page.i65"
-    .word rfrom                 ; ( d 83e8 ) ( R; len )
+    .word twoswap
 #include "page.i65"
-    .word rfetch                ; ( d 83e8 len ) ( R; len )
+editdel03                       ; BEGIN
+    .word over
 #include "page.i65"
-    .word minus                 ; ( d VIDRAM+1000-len ) ( R; len )
+    .word cfetch
 #include "page.i65"
-    .word rfrom                 ; ( d VIDRAM+1000-len len )
+    .word qbranch               ; WHILE
+    .byt <(editdel05-*+1)
+#include "pad.i65"
+    .word tor
+    .word tor
+    .word one
+    .word wrapfill
+    .word rfetch
+    .word over
+    .word clit
+    .byt 80
+    .word eq
+    
+    .word _pastefrom
 #include "page.i65"
-    .word _blank                ; ( d )
+    .word branch
+    .byt <(editdel03-*+1)       ; REPEAT
+#include "pad.i65"
+editdel05
+    .word 
 #include "page.i65"
-    .word wrapstore             ; ( ) 
+    .word 
 #include "page.i65"
+    .word 
+#include "page.i65"
+    .word 
+#include "page.i65"
+    .word 
+#include "page.i65"
+    .word 
     .word exit
 
 ;--------------------------------------------------------------
@@ -649,6 +714,8 @@ editdelline01
 ;    .asc "EDITPAST","E"|bit7
 _editpaste
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word _paste             ; ( buftail )
 #include "page.i65"
     .word tor                   ; ( ) ( R; buftail )
@@ -656,7 +723,7 @@ _editpaste
     .word clit
     .byt 26                     ; ( 26 ) ( R; buftail )
 #include "pad.i65"
-    .word nextphysline          ; ( 26 line ) ( R; buftail )
+    .word _linephys          ; ( 26 line ) ( R; buftail )
 #include "page.i65"
     .word pqdo                  ; ( ) ( R; buftail )
     .byt <(editpaste02-*+1)
