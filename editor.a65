@@ -3,7 +3,7 @@
 ;       WRAPABOVE   ( -- d )
 ;
 ; Reads (a portion of) the linewrap table above the current physical
-; line (stored at $d8) up to but not including the current line.  
+; line (stored at $d8) up to but not including the current logical line.  
 ; Returns a right-aligned double with copies of those high bit values
 ;
 ; $d8 = Current Cursor Physical Line Number
@@ -92,139 +92,88 @@ wrapstore01
 
 ;--------------------------------------------------------------
 ;
-;       LINESIZE   ( physline -- 40|80 )
+;       LINEINFO   ( logline -- addr 40|80 )
 ;
-; return the length of the logical line
-; physline must already point to the first line of the logical line
+; return the start address and length of the logical line
+; logline must already point to the first line of the logical line
 ;
 ;lineinfolfa
 ;    .byt $de,$ad
-;    .byt (linesize-*-1)|bit7
-;    .asc "LINESIZ","E"|bit7
-linesize
+;    .byt (lineinfo-*-1)|bit7
+;    .asc "LINEINF","O"|bit7
+lineinfo
     stx storex
     ldx tos
+    lda WRAPLO,x
+    sta tos
+    lda $e0,x
+    sta tos+1
     lda #40
     cpx #24
-    beq lineinfo02
+    beq lineinfo01
     ldy $e1,x
-    bmi lineinfo02
+    bmi lineinfo01
     asl                     ; 80 char
-linesize02
+lineinfo01
     ldy #0
     ldx storex
-    jmp puts
+    jmp pushya
 
 ;--------------------------------------------------------------
 ;
-;       LINEPHYS   ( addr -- physline )
+;       LOGLINE   ( -- logline )
 ;
-; converts a video memory address to its physical line 0..24
-;
-  ;  VIDRAM - 40 / ;
-    
-;": linephys   ( addr -- physline )
-;     0
-;     begin
-;         1+
-;         swap 40 -
-;         swap over 0>
-;     until
-;     swap drop 1- ;
-linephyslfa
-    .byt $de,$ad
-    .byt (_linephys-*-1)|bit7
-    .asc "LINEPHY","S"|bit7
-_linephys
-#include "enter.i65"
-    .word zero
-#include "page.i65"
-linephys01
-    .word oneplus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word clit
-    .byt 40
-#include "pad.i65"
-    .word minus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word zgt
-#include "page.i65"
-    .word qbranch
-    .byt <(linephys01-*+1)
-#include "pad.i65"
-    .word swap
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word oneminus
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       CURRLINE   ( -- addr physline )
-;
-; return the starting address of the logical line at the cursor, 
-; and its physical line number
-;
-;" : currline   ( -- addr 40|80 physline )
-;    c4 @  d5 c@ 1+ d8 c@ ; [22]
-;
-;": currline   ( -- addr 40|80 )
-;     c4 @  physline  lineinfo ;
-;
-;": currline   ( -- addr 40|80 )
-;     d8 c@  lineinfo ;
+; return the physical line number of the current logical line.
+; The return value is the first line of the logical line, which
+; may be the physical line of the cursor or the line above it.
+; From this position, leapfrogging forward through the screen will
+; always return addresses with bit7 set.
 ;
 ; A man with a watch always knows what time it is.  A man 
-; with two watches is neer sure.
+; with two watches is never sure.
 ;
-;currlinelfa
+;loglinelfa
 ;    .byt $de,$ad
-;    .byt (currline-*-1)|bit7
-;    .asc "CURRLIN","E"|bit7
-_currline
-#include "enter.i65"
-    .word clit
-    .byt $c4
-#include "pad.i65"
-    .word fetch
-#include "page.i65"
-    .word clit
-    .byt $d8
-#include "pad.i65"
-    .word cfetch
-#include "page.i65"
-    .word to6502
-    
-    brk
-    .byt push
-    .byt set | TOS
-    .word $c4
-    .byt ldd | TOS
-    .byt st TOS
-    .byt rtn
+;    .byt (logline-*-1)|bit7
+;    .asc "LOGLIN","E"|bit7
+_logline
     stx storex
     ldx $d8
     inx
-currline01
+logline01
     dex
-    lda $e0,x
-    bpl currline01
+    ldy $e0,x
+    bpl logline01
     txa
     ldy #0
     ldx storex
     jmp pushya
-    
-    #include "page.i65"
-    .word lineinfo
-#include "page.i65"
+
+;--------------------------------------------------------------
+;
+;       LOGLINE+   ( logline -- logline+|0 )
+;
+; Return the next logical line number or 0 after bottom of screen
+;
+;loglinepluslfa
+;    .byt $de,$ad
+;    .byt (_loglineplus-*-1)|bit7
+;    .asc "LOGLINE","+"|bit7
+loglineplus
+    stx storex
+    lda #0
+    ldx tos
+loglineplus01
+    cpx #24
+    beq loglineplus02
+    inx
+    ldy $e0,x
+    bpl loglineplus01
+    txa
+loglineplus02
+    ldy #0
+    ldx storex
+    jmp puts
 
 ;--------------------------------------------------------------
 ;
@@ -326,38 +275,133 @@ _topaste
      
 ;--------------------------------------------------------------
 ;
-;       EOS>PASTE   ( paste screen -- )
+;       EOS>PASTE   ( paste logline -- )
 ;
-; append every line from screen to the end of screen to the paste
+; append every line from logine to the end of screen to the paste
 ; buffer 
 ;    
+;": eos>paste   ( paste logline -- )
+;     begin
+;         ?dup
+;     while
+;         dup logline+ >r       ( paste logline ) ( R; logline+ )
+;         lineinfo              ( paste screen 40|80 ) ( R; logline+ )
+;         >paste                ( paste+ ) ( R; logline+ )
+;         r>
+;     repeat
+;     drop ;
+;
 ;eostopastelfa
 ;    .byt $de,$ad
 ;    .byt (_eostopaste-*-1)|bit7
 ;    .asc "EOS>PAST","E"|bit7
 _eostopaste
+#include "enter.i65"
+eostopaste01                    ; BEGIN
+    .word qdup
+#include "page.i65"
+    .word qbranch               ; WHILE
+    .byt <(eostopaste02-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word loglineplus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _topaste
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word branch
+    .byt <(eostopaste01-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+    .word exit
+
 
 ;--------------------------------------------------------------
 ;
-;       PASTE>   ( paste screen -- paste+ screen+ flag )
+;       TEST25   ( screen offset -- screen offset' )
 ;
-; copy logical line from the paste buffer to screen
-; returns true when end of screen hit
-; or when paste buffer exhausted
+; Adjusts the offset from 80 to 40 if we're on line 25 to prevent
+; overflowing the screen
 ;
+;": test25 
+;     over 33728 =
+;     if
+;         drop 40
+;     then ;
+;
+    lda stackl,x
+    cmp #<33728
+    lda stackh,x
+    sbc #>33728
+    bne test2501
+    lsr tos
+test2501
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       PASTE>   ( paste screen -- d paste+ screen+ )
+;
+; copy logical lines from the paste buffer to screen until
+;   a) we exhaust the paste buffer
+;   b) we run past the bottom of the screen
+;   c) we fill up the linewrap table
+;
+; returns a double with the linewrap bits from line 0 until
+; PASTE> reaches any exit condition, also the next paste
+; buffer source address and next screen target address
+;
+;": paste>
+;     wrapabove 2swap           ( d paste screen )
+;     begin
+;         over c@               ( d paste screen len )
+;         rot 1+ 2dup + >r lrot ( d from screen len ) ( R; paste+ )
+;         line25 2dup + >r      ( d from screen len ) ( R; paste+ screen+ )
+;         dup >r cmove          ( d ) ( R; paste+ screen+ adjlen )
+;         r> wrapfill           ( d full? ) ( R; paste+ screen+ )
+;         r> 0 line25 or        ( d full|offscreen? ) ( R; paste+ screen+ )
+;         r> r> rot over        ( d 
+
+
+r> r>     ( d flag screen+ paste+ )
+;         over 2swap            ( d paste+ screen+ flag screen+ )
+;         33767 > or            ( d paste+ screen+ )
+;     until ;
+
+;         r@ c@ dup r> 1+ 2dup + ( d len len paste+1 paste+ ) ( R; screen )
+;         r>  
+;         over c@ 2dup test25   ( d paste screen len screen len )
+;         test25 + >r              ( d paste screen len )
+;         1+ 2dup 1- c@ >r r@   ( d screen paste+1 screen len ) ( R; len )
+
+
+
+;         2dup 32768 <          
+ > over c@ 0= or    ( d paste screen paste flag )
+;     while 
+;         1+ rot c@ >r          ( d screen paste+1 ) ( R; len )
+;         2dup r@ + swap        ( d screen paste+1 paste+ screen 
+
 ;    over c@ >r swap 1+ 2dup swap r@
 ;    2dup + 33767 > if drop 40 then 
 ;    cmove   ( screen paste+1 )
 ;    r@ + swap r> +   ( paste+ screen+ flag )
 ;    2dup 33767 > swap c@ 0= or ;   ( paste+ screen+ flag )
 ;
-;topastelfa
+;pastefromlfa
 ;    .byt $de,$ad
 ;    .byt (_pastefrom-*-1)|bit7
 ;    .asc "PASTE",">"|bit7
 _pastefrom
 #include "enter.i65"
     .word xyzzy
+#include "page.i65"
+    .word 
 #include "page.i65"
     .word exit
 
@@ -380,11 +424,13 @@ _editcopy
 #include "page.i65"
     .word _paste
 #include "page.i65"
-    .word _currline         ; ( paste screen size )
+    .word logline           ; ( paste line )
 #include "page.i65"
-    .word _topaste          ; ( )
+    .word lineinfo          ; ( paste screen 40|80 )
 #include "page.i65"
-    .word _twodrop
+    .word _topaste          ; ( paste+ screen+ )
+#include "page.i65"
+    .word _twodrop          ; ( )
 #include "page.i65"
     .word exit
 
@@ -395,32 +441,21 @@ _editcopy
 ; delete the current line, appending it to the paste buffer
 ;
 ;": editdel
-;    editcopy 
-;    paste dup currline + eos>paste
-;    wrapabove
-;	   rot currline 
-;    begin
-;        over c@ >r 2swap r> wrapfill 2swap
-;        paste>
-;    until
-;    33768 over - blank drop
+;    \ append the current line to the paste buffer
+;    editcopy
+;    \ mark the tail of the paste buffer and start a new buffer here
+;    paste dup >r               ( tpaste ) ( R; tpaste )
+;    \ append all lines from the next one to the bottom of screen to paste
+;    logline logline+ eos>paste ( ) ( R; tpaste )
+;    \ put everything back, with linewrap
+;    r@ logline lineinfo drop   ( tpaste screen ) ( R; tpaste )
+;    paste>                     ( d tpaste+ screen+ )
+;    VIDRAM+1000 over - blank   ( d tpaste+ ) ( R; tpaste )
+;    drop r> off                ( d )
 ;    begin
 ;        40 wrapfill
 ;    until
-;    wrap! off ;
-;		
-;    wrapabove  nextphysline wrapbelow  begin  1 wrapfill  until
-;    currline
-;    2dup + dup 2swap >r 33768 dup >r rot - cmove r> r@ - r> blank
-;    wrap!
-;
-; copy the current line
-; copy linewrap table above this line
-; append linewrap table below this line
-; roll in 1 bits until there are 24 linewrap bits
-; move everything below this line to end of screen up to here
-; erase the last 40 or 80 characters, same size as currline
-; write the new linewrap table to $e0
+;    wrap! ;
 ;
 ;editdellfa
 ;    .byt $de,$ad
@@ -436,43 +471,23 @@ _editdel
 #include "page.i65"
     .word dup
 #include "page.i65"
-    .word _currline
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word _linephys
-#include "page.i65"
-editdel01                       ; BEGIN
     .word tor
 #include "page.i65"
+    .word logline
+#include "page.i65"
+    .word loglineplus
+#include "page.i65"
+    .word _eostopaste
+#include "page.i65"
     .word rfetch
 #include "page.i65"
-    .word clit
-    .byt 25
-#include "pad.i65"
-    .word eq
-#include "page.i65"
-    .word qbranch
-    .byt <(editdel02-*+1)       ; WHILE
-#include "pad.i65"
-    .word rfetch
+    .word logline
 #include "page.i65"
     .word lineinfo
-#include "page.i65"
-    .word _topaste
 #include "page.i65"
     .word drop
 #include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word branch                ; REPEAT
-    .byt <(editdel01-*+1)
-#include "pad.i65"
-    .word rfrom
-#include "page.i65"
-    .word lineinfo
+    .word _pastefrom
 #include "page.i65"
     .word plit
     .word VIDRAM+1000
@@ -481,51 +496,27 @@ editdel01                       ; BEGIN
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word _blank
+    .word blank
 #include "page.i65"
-    .word _currline
+    .word drop
 #include "page.i65"
-    .word wrapabove
+    .word rfrom
 #include "page.i65"
-    .word twoswap
+    .word off
 #include "page.i65"
-editdel03                       ; BEGIN
-    .word over
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word qbranch               ; WHILE
-    .byt <(editdel05-*+1)
-#include "pad.i65"
-    .word tor
-    .word tor
-    .word one
-    .word wrapfill
-    .word rfetch
-    .word over
+editdel01                       ; BEGIN
     .word clit
-    .byt 80
-    .word eq
-    
-    .word _pastefrom
-#include "page.i65"
-    .word branch
-    .byt <(editdel03-*+1)       ; REPEAT
+    .byt 40
 #include "pad.i65"
-editdel05
-    .word 
+    .word wrapfill
 #include "page.i65"
-    .word 
+    .word qbranch
+    .byt <(editdel01-*+1)       ; UNTIL
+#include "pad.i65"
+    .word wrapstore
 #include "page.i65"
-    .word 
-#include "page.i65"
-    .word 
-#include "page.i65"
-    .word 
-#include "page.i65"
-    .word 
     .word exit
-
+    
 ;--------------------------------------------------------------
 ;
 ;       EDITPASTE   ( -- )
