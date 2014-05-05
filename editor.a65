@@ -1,86 +1,5 @@
 ;--------------------------------------------------------------
 ;
-;       EDITIRQTOGGLE   ( -- )
-;
-; Enable or disable the IRQ handler within EDIT that checks for
-; the STOP key in the screen editor.
-;
-;editirqtogglelfa
-;    .byt $de,$ad
-;    .byt (editirqtoggle-*-1)|bit7
-;    .asc "EDITIRQTOGGL","E"|bit7
-_editirqtoggle
-#include "enter.i65"
-    .word plit
-    .word (MAINIRQ^edit02)
-#include "pad.i65"
-    .word clit
-    .byt <CINV       ; $90
-#include "pad.i65"
-    .word toggleirq
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       WRAP!   ( d -- )
-;
-; Updates the linewrap table at $E0 to reflect the bits
-; stored in d.  Since line 0 is *always* $80, never a continuation 
-; line, only 24 bits are required, not 25.
-;
-wrapstore
-    ldy #1
-    jsr setup
-    stx storex
-    ldx #24
-wrapstore01
-    asl $e0,x
-    lsr tos+1
-    ror tos
-    ror n+1
-    ror n
-    ror $e0,x
-    dex
-    bne wrapstore01
-    ldx storex
-    jmp pops
-
-;--------------------------------------------------------------
-;
-;       WRAPBELOW   ( d startline -- d )
-;
-; Reads (a portion of) the linewrap table in $E0, nondestructively
-; shifting the high bits into a double, beginning at startline
-;
-wrapbelow
-    ldy #2
-    jsr setup
-    stx storex
-    ldx tos
-wrapbelow01
-    cpx #25
-    beq wrapbelow02
-    lda $e0,x
-    asl
-    rol n
-    rol n+1
-    rol n+2
-    rol n+3
-    inx
-    bne wrapbelow01
-wrapbelow02
-    lda n
-    sta tos
-    lda n+1
-    sta tos+1
-    lda n+2
-    ldy n+3
-    ldx storex
-    jmp pushya
-
-;--------------------------------------------------------------
-;
 ;       WRAPABOVE   ( -- d )
 ;
 ; Reads (a portion of) the linewrap table above the current physical
@@ -123,58 +42,78 @@ wrapabove03
 
 ;--------------------------------------------------------------
 ;
-;       WRAPFILL   ( d 0|1 -- d flag )
+;       WRAPFILL   ( d 40|80 -- d flag )
 ;
-; Appends the bit to the double and returns true if there are 24
-; bits in the  double. 
+; Shift and append one or two bits to the double.  Return nonzero
+; once 25 bits have been stored.  40 = <<,1; 80 = <<,1 <<,0
 ;
 wrapfill
-    ldy #$ff        ; true flag
-    lda stackh,x    ; inspect the 4th byte to see if we're full yet
-    bne wrapfill01
-    iny             ; false flag
-    lsr tos         ; all even numbers are "0", all odd numbers are "1"
-    rol stackl+1,x
+    sec             ; always shift in a 1
+wrapfill01
+    ldy stackh,x
+    bne wrapfill03
+    rol stackl+1,x  ; shift in a single bit
     rol stackh+1,x
     rol stackl,x
-    rol stackh,x    ; shift in a single bit from the right
-    beq wrapfill01  ; test again for full
-    dey             ; Y=ff iff full
-wrapfill01
+    rol stackh,x
+    lda #40
+    cmp tos
+    sta tos         ; so we only do this once
+    bcc wrapfill01  ; maybe shift in a 0 (if 80-column)
+wrapfill03
+    ldy stackh,x
     tya
     jmp put
 
 ;--------------------------------------------------------------
 ;
-;       LINEINFO   ( physline -- addr 40|80 )
+;       WRAP!   ( d -- )
 ;
-; return the starting address of the logical line, and its length
+; Updates the linewrap table at $E0 to reflect the bits
+; stored in d.  Since line 0 is *always* $80, never a continuation 
+; line, only 24 bits are required, not 25.
+;
+wrapstore
+    ldy #1
+    jsr setup
+    stx storex
+    ldx #24
+wrapstore01
+    asl $e0,x
+    lsr tos+1
+    ror tos
+    ror n+1
+    ror n
+    ror $e0,x
+    dex
+    bne wrapstore01
+    ldx storex
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       LINESIZE   ( physline -- 40|80 )
+;
+; return the length of the logical line
+; physline must already point to the first line of the logical line
 ;
 ;lineinfolfa
 ;    .byt $de,$ad
-;    .byt (lineinfo-*-1)|bit7
-;    .asc "LINEINF","O"|bit7
-lineinfo
+;    .byt (linesize-*-1)|bit7
+;    .asc "LINESIZ","E"|bit7
+linesize
     stx storex
     ldx tos
-    inx
-lineinfo01
-    dex
-    lda $e0,x
-    bpl lineinfo01
-    sta tos+1
-    lda WRAPLO,x
-    sta tos
     lda #40
     cpx #24
     beq lineinfo02
     ldy $e1,x
     bmi lineinfo02
     asl                     ; 80 char
-lineinfo02
+linesize02
     ldy #0
     ldx storex
-    jmp pushya
+    jmp puts
 
 ;--------------------------------------------------------------
 ;
@@ -229,82 +168,13 @@ linephys01
 
 ;--------------------------------------------------------------
 ;
-;       >PASTE   ( paste screen 40|80 -- paste+ screen+ )
+;       CURRLINE   ( -- addr physline )
 ;
-; append the line on the screen to the paste buffer 
+; return the starting address of the logical line at the cursor, 
+; and its physical line number
 ;
-;    >r swap r@ over c!   ( screen paste ; 40|80 )
-;    1+ 2dup r@ cmove   ( screen paste+1 ) 
-;    r@ + dup off swap r> + ;
- 
- 
- 
-;topastelfa
-;    .byt $de,$ad
-;    .byt (_topaste-*-1)|bit7
-;    .asc ">PAST","E"|bit7
-_topaste
-#include "enter.i65"
-    .word tor
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word _twodup
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word exit
-     
-;--------------------------------------------------------------
-;
-;       PASTE>   ( paste screen -- paste+ screen+ )
-;
-; copy logical line from the paste buffer to screen
-;    over c@ >r swap 1+ 2dup swap r@ cmove   ( screen paste+1 )
-;    r@ + swap r> + ;   ( paste+ screen+ )
-    
-;topastelfa
-;    .byt $de,$ad
-;    .byt (_pastefrom-*-1)|bit7
-;    .asc "PASTE",">"|bit7
-_pastefrom
-#include "enter.i65"
-    .word xyzzy
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       CURRLINE   ( -- addr 40|80 )
-;
-; return the starting address of the line at the cursor, and its length
-;
-;" : currline   ( -- addr 40|80 )
-;    c4 @  d5 c@ 1+ ;
+;" : currline   ( -- addr 40|80 physline )
+;    c4 @  d5 c@ 1+ d8 c@ ; [22]
 ;
 ;": currline   ( -- addr 40|80 )
 ;     c4 @  physline  lineinfo ;
@@ -326,36 +196,45 @@ _currline
 #include "pad.i65"
     .word fetch
 #include "page.i65"
-    .word _linephys
+    .word clit
+    .byt $d8
+#include "pad.i65"
+    .word cfetch
 #include "page.i65"
+    .word to6502
+    
+    brk
+    .byt push
+    .byt set | TOS
+    .word $c4
+    .byt ldd | TOS
+    .byt st TOS
+    .byt rtn
+    stx storex
+    ldx $d8
+    inx
+currline01
+    dex
+    lda $e0,x
+    bpl currline01
+    txa
+    ldy #0
+    ldx storex
+    jmp pushya
+    
+    #include "page.i65"
     .word lineinfo
 #include "page.i65"
-    .word exit
-    
-
-;--------------------------------------------------------------
-;
-;       NEXTPHYSLINE   ( --  n )
-;
-; return the physical cursor line (1..24) after current logical line
-;
-;nextphysline
-;    ldy $d8 ; current physical line 0..24
-;    lda #4
-;    cmp $e0+1,y ; 00 01 02 03=set carry 80 81 82 83=clear carry
-;    tya
-;    adc #1
-;    ldy #0
-;    jmp pushya  ; [14]
 
 ;--------------------------------------------------------------
 ;
 ;       PASTE   ( -- addr )
 ;
-; Return the address of the end of the paste buffer (marked by 0)
-; The paste buffer consists of zero or more screen lines, stored 
-; as a length (40|80) followed by that many screen codes.
-; Each record is 41 or 81 bytes long.
+; Return the tail of the paste buffer, marked by 0
+;
+; The paste buffer begins at PAD and consists of zero or more
+; screen lines, stored as a length (40|80) followed by that many
+; screen codes.  Each record is 41 or 81 bytes long.
 ;
 ;pastelfa
 ;    .byt $de,$ad
@@ -398,103 +277,85 @@ paste02
 
 ;--------------------------------------------------------------
 ;
-;       EDITINDEX   ( -- )
+;       >PASTE   ( paste screen 40|80 -- paste+ screen+ )
 ;
-; STOP-I   Present an index screen and let the user select one to edit
+; append the line on the screen to the paste buffer 
 ;
-;editindexlfa
+;    >r swap r@ over c!   ( screen paste ; 40|80 )
+;    1+ 2dup r@ cmove   ( screen paste+1 ) 
+;    r@ + dup off swap r> + ;
+;topastelfa
 ;    .byt $de,$ad
-;    .byt (editindex-*-1)|bit7
-;    .asc "EDITINDE","X"|bit7
-editindex
+;    .byt (_topaste-*-1)|bit7
+;    .asc ">PAST","E"|bit7
+_topaste
 #include "enter.i65"
-    .word xyzzy
+    .word tor
 #include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       EDITSAVE   ( -- )
-;
-; STOP-S   Save all buffers to a PRG file
-;
-;editsavelfa
-;    .byt $de,$ad
-;    .byt (editsave-*-1)|bit7
-;    .asc "EDITSAV","E"|bit7
-editsave
-#include "enter.i65"
-    .word xyzzy
+    .word swap
 #include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       EDITLOAD   ( -- )
-;
-; STOP-L   Load a group of buffers from a PRG file
-;
-;editloadlfa
-;    .byt $de,$ad
-;    .byt (editload-*-1)|bit7
-;    .asc "EDITLOA","D"|bit7
-_editload
-#include "enter.i65"
-    .word _pdq
-    .byt editload02-*-1
-    .asc    CLR,"LOADING"
-editload02
-#include "pad.i65"
-    .word xyzzy
+    .word rfetch
 #include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       EDITVERIFY   ( -- )
-;
-; STOP-V   Verify a buffer file vs. memory
-;
-;editverifylfa
-;    .byt $de,$ad
-;    .byt (editverify-*-1)|bit7
-;    .asc "EDITVERIF","Y"|bit7
-editverify
-#include "enter.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       EDITZILCH   ( -- )
-;
-; STOP-Z   Zilch the paste buffer
-;
-;": editzilch   ( -- )
-;     pad off ;
-;
-;editzilchlfa
-;    .byt $de,$ad
-;    .byt (editzilch-*-1)|bit7
-;    .asc "EDITZILC","H"|bit7
-_editzilch
-#include "enter.i65"
-    .word _pad
+    .word over
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word _twodup
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word dup
 #include "page.i65"
     .word off
 #include "page.i65"
+    .word swap
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plus
+#include "page.i65"
     .word exit
+     
+;--------------------------------------------------------------
+;
+;       EOS>PASTE   ( paste screen -- )
+;
+; append every line from screen to the end of screen to the paste
+; buffer 
+;    
+;eostopastelfa
+;    .byt $de,$ad
+;    .byt (_eostopaste-*-1)|bit7
+;    .asc "EOS>PAST","E"|bit7
+_eostopaste
 
 ;--------------------------------------------------------------
 ;
-;       EDITRESTORE   ( -- )
+;       PASTE>   ( paste screen -- paste+ screen+ flag )
 ;
-; STOP-R   Restore the current screen from the buffer
+; copy logical line from the paste buffer to screen
+; returns true when end of screen hit
+; or when paste buffer exhausted
 ;
-editrestorelfa
-    .byt $de,$ad
-    .byt (editrestore-*-1)|bit7
-    .asc "EDITRESTOR","E"|bit7
-editrestore
+;    over c@ >r swap 1+ 2dup swap r@
+;    2dup + 33767 > if drop 40 then 
+;    cmove   ( screen paste+1 )
+;    r@ + swap r> +   ( paste+ screen+ flag )
+;    2dup 33767 > swap c@ 0= or ;   ( paste+ screen+ flag )
+;
+;topastelfa
+;    .byt $de,$ad
+;    .byt (_pastefrom-*-1)|bit7
+;    .asc "PASTE",">"|bit7
+_pastefrom
 #include "enter.i65"
     .word xyzzy
 #include "page.i65"
@@ -506,12 +367,8 @@ editrestore
 ;
 ; STOP-C   Copy current line to end of paste buffer
 ;
-; D5 has the length of the current line (39 or 79)
-; C4 is the address of the start of the line
-; _pad is the start of the paste buffer
-;
 ;": editcopy
-;    currline >paste ;
+;    currline >paste 2drop ;
 ;
 ;editcopylfa
 ;    .byt $de,$ad
@@ -527,6 +384,8 @@ _editcopy
 #include "page.i65"
     .word _topaste          ; ( )
 #include "page.i65"
+    .word _twodrop
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -536,7 +395,20 @@ _editcopy
 ; delete the current line, appending it to the paste buffer
 ;
 ;": editdel
-;    editcopy
+;    editcopy 
+;    paste dup currline + eos>paste
+;    wrapabove
+;	   rot currline 
+;    begin
+;        over c@ >r 2swap r> wrapfill 2swap
+;        paste>
+;    until
+;    33768 over - blank drop
+;    begin
+;        40 wrapfill
+;    until
+;    wrap! off ;
+;		
 ;    wrapabove  nextphysline wrapbelow  begin  1 wrapfill  until
 ;    currline
 ;    2dup + dup 2swap >r 33768 dup >r rot - cmove r> r@ - r> blank
@@ -868,6 +740,110 @@ editpaste06                     ; THEN
 
 ;--------------------------------------------------------------
 ;
+;       EDITINDEX   ( -- )
+;
+; STOP-I   Present an index screen and let the user select one to edit
+;
+;editindexlfa
+;    .byt $de,$ad
+;    .byt (editindex-*-1)|bit7
+;    .asc "EDITINDE","X"|bit7
+editindex
+#include "enter.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       EDITSAVE   ( -- )
+;
+; STOP-S   Save all buffers to a PRG file
+;
+;editsavelfa
+;    .byt $de,$ad
+;    .byt (editsave-*-1)|bit7
+;    .asc "EDITSAV","E"|bit7
+editsave
+#include "enter.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       EDITLOAD   ( -- )
+;
+; STOP-L   Load a group of buffers from a PRG file
+;
+;editloadlfa
+;    .byt $de,$ad
+;    .byt (editload-*-1)|bit7
+;    .asc "EDITLOA","D"|bit7
+_editload
+#include "enter.i65"
+    .word _pdq
+    .byt editload02-*-1
+    .asc    CLR,"LOADING"
+editload02
+#include "pad.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       EDITVERIFY   ( -- )
+;
+; STOP-V   Verify a buffer file vs. memory
+;
+;editverifylfa
+;    .byt $de,$ad
+;    .byt (editverify-*-1)|bit7
+;    .asc "EDITVERIF","Y"|bit7
+editverify
+#include "enter.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       EDITZILCH   ( -- )
+;
+; STOP-Z   Zilch the paste buffer
+;
+;": editzilch   ( -- )
+;     pad off ;
+;
+;editzilchlfa
+;    .byt $de,$ad
+;    .byt (editzilch-*-1)|bit7
+;    .asc "EDITZILC","H"|bit7
+_editzilch
+#include "enter.i65"
+    .word _pad
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       EDITRESTORE   ( -- )
+;
+; STOP-R   Restore the current screen from the buffer
+;
+editrestorelfa
+    .byt $de,$ad
+    .byt (editrestore-*-1)|bit7
+    .asc "EDITRESTOR","E"|bit7
+editrestore
+#include "enter.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;       EDITDELSCR   ( -- )
 ;
 ; delete the current screen.  restore from next, then prev, then blank
@@ -992,6 +968,10 @@ editquit
 ;
 ; a variable used to hold the current screen (e.g. 1 = top)
 ;
+; put this at $7bfe 
+; =0 means screen buffer is empty
+; else most recently edited block #
+;
 ;editscrlfa
 ;    .byt $de,$ad
 ;    .byt (editscr-*-1)|bit7
@@ -1024,10 +1004,10 @@ editinit
 ;
 ; returns the address of a counted string of menu commands
 ;
-editmenulfa
-    .byt $de,$ad
-    .byt (editmenu-*-1)|bit7
-    .asc "EDITMEN","U"|bit7
+;editmenulfa
+;    .byt $de,$ad
+;    .byt (editmenu-*-1)|bit7
+;    .asc "EDITMEN","U"|bit7
 editmenu
      jsr docreate
      .byt editmenu01-*-1        ; number of menu items = 16
@@ -1102,6 +1082,29 @@ editcmd01                       ; THEN
 
 ;--------------------------------------------------------------
 ;
+;       EDITIRQTOGGLE   ( -- )
+;
+; Enable or disable the IRQ handler within EDIT that checks for
+; the STOP key in the screen editor.
+;
+;editirqtogglelfa
+;    .byt $de,$ad
+;    .byt (editirqtoggle-*-1)|bit7
+;    .asc "EDITIRQTOGGL","E"|bit7
+_editirqtoggle
+#include "enter.i65"
+    .word plit
+    .word (MAINIRQ^edit02)
+#include "pad.i65"
+    .word clit
+    .byt <CINV       ; $90
+#include "pad.i65"
+    .word toggleirq
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;       EDIT   ( -- )
 ;
 editlfa
@@ -1158,4 +1161,3 @@ edit04
     .byt <(edit00-*+1)
 #include "pad.i65" ; this never executes. editquit breaks out by dropping returns
     .word exit
-
