@@ -14,11 +14,6 @@ wrapabove
     stx n+1
     stx n
     stx tos+1
-;    bit $e1
-;    bmi wrapabove01
-;    inx
-;wrapabove01
-;    inx
     stx tos
     ldx #$ff
 wrapabove02
@@ -76,33 +71,12 @@ wrapstore
     jsr setup
     stx storex
     ldx #24
-#ifdef DEBUG
-    ldy #39
-#endif
 wrapstore01
-
-#ifdef DEBUG
-    lda WRAPLO,x
-    sta n+2
-    lda $e0,x
-    ora #$80
-    sta n+3
-#endif
-    
     asl $e0,x
     lsr tos+1
     ror tos
     ror n+1
     ror n
-
-#ifdef DEBUG
-    lda #"b"
-    bcs wrapstore02
-    lda #"a"
-wrapstore02
-    sta (n+2),y
-#endif
-
     ror $e0,x
     dex
     bne wrapstore01
@@ -223,21 +197,21 @@ _paste
 #include "enter.i65"
     .word _pad
 #include "page.i65"
-paste01                      ; BEGIN
+paste01                                 ; BEGIN
     .word dup
 #include "page.i65"
     .word cfetch
 #include "page.i65"
     .word qdup
 #include "page.i65"
-    .word qbranch               ; WHILE
+    .word qbranch                       ; WHILE
     .byt <(paste02-*+1)
 #include "pad.i65"
     .word plus
 #include "page.i65"
     .word oneplus
 #include "page.i65"
-    .word branch               ; REPEAT
+    .word branch                        ; REPEAT
     .byt <(paste01-*+1)
 #include "pad.i65"
 paste02
@@ -293,7 +267,7 @@ _topaste
     .word plus
 #include "page.i65"
     .word exit
-     
+
 ;--------------------------------------------------------------
 ;
 ;       EOS>PASTE   ( paste logline -- )
@@ -369,7 +343,7 @@ _test25
     .word plus
 #include "page.i65"
     .word plit
-    .word VIDRAM+999
+    .word VIDRAM+1000
 #include "pad.i65"
     .word gt
 #include "page.i65"
@@ -378,7 +352,7 @@ _test25
 #include "pad.i65"
     .word drop
 #include "page.i65"
-    .word plit
+    .word clit
     .byt 40
 #include "pad.i65"
 test2501                        ; THEN
@@ -488,6 +462,8 @@ pastefrom03
     .word tor                   ; ( d paste screen flagab ) ( R; flagab )
 #include "page.i65"
     .word zeq                   ; ( d paste screen !flagab ) ( R; flagab )
+#include "page.i65"
+    .word xyzzy
 #include "page.i65"
     .word qbranch               ; IF
     .byt <(pastefrom04-*+1)
@@ -660,55 +636,19 @@ editdel01                       ; BEGIN
 ;
 ;       EDITPASTE   ( -- )
 ;
+; STOP-P 
 ; insert the paste buffer before the current line
 ;
 ;": editpaste   ( -- )
-;     paste >r  26 nextphysline ?do  editdel  loop  wrapabove
-;     currline drop pad 2swap
-;     begin
-;         2swap dup c@ >r 1+ swap 2dup r@ cmove
-;         r@ + swap  r@ + swap
-;         2swap  1 wrapfill  dup 0= r> 80 = and  if  ( 0 ) wrapfill  then
-;     until  2swap 2drop  wrap!  r> off ;
-;
-; Cut goes up to line 26 because we actually begin with the current
-; logical line, not the next physical line, so it's off by one.  
-; Worst case scenario is initially empty paste buffer and all 40-column
-; lines below and including currline.  This gets us enough to refill 
-; the screen
-;
-;": editpaste
-;    paste >r
-;    26 nextphysline ?do  editdel  loop
-;    currline drop
-;    pad 
-;    begin
-;        dup c@ >r 1+       ( screen paste+1 ) ( R; buftail len )        
-;		 r@ over + rot      ( from paste+ screen ) ( R; buftail len )
-;        r> 2dup +          ( from paste+ screen len screen+len ) ( R; buftail )
-;        VIDRAM+999 > >r    ( from paste+len+1 screen len flag )
-;        r@ if drop 40 then ( from paste+len+1 screen adjlen )
-;        rot >r             ( from screen adjlen ) ( R; buftail flag paste+ )
-;        2dup + >r          ( from to howmany ) ( R; buftail flag paste+ screen+ )
-;        cmove              ( ) ( R; buftail flag paste+ screen+ )
-;        r> r> r>           ( screen+ paste+ flag ) ( R; buftail )
-;    until
-;    2drop                  ( ) ( R; buftail )
-;    wrapabove
-;    pad >r
-;    begin                     ( d )       ( R; buftail paste )
-;        r@ c@ r> 1+           ( d len paste+1 ) ( R; buftail )
-;        over + >r >r          ( d )       ( R; buftail paste+ len )
-;        1 wrapfill            ( d full? ) ( R; buftail paste+ len )
-;        r> 80 =               ( d full? >40? ) ( R; buftail paste+ )
-;        if                    ( d full? ) ( R; buftail paste+ )
-;            drop              ( d )       ( R; buftail paste+ )
-;            0 wrapfill        ( d full? ) ( R; buftail paste+ )
-;        then
-;    until
-;    r> drop
-;    wrap!
-;    r> off ;
+;     \ mark the current tail of the paste buffer
+;     paste dup >r                      ( tpaste ) ( R; tpaste )
+;     \ append everything to end of screen to secondary paste buffer
+;     logline eos>paste                 ( ) ( R; tpaste )
+;     \
+;     pad logline lineinfo drop         ( paste screen ) ( R; tpaste )
+;     \ put everything back
+;     paste>                            ( d paste+ screen+ ) ( R; tpaste )
+;     2drop  r> off  wrap! ;
 ;
 ;editpastelfa
 ;    .byt $de,$ad
@@ -716,153 +656,37 @@ editdel01                       ; BEGIN
 ;    .asc "EDITPAST","E"|bit7
 _editpaste
 #include "enter.i65"
+    .word _paste                        ; ( tpaste )
+#include "page.i65"
+    .word dup                           ; ( tpaste tpaste )
+#include "page.i65"
+    .word tor                           ; ( tpaste ) ( R; tpaste )
+#include "page.i65"
+    .word logline                       ; ( tpaste logline ) ( R; tpaste )
+#include "page.i65"
+    .word _eostopaste                   ; ( ) ( R; tpaste )
+#include "page.i65"
+    .word _pad                          ; ( paste )
+#include "page.i65"
+    .word logline                       ; ( paste logline ) ( R; tpaste )
+#include "page.i65"
+    .word lineinfo                      ; ( paste screen 40|80 ) ( R; tpaste )
+#include "page.i65"
+    .word drop                          ; ( paste screen ) ( R; tpaste )
+#include "page.i65"
     .word xyzzy
 #include "page.i65"
-    .word _paste             ; ( buftail )
+    .word _pastefrom                    ; ( d paste+ screen+ ) ( R; tpaste )
 #include "page.i65"
-    .word tor                   ; ( ) ( R; buftail )
+    .word xyzzy
 #include "page.i65"
-    .word clit
-    .byt 26                     ; ( 26 ) ( R; buftail )
-#include "pad.i65"
-;    .word _linephys          ; ( 26 line ) ( R; buftail )
-;#include "page.i65"
-    .word pqdo                  ; ( ) ( R; buftail )
-    .byt <(editpaste02-*+1)
-#include "pad.i65"
-editpaste01
-    .word _editdel              ; ( ) ( R; buftail )
-#include "page.i65"
-    .word ploop
-    .byt <(editpaste01-*+1)
-#include "pad.i65"
-editpaste02
-    .word logline
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word _pad
-#include "page.i65"
-editpaste03                     ; BEGIN
-    .word dup
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word oneplus               ; ( screen paste+1 ) ( R; buftail len )
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word rot                   ; ( from paste+ screen ) ( R; buftail len )
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word _twodup
-#include "page.i65"
-    .word plus                  ; ( from paste+ screen len screen+len ) ( R; buftail )
-#include "page.i65"
-    .word plit
-    .word VIDRAM+999
-#include "pad.i65"
-    .word gt
-#include "page.i65"
-    .word tor                   ; ( from paste+ screen len flag )
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word qbranch               ; IF
-    .byt <(editpaste04-*+1)
-#include "pad.i65"
-    .word drop
-#include "page.i65"
-    .word clit
-    .byt 40
-#include "page.i65"             ; ( from paste+len+1 screen adjlen )                                
-editpaste04                     ; THEN
-    .word rot
-#include "page.i65"
-    .word tor                   ; ( from screen adjlen ) ( R; buftail flag paste+ )
-#include "page.i65"
-    .word _twodup
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word tor    ; ( from to howmany ) ( R; buftail flag paste+ screen+ )
-#include "page.i65"
-    .word cmove                 ; ( ) ( R; buftail flag paste+ screen+ )
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word rfrom                 ; ( screen+ paste+ flag ) ( R; buftail )
-#include "page.i65"
-    .word qbranch               ; UNTIL
-    .byt <(editpaste03-*+1)
-#include "pad.i65"
-    .word twodrop               ; ( ) ( R; buftail )
-#include "page.i65"
-    .word wrapabove
-#include "page.i65"
-    .word _pad
-#include "page.i65"
-    .word tor
-#include "page.i65"             ; BEGIN
-editpaste05                     ; ( d ) ( R; buftail paste )
-    .word rfetch
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word oneplus               ; ( d len paste+1 ) ( R; buftail )
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word tor                   ; ( d )       ( R; buftail paste+ len )
-#include "page.i65"
-    .word one
-#include "page.i65"
-    .word wrapfill              ; ( d full? ) ( R; buftail paste+ len )
-#include "page.i65"
-    .word rfrom                 ; ( d full? len )
-#include "page.i65"
-    .word clit
-    .byt 80                     ; ( d full? len 80 )
-#include "pad.i65"
-    .word eq                    ; ( d full? >40? ) ( R; buftail paste+ )
-#include "page.i65"
-    .word qbranch               ; IF
-    .byt <(editpaste06-*+1)     ; ( d full? ) ( R; buftail paste+ )
-#include "pad.i65"
-    .word drop                  ; ( d )       ( R; buftail paste+ )
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word wrapfill              ; ( d full? ) ( R; buftail paste+ )
-#include "page.i65"
-editpaste06                     ; THEN
-    .word qbranch
-    .byt <(editpaste05-*+1)     ; UNTIL
-#include "pad.i65"
-    .word rfrom
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word wrapstore
+    .word twodrop
 #include "page.i65"
     .word rfrom
 #include "page.i65"
     .word off
+#include "page.i65"
+    .word wrapstore
 #include "page.i65"
     .word exit
 
