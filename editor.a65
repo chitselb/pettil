@@ -4,28 +4,23 @@
 ;
 ; Reads (a portion of) the linewrap table above the current physical
 ; line (stored at $d8) up to but not including the current logical line.  
-; Returns a right-aligned double with copies of those high bit values
-; This word *always* does logical line 0, returning 40=1. or 80=2. to
-; seed the wrap bits with a nonzero value.
+; Returns a right-aligned double with a copy of those high bit values
 ;
 wrapabove
     stx storex      ; preserve Forth data stack pointer
-    ldx #0
     ldy tos         ; first physical line of this logical line
-    stx tos
-    stx tos+1
-    stx n
-    stx n+1
-    bne wrapabove01
-    iny             ; count to at least 1
-    bit $e1         ; see if it's an 80 column
-    bmi wrapabove01
-    sty tos         ; start with 2, because line 0 is 80 column 
-    iny             ; count to at least 2
-    inx
-wrapabove01
     sty n+2
-    inc tos         ; 0 00000000 00000000 00000001 or 0 00000000 00000000 00000010
+    ldx #0
+    stx n+1
+    stx n
+    stx tos+1
+;    bit $e1
+;    bmi wrapabove01
+;    inx
+;wrapabove01
+;    inx
+    stx tos
+    ldx #$ff
 wrapabove02
     inx
     cpx n+2         ; are we there yet?
@@ -81,12 +76,33 @@ wrapstore
     jsr setup
     stx storex
     ldx #24
+#ifdef DEBUG
+    ldy #39
+#endif
 wrapstore01
+
+#ifdef DEBUG
+    lda WRAPLO,x
+    sta n+2
+    lda $e0,x
+    ora #$80
+    sta n+3
+#endif
+    
     asl $e0,x
     lsr tos+1
     ror tos
     ror n+1
     ror n
+
+#ifdef DEBUG
+    lda #"b"
+    bcs wrapstore02
+    lda #"a"
+wrapstore02
+    sta (n+2),y
+#endif
+
     ror $e0,x
     dex
     bne wrapstore01
@@ -412,8 +428,13 @@ _flagab
 ; buffer source address and next screen target address
 ;
 ;": paste>
-;     logline wrapabove         ( paste screen d )
-;         2swap                 ( d paste screen )
+;     logline ?dup
+;     if
+;         wrapabove             ( paste screen d )
+;     else
+;         1 0
+;     endif
+;     2swap
 ;     begin
 ;         2dup flagab dup >r 0= ( d paste screen !flagab ) ( R; flagab )
 ;         if
@@ -438,11 +459,26 @@ _pastefrom
 #include "enter.i65"
     .word logline               ; ( paste screen logline )
 #include "page.i65"
-    .word wrapabove             ; ( paste screen d )
+    .word qdup
+#include "page.i65"
+    .word qbranch               ; IF
+    .byt <(pastefrom01-*+1)
+#include "page.i65"
+    .word wrapabove
+#include "page.i65"
+    .word branch                ; ELSE
+    .byt <(pastefrom02-*+1)
+#include "page.i65"
+pastefrom01
+    .word zero
+#include "page.i65"
+    .word zero
+#include "page.i65"
+pastefrom02                     ; THEN
 #include "page.i65"
     .word twoswap               ; ( d paste screen )
 #include "page.i65"
-pastefrom01
+pastefrom03
     .word _twodup               ; ( d paste screen paste screen )
 #include "page.i65"
     .word _flagab               ; ( d paste screen flagab )
@@ -454,7 +490,7 @@ pastefrom01
     .word zeq                   ; ( d paste screen !flagab ) ( R; flagab )
 #include "page.i65"
     .word qbranch               ; IF
-    .byt <(pastefrom02-*+1)
+    .byt <(pastefrom04-*+1)
 #include "pad.i65"
     .word over                  ; ( d paste screen paste ) ( R; flagab )
 #include "page.i65"
@@ -504,11 +540,11 @@ pastefrom01
 #include "page.i65"
     .word tor                   ; ( d paste' screen' ) ( R; flagabc )
 #include "page.i65"
-pastefrom02                     ; THEN
+pastefrom04                     ; THEN
     .word rfrom
 #include "page.i65"
     .word qbranch               ; UNTIL 
-    .byt <(pastefrom01-*+1)
+    .byt <(pastefrom03-*+1)
 #include "page.i65"
     .word exit
 
