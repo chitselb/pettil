@@ -5659,6 +5659,27 @@ _abort
 
 ;--------------------------------------------------------------
 ;
+;       EMPTY-BUFFERS
+;
+; Unassign all block buffers.  UPDATEed blocks are not written
+; to mass storage.
+;
+emptybufferslfa
+    .byt $de,$ad
+    .byt (_emptybuffers-*-1)|bit7
+    .asc "EMPTY-BUFFER","S"|bit7
+_emptybuffers
+#include "enter.i65"
+    .word editblk
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;       STARTUP
 ;
 startuplfa
@@ -5739,6 +5760,8 @@ warm02
     .word editblk           ; set top of block buffer storage area
 #include "page.i65"
     .word store
+#include "page.i65"
+    .word _emptybuffers
 #include "page.i65"
     .word _pdq
     .byt (warm03-*-1)
@@ -8572,6 +8595,110 @@ baz04
     bne baz05
 
 bevlvl          .byt $20,$64,$6f,$79,$62,$f8,$f7,$e3,$a0
+
+;--------------------------------------------------------------
+;
+;       RLENCODE ( srcaddr targaddr srclen -- targend )
+;
+; encode length {srclen} bytes from source address {srcaddr} to
+; target address {targaddr}.  Return target end address {targend}
+;
+rlencodelfa
+    .byt $de,$ad
+    .byt (rlencode-*-1)|bit7
+    .asc "RLENCOD","E"|bit7
+rlencode
+    ldy #2
+    jsr setup
+    brk
+    .byt ld | N1
+    .byt st | R10   ; copy of targaddr to store length
+    .byt set | R9   ; to check counter overflow
+    .word $100
+rlencode00
+    .byt ld | R9
+    .byt st | N2    ; set prev to unmatchable value
+rlencode01
+    .byt ldi | N0   ; read input stream
+    .byt sti | N1   ; to output stream
+    .byt dcr | TOS  ; decrement source counter
+    .byt bz, <(rlencode05-*-2)  ; done?
+    .byt cpr | N2   ; compare to prev
+    .byt st | N2    ; save new prev
+    .byt ld | R13   ; reget compare result
+    .byt bnz, <(rlencode01-*-2) ; different? go get more
+    .byt ld | R9
+    .byt st | N3    ; count backwards from 256
+rlencode02          ; start counting
+    .byt dcr | N3
+    .byt bnz, <(rlencode03-*-2) ; overflow?
+    .byt ld | N3
+    .byt sti | N1   ; 0 count represents 255x
+    .byt br, <(rlencode00-*-2)
+rlencode03
+    .byt ldi | N0
+    .byt dcr | TOS  ; decrement source counter
+    .byt bz, <(rlencode04-*-2)  ; done?
+    .byt cpr | N2
+    .byt bz, <(rlencode02-*-2)
+    .byt st | N2
+rlencode04
+    .byt ld | R9
+    .byt sub | N3
+    .byt sti | N1   ; counter to output stream
+    .byt ld | N2
+    .byt sti | N1   ; new char to output stream
+    .byt ld | TOS
+    .byt bnz, <(rlencode01-*-2)
+rlencode05
+    .byt ld | N1
+    .byt st | TOS
+    .byt nxt
+
+;--------------------------------------------------------------
+;
+;       RLDECODE ( srcaddr targaddr targlen -- )
+;
+; decode length {targlen} bytes beginning at source address 
+; {srcaddr} to the target address (targaddr).  
+;
+rldecodelfa
+    .byt $de,$ad
+    .byt (rldecode-*-1)|bit7
+    .asc "RLDECOD","E"|bit7
+rldecode
+    ldy #2
+    jsr setup
+    brk
+    .byt set | R9   ; to check counter overflow
+    .word $100
+rldecode01
+    .byt ld| R9
+    .byt st | N2    ; set prev to unmatchable value
+rldecode02
+    .byt ldi | N0   ; read input stream
+    .byt sti | N1   ; write to output stream
+    .byt dcr | TOS
+    .byt bnz, <(rldecode03-*-2) ; done?
+    .byt pull
+    .byt nxt
+rldecode03
+    .byt cpr | N2   ; compare to prev
+    .byt st | N2    ; save new prev
+    .byt ld | R13   ; reget compare result
+    .byt bnz, <(rldecode02-*-2) ; different? go get more
+    .byt ldi | N0   ; fetch the count
+    .byt st | N3
+    .byt bnz, <(rldecode04-*-2)
+    .byt ld | R9
+    .byt st | N3
+rldecode04
+    .byt dcr | N3
+    .byt bz, <(rldecode01-*-2)
+    .byt ld | N2
+    .byt sti | N1   ; write to output stream
+    .byt dcr | TOS
+    .byt br, <(rldecode04-*-2)
 
 ;--------------------------------------------------------------
 ;
