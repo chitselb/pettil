@@ -1,0 +1,94 @@
+: blkbuf
+    memsiz @ b/buf - ;
+
+
+: vbuf
+    blkbuf 2- ;
+
+: getblk   ( n -- addr size )
+    vbuf   ( n vbuf )
+    swap 0 ?do
+        dup @ ?dup
+        if -
+        else 2 over ! dup 2- off
+        then
+    loop 
+    dup @ 2- ;
+
+
+: unpack
+    getblk ?dup
+    if
+        blkbuf swap rldecode
+    else
+
+
+;--------------------------------------------------------------
+;
+;       ZBITS   ( d -- n )
+;
+; analyzes the double and returns the longest consecutive run of
+; 0 bits in it.  e.g. $ffffffff -> 0, $deadbeef -> 1, 
+; $80806502 -> 7, $00000000 -> 32
+;
+zbits
+    ldy #1
+    jsr setup
+    sty n+2
+    stx storex
+    ldx #32
+zbits02
+    ldy #0
+zbits03
+    lsr tos+1
+    ror tos
+    ror n+1
+    ror n
+    dex
+    bmi zbits04 ; done?
+    bcs zbits02
+    iny
+    cpy n+2
+    bcc zbits03
+    sty n+2
+    bcs zbits03 ; bra
+zbits04
+    ldx storex
+    lda n+2
+    ldy #0
+    jmp puts
+
+; fetches three bytes as a double.  Useful for retrieving screen
+; linewrap bits from the beginning of the block buffer
+: 3c@   ( addr -- d )
+    dup 1+ @ swap c@ ;
+
+; store low 3 bytes of d at addr as msb, lsw
+: 3c!    ( d addr -- )
+    2dup c!  nip 1+ ! ;
+
+; returns true if the three bytes at addr is valid linewrap
+; (containing no double-0 bit pairs)
+: wrap?  ( 7c00 -- flag )
+    3c@ ff00 or zbits 2 < ;
+
+; returns true if the 1024 bytes at addr is a valid screen block
+;
+: scr?   ( addr -- flag )
+    dup notwrap? over $3e8 + 21 bl skip swap drop 0= or ;
+
+;--------------------------------------------------------------
+;
+;       BLOCK   ( n -- addr )
+;
+; return the buffer address of block N. Create it if necessary.
+;
+: block
+
+;       begin
+;           #que @  0
+;           ?do
+;               i 2*  que +  @  execute
+;           loop
+;       again ;
+;
