@@ -206,6 +206,7 @@ userwarm
 userfence       .word forgetfence                       ; COLD
 userdp          .word endofile                          ;
 usermemsiz      .word VIDRAM                            ;
+userblkbuf      .word VIDRAM-1024                       ;
 usercold
 userblk         = usercold                              ; SOFT
 usertoin        = usercold+2                            ;
@@ -223,9 +224,8 @@ userrsharp      = usercold+24                           ;
 userhld         = usercold+26                           ;
 usertib         = usercold+28                           ;
 userline        = usercold+30                           ;
-userscr         = usercold+32                           ;
-uservmsiz       = usercold+34                           ;
-uservmbuf       = usercold+36                           ;
+uservmsiz       = usercold+32                           ;
+uservmbuf       = usercold+34                           ;
 ; live userarea has 2 bytes for each initializer
 ; extra memory beyond warm/cold initialized user variables
 ; is reserved for "soft" user variables
@@ -2549,20 +2549,6 @@ memsiz
 
 ;--------------------------------------------------------------
 ;
-;       EDITBLK
-;
-; The most recently edited (current) block
-;
-editblklfa
-    .byt $de,$ad
-    .byt (editblk-*-1)|bit7
-    .asc "EDITBL","K"|bit7
-editblk
-    jsr uservar
-    .byt usereditblk-userarea
-
-;--------------------------------------------------------------
-;
 ;       VOC-LINK
 ;
 ;voclinklfa
@@ -2575,15 +2561,15 @@ editblk
 
 ;--------------------------------------------------------------
 ;
-;       VIEW?
+;       BLKBUF
 ;
-;viewqlfa
-;    .byt $de,$ad
-;    .byt (viewq-*-1)|bit7
-;    .asc "VIEW","?"|bit7
-;viewq
-;     jsr uservar
-;     .byt userviewquery-userarea
+blkbuflfa
+    .byt $de,$ad
+    .byt (blkbuf-*-1)|bit7
+    .asc "BLKBU","F"|bit7
+blkbuf
+     jsr uservar
+     .byt userblkbuf-userarea
 
 ; ^ cold
 ; |
@@ -2817,6 +2803,30 @@ numlinelfa
 numline
     jsr uservar
     .byt userline-userarea
+
+;--------------------------------------------------------------
+;
+;       VMSIZ
+;
+vmsizlfa
+    .byt $de,$ad
+    .byt (vmsiz-*-1)|bit7
+    .asc "VMSI","Z"|bit7
+vmsiz
+    jsr uservar
+    .byt uservmsiz-userarea
+
+;--------------------------------------------------------------
+;
+;       VMBUF
+;
+vmbuflfa
+    .byt $de,$ad
+    .byt (vmbuf-*-1)|bit7
+    .asc "VMBU","F"|bit7
+vmbuf
+    jsr uservar
+    .byt uservmbuf-userarea
 
 ;--------------------------------------------------------------
 ;
@@ -5665,20 +5675,38 @@ _abort
 ;
 ; Unassign all block buffers.  UPDATEed blocks are not written
 ; to mass storage.
-;
+;": empty-buffers   ( -- ) vmsiz off blkbuf 2- dup off vmbuf ! ;
 emptybufferslfa
     .byt $de,$ad
     .byt (_emptybuffers-*-1)|bit7
     .asc "EMPTY-BUFFER","S"|bit7
 _emptybuffers
 #include "enter.i65"
-    .word editblk
-#include "page.i65"
-    .word fetch
+    .word vmsiz
 #include "page.i65"
     .word off
 #include "page.i65"
+    .word blkbuf
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word store
+#include "page.i65"
     .word exit
+
+;--------------------------------------------------------------
+;
+;       ?BLOCK
+;
+;": ?block   ( blk -- flag )
+;    vmsiz @ < ;
+;
 
 ;--------------------------------------------------------------
 ;
@@ -5759,7 +5787,7 @@ warm02
 #include "page.i65"
     .word twominus
 #include "page.i65"
-    .word editblk           ; set top of block buffer storage area
+    .word blkbuf            ; set top of block buffer storage area
 #include "page.i65"
     .word store
 #include "page.i65"
