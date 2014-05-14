@@ -764,13 +764,19 @@ _editzilch
 ;
 ;       EDITNOWRAP   ( -- )
 ;
-; reset the linewrap table
+; reset the linewrap table and make this screen writeable
 ;
 ;editnowraplfa
 ;    .byt $de,$ad
-;    .byt (editnowrap-*-1)|bit7
+;    .byt (_editnowrap-*-1)|bit7
 ;    .asc "EDITNOWRA","P"|bit7
-editnowrap
+_editnowrap
+#include "enter.i65"
+    .word scrwritequery
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word to6502
     stx storex
     ldx #24
 editnowrap01
@@ -1101,7 +1107,20 @@ scrwritequery
 ;
 ;": scr@   ( scr -- )
 ;     dup scr ! (block)
-;     scrwrite? !
+;     dup scrwrite? !
+;     if
+;         CLR emit
+;         drop
+;     else
+;         b/buf over scr?
+;         if
+;             scrwrite? on
+;             over 3c@ wrap!
+;             3 - swap 3 + swap
+;         then
+;         vidram swap cmove ;
+;     then ;
+;
 ;scrfetchlfa
 ;    .byt $de,$ad
 ;    .byt (_scrfetch-*-1)|bit7
@@ -1116,13 +1135,65 @@ _scrfetch
 #include "page.i65"
     .word _pblock
 #include "page.i65"
+    .word dup
+#include "page.i65"
     .word scrwritequery
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word store
-
+    .word qbranch
+    .byt <(scrfetch01-*+1)
+#include "pad.i65"
+    .word clit
+    .byt CLR
+#include "pad.i65"
+    .word emit
 #include "page.i65"
+    .word drop
+#include "page.i65"
+    .word branch
+    .byt <(scrfetch03-*+1)
+#include "pad.i65"
+scrfetch01
+    .word bperbuf
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _scrquery
+#include "page.i65"
+    .word qbranch
+    .byt <(scrfetch02-*+1)
+#include "pad.i65"
+    .word scrwritequery
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _threecfetch
+#include "page.i65"
+    .word wrapstore
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+scrfetch02
+    .word vidram
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+scrfetch03
     .word exit
 
 ;--------------------------------------------------------------
@@ -1144,8 +1215,6 @@ _editinit
     .word _scrfetch
 #include "page.i65"
     .word _editzilch
-#include "page.i65"
-    .word cr
 #include "page.i65"
     .word exit
 
@@ -1178,7 +1247,7 @@ editmenu01
      .word editdelscr
      .word editinsscr
      .word edittopscr
-     .word editnowrap
+     .word _editnowrap
      .word editnextscr
      .word editprevscr
 
@@ -1264,6 +1333,8 @@ editlfa
     .asc "EDI","T"|bit7
 _edit
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word _editinit
 #include "page.i65"
 edit00              ; reentry to editor here
