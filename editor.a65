@@ -1,5 +1,60 @@
 ;--------------------------------------------------------------
 ;
+;       3C@   ( addr -- d )
+;
+; fetches three bytes as a double.  Useful for retrieving screen
+; linewrap bits from the beginning of the block buffer
+;
+;": 3c@   ( addr -- d )
+;     dup 1+ @ swap c@ ;
+;
+threecfetchlfa
+    .byt $de,$ad
+    .byt (_threecfetch-*-1)|bit7
+    .asc "3C","@"|bit7
+_threecfetch
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       3C!   ( d addr -- )
+;
+; store low 3 bytes of d at addr as msb, lsw
+;
+;": 3c!    ( d addr -- )
+;     2dup c!  nip 1+ ! ;
+;
+threecstorelfa
+    .byt $de,$ad
+    .byt (_threecstore-*-1)|bit7
+    .asc "3C","!"|bit7
+_threecstore
+#include "enter.i65"
+    .word _twodup
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word _nip
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;       WRAPABOVE   ( logline -- d )
 ;
 ; Reads (a portion of) the linewrap table above the current physical
@@ -68,7 +123,7 @@ wrapfill03
 ;
 wrapstore
     ldy #1
-    jsr setup
+    jsr locals
     stx storex
     ldx #24
 wrapstore01
@@ -916,16 +971,178 @@ editinsscr
 
 ;--------------------------------------------------------------
 ;
-;       EDITINIT   ( -- )
+;       ZBITS   ( d -- n )
+;
+; analyzes the double and returns the longest consecutive run of
+; 0 bits in it.  e.g. $ffffffff -> 0, $deadbeef -> 1, 
+; $80806502 -> 7, $00000000 -> 32
+;
+zbits
+    ldy #1
+    jsr locals
+    sty n+2
+    stx storex
+    ldx #32
+zbits02
+    ldy #0
+zbits03
+    lsr tos+1
+    ror tos
+    ror n+1
+    ror n
+    dex
+    bmi zbits04 ; done?
+    bcs zbits02
+    iny
+    cpy n+2
+    bcc zbits03
+    sty n+2
+    bcs zbits03 ; bra
+zbits04
+    ldx storex
+    lda n+2
+    ldy #0
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       WRAP?   ( addr -- flag )
+;
+; Variable reflecting whether the current screen is text (true)
+; or a data block (false)
+; returns true if the three bytes at addr is valid linewrap
+; (containing no double-0 bit pairs)
+;": wrap?  ( 7c00 -- flag )
+;     3c@ ff00 or zbits 2 < ;
+wrapquerylfa
+    .byt $de,$ad
+    .byt (_wrapquery-*-1)|bit7
+    .asc "WRAP","?"|bit7
+_wrapquery
+#include "enter.i65"
+    .word _threecfetch
+#include "page.i65"
+    .word plit
+    .word $ff00
+#include "pad.i65"
+    .word orx
+#include "page.i65"
+    .word zbits
+#include "page.i65"
+    .word two
+#include "page.i65"
+    .word lt
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       SCR?   ( addr -- flag )
+;
+; Return true if the buffer at addr is a valid text screen
+;
+;": scr?   ( addr -- flag )
+;     dup wrap? over $3e8 + 21 bl skip swap drop 0= or ;
+;
+scrquerylfa
+    .byt $de,$ad
+    .byt (_scrquery-*-1)|bit7
+    .asc "SCR","?"|bit7
+_scrquery
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word _wrapquery
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word plit
+    .word 1000
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word clit
+    .byt 21
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word skip
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       SCRWRITE?   ( -- addr )
+;
+; Variable reflecting whether the current screen is text (true)
+; or a data block (false)
+;
+scrwritequerylfa
+    .byt $de,$ad
+    .byt (scrwritequery-*-1)|bit7
+    .asc "SCRWRITE","?"|bit7
+scrwritequery
+    jsr docreate
+    .word 0
+
+;--------------------------------------------------------------
+;
+;       SCR@   ( scr -- )
+;
+; retrieve the requested screen, set it as the current screen
+;
+;": scr@   ( scr -- )
+;     dup scr ! (block)
+;     scrwrite? !
+;scrfetchlfa
+;    .byt $de,$ad
+;    .byt (_scrfetch-*-1)|bit7
+;    .asc "SCR","@"|bit7
+_scrfetch
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word scr
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word _pblock
+#include "page.i65"
+    .word scrwritequery
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word store
+
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       EDITINIT   ( scr -- )
 ;
 ; prepare before we drop into the editor infinite loop
 ;
+;": editinit   ( scr -- )
+;     dup scr ! (block)
+;     scrwrite? !
+;
 ;editinitlfa
 ;    .byt $de,$ad
-;    .byt (editinit-*-1)|bit7
+;    .byt (_editinit-*-1)|bit7
 ;    .asc "EDITINI","T"|bit7
-editinit
+_editinit
 #include "enter.i65"
+    .word _scrfetch
+#include "page.i65"
     .word _editzilch
 #include "page.i65"
     .word cr
@@ -1039,7 +1256,7 @@ _editirqtoggle
 
 ;--------------------------------------------------------------
 ;
-;       EDIT   ( -- )
+;       EDIT   ( scr -- )
 ;
 editlfa
     .byt $de,$ad
@@ -1047,7 +1264,7 @@ editlfa
     .asc "EDI","T"|bit7
 _edit
 #include "enter.i65"
-    .word editinit
+    .word _editinit
 #include "page.i65"
 edit00              ; reentry to editor here
     .word _editirqtoggle   ; enable STOP key trap

@@ -1848,3 +1848,182 @@ editpaste02                     ; BEGIN
 ; erase the last 40 or 80 characters, same size as currline
 ; write the new linewrap table to $e0
 ;
+;       RLDECODE ( srcaddr targaddr targlen -- )
+rldecodelfa
+    .byt $de,$ad
+    .byt (rldecode-*-1)|bit7
+    .asc "RLDECOD","E"|bit7
+rldecode
+    ldy #2
+    jsr setup
+    brk
+    .byt set | R9   ; to check counter overflow
+    .word $100
+rldecode01
+    .byt ld| R9
+    .byt st | N2    ; set prev to unmatchable value
+rldecode02
+    .byt ldi | N0   ; read input stream
+    .byt sti | N1   ; write to output stream
+    .byt dcr | TOS
+    .byt bnz, <(rldecode03-*-2) ; done?
+    .byt pull
+    .byt nxt
+rldecode03
+    .byt cpr | N2   ; compare to prev
+    .byt st | N2    ; save new prev
+    .byt ld | R13   ; reget compare result
+    .byt bnz, <(rldecode02-*-2) ; different? go get more
+    .byt ldi | N0   ; fetch the count
+    .byt st | N3
+    .byt bnz, <(rldecode04-*-2)
+    .byt ld | R9
+    .byt st | N3
+rldecode04
+    .byt dcr | N3
+    .byt bz, <(rldecode01-*-2)
+    .byt ld | N2
+    .byt sti | N1   ; write to output stream
+    .byt dcr | TOS
+    .byt br, <(rldecode04-*-2)
+
+;       RLDECODE ( srcaddr targaddr srclen -- )
+    .byt $de,$ad
+    .byt (rldecode-*-1)|bit7
+    .asc "RLDECOD","E"|bit7
+rldecode
+    ldy #2
+    jsr setup
+    brk
+    .byt set | R9
+    .word $100
+rldecode01
+    .byt ld | N1
+    .byt st | N2        ; set prev to unmatchable value
+rldecode02
+    .byt ldi | N0       ; read source stream
+    .byt sti | N1       ; write target stream
+    .byt dcr | TOS      ; decrement source counter
+    .byt bnz, <(rldecdode03-*-2)    ; done?
+    .byt pull
+    .byt nxt
+rldecode03
+    .byt cpr | N2
+    .byt st | N2
+    .byt ld | R13
+    .byt bnz, <(rldecdode02-*-2)    ; different? go get more
+    .byt ldi | N0
+    .byt st | N3
+    .byt bnz, <rldecode04-*-2)
+    .byt ld | R9
+    .byt st | N3
+rldecode04
+    .byt dcr | N3
+    .byt bz, <(rldecode01-*-2)
+    .byt ld | N2
+    .byt sti | N1       ; wrote target stream
+    .byt br, <(rldecode04-*-2)
+    
+    
+
+: blk+   ( -- packet )
+        vmbuf @ 14 2dup 2dup -      ( vmbuf 14 vmbuf 14 vmbuf-14 )
+        tuck vmbuf !  erase  ! ;    ( vmbuf )
+
+original version
+filllfa
+    .byt $de,$ad
+    .byt (fill-*-1)|bit7
+    .asc "FIL","L"|bit7
+fill
+    ldy #2
+    jsr setup       ; addr -> N0; howmany -> N1
+    stx storex
+    inc n+3         ; high byte of howmany
+    lda tos
+    ;ldy #0         ; Y = 0 from setup
+    ldx n+2
+    beq fill02
+fill01
+    sta (n),y
+    iny
+    beq fill02
+fill03
+    dex
+    bne fill01
+    dec n+3
+    bne fill01
+    ldx storex
+    jmp pops
+
+fill02
+    inc n+1
+    bne fill03      ; [36]
+
+fixed version
+filllfa
+    .byt $de,$ad
+    .byt (fill-*-1)|bit7
+    .asc "FIL","L"|bit7
+fill
+    ldy #2
+    jsr locals      ; addr -> N0; howmany -> N1
+    ;clc            ; C cleared by setup
+    ;ldy #0
+    lda tos
+fill01
+    dec n+3
+    bpl fill02
+    sec             ; fill a partial page then exit
+    ldy n+2
+    beq fill03      ; nothing to do?
+fill02
+    dey
+    sta (n),y
+    bne fill02
+    inc n+1
+    bcc fill01
+fill03
+    jmp pops        ; [28]
+
+: block   ( n -- addr )
+                            ( n )
+dup vmsiz @
+                            ( n n vmsiz )
+<
+                            ( n flag )
+if                          ( block exists, get the packet addr )
+                            ( n )
+    blk@
+                            ( packet )
+else                        ( block does not exist, create it )
+                            ( n )
+    0 swap 1+ vmsiz @
+                            ( 0 n+1 vmsiz )
+    do
+                            ( 0 )
+        drop
+                            ( )
+        blk+
+                            ( packet )
+    loop
+                            ( packet )
+then ;
+
+
+: blk@   ( n -- packet )
+    blkbuf 2-
+                            ( n packet0 )
+    begin
+        over 0>
+                            ( n packet flag )
+    while
+                            ( n packet )
+        dup @
+                            ( n packet size )
+        -
+                            ( n packet' )
+        swap 1- swap
+                            ( n-1 packet' )
+    repeat
+    swap drop ;
