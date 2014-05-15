@@ -1,66 +1,15 @@
 ;--------------------------------------------------------------
 ;
-;       3C@   ( addr -- d )
-;
-; fetches three bytes as a double.  Useful for retrieving screen
-; linewrap bits from the beginning of the block buffer
-;
-;": 3c@   ( addr -- d )
-;     dup 1+ @ swap c@ ;
-;
-threecfetchlfa
-    .byt $de,$ad
-    .byt (_threecfetch-*-1)|bit7
-    .asc "3C","@"|bit7
-_threecfetch
-#include "enter.i65"
-    .word dup
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       3C!   ( d addr -- )
-;
-; store low 3 bytes of d at addr as msb, lsw
-;
-;": 3c!    ( d addr -- )
-;     2dup c!  nip 1+ ! ;
-;
-threecstorelfa
-    .byt $de,$ad
-    .byt (_threecstore-*-1)|bit7
-    .asc "3C","!"|bit7
-_threecstore
-#include "enter.i65"
-    .word _twodup
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word _nip
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
 ;       WRAPABOVE   ( logline -- d )
 ;
 ; Reads (a portion of) the linewrap table above the current physical
 ; line (stored at $d8) up to but not including the current logical line.  
 ; Returns a right-aligned double with a copy of those high bit values
 ;
+;wrapabovelfa
+;    .byt $de,$ad
+;    .byt (wrapabove-*-1)|bit7
+;    .asc "WRAPABOV","E"|bit7
 wrapabove
     stx storex      ; preserve Forth data stack pointer
     ldy tos         ; first physical line of this logical line
@@ -95,6 +44,10 @@ wrapabove03
 ; Shift and append one or two bits to the double.  Return nonzero
 ; once 25 bits have been stored.  40 = <<,1; 80 = <<,1 <<,0
 ;
+;wrapfilllfa
+;    .byt $de,$ad
+;    .byt (wrapfill-*-1)|bit7
+;    .asc "WRAPFIL","L"|bit7
 wrapfill
     sec             ; always shift in a 1
 wrapfill01
@@ -846,8 +799,16 @@ editprevscr
 ;    .byt $de,$ad
 ;    .byt (editquit-*-1)|bit7
 ;    .asc "EDITQUI","T"|bit7
-editquit
+_editquit
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
+    .word scr
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _scrstore
+#include "page.i65"
     .word rfrom         ; discard returns
 #include "page.i65"
     .word rfrom
@@ -1026,7 +987,7 @@ wrapquerylfa
     .asc "WRAP","?"|bit7
 _wrapquery
 #include "enter.i65"
-    .word _threecfetch
+    .word threecfetch
 #include "page.i65"
     .word plit
     .word $ff00
@@ -1127,6 +1088,8 @@ scrwritequery
 ;    .asc "SCR","@"|bit7
 _scrfetch
 #include "enter.i65"
+    .word xyzzy
+#include "page.i65"
     .word dup
 #include "page.i65"
     .word scr
@@ -1170,7 +1133,7 @@ scrfetch01
 #include "page.i65"
     .word over
 #include "page.i65"
-    .word _threecfetch
+    .word threecfetch
 #include "page.i65"
     .word wrapstore
 #include "page.i65"
@@ -1194,6 +1157,101 @@ scrfetch02
     .word cmove
 #include "page.i65"
 scrfetch03
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       SCR!   ( scr -- )
+;
+; store the current screen in the block buffer.
+;
+;": scr!   ( scr -- )
+;     25 wrapabove
+;                                     ( scr d )
+;     blkbuf dup 3 + >r 3c!
+;                                     ( scr ) ( R; blkbuf+3 )
+;     vidram r> 1000 rlencode
+;                                     ( scr targend )
+;     blkbuf - >r
+;                                     ( scr ) ( R; size )
+;     blk@                        
+;                                     ( packet ) ( R; size )
+;     vmbuf dup r@ - r@
+;                                     ( packet vmbuf vmbuf-size size )
+;     cmove>
+;                                     ( packet )
+;     r@ - blkbuf swap r>
+;                                     ( blkbuf packet-size size )
+;     cmove ;
+;
+;scrstorelfa
+;    .byt $de,$ad
+;    .byt (_scrstore-*-1)|bit7
+;    .asc "SCR","!"|bit7
+_scrstore
+#include "enter.i65"
+    .word xyzzy
+#include "page.i65"
+    .word clit
+    .byt 25
+#include "pad.i65"
+    .word wrapabove
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plit
+    .word 1000
+#include "pad.i65"
+    .word rlencode
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _blkfetch
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word cmovegt
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word cmove
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1234,7 +1292,7 @@ editmenu
      .asc "QISLVZRDCP"          ; command keys
      .byt DELETE, INSERT, HOME, CLR, CRSRDOWN, CRSRUP
 editmenu01
-     .word editquit             ; CFA of corresponding Forth word
+     .word _editquit             ; CFA of corresponding Forth word
      .word editindex
      .word editsave
      .word _editload
@@ -1319,7 +1377,7 @@ _editirqtoggle
     .word clit
     .byt <CINV       ; $90
 #include "pad.i65"
-    .word toggleirq
+    .word togglevector
 #include "page.i65"
     .word exit
 

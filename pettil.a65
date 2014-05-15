@@ -3819,26 +3819,144 @@ setirq
 
 ;--------------------------------------------------------------
 ;
+;       3C@   ( addr -- d )
+;
+; fetches three bytes as a double.  Useful for retrieving screen
+; linewrap bits from the beginning of the block buffer or the jiffy
+; clock
+;
+; msb addr+0
+; 2sb addr+1
+; lsb addr+2
+;
+;": 3c@   ( addr -- d )
+;     dup 1+ @ swap c@ ;
+;
+threecfetchlfa
+    .byt $de,$ad
+    .byt (threecfetch-*-1)|bit7
+    .asc "3C","@"|bit7
+;_threecfetch
+;#include "enter.i65"
+;    .word dup
+;#include "page.i65"
+;    .word oneplus
+;#include "page.i65"
+;    .word fetch
+;#include "page.i65"
+;    .word swap
+;#include "page.i65"
+;    .word cfetch
+;#include "page.i65"
+;    .word exit
+threecfetch
+    jsr slip
+    ldy #2
+    lda (tos),y         ; msb
+    sta stackl,x
+    dey
+    lda (tos),y
+    sta stackh,x
+    dey
+    lda (tos),y
+    jmp put             ; [20]
+
+;--------------------------------------------------------------
+;
+;       3C!   ( d addr -- )
+;
+; store low 3 bytes of d at addr in jiffy clock order
+;
+; msb addr
+; 2sb addr+1
+; lsb addr+2
+;
+;": 3c!    ( d addr -- )
+;     2dup c!  nip 1+ ! ;
+;
+;_threecstore
+;#include "enter.i65"
+;    .word _twodup
+;#include "page.i65"
+;    .word cstore
+;#include "page.i65"
+;    .word _nip
+;#include "page.i65"
+;    .word oneplus
+;#include "page.i65"
+;    .word store
+;#include "page.i65"
+;    .word exit
+;
+threecstorelfa
+    .byt $de,$ad
+    .byt (threecstore-*-1)|bit7
+    .asc "3C","!"|bit7
+threecstore
+    ldy #0
+    lda stackl,x                ; msb
+    sta (tos),y
+    iny
+    lda stackh+1,x              ; 2sb
+    sta (tos),y
+    iny
+    lda stackl+1,x              ; lsb
+    sta (tos),y
+    inx                         ; discard 3 cells
+    jmp poptwo
+
+;--------------------------------------------------------------
+;
+;       IRQ^   ( -- )
+;
+; toggle the processor IRQ flag
+;
+irqfliplfa
+    .byt $de,$ad
+    .byt (irqflip-*-1)|bit7
+    .asc "IRQ","^"|bit7
+irqflip
+    php
+    pla
+    eor #$14        ; toggle I flag
+    pha
+    plp
+    jmp next
+
+;--------------------------------------------------------------
+;
 ;       JIFFY@   ( --  djiffyclock )
 ;
 ; returns number of jiffies since powerup or midnight as a double
 ;
+;jiffyfetch
+;    sei
+;    jsr slip
+;    lda TIME+2
+;    sta tos
+;    lda TIME+1
+;    sta tos+1
+;    ldy #0
+;    lda TIME
+;    cli
+;    jmp pushya
+;
 jiffyfetchlfa
     .byt $de,$ad
-    .byt (jiffyfetch-*-1)|bit7
+    .byt (_jiffyfetch-*-1)|bit7
     .asc "JIFFY","@"|bit7
-jiffyfetch
-jiffyfetch01
-    sei
-    jsr slip
-    lda TIME+2
-    sta tos
-    lda TIME+1
-    sta tos+1
-    ldy #0
-    lda TIME
-    cli
-    jmp pushya
+_jiffyfetch
+#include "enter.i65"
+    .word irqflip
+#include "page.i65"
+    .word clit
+    .byt TIME
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word irqflip
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -9275,17 +9393,17 @@ dolindex02
 
 ;--------------------------------------------------------------
 ;
-;       TOGGLEIRQ   ( eorvalue $90|$92 -- )
+;       TOGGLEVECTOR   ( eorvalue $90|$92 -- )
 ;
 ; Apply a difference value to the interrupt vector, pointing
 ; it to a new destination.  The same difference value restores the
 ; original target.
 ;
-toggleirqlfa
+togglevectorlfa
     .byt $de,$ad
-    .byt (toggleirq-*-1)|bit7
-    .asc "TOGGLEIR","Q"|bit7
-toggleirq
+    .byt (togglevector-*-1)|bit7
+    .asc "TOGGLEVECTO","R"|bit7
+togglevector
     sei
     ldy #0
     lda (tos),y

@@ -11,6 +11,7 @@ echo "disable 2">>pettil.lab
 #echo "watch store 2 3">>pettil.lab	# UP
 echo break .xyzzy>>pettil.lab
 echo break ._block>>pettil.lab
+echo break ._jiffyfetch>>pettil.lab
 echo break .rlencode>>pettil.lab
 echo break .rldecode>>pettil.lab
 #echo break .wrapstore>>pettil.lab
