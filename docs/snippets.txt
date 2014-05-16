@@ -2211,3 +2211,205 @@ insert size bytes
                                 ( 
     vmsiz 1+! ;
                                 ( 
+
+
+
+
+
+
+; move virtual memory between the bottom of the buffer (vmbuf @) 
+; and the bottom of the packet being replaced
+; e.g. if we're changing a 100 byte packet into a 300 byte packet,
+; all the packets below it in memory will have to move down 200 bytes
+; conversely, if we're changing a 300 byte packet into a 10 byte
+; packet, all packets below it have to move upward 290 bytes
+; The packet is presumed to exist
+;
+: mvvm   ( blk# newsize -- )
+
+vmbuf vmbuf+oldsize-newsize packet-oldsize+2-vmbuf cmove
+
+
+
+swap (block) 0=
+                                ( newsize packet packet-exists? )
+if                              ( block exists )
+                                ( newsize packet )
+    >r r@ @ >r
+                                ( newsize ) ( R; packet oldsize )
+    r@ swap -
+                                ( oldsize-newsize ) ( R; packet oldsize )
+    r> r>
+                                ( oldsize-newsize oldsize packet )
+    swap - 2+
+                                ( oldsize-newsize packet-oldsize+2 )
+    vmbuf @ >r r@ -
+                                ( oldsize-newsize packet-oldsize+2-vmbuf ) ( R; vmbuf )
+    swap r@ + swap
+                                ( vmbuf+oldsize-newsize packet-oldsize+2-vmbuf ) ( R; vmbuf )
+    r> -rot 
+                                ( vmbuf vmbuf+oldsize-newsize packet-oldsize+2-vmbuf )
+    cmove
+
+else
+    8 fail                      ( block out of range ) 
+then ;
+
+6000  6000+300-10 
+
+
+
+
+;--------------------------------------------------------------
+;
+;       BLETCH ( -- )
+;
+;
+;
+;
+bletchlfa
+    .byt $de,$ad
+    .byt (bletch-*-1)|bit7
+    .asc "BLETC","H"|bit7
+bletch
+#include "enter.i65"
+    .word plit
+    .word 64000
+#include "pad.i65"
+    .word zero
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+bletch01
+    .word i
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word clit
+    .byt 40
+#include "pad.i65"
+    .word _umslashmod
+#include "page.i65"
+    .word _udot
+#include "page.i65"
+    .word _udot
+#include "page.i65"
+    .word cr
+#include "page.i65"
+    .word ploop
+    .byt <(bletch01-*+1)
+#include "pad.i65"
+    .word exit
+
+r50special      .byt ',','-','?'
+
+;--------------------------------------------------------------
+;
+;       R50CHAR   ( d -- d2 c )
+;
+; Unpack and translate a single character in radix-50
+;
+;r50charlfa
+;    .byt $de,$ad
+;    .byt (r50char-*-1)|bit7
+;    .asc "RAD5","0"|bit7
+_r50char
+#include "enter.i65"
+    .word clit
+    .byt 40
+#include "pad.i65"
+    .word starslashmod
+#include "page.i65"
+    .word qbranch
+    .byt <(r50char01-*+1)
+#include "pad.i65"
+    .word bl
+#include "page.i65"
+    .word branch
+    .byt <(r50char06-*+1)
+#include "pad.i65"
+r50char01
+    .word clit
+    .byt 10
+#include "pad.i65"
+    .word minus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word qbranch
+    .byt <(r50char02-*+1)
+#include "pad.i65"
+    .word clit
+    .byt '0'+9
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word qbranch
+    .byt <(r50char02-*+1)
+#include "pad.i65"
+r50char02
+    .word clit
+    .byt 26
+#include "pad.i65"
+    .word minus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word qbranch
+    .byt <(r50char03-*+1)
+#include "pad.i65"
+    .word clit
+    .byt '@'+26
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word qbranch
+    .byt <(r50char02-*+1)
+#include "pad.i65"
+r50char03
+    .word plit
+    .word r50special
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+r50char06
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       RAD50   ( r -- c1 c2 c3 )
+;
+;"http://en.wikipedia.org/wiki/DEC_Radix-50
+; Unpack a rad-50 (base 40) encoded word into three characters
+; space, 0, 1, 2, 3, 4, 5, 6,
+; 7, 8, 9, a, b, c, d, e
+; f, g, h, i, j, k, l, m,
+; n, o, p, q, r, s, t, u,
+; v, w, x, y, z, comma, dash, question
+;
+rad50lfa
+    .byt $de,$ad
+    .byt (_rad50-*-1)|bit7
+    .asc "RAD5","0"|bit7
+_rad50
+#include "enter.i65"
+    .word _r50char
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _r50char
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word exit
+
