@@ -554,11 +554,6 @@ pastefrom04                     ; THEN
 ; Return the packet address of block n
 ;
 ;": pkt@   ( n -- packet )
-;     -1 do 
-;         blkbuf 2- dup @
-;     loop
-;
-;": pkt@   ( n -- packet )
 ;     blkbuf 2-
 ;     begin
 ;         over 0>
@@ -568,14 +563,12 @@ pastefrom04                     ; THEN
 ;     repeat
 ;     swap drop ;
 ;
-pkgfetchlfa
+pktfetchlfa
     .byt $de,$ad
     .byt (_pktfetch-*-1)|bit7
     .asc "PKT","@"|bit7
 _pktfetch
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word _blkbuf
 #include "page.i65"
     .word twominus
@@ -710,23 +703,36 @@ _unpkt
 
 ;--------------------------------------------------------------
 ;
-;       (BLOCK)   ( n -- addr flag )
+;       (BLOCK)   ( blk -- addr new? )
 ;
 ; return the buffer address of block N. Create it if necessary.
 ; flag is true if the block is new, false if it already exists
 ;
-;": (block)   ( n -- addr )
-;     dup vmsiz @ <
-;     if                        ( block exists, get the packet addr )
-;         blk@
-;         false
-;     else                      ( block does not exist, create it )
+; *** TRICK ALERT ***
+; Uses the address on the return stack to determine if the caller 
+; was the screen editor.  Then does an OR with $8000 (VIDRAM)
+; on the packet length, setting the "editable" flag on the block.
+;
+; Any other caller creates a data block.
+;
+;": (block)   ( blk -- addr new? )
+;     vmsiz @ over >  dup       ( blk flag flag )
+;     if
+;                               ( block does not exist, create it )
+;                               ( blk flag 
 ;         0 swap 1+ vmsiz @
 ;         do
 ;             drop pkt+
 ;         loop
-;         true
+;     else
+;                               ( block exists, get the packet addr )
+;         pkt@
 ;     then
+
+
+
+
+
 ;     swap unpkt swap ;
 ;
 ;pblocklfa
@@ -767,7 +773,12 @@ pblock01                    ; ELSE
     .word pdo               ; DO
 #include "page.i65"
 pblock02
-    .word drop
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word twodrop
 #include "page.i65"
     .word _pktplus
 #include "page.i65"
@@ -865,6 +876,459 @@ _scrstore
     .word _move
 #include "page.i65"
     .word exit
+
+;--------------------------------------------------------------
+;
+;       ZBITS   ( d -- n )
+;
+; analyzes the double and returns the longest consecutive run of
+; 0 bits in it.  e.g. $ffffffff -> 0, $deadbeef -> 1, 
+; $80806502 -> 7, $00000000 -> 32
+;
+zbits
+    ldy #1
+    jsr locals
+    sty n+2
+    stx storex
+    ldx #32
+zbits02
+    ldy #0
+zbits03
+    lsr tos+1
+    ror tos
+    ror n+1
+    ror n
+    dex
+    bmi zbits04 ; done?
+    bcs zbits02
+    iny
+    cpy n+2
+    bcc zbits03
+    sty n+2
+    bcs zbits03 ; bra
+zbits04
+    ldx storex
+    lda n+2
+    ldy #0
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       WRAP?   ( addr -- flag )
+;
+; Variable reflecting whether the current screen is text (true)
+; or a data block (false)
+; returns true if the three bytes at addr is valid linewrap
+; (containing no double-0 bit pairs)
+;": wrap?  ( 7c00 -- flag )
+;     3c@ ff00 or zbits 2 < ;
+wrapquerylfa
+    .byt $de,$ad
+    .byt (_wrapquery-*-1)|bit7
+    .asc "WRAP","?"|bit7
+_wrapquery
+#include "enter.i65"
+    .word threecfetch
+#include "page.i65"
+    .word plit
+    .word $ff00
+#include "pad.i65"
+    .word orx
+#include "page.i65"
+    .word zbits
+#include "page.i65"
+    .word two
+#include "page.i65"
+    .word lt
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       SCR?   ( addr -- flag )
+;
+; Return true if the packet at addr is a valid text screen
+;
+;": scr?   ( addr -- flag )
+;     dup wrap? over $3e8 + 21 bl skip swap drop 0= or ;
+;
+scrquerylfa
+    .byt $de,$ad
+    .byt (_scrquery-*-1)|bit7
+    .asc "SCR","?"|bit7
+_scrquery
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word _wrapquery
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word plit
+    .word 1000
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word clit
+    .byt 21
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word skip
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       SCRWRITE?   ( -- addr )
+;
+; Variable reflecting whether the current screen is text (true)
+; or a data block (false)
+;
+scrwritequerylfa
+    .byt $de,$ad
+    .byt (scrwritequery-*-1)|bit7
+    .asc "SCRWRITE","?"|bit7
+scrwritequery
+    jsr docreate
+    .word 0
+
+;--------------------------------------------------------------
+;
+;       SCR@   ( scr -- )
+;
+; Locate or create the packet for this screen, set the current
+; screen variable SCR, and display it with linewrap
+;
+;": scr@   ( scr -- )
+;     dup scr ! (block)
+;     dup scrwrite? !
+;     if
+;         CLR emit
+;         drop
+;     else
+;         b/buf over scr?
+;         if
+;             scrwrite? on
+;             over 3c@ wrap!
+;             3 - swap 3 + swap
+;         then
+;         vidram swap cmove ;
+;     then ;
+;
+;scrfetchlfa
+;    .byt $de,$ad
+;    .byt (_scrfetch-*-1)|bit7
+;    .asc "SCR","@"|bit7
+_scrfetch
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word scr
+#include "page.i65"
+    .word store
+#include "page.i65"
+screenmade
+    .word _pblock
+scrcreate
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word scrwritequery
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word qbranch
+    .byt <(scrfetch01-*+1)
+#include "pad.i65"
+    .word clit
+    .byt CLR
+#include "pad.i65"
+    .word emit
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word branch
+    .byt <(scrfetch03-*+1)
+#include "pad.i65"
+scrfetch01
+    .word bperbuf
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _scrquery
+#include "page.i65"
+    .word qbranch
+    .byt <(scrfetch02-*+1)
+#include "pad.i65"
+    .word scrwritequery
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word wrapstore
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+scrfetch02
+    .word vidram
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+scrfetch03
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       SCRDEL   ( scr -- packet )
+;
+; delete the screen from the packet buffer.
+;
+;": scrdel   ( scr -- packet )
+;     blk@
+;     dup @ 
+;     vmbuf @ 2dup +
+;     dup
+;     vmbuf ! rot
+;     cmove
+;     vmsiz 1-! ;
+;
+;scrdelfa
+;    .byt $de,$ad
+;    .byt (_scrdel-*-1)|bit7
+;    .asc "SCRDE","L"|bit7
+_scrdel
+#include "enter.i65"
+    .word _pktfetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _twodup
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word vmsiz
+#include "page.i65"
+    .word oneminusstore
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       MKPKT ( blkbuf -- size )
+;
+; Create a new packet at BLKBUF from the current video screen.
+; The first three bytes of the packet are the linewrap bits for
+; lines 1..24.  This is followed by RLE-encoded screen codes,
+; and the last two bytes of the packet is the total size.
+;
+;": mkpkt   ( blkbuf -- size )
+;     25 wrapabove                  ( blkbuf d )
+;     rot dup >r                    ( d blkbuf ) ( R; blkbuf )
+;     dup 3 + >r                    ( d blkbuf ) ( R; blkbuf blkbuf+3 )
+;     3c!                           ( ) ( R; blkbuf blkbuf+3 )
+;     vidram b/scr -trailing        ( vidram nonblanksiz ) ( R; blkbuf blkbuf+3 )
+;     r> swap                       ( vidram blkbuf+3 nonblanksiz ) ( R; blkbuf )
+;     rlencode                      ( targend ) ( R; blkbuf )
+;     dup 2+ r>                     ( targend targend+2 blkbuf )
+;     - dup rot ! ;                 ( size )
+;
+mkpktlfa
+    .byt $de,$ad
+    .byt (_mkpkt-*-1)|bit7
+    .asc "MKPK","T"|bit7
+_mkpkt
+#include "enter.i65"
+    .word clit
+    .byt 25
+#include "pad.i65"
+    .word wrapabove
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word bperscr
+#include "page.i65"
+    .word _dashtrailing
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word rlencode
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word minus             ; ( addr size )
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       SCRINS   ( scr -- )
+;
+; insert the current screen into the packet buffer.
+;
+;": scrins   ( scr -- )
+;     25 wrapabove
+;     blkbuf dup >r dup 3 + >r 3c!
+;     vidram r> 1000 rlencode
+;     r> - >r
+;     blk@                        
+;     vmbuf @ dup r@ - r@
+;     cmove>
+;     r@ over !
+;     r@ - 2+ blkbuf swap r>
+;     cmove 
+;     vmsiz 1+! ;
+;
+;scrinslfa
+;    .byt $de,$ad
+;    .byt (_scrins-*-1)|bit7
+;    .asc "SCRIN","S"|bit7
+;_scrins
+;#include "enter.i65"
+;    .word clit
+;    .byt 25
+;#include "pad.i65"
+;    .word wrapabove
+;#include "page.i65"
+;    .word _blkbuf
+;#include "page.i65"
+;    .word dup
+;#include "page.i65"
+;    .word tor
+;#include "page.i65"
+;    .word dup
+;#include "page.i65"
+;    .word three
+;#include "page.i65"
+;    .word plus
+;#include "page.i65"
+;    .word tor
+;#include "page.i65"
+;    .word threecstore
+;#include "page.i65"
+;    .word vidram
+;#include "page.i65"
+;    .word rfrom
+;#include "page.i65"
+;    .word plit
+;    .word 1000
+;#include "pad.i65"
+;    .word rlencode
+;#include "page.i65"
+;    .word rfrom
+;#include "page.i65"
+;    .word minus
+;#include "page.i65"
+;    .word tor
+;#include "page.i65"
+;    .word _pktfetch
+;#include "page.i65"
+;    .word vmbuf
+;#include "page.i65"
+;    .word fetch
+;#include "page.i65"
+;    .word dup
+;#include "page.i65"
+;    .word rfetch
+;#include "page.i65"
+;    .word minus
+;#include "page.i65"
+;    .word rfetch
+;#include "page.i65"
+;    .word cmovegt
+;#include "page.i65"
+;    .word rfetch
+;#include "page.i65"
+;    .word over
+;#include "page.i65"
+;    .word store
+;#include "page.i65"
+;    .word rfetch
+;#include "page.i65"
+;    .word minus
+;#include "page.i65"
+;    .word twoplus
+;#include "page.i65"
+;    .word _blkbuf
+;#include "page.i65"
+;    .word swap
+;#include "page.i65"
+;    .word rfrom
+;#include "page.i65"
+;    .word cmove
+;#include "page.i65"
+;    .word vmsiz
+;#include "page.i65"
+;    .word oneplusstore
+;#include "page.i65"
+;    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -1252,456 +1716,6 @@ editdelscr
 ;    .asc "EDITINSSC","R"|bit7
 editinsscr
 #include "enter.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       ZBITS   ( d -- n )
-;
-; analyzes the double and returns the longest consecutive run of
-; 0 bits in it.  e.g. $ffffffff -> 0, $deadbeef -> 1, 
-; $80806502 -> 7, $00000000 -> 32
-;
-zbits
-    ldy #1
-    jsr locals
-    sty n+2
-    stx storex
-    ldx #32
-zbits02
-    ldy #0
-zbits03
-    lsr tos+1
-    ror tos
-    ror n+1
-    ror n
-    dex
-    bmi zbits04 ; done?
-    bcs zbits02
-    iny
-    cpy n+2
-    bcc zbits03
-    sty n+2
-    bcs zbits03 ; bra
-zbits04
-    ldx storex
-    lda n+2
-    ldy #0
-    jmp put
-
-;--------------------------------------------------------------
-;
-;       WRAP?   ( addr -- flag )
-;
-; Variable reflecting whether the current screen is text (true)
-; or a data block (false)
-; returns true if the three bytes at addr is valid linewrap
-; (containing no double-0 bit pairs)
-;": wrap?  ( 7c00 -- flag )
-;     3c@ ff00 or zbits 2 < ;
-wrapquerylfa
-    .byt $de,$ad
-    .byt (_wrapquery-*-1)|bit7
-    .asc "WRAP","?"|bit7
-_wrapquery
-#include "enter.i65"
-    .word threecfetch
-#include "page.i65"
-    .word plit
-    .word $ff00
-#include "pad.i65"
-    .word orx
-#include "page.i65"
-    .word zbits
-#include "page.i65"
-    .word two
-#include "page.i65"
-    .word lt
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       SCR?   ( addr -- flag )
-;
-; Return true if the buffer at addr is a valid text screen
-;
-;": scr?   ( addr -- flag )
-;     dup wrap? over $3e8 + 21 bl skip swap drop 0= or ;
-;
-scrquerylfa
-    .byt $de,$ad
-    .byt (_scrquery-*-1)|bit7
-    .asc "SCR","?"|bit7
-_scrquery
-#include "enter.i65"
-    .word dup
-#include "page.i65"
-    .word _wrapquery
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word plit
-    .word 1000
-#include "pad.i65"
-    .word plus
-#include "page.i65"
-    .word clit
-    .byt 21
-#include "page.i65"
-    .word bl
-#include "page.i65"
-    .word skip
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       SCRWRITE?   ( -- addr )
-;
-; Variable reflecting whether the current screen is text (true)
-; or a data block (false)
-;
-scrwritequerylfa
-    .byt $de,$ad
-    .byt (scrwritequery-*-1)|bit7
-    .asc "SCRWRITE","?"|bit7
-scrwritequery
-    jsr docreate
-    .word 0
-
-;--------------------------------------------------------------
-;
-;       SCR@   ( scr -- )
-;
-; retrieve the requested screen, set it as the current screen
-;
-;": scr@   ( scr -- )
-;     dup scr ! (block)
-;     dup scrwrite? !
-;     if
-;         CLR emit
-;         drop
-;     else
-;         b/buf over scr?
-;         if
-;             scrwrite? on
-;             over 3c@ wrap!
-;             3 - swap 3 + swap
-;         then
-;         vidram swap cmove ;
-;     then ;
-;
-;scrfetchlfa
-;    .byt $de,$ad
-;    .byt (_scrfetch-*-1)|bit7
-;    .asc "SCR","@"|bit7
-_scrfetch
-#include "enter.i65"
-    .word dup
-#include "page.i65"
-    .word scr
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word _pblock
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word scrwritequery
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word qbranch
-    .byt <(scrfetch01-*+1)
-#include "pad.i65"
-    .word clit
-    .byt CLR
-#include "pad.i65"
-    .word emit
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word branch
-    .byt <(scrfetch03-*+1)
-#include "pad.i65"
-scrfetch01
-    .word bperbuf
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word _scrquery
-#include "page.i65"
-    .word qbranch
-    .byt <(scrfetch02-*+1)
-#include "pad.i65"
-    .word scrwritequery
-#include "page.i65"
-    .word on
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word threecfetch
-#include "page.i65"
-    .word wrapstore
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-scrfetch02
-    .word vidram
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-scrfetch03
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       SCRDEL   ( scr -- packet )
-;
-; delete the screen from the packet buffer.
-;
-;": scrdel   ( scr -- packet )
-;     blk@
-;     dup @ 
-;     vmbuf @ 2dup +
-;     dup
-;     vmbuf ! rot
-;     cmove
-;     vmsiz 1-! ;
-;
-;scrdelfa
-;    .byt $de,$ad
-;    .byt (_scrdel-*-1)|bit7
-;    .asc "SCRDE","L"|bit7
-_scrdel
-#include "enter.i65"
-    .word _pktfetch
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _twodup
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word vmsiz
-#include "page.i65"
-    .word oneminusstore
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       MKPKT ( blkbuf -- size )
-;
-; Create a new packet at BLKBUF from the current video screen.
-; The first three bytes of the packet are the linewrap bits for
-; lines 1..24.  This is followed by RLE-encoded screen codes,
-; and the last two bytes of the packet is the total size.
-;
-;": mkpkt   ( blkbuf -- size )
-;     25 wrapabove                  ( blkbuf d )
-;     rot dup >r                    ( d blkbuf ) ( R; blkbuf )
-;     dup 3 + >r                    ( d blkbuf ) ( R; blkbuf blkbuf+3 )
-;     3c!                           ( ) ( R; blkbuf blkbuf+3 )
-;     vidram b/scr -trailing        ( vidram nonblanksiz ) ( R; blkbuf blkbuf+3 )
-;     r> swap                       ( vidram blkbuf+3 nonblanksiz ) ( R; blkbuf )
-;     rlencode                      ( targend ) ( R; blkbuf )
-;     dup 2+ r>                     ( targend targend+2 blkbuf )
-;     - dup rot ! ;                 ( size )
-;
-mkpktlfa
-    .byt $de,$ad
-    .byt (_mkpkt-*-1)|bit7
-    .asc "MKPK","T"|bit7
-_mkpkt
-#include "enter.i65"
-    .word clit
-    .byt 25
-#include "pad.i65"
-    .word wrapabove
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word _dashtrailing
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rlencode
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word minus             ; ( addr size )
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       SCRINS   ( scr -- )
-;
-; insert the current screen into the packet buffer.
-;
-;": scrins   ( scr -- )
-;     25 wrapabove
-;     blkbuf dup >r dup 3 + >r 3c!
-;     vidram r> 1000 rlencode
-;     r> - >r
-;     blk@                        
-;     vmbuf @ dup r@ - r@
-;     cmove>
-;     r@ over !
-;     r@ - 2+ blkbuf swap r>
-;     cmove 
-;     vmsiz 1+! ;
-;
-;scrinslfa
-;    .byt $de,$ad
-;    .byt (_scrins-*-1)|bit7
-;    .asc "SCRIN","S"|bit7
-;_scrins
-#include "enter.i65"
-    .word clit
-    .byt 25
-#include "pad.i65"
-    .word wrapabove
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word plit
-    .word 1000
-#include "pad.i65"
-    .word rlencode
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word _pktfetch
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word cmovegt
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word vmsiz
-#include "page.i65"
-    .word oneplusstore
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
