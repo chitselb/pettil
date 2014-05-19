@@ -101,21 +101,18 @@ zpbuf
 ;               [IP] -> PC
 ;
 ; minimalist NEXT, copied to zeropage by COLD
-#ifdef DEBUG
-    nop                     ; leave a little room here
-    nop                     ; because it's annoying when
-    nop                     ; something underflows the
-    nop                     ; data stack, overwriting NEXT
-#endif
+    nop                     ; six bytes of memory used by the
+    nop                     ; 8-bit random number generator RANDU
+    nop                     ; borrowed from the First Book of KIM
+    nop                     ; 
+    nop                     ; see "RANDU" for how it works
+    nop                     ; 
 zpnext
     inc ip                  ; 5
     inc ip                  ; 5
 ;ip = *+1
     jmp ($cafe)             ; 5
 zpnextx                                 ;15 cycles total
-
-; if #DEBUG is on, add enough padding between NEXT and TIME
-    .dsb TIME-(*-zpbuf),$ea ; more cowbell
 
 ;--------------------------------------------------------------
 ; Pops cells from the split stack to N area, working backwards.
@@ -971,37 +968,6 @@ skipscan04
 
 ;--------------------------------------------------------------
 ;
-;       -SKIP   ( addr1 addr char -- addr )
-;
-; skip backwards in memory until @addr != char, or addr1 is reached,
-; returning the first non-matching addr (or the limit, addr1).
-; The search begins at addr-1, not addr
-;
-; e.g. VIDRAM DUP 1000 + BL -SKIP will return the last non-blank location
-; on the screen
-;
-dashskiplfa
-    .byt $de,$ad
-    .byt (dashskip-*-1)|bit7
-    .asc "-SKI","P"|bit7
-dashskip
-    ldy #2
-    jsr locals                  ; ( char addr1 addr )
-    brk
-dashskip01
-    .byt pop | N1
-    .byt cpr | TOS
-    .byt bnz, <(dashskip02-*-2)
-    .byt ld | N1
-    .byt cpr | N0
-    .byt bnz, <(dashskip01-*-2)
-dashskip02
-    .byt ld | N1
-    .byt st | TOS
-    .byt nxt
-
-;--------------------------------------------------------------
-;
 ;       EMIT
 ;
 ; * 83 device
@@ -1761,10 +1727,11 @@ zgtlfa
     .byt (zgt-*-1)|bit7
     .asc "0",">"|bit7
 zgt
-    ldy #$ff
-    bit tos+1
-    bpl zgt01
-    iny
+    ldy #0
+    lda tos+1
+    bmi zgt01                   ; check the sign
+    ora tos                     ; check for nonzero
+    tay 
 zgt01
     tya
     jmp put
@@ -3598,11 +3565,11 @@ plusunderlfa
 plusunder
     clc
     lda tos
-    adc stackl,x
-    sta stackl,x
+    adc stackl+1,x
+    sta stackl+1,x
     lda tos+1
-    adc stackh,x
-    sta stackh,x
+    adc stackh+1,x
+    sta stackh+1,x
     jmp pops
 
 ;--------------------------------------------------------------
@@ -4783,9 +4750,21 @@ dodoes02        lda n+2
 
 ;--------------------------------------------------------------
 ;
-;       -TRAILING
+;       -TRAILING   ( addr +n1 -- addr +n2 )
 ;
-; * 83 interpreter
+; The character count +n1 of a text string beginning at addr
+; is adjusted to exclude trailing spaces.  If +n1 is zero,
+; then +n2 is also zero.  If the entire string consists of
+; spaces, then +n2 is zero.
+;
+;": -trailing   ( addr n1 -- addr n2 )
+;     dup 0
+;     ?do
+;         2dup + 1- c@
+;         bl <>
+;     ?leave
+;         1-
+;     loop ;
 ;
 dashtrailinglfa .byt $de,$ad
     .byt (_dashtrailing-*-1)|bit7
@@ -4798,7 +4777,8 @@ _dashtrailing
 #include "page.i65"
     .word pdo
 #include "page.i65"
-dashtrailing01  .word _twodup
+dashtrailing01
+    .word _twodup
 #include "page.i65"
     .word plus
 #include "page.i65"
@@ -4811,12 +4791,12 @@ dashtrailing01  .word _twodup
     .word ne
 #include "page.i65"
     .word pqleave
-    .word dashtrailing02
-#include "page.i65"
+    .byt <(dashtrailing02-*+1)
+#include "pad.i65"
     .word oneminus
 #include "page.i65"
     .word ploop
-    .word dashtrailing01
+    .byt <(dashtrailing01-*+1)
 #include "pad.i65"
 dashtrailing02
     .word exit
@@ -6309,6 +6289,34 @@ sgn
 sgn01
     tya
     jmp put
+
+;--------------------------------------------------------------
+;
+;       RANDU   ( -- r )
+;
+; return a random number in the range 0..255
+; from the First Book of KIM-1
+;
+randulfa
+    .byt $de,$ad
+    .byt (randu-*-1)|bit7
+    .asc "RAND","U"|bit7
+randu
+    stx storex
+    sec
+    lda rnd+1
+    adc rnd+4
+    adc rnd+5
+    sta rnd
+    ldx #4
+rpl
+    lda rnd,x
+    sta rnd+1,x
+    dex
+    bpl rpl
+    ldx storex
+    ldy #0
+    jmp pushya
 
 ;--------------------------------------------------------------
 ;
@@ -8905,46 +8913,52 @@ flipscr01
 ;
 ;       FOO ( -- )
 ;
-; hooks/unhooks the IRQ
+; 
 ;
 ;
 foolfa
     .byt $de,$ad
-    .byt (foo-*-1)|bit7
+    .byt (_foo-*-1)|bit7
     .asc "FO","O"|bit7
-foo
+_foo
 #include "enter.i65"
-    .word plit
-    .word foostash          ; ( new )
-#include "pad.i65"
-    .word dup               ; ( new new )
+foo01                           ; BEGIN
+    .word randu
 #include "page.i65"
-    .word fetch             ; ( new newirq )
+    .word two
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word sgn
 #include "page.i65"
     .word clit
-    .byt $90                ; ( new newirq live )
+    .byt 205
 #include "pad.i65"
-    .word fetch             ; ( new newirq liveirq )
+    .word plus
 #include "page.i65"
-    .word rot               ; ( newirq liveirq new )
+    .word emit
 #include "page.i65"
-    .word store             ; ( newirq )
+    .word numout
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word clit
+    .byt 39
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word qbranch
+    .byt <(foo02-*+1)
 #include "pad.i65"
-    .word setirq
+    .word cr
 #include "page.i65"
-    .word drop
+foo02
+    .word qterminal
 #include "page.i65"
+    .word qbranch               ; UNTIL
+    .byt <(foo01-*+1)
+#include "pad.i65"
     .word exit
-foostash
-    .word fooirq
-fooirq
-    ldy #2
-fooirq01
-    lda TIME,y
-    sta VIDRAM+37,y
-    dey
-    bpl fooirq01
-    jmp (foostash)
 
 ;--------------------------------------------------------------
 ;
@@ -9016,48 +9030,45 @@ rlencodelfa
     .asc "RLENCOD","E"|bit7
 rlencode
     ldy #2
-    jsr locals
+    jsr locals      ; TOS = srclen; N0 = srcaddr; N1 = targaddr
     brk
-    .byt ld | N1
-    .byt st | R10   ; copy of targaddr to store length
     .byt set | R9   ; to check counter overflow
     .word $100
 rlencode00
     .byt ld | R9
-    .byt st | N2    ; set prev to unmatchable value
 rlencode01
-    .byt ldi | N0   ; read input stream
-    .byt sti | N1   ; to output stream
-    .byt dcr | TOS  ; decrement source counter
-    .byt bz, <(rlencode05-*-2)  ; done?
+    .byt st | N2    ; set prev char
+    .byt ld | TOS
+    .byt bz, <(rlencode06-*-2)
+    .byt ldi | N0
+    .byt dcr | TOS
+    .byt sti | N1
     .byt cpr | N2   ; compare to prev
-    .byt st | N2    ; save new prev
-    .byt ld | R13   ; reget compare result
     .byt bnz, <(rlencode01-*-2) ; different? go get more
+
     .byt ld | R9
     .byt st | N3    ; count backwards from 256
-rlencode02          ; start counting
+    .byt dcr | N3   ; count the one already in output stream
+rlencode02
     .byt dcr | N3
-    .byt bnz, <(rlencode03-*-2) ; overflow?
-    .byt ld | N3
-    .byt sti | N1   ; 0 count represents 255x
-    .byt br, <(rlencode00-*-2)
-rlencode03
-    .byt ldi | N0
-    .byt dcr | TOS  ; decrement source counter
-    .byt bz, <(rlencode04-*-2)  ; done?
+    .byt bz, <(rlencode04-*-2)  ; overflow?
+    .byt ld | TOS
+    .byt bz, <(rlencode04-*-2)  ; end of input?
+    .byt ldi | N0               ; get from input stream
+    .byt dcr | TOS
     .byt cpr | N2
     .byt bz, <(rlencode02-*-2)
-    .byt st | N2
+;different char
+    .byt inr | TOS              ; un-get from input stream
+    .byt dcr | N0
+;overflow/end of input
 rlencode04
     .byt ld | R9
     .byt sub | N3
-    .byt sti | N1   ; counter to output stream
-    .byt ld | N2
-    .byt sti | N1   ; new char to output stream
-    .byt ld | TOS
-    .byt bnz, <(rlencode01-*-2)
-rlencode05
+    .byt sti | N1               ; write count to output stream
+    .byt br, <(rlencode00-*-2)
+
+rlencode06
     .byt ld | N1
     .byt st | TOS
     .byt nxt
@@ -9153,196 +9164,6 @@ _blkplus
 
 ;--------------------------------------------------------------
 ;
-;       BLK@ ( n -- packet )
-;
-; Return the packet address of block n
-;
-;": blk@   ( n -- packet )
-;     -1 do 
-;         blkbuf 2- dup @
-;     loop
-;
-;": blk@   ( n -- packet )
-;     blkbuf 2-
-;     begin
-;         over 0>
-;     while
-;         dup @
-;         - swap 1- swap
-;     repeat
-;     swap drop ;
-;
-blkfetchlfa
-    .byt $de,$ad
-    .byt (_blkfetch-*-1)|bit7
-    .asc "BLK","@"|bit7
-_blkfetch
-#include "enter.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-blkfetch01
-    .word over
-#include "page.i65"
-    .word zgt
-#include "page.i65"
-    .word qbranch
-    .byt <(blkfetch02-*+1)
-#include "pad.i65"
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word oneminus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word branch
-    .byt <(blkfetch01-*+1)
-#include "pad.i65"
-blkfetch02
-    .word swap
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       UNPACKET ( packet -- blkbuf )
-;
-; Given the address of a packet (its size word, at the end)
-; this will unpack the packet to the block buffer and return
-; the address of the unpacked block
-;
-;": unpacket   ( packet -- blkbuf )
-;     >r                             ( ) ( R; packet )
-;     blkbuf dup dup b/buf blank     ( blkbuf blkbuf ) ( R; packet )
-;     r@ @ 2- r>                     ( blkbuf blkbuf srclen packet )
-;     over -                         ( blkbuf blkbuf srclen source )
-;     -rot                           ( blkbuf source blkbuf srclen )
-;     rldecode ;                     ( blkbuf )
-;
-unpacketlfa
-    .byt $de,$ad
-    .byt (_unpacket-*-1)|bit7
-    .asc "UNPACKE","T"|bit7
-_unpacket
-#include "enter.i65"
-    .word tor
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word _blank
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word _dashrot
-#include "page.i65"
-    .word rldecode
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       (BLOCK)   ( n -- addr flag )
-;
-; return the buffer address of block N. Create it if necessary.
-; flag is true if the block is new, false if it already exists
-;
-;": (block)   ( n -- addr )
-;     dup vmsiz @ <
-;     if                        ( block exists, get the packet addr )
-;         blk@
-;         false
-;     else                      ( block does not exist, create it )
-;         0 swap 1+ vmsiz @
-;         do
-;             drop blk+
-;         loop
-;         true
-;     then
-;     swap unpacket swap ;
-;
-;pblocklfa
-;    .byt $de,$ad
-;    .byt (_pblock-*-1)|bit7
-;    .asc "(BLOCK",")"|bit7
-_pblock
-#include "enter.i65"
-    .word dup
-#include "page.i65"
-    .word vmsiz
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word lt
-#include "page.i65"
-    .word qbranch           ; IF
-    .byt <(pblock01-*+1)
-#include "pad.i65"
-    .word _blkfetch
-#include "page.i65"
-    .word false
-#include "page.i65"
-    .word branch
-    .byt <(pblock03-*+1)
-#include "page.i65"
-pblock01                    ; ELSE
-    .word zero
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word vmsiz
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word pdo               ; DO
-#include "page.i65"
-pblock02
-    .word drop
-#include "page.i65"
-    .word _blkplus
-#include "page.i65"
-    .word ploop             ; LOOP
-    .byt <(pblock02-*+1)
-#include "pad.i65"
-    .word true
-#include "page.i65"
-pblock03                    ; THEN
-    .word swap
-#include "page.i65"
-    .word _unpacket
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
 ;       BLOCK   ( n -- addr )
 ;
 blocklfa
@@ -9354,130 +9175,6 @@ _block
     .word _pblock
 #include "page.i65"
     .word drop
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       MVVM   ( block newsize -- )
-;
-; move virtual memory between the bottom of the buffer (vmbuf @) 
-; and the bottom of the packet being replaced
-; e.g. if we're changing a 100 byte packet into a 300 byte packet,
-; all the packets below it in memory will have to move down 200 bytes
-; conversely, if we're changing a 300 byte packet into a 10 byte
-; packet, all packets below it have to move upward 290 bytes
-; The packet is presumed to exist
-;
-; vmbuf vmbuf+oldsize-newsize packet-oldsize+2-vmbuf cmove
-;
-;": mvvm   ( blk# newsize -- )
-;     swap (block) 0=           ( newsize packet packet-exists? )
-;     if                        ( newsize packet ; block exists )
-;         >r r@ @ >r            ( newsize ) ( R; packet oldsize )
-;         r@ swap -             ( oldsize-newsize ) ( R; packet oldsize )
-;         r> r>                 ( oldsize-newsize oldsize packet )
-;         swap - 2+             ( oldsize-newsize packet-oldsize+2 )
-;         vmbuf @ >r r@ -       ( oldsize-newsize packet-oldsize+2-vmbuf ) ( R; vmbuf )
-;         r@ +under r> -rot     ( vmbuf vmbuf+oldsize-newsize packet-oldsize+2-vmbuf )
-;         move             
-;     else
-;         8 fail                ( block out of range ) 
-;     then ;
-;
-mvvmlfa
-    .byt $de,$ad
-    .byt (_mvvm-*-1)|bit7
-    .asc "MVV","M"|bit7
-_mvvm
-#include "enter.i65"
-    .word swap
-#include "page.i65"
-    .word _pblock
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word qbranch
-    .byt <(mvvm03-*+1)
-#include "pad.i65"
-    .word tor
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word gt
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word _dashrot
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word qbranch
-    .byt <(mvvm01-*+1)
-#include "pad.i65"
-    .word cmove
-#include "page.i65"
-mvvm01
-    .word branch
-    .byt <(mvvm02-*+1)
-#include "pad.i65"
-    .word cmovegt
-#include "page.i65"
-mvvm02
-    .word branch
-    .byt <(mvvm04-*+1)
-#include "pad.i65"
-mvvm03
-    .word clit
-    .byt 8
-#include "pad.i65"
-    .word fail
-#include "page.i65"
-mvvm04
 #include "page.i65"
     .word exit
 
@@ -9586,7 +9283,52 @@ _cmenu
     .word 
 #include "page.i65"
 
+;--------------------------------------------------------------
+;
+;       EXPECT2   ( addr +n -- )
+;
+; A variant of EXPECT, this uses a phantom screen
+
+expect2lfa
+    .byt $de,$ad
+    .byt (expect2-*-1)|bit7
+    .asc "EXPECT","2"|bit7
+expect2
+    jmp expect2vector
+expect2vector
+    ldy #1
+    jsr locals
+    stx storex
+
+    lda #3      ; Screen = device 3
+    sta $af     ; DFLTN Default Input Device = screen
+    lda #$0
+    sta $c4     ; PNT pointer - current scren line address
+    sta $c6     ; PNTR cursor column on current line
+    lda #$7c
+    sta $c5     ; PNT
+    lda #39
+    sta $d5     ; LNMX physical screen line length
+
+    dey
+expect201
+    iny
+    cpy tos
+    bcs expect202
+    jsr CHRIN
+    cmp #$0d
+    beq expect202
+    sta (n),y
+    bne expect201
+expect202
+    tya
+    ldy span+3
+    sta (up),y
+    iny
+    lda #0
+    sta (up),y
+    ldx storex
+    jmp pops
 
 #include "editor.a65"
-
 endofile

@@ -532,6 +532,322 @@ pastefrom04                     ; THEN
 
 ;--------------------------------------------------------------
 ;
+;       PKT@ ( n -- packet )
+;
+; Return the packet address of block n
+;
+;": pkt@   ( n -- packet )
+;     -1 do 
+;         blkbuf 2- dup @
+;     loop
+;
+;": pkt@   ( n -- packet )
+;     blkbuf 2-
+;     begin
+;         over 0>
+;     while
+;         dup @
+;         - swap 1- swap
+;     repeat
+;     swap drop ;
+;
+pkgfetchlfa
+    .byt $de,$ad
+    .byt (_pktfetch-*-1)|bit7
+    .asc "PKT","@"|bit7
+_pktfetch
+#include "enter.i65"
+    .word xyzzy
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+pktfetch01
+    .word over
+#include "page.i65"
+    .word zgt
+#include "page.i65"
+    .word qbranch
+    .byt <(pktfetch02-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word branch
+    .byt <(pktfetch01-*+1)
+#include "pad.i65"
+pktfetch02
+    .word swap
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       UNPKT ( packet -- blkbuf )
+;
+; Given the address of a packet (its size word, at the end)
+; this will unpack the packet to the block buffer and return
+; the address of the unpacked block
+;
+;": unpkt   ( packet -- blkbuf )
+;     >r                             ( ) ( R; packet )
+;     blkbuf dup dup b/buf blank     ( blkbuf blkbuf ) ( R; packet )
+;     r@ @ 2- r>                     ( blkbuf blkbuf srclen packet )
+;     over -                         ( blkbuf blkbuf srclen source )
+;     -rot                           ( blkbuf source blkbuf srclen )
+;     rldecode ;                     ( blkbuf )
+;
+unpktlfa
+    .byt $de,$ad
+    .byt (_unpkt-*-1)|bit7
+    .asc "UNPK","T"|bit7
+_unpkt
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word _blank
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _dashrot
+#include "page.i65"
+    .word rldecode
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       (BLOCK)   ( n -- addr flag )
+;
+; return the buffer address of block N. Create it if necessary.
+; flag is true if the block is new, false if it already exists
+;
+;": (block)   ( n -- addr )
+;     dup vmsiz @ <
+;     if                        ( block exists, get the packet addr )
+;         blk@
+;         false
+;     else                      ( block does not exist, create it )
+;         0 swap 1+ vmsiz @
+;         do
+;             drop blk+
+;         loop
+;         true
+;     then
+;     swap unpacket swap ;
+;
+;pblocklfa
+;    .byt $de,$ad
+;    .byt (_pblock-*-1)|bit7
+;    .asc "(BLOCK",")"|bit7
+_pblock
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word vmsiz
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word lt
+#include "page.i65"
+    .word qbranch           ; IF
+    .byt <(pblock01-*+1)
+#include "pad.i65"
+    .word _pktfetch
+#include "page.i65"
+    .word false
+#include "page.i65"
+    .word branch
+    .byt <(pblock03-*+1)
+#include "page.i65"
+pblock01                    ; ELSE
+    .word zero
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word vmsiz
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word pdo               ; DO
+#include "page.i65"
+pblock02
+    .word drop
+#include "page.i65"
+    .word _blkplus
+#include "page.i65"
+    .word ploop             ; LOOP
+    .byt <(pblock02-*+1)
+#include "pad.i65"
+    .word true
+#include "page.i65"
+pblock03                    ; THEN
+    .word swap
+#include "page.i65"
+    .word _unpkt
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       MVVM   ( block newsize -- )
+;
+; move virtual memory between the bottom of the buffer (vmbuf @) 
+; and the bottom of the packet being replaced
+; e.g. if we're changing a 100 byte packet into a 300 byte packet,
+; all the packets below it in memory will have to move down 200 bytes
+; conversely, if we're changing a 300 byte packet into a 10 byte
+; packet, all packets below it have to move upward 290 bytes
+; The packet is presumed to exist
+;
+; vmbuf vmbuf+oldsize-newsize packet-oldsize+2-vmbuf cmove
+;
+;": mvvm   ( blk# newsize -- )
+;     swap (block) 0=           ( newsize packet packet-exists? )
+;     if                        ( newsize packet ; block exists )
+;         >r r@ @ >r            ( newsize ) ( R; packet oldsize )
+;         r@ swap -             ( oldsize-newsize ) ( R; packet oldsize )
+;         r> r>                 ( oldsize-newsize oldsize packet )
+;         swap - 2+             ( oldsize-newsize packet-oldsize+2 )
+;         vmbuf @ >r r@ -       ( oldsize-newsize packet-oldsize+2-vmbuf ) ( R; vmbuf )
+;         r@ +under r> -rot     ( vmbuf vmbuf+oldsize-newsize packet-oldsize+2-vmbuf )
+;         move             
+;     else
+;         8 fail                ( block out of range ) 
+;     then ;
+;
+mvvmlfa
+    .byt $de,$ad
+    .byt (_mvvm-*-1)|bit7
+    .asc "MVV","M"|bit7
+_mvvm
+#include "enter.i65"
+    .word swap
+#include "page.i65"
+    .word _pblock
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word qbranch
+    .byt <(mvvm03-*+1)
+#include "pad.i65"
+    .word tor
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word gt
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _dashrot
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word qbranch
+    .byt <(mvvm01-*+1)
+#include "pad.i65"
+    .word cmove
+#include "page.i65"
+mvvm01
+    .word branch
+    .byt <(mvvm02-*+1)
+#include "pad.i65"
+    .word cmovegt
+#include "page.i65"
+mvvm02
+    .word branch
+    .byt <(mvvm04-*+1)
+#include "pad.i65"
+mvvm03
+    .word clit
+    .byt 8
+#include "pad.i65"
+    .word fail
+#include "page.i65"
+mvvm04
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;       EDITCOPY   ( -- )
 ;
 ; STOP-C   Copy current line to end of paste buffer
@@ -753,8 +1069,6 @@ editnowrap01
 ;    .asc "EDITTOPSC","R"|bit7
 edittopscr
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -769,8 +1083,6 @@ edittopscr
 ;    .asc "EDITNEXTSC","R"|bit7
 editnextscr
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -785,8 +1097,6 @@ editprevscrlfa
     .asc "EDITPREVSC","R"|bit7
 editprevscr
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -801,8 +1111,6 @@ editprevscr
 ;    .asc "EDITQUI","T"|bit7
 _editquit
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word scr
 #include "page.i65"
     .word fetch
@@ -833,8 +1141,6 @@ _editquit
 ;    .asc "EDITINDE","X"|bit7
 editindex
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -849,8 +1155,6 @@ editindex
 ;    .asc "EDITSAV","E"|bit7
 editsave
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -870,8 +1174,6 @@ _editload
     .asc    CLR,"LOADING"
 editload02
 #include "pad.i65"
-    .word xyzzy
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -900,8 +1202,6 @@ editrestorelfa
     .asc "EDITRESTOR","E"|bit7
 editrestore
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -916,8 +1216,6 @@ editrestore
 ;    .asc "EDITDELSC","R"|bit7
 editdelscr
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -932,8 +1230,6 @@ editdelscr
 ;    .asc "EDITINSSC","R"|bit7
 editinsscr
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1088,8 +1384,6 @@ scrwritequery
 ;    .asc "SCR","@"|bit7
 _scrfetch
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word dup
 #include "page.i65"
     .word scr
@@ -1180,7 +1474,7 @@ scrfetch03
 ;    .asc "SCRDE","L"|bit7
 _scrdel
 #include "enter.i65"
-    .word _blkfetch
+    .word _pktfetch
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -1212,6 +1506,81 @@ _scrdel
 
 ;--------------------------------------------------------------
 ;
+;       MKPKT ( blkbuf -- size )
+;
+; Create a new packet at BLKBUF from the current video screen.
+; The first three bytes of the packet are the linewrap bits for
+; lines 1..24.  This is followed by RLE-encoded screen codes,
+; and the last two bytes of the packet is the total size.
+;
+;": mkpkt   ( blkbuf -- size )
+;     25 wrapabove                  ( blkbuf d )
+;     rot dup >r                    ( d blkbuf ) ( R; blkbuf )
+;     dup 3 + >r                    ( d blkbuf ) ( R; blkbuf blkbuf+3 )
+;     3c!                           ( ) ( R; blkbuf blkbuf+3 )
+;     vidram b/scr -trailing        ( vidram nonblanksiz ) ( R; blkbuf blkbuf+3 )
+;     r> swap                       ( vidram blkbuf+3 nonblanksiz ) ( R; blkbuf )
+;     rlencode                      ( targend ) ( R; blkbuf )
+;     dup 2+ r>                     ( targend targend+2 blkbuf )
+;     - dup rot ! ;                 ( size )
+;
+mkpktlfa
+    .byt $de,$ad
+    .byt (_mkpkt-*-1)|bit7
+    .asc "MKPK","T"|bit7
+_mkpkt
+#include "enter.i65"
+    .word clit
+    .byt 25
+#include "pad.i65"
+    .word wrapabove
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word bperscr
+#include "page.i65"
+    .word _dashtrailing
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word rlencode
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word minus             ; ( addr size )
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;       SCRINS   ( scr -- )
 ;
 ; insert the current screen into the packet buffer.
@@ -1233,7 +1602,7 @@ _scrdel
 ;    .byt $de,$ad
 ;    .byt (_scrins-*-1)|bit7
 ;    .asc "SCRIN","S"|bit7
-_scrins
+;_scrins
 #include "enter.i65"
     .word clit
     .byt 25
@@ -1271,7 +1640,7 @@ _scrins
 #include "page.i65"
     .word tor
 #include "page.i65"
-    .word _blkfetch
+    .word _pktfetch
 #include "page.i65"
     .word vmbuf
 #include "page.i65"
@@ -1284,8 +1653,6 @@ _scrins
     .word minus
 #include "page.i65"
     .word rfetch
-#include "page.i65"
-    .word xyzzy
 #include "page.i65"
     .word cmovegt
 #include "page.i65"
@@ -1317,26 +1684,87 @@ _scrins
 
 ;--------------------------------------------------------------
 ;
+;       (SCR!)   ( pkt blkbuf newsize oldsize vmbuf -- blkbuf pkt-newsize+2 newsize vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf+2 )
+;
+; Uses Sweet16 to take a lot of the ridiculousness out of the 
+; pointer math involved in juggling packets in the buffer.
+; This sets up for two MOVE operations.  The first move opens
+; a hole correctly sized for the replacement packet.  The new
+; packet is then moved into the hole.
+;
+;pscrstorelfa
+;    .byt $de,$ad
+;    .byt (pscrstore-*-1)|bit7
+;    .asc "(SCR!",")"|bit7
+pscrstore
+    ldy #4
+    jsr locals    ; TOS = vmbuf; N0 = pkt; N1 = blkbuf; N2 = newsize; N3 = oldsize
+    brk
+    .byt ld | TOS
+    .byt st | R9                ; vmbuf -> R9
+    .byt ld | N1
+    .byt st | TOS               ; blkbuf
+    .byt push
+    .byt ldd | N0               ; pkt += 2
+    .byt ld | N0
+    .byt sub | N2
+    .byt st | TOS               ; pkt-newsize+2
+    .byt push
+    .byt ld | N2
+    .byt st | TOS               ; newsize
+    .byt push                   
+    .byt ld | R9
+    .byt st | TOS               ; vmbuf
+    .byt push
+    .byt add | N3
+    .byt sub | N2
+    .byt st | TOS               ; vmbuf+oldsize-newsize
+    .byt push
+    .byt ld | N0
+    .byt sub | N3
+    .byt sub | R9
+    .byt st | TOS               ; pkt-oldsize-vmbuf+2
+    .byt nxt
+    
+;--------------------------------------------------------------
+;
 ;       SCR!   ( scr -- )
 ;
-; store the current screen in the block buffer.
+; store the current screen in the block buffer.  It invokes a
+; helper word to set up the pointers, then does two moves
 ;
 ;": scr!   ( scr -- )
-;     dup scrdel scrins ;
+;     pkt@ blkbuf 2dup            ( pkt blkbuf pkt blkbuf )
+;     mkpkt swap @ vmbuf @        ( pkt blkbuf newsize oldsize vmbuf )
+;     (scr!) move move ;
 ;
-;scrstorelfa
-;    .byt $de,$ad
-;    .byt (_scrstore-*-1)|bit7
-;    .asc "SCR","!"|bit7
+scrstorelfa
+    .byt $de,$ad
+    .byt (_scrstore-*-1)|bit7
+    .asc "SCR","!"|bit7
 _scrstore
 #include "enter.i65"
-    .word dup
+    .word _pktfetch
 #include "page.i65"
-    .word _scrdel
+    .word _blkbuf
 #include "page.i65"
-    .word drop
+    .word _twodup
 #include "page.i65"
-    .word _scrins
+    .word _mkpkt
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word pscrstore
+#include "page.i65"
+    .word _move
+#include "page.i65"
+    .word _move
 #include "page.i65"
     .word exit
 
@@ -1477,8 +1905,6 @@ editlfa
     .asc "EDI","T"|bit7
 _edit
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word _editinit
 #include "page.i65"
 edit00              ; reentry to editor here
