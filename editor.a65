@@ -186,10 +186,6 @@ loglineplus02
 ; screen lines, stored as a length (40|80) followed by that many
 ; screen codes.  Each record is 41 or 81 bytes long.
 ;
-;pastelfa
-;    .byt $de,$ad
-;    .byt (paste-*-1)|bit7
-;    .asc "PAST","E"|bit7
 ;": paste
 ;    pad                     ( pad )
 ;    begin
@@ -199,82 +195,101 @@ loglineplus02
 ;    while                   ( addr len )
 ;        +                   ( len+addr )
 ;        1+                  ( newaddr )
-;    repeat                  ( addr )
+;    repeat ; [19]           ( addr )
 ;
+pastelfa
+    .byt $de,$ad
+    .byt (_paste-*-1)|bit7
+    .asc "PAST","E"|bit7
 _paste
 #include "enter.i65"
     .word _pad
 #include "page.i65"
-paste01                                 ; BEGIN
-    .word dup
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word qdup
-#include "page.i65"
-    .word qbranch                       ; WHILE
-    .byt <(paste02-*+1)
-#include "pad.i65"
-    .word plus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word branch                        ; REPEAT
-    .byt <(paste01-*+1)
-#include "pad.i65"
+    .word to6502
+    brk
+paste01
+    .byt ldi | TOS
+    .byt bz , <(paste02-*-2)
+    .byt add | TOS
+    .byt st | TOS
+    .byt br , <(paste01-*-2)
 paste02
-    .word exit
+    .byt nxt    ; [16]
 
 ;--------------------------------------------------------------
 ;
-;       >PASTE   ( paste screen 40|80 -- paste+ screen+ )
+;       (>PASTE)   ( paste screen 40|80 -- paste+len+1 screen+len screen paste+1 len )
 ;
-; append the line on the screen to the paste buffer 
+; set up the stack to append the line on the screen to the paste buffer with cmove
 ;
-;": >paste
+;": (>paste)
 ;     >r swap r@ over c!   ( screen paste ; 40|80 )
 ;     1+ 2dup r@ cmove   ( screen paste+1 ) 
-;     r@ + dup off swap r> + ;
+;     r@ + dup off swap r> + ; [37]
 ;
-;topastelfa
+;
+;ptopastelfa
 ;    .byt $de,$ad
-;    .byt (_topaste-*-1)|bit7
-;    .asc ">PAST","E"|bit7
-_topaste
-#include "enter.i65"
-    .word tor
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word _twodup
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word exit
+;    .byt (ptopaste-*-1)|bit7
+;    .asc "(>PASTE",")"|bit7
+;_ptopaste
+;#include "enter.i65"
+;    .word tor
+;#include "page.i65"
+;    .word swap
+;#include "page.i65"
+;    .word rfetch
+;#include "page.i65"
+;    .word over
+;#include "page.i65"
+;    .word cstore
+;#include "page.i65"
+;    .word oneplus
+;#include "page.i65"
+;    .word _twodup
+;#include "page.i65"
+;    .word rfetch
+;#include "page.i65"
+;    .word cmove
+;#include "page.i65"
+;    .word rfetch
+;#include "page.i65"
+;    .word plus
+;#include "page.i65"
+;    .word dup
+;#include "page.i65"
+;    .word off
+;#include "page.i65"
+;    .word swap
+;#include "page.i65"
+;    .word rfrom
+;#include "page.i65"
+;    .word plus
+;#include "page.i65"
+;    .word exit
+;
+ptopaste
+    ldy #2
+    jsr locals
+    brk                         ; TOS = len; N0 = paste; N1 = screen
+    .byt ld | TOS
+    .byt sti | N0               ; len paste c! paste 1+!
+    .byt st | N2                ; copy of len
+    .byt add | N0
+    .byt st | TOS               ; paste+len+1
+    .byt st | N3
+    .byt sub | R0
+    .byt std | N3               ; off
+    .byt ld | N1
+    .byt add | N2
+    .byt push                   ; screen+len
+    .byt ld | N1
+    .byt push                   ; screen
+    .byt ld | N0
+    .byt push                   ; paste+1
+    .byt ld | N2
+    .byt push                   ; len
+    .byt nxt                    ; [27]
 
 ;--------------------------------------------------------------
 ;
@@ -314,7 +329,9 @@ eostopaste01                    ; BEGIN
 #include "page.i65"
     .word lineinfo
 #include "page.i65"
-    .word _topaste
+    .word ptopaste              ; ( paste+ screen+ screen paste+1 len )
+#include "page.i65"
+    .word cmove
 #include "page.i65"
     .word drop
 #include "page.i65"
@@ -595,6 +612,52 @@ pktfetch02
 
 ;--------------------------------------------------------------
 ;
+;       PKT+ (  -- packet )
+;
+; Append a new packet to the bottom of vmbuf, return its address
+;
+;": pkt+   ( -- packet )
+;     vmbuf @ 14 2dup 2dup - tuck   ( vmbuf 14 vmbuf vmbuf-14 14 vmbuf-14 )
+;     vmbuf !  erase  !             ( vmbuf )
+;     vmsiz 1+! ;                   ( vmbuf )
+;
+pktpluslfa
+    .byt $de,$ad
+    .byt (_pktplus-*-1)|bit7
+    .asc "PKT","+"|bit7
+_pktplus
+#include "enter.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word clit
+    .byt 14
+#include "pad.i65"
+    .word _twodup
+#include "page.i65"
+    .word _twodup
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _tuck
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word _erase
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word vmsiz
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;       UNPKT ( packet -- blkbuf )
 ;
 ; Given the address of a packet (its size word, at the end)
@@ -660,11 +723,11 @@ _unpkt
 ;     else                      ( block does not exist, create it )
 ;         0 swap 1+ vmsiz @
 ;         do
-;             drop blk+
+;             drop pkt+
 ;         loop
 ;         true
 ;     then
-;     swap unpacket swap ;
+;     swap unpkt swap ;
 ;
 ;pblocklfa
 ;    .byt $de,$ad
@@ -706,7 +769,7 @@ pblock01                    ; ELSE
 pblock02
     .word drop
 #include "page.i65"
-    .word _blkplus
+    .word _pktplus
 #include "page.i65"
     .word ploop             ; LOOP
     .byt <(pblock02-*+1)
@@ -724,125 +787,82 @@ pblock03                    ; THEN
 
 ;--------------------------------------------------------------
 ;
-;       MVVM   ( block newsize -- )
+;       (SCR!)   ( pkt blkbuf newsize oldsize vmbuf -- blkbuf pkt-newsize+2 newsize vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf+2 )
 ;
-; move virtual memory between the bottom of the buffer (vmbuf @) 
-; and the bottom of the packet being replaced
-; e.g. if we're changing a 100 byte packet into a 300 byte packet,
-; all the packets below it in memory will have to move down 200 bytes
-; conversely, if we're changing a 300 byte packet into a 10 byte
-; packet, all packets below it have to move upward 290 bytes
-; The packet is presumed to exist
+; Uses Sweet16 to take a lot of the ridiculousness out of the 
+; pointer math involved in juggling packets in the buffer.
+; This sets up for two MOVE operations.  The first move opens
+; a hole correctly sized for the replacement packet.  The new
+; packet is then moved into the hole.
 ;
-; vmbuf vmbuf+oldsize-newsize packet-oldsize+2-vmbuf cmove
+;pscrstorelfa
+;    .byt $de,$ad
+;    .byt (pscrstore-*-1)|bit7
+;    .asc "(SCR!",")"|bit7
+pscrstore
+    ldy #4
+    jsr locals    ; TOS = vmbuf; N0 = pkt; N1 = blkbuf; N2 = newsize; N3 = oldsize
+    brk
+    .byt ld | TOS
+    .byt st | R9                ; vmbuf -> R9
+    .byt ld | N1
+    .byt st | TOS               ; blkbuf
+    .byt ldd | N0               ; pkt += 2
+    .byt ld | N0
+    .byt sub | N2
+    .byt push                   ; pkt-newsize+2
+    .byt ld | N2
+    .byt push                   ; newsize               
+    .byt ld | R9
+    .byt push                   ; vmbuf
+    .byt add | N3
+    .byt sub | N2
+    .byt push                   ; vmbuf+oldsize-newsize
+    .byt ld | N0
+    .byt sub | N3
+    .byt sub | R9
+    .byt push                   ; pkt-oldsize-vmbuf+2
+    .byt nxt
+    
+;--------------------------------------------------------------
 ;
-;": mvvm   ( blk# newsize -- )
-;     swap (block) 0=           ( newsize packet packet-exists? )
-;     if                        ( newsize packet ; block exists )
-;         >r r@ @ >r            ( newsize ) ( R; packet oldsize )
-;         r@ swap -             ( oldsize-newsize ) ( R; packet oldsize )
-;         r> r>                 ( oldsize-newsize oldsize packet )
-;         swap - 2+             ( oldsize-newsize packet-oldsize+2 )
-;         vmbuf @ >r r@ -       ( oldsize-newsize packet-oldsize+2-vmbuf ) ( R; vmbuf )
-;         r@ +under r> -rot     ( vmbuf vmbuf+oldsize-newsize packet-oldsize+2-vmbuf )
-;         move             
-;     else
-;         8 fail                ( block out of range ) 
-;     then ;
+;       SCR!   ( scr -- )
 ;
-mvvmlfa
+; store the current screen in the block buffer.  It invokes a
+; helper word to set up the pointers, then does two moves
+;
+;": scr!   ( scr -- )
+;     pkt@ blkbuf 2dup            ( pkt blkbuf pkt blkbuf )
+;     mkpkt swap @ vmbuf @        ( pkt blkbuf newsize oldsize vmbuf )
+;     (scr!) move move ;
+;
+scrstorelfa
     .byt $de,$ad
-    .byt (_mvvm-*-1)|bit7
-    .asc "MVV","M"|bit7
-_mvvm
+    .byt (_scrstore-*-1)|bit7
+    .asc "SCR","!"|bit7
+_scrstore
 #include "enter.i65"
+    .word _pktfetch
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word _twodup
+#include "page.i65"
+    .word _mkpkt
+#include "page.i65"
     .word swap
-#include "page.i65"
-    .word _pblock
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word qbranch
-    .byt <(mvvm03-*+1)
-#include "pad.i65"
-    .word tor
-#include "page.i65"
-    .word rfetch
 #include "page.i65"
     .word fetch
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word twoplus
 #include "page.i65"
     .word vmbuf
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word tor
+    .word pscrstore
 #include "page.i65"
-    .word rfetch
+    .word _move
 #include "page.i65"
-    .word minus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word gt
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word _dashrot
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word qbranch
-    .byt <(mvvm01-*+1)
-#include "pad.i65"
-    .word cmove
-#include "page.i65"
-mvvm01
-    .word branch
-    .byt <(mvvm02-*+1)
-#include "pad.i65"
-    .word cmovegt
-#include "page.i65"
-mvvm02
-    .word branch
-    .byt <(mvvm04-*+1)
-#include "pad.i65"
-mvvm03
-    .word clit
-    .byt 8
-#include "pad.i65"
-    .word fail
-#include "page.i65"
-mvvm04
+    .word _move
 #include "page.i65"
     .word exit
 
@@ -867,7 +887,9 @@ _editcopy
 #include "page.i65"
     .word lineinfo          ; ( paste screen 40|80 )
 #include "page.i65"
-    .word _topaste          ; ( paste+ screen+ )
+    .word ptopaste          ; ( paste+ screen+ screen paste+1 len )
+#include "page.i65"
+    .word cmove
 #include "page.i65"
     .word twodrop          ; ( )
 #include "page.i65"
@@ -1679,87 +1701,6 @@ _mkpkt
     .word vmsiz
 #include "page.i65"
     .word oneplusstore
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       (SCR!)   ( pkt blkbuf newsize oldsize vmbuf -- blkbuf pkt-newsize+2 newsize vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf+2 )
-;
-; Uses Sweet16 to take a lot of the ridiculousness out of the 
-; pointer math involved in juggling packets in the buffer.
-; This sets up for two MOVE operations.  The first move opens
-; a hole correctly sized for the replacement packet.  The new
-; packet is then moved into the hole.
-;
-;pscrstorelfa
-;    .byt $de,$ad
-;    .byt (pscrstore-*-1)|bit7
-;    .asc "(SCR!",")"|bit7
-pscrstore
-    ldy #4
-    jsr locals    ; TOS = vmbuf; N0 = pkt; N1 = blkbuf; N2 = newsize; N3 = oldsize
-    brk
-    .byt ld | TOS
-    .byt st | R9                ; vmbuf -> R9
-    .byt ld | N1
-    .byt st | TOS               ; blkbuf
-    .byt ldd | N0               ; pkt += 2
-    .byt ld | N0
-    .byt sub | N2
-    .byt push                   ; pkt-newsize+2
-    .byt ld | N2
-    .byt push                   ; newsize               
-    .byt ld | R9
-    .byt push                   ; vmbuf
-    .byt add | N3
-    .byt sub | N2
-    .byt push                   ; vmbuf+oldsize-newsize
-    .byt ld | N0
-    .byt sub | N3
-    .byt sub | R9
-    .byt push                   ; pkt-oldsize-vmbuf+2
-    .byt nxt
-    
-;--------------------------------------------------------------
-;
-;       SCR!   ( scr -- )
-;
-; store the current screen in the block buffer.  It invokes a
-; helper word to set up the pointers, then does two moves
-;
-;": scr!   ( scr -- )
-;     pkt@ blkbuf 2dup            ( pkt blkbuf pkt blkbuf )
-;     mkpkt swap @ vmbuf @        ( pkt blkbuf newsize oldsize vmbuf )
-;     (scr!) move move ;
-;
-scrstorelfa
-    .byt $de,$ad
-    .byt (_scrstore-*-1)|bit7
-    .asc "SCR","!"|bit7
-_scrstore
-#include "enter.i65"
-    .word _pktfetch
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word _twodup
-#include "page.i65"
-    .word _mkpkt
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word pscrstore
-#include "page.i65"
-    .word _move
-#include "page.i65"
-    .word _move
 #include "page.i65"
     .word exit
 
