@@ -39,20 +39,20 @@ wrapabove03
 
 ;--------------------------------------------------------------
 ;
-;       WRAPFILL   ( d 40|80 -- d flag )
+;       WRAP+   ( d 40|80 -- d flag )
 ;
 ; Shift and append one or two bits to the double.  Return nonzero
 ; once 25 bits have been stored.  40 = <<,1; 80 = <<,1 <<,0
 ;
-;wrapfilllfa
+;wrappluslfa
 ;    .byt $de,$ad
-;    .byt (wrapfill-*-1)|bit7
-;    .asc "WRAPFIL","L"|bit7
-wrapfill
+;    .byt (wrapplus-*-1)|bit7
+;    .asc "WRAP","+"|bit7
+wrapplus
     sec             ; always shift in a 1
-wrapfill01
+wrapplus01
     ldy stackh,x
-    bne wrapfill03
+    bne wrapplus03
     rol stackl+1,x  ; shift in a single bit
     rol stackh+1,x
     rol stackl,x
@@ -60,8 +60,8 @@ wrapfill01
     lda #40
     cmp tos
     sta tos         ; so we only do this once
-    bcc wrapfill01  ; maybe shift in a 0 (if 80-column)
-wrapfill03
+    bcc wrapplus01  ; maybe shift in a 0 (if 80-column)
+wrapplus03
     ldy stackh,x
     tya
     jmp put
@@ -345,6 +345,61 @@ eostopaste02
 #include "page.i65"
     .word exit
 
+;--------------------------------------------------------------
+;
+;       WRAPPASTE   ( -- dwrap )
+;
+; Leave a double of screenwrap bits on the stack, treating the
+; current cursor position as the target of a paste (above from
+; linewrap table $E0-F8, at and below from paste buffer)
+;
+;": wrappaste   ( -- dwrap )
+;     wrapabove   ( dwrap )
+;     pad >r
+;     begin
+;         r@ c@ dup   ( dwrap len len )
+;         r> + 1+ >r
+;     while
+;         wrap+
+;     repeat
+;     r> drop ;   ( d )
+;
+#include "enter.i65"
+    .word wrapabove
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word tor
+#include "page.i65"
+wrappaste01
+    .word rfetch
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word qbranch
+    .byt <(wrappaste02-*+1)
+#include "pad.i65"
+    .word wrapplus
+#include "page.i65"
+    .word branch
+    .byt <(wrappaste01-*+1)
+#include "pad.i65"
+wrappaste02
+    .word rfrom
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -525,7 +580,7 @@ pastefrom03
 #include "page.i65"
     .word cmove                 ; ( d len ) ( R; flagab screen' paste' )
 #include "page.i65"
-    .word wrapfill              ; ( d flagc ) ( R; flagab screen' paste' )
+    .word wrapplus              ; ( d flagc ) ( R; flagab screen' paste' )
 #include "page.i65"
     .word rfrom                 ; ( d flagc paste' ) ( R; flagab screen' )
 #include "page.i65"
@@ -1439,7 +1494,7 @@ editdel01                       ; BEGIN
     .word clit
     .byt 40
 #include "pad.i65"
-    .word wrapfill
+    .word wrapplus
 #include "page.i65"
     .word qbranch
     .byt <(editdel01-*+1)       ; UNTIL
