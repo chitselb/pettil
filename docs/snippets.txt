@@ -715,3 +715,312 @@ r> drop ;   ( d )
 code smell goto spaghetti
 wrestling with the notion of standards
 steampunk
+
+
+
+block exists?
+if
+    pkt@
+else
+    begin
+        pkt+
+        1-
+        0=
+    until
+    
+: (block)   ( blk -- addr new? )
+    vmsize @ over -
+                                ( blk vmsize-blk )
+    dup 0>
+                                ( blk vmsize-blk exists? )
+    dup >r
+                                ( blk vmsize-blk exists? ) ( R; exists? )
+    if
+                                ( blk vmsize-blk ) ( R; exists? )
+        drop pkt@
+                                ( pkt ) ( R; exists? )
+    else
+                                ( blk vmsize-blk ) ( R; exists? )
+        begin
+            swap
+                                ( vmsize-blk blk ) ( R; exists? )
+            drop
+                                ( vmsize-blk ) ( R; exists? )
+            1-
+                                ( vmsize-blk-1 ) ( R; exists? )
+            pkt+
+                                ( vmsize-blk-1 pkt ) ( R; exists? )
+            swap dup
+                                ( pkt vmsize-blk-1 vmsize-blk-1 ) ( R; exists? )
+            0<
+                                ( pkt vmsize-blk-1 done? ) ( R; exists? )
+        until
+                                ( pkt vmsize-blk-1 ) ( R; exists? )
+        drop
+                                ( pkt ) ( R; exists? )
+    then
+    r> ;
+
+: pkt+   ( flag -- packet )
+                                ( flag )
+    >r vmbuf @ 14 r@
+                                ( vmbuf 14 flag ) ( R; flag )
+    if
+                                ( vmbuf 14 ) ( R; flag )
+        drop 5
+                                ( vmbuf 5 ) ( R; flag )
+    then
+                                ( vmbuf 5 ) ( R; flag )
+        2dup 2dup 2dup - over
+; clear packet
+                                ( vmbuf 5 vmbuf 5 vmbuf 5 vmbuf-5 5 )
+        erase
+; set packet length
+                                ( vmbuf 5 vmbuf 5 vmbuf 5 )
+        VIDRAM r@ and or swap
+                                ( vmbuf 5 vmbuf 5 VIDRAM|5 vmbuf )
+        !
+; copy flag to first 3 bytes of packet
+                                ( vmbuf 5 vmbuf 5 )
+        - r@ tuck over ! 1+ !
+; packet address
+                                ( vmbuf 5 )
+        drop
+                                ( vmbuf )
+; increment packet counter
+    vmsiz 1+! ;
+
+
+: (block)   ( blk -- addr new? )
+    vmsize @ over -
+                                ( blk vmsize-blk )
+    dup 0>
+                                ( blk vmsize-blk exists? )
+    rfetch usingeditor =
+                                ( blk vmsize-blk exists? editor? )
+    over >r >r
+                                ( blk vmsize-blk exists? ) ( R; exists? editor? )
+    if
+                                ( blk vmsize-blk exists? ) ( R; exists? editor? )
+        drop pkt@
+
+    else
+
+        begin
+            swap
+
+            drop
+
+            1-
+
+            pkt+
+
+            swap dup
+
+            0<
+
+        until
+
+        drop
+
+    then
+    unpkt r> ;
+
+;--------------------------------------------------------------
+;
+;       UNPKT ( packet -- blkbuf )
+;
+; Given the address of a packet (its size word, at the end)
+; this will unpack the packet to the block buffer and return
+; the address of the unpacked block
+;
+: unpkt   ( packet -- blkbuf )
+    >r
+                                ( ) ( R; packet )
+    blkbuf dup 
+                                ( blkbuf blkbuf ) ( R; packet )
+    dup b/buf blank             ( blank the buffer )
+                                ( blkbuf blkbuf ) ( R; packet )
+    r@ @ dup 0<
+                                ( blkbuf blkbuf pkthead flag ) ( R; packet )
+    if
+                                ( blkbuf blkbuf pkthead ) ( R; packet )
+        r@ vidram rot xor
+                                ( blkbuf blkbuf packet pktlen ) ( R; packet )
+        2- 
+                                ( blkbuf blkbuf packet pktlen-2 ) ( R; packet )
+        2dup -
+                                ( blkbuf blkbuf packet pktlen-2 source-3 ) ( R; packet )
+        3c@ wrap!
+                                ( blkbuf blkbuf packet pktlen-2  ) ( R; packet )
+        1- -
+                                ( blkbuf blkbuf packet-pktlen+3  ) ( R; packet )
+
+                                ( blkbuf blkbuf packet-pktlen+2 dwrap ) ( R; packet )
+         wrap! 3 +
+                                ( blkbuf blkbuf packet-pktlen+5 ) ( R; packet )
+    then
+
+    over -
+                                ( blkbuf blkbuf srclen source )
+    -rot                           
+                                ( blkbuf source blkbuf srclen )
+    rldecode ;               
+                                ( blkbuf )
+
+
+
+
+: (block)   ( blk -- addr exists? )
+    vmsize @ over -
+                                ( blk vmsize-blk )
+    dup 0>
+                                ( blk vmsize-blk exists? )
+    dup >r
+                                ( blk vmsize-blk exists? ) ( R; exists? )
+    if
+                                ( blk vmsize-blk ) ( R; exists? editor? )
+        drop pkt@
+                                ( pkt ) ( R; exists? editor? )
+    else
+                                ( blk vmsize-blk ) ( R; exists? editor? )
+        rfetch usingeditor =
+        
+        begin
+            swap drop 1+
+                                ( vmsize-blk+1 ) ( R; exists? editor? )
+            r@ pkt+
+                                ( vmsize-blk+1 packet ) ( R; exists? editor? )
+            swap dup 0>
+
+        until
+
+        drop
+
+    then
+    unpkt r> drop r> ;
+
+
+
+
+
+
+;--------------------------------------------------------------
+;
+;       (BLOCK)   ( blk -- blkbuf )
+;
+; return the buffer address of block N. Create it if necessary.
+; flag is true if the block is new, false if it already exists
+;
+; *** TRICK ALERT ***
+; Uses the address on the return stack to determine if the caller 
+; was the screen editor.  Then does an OR with $8000 (VIDRAM)
+; on the packet length, setting the "editable" flag on the block.
+;
+; Any other caller creates a data block.
+;
+: (block)   ( blk -- blkbuf )
+    vmsize @ over -
+                                ( blk vmsize-blk )
+    dup 0>
+                                ( blk vmsize-blk exists? )
+    if
+                                ( blk vmsize-blk )
+        drop pkt@
+                                ( packet )
+    else
+                                ( blk vmsize-blk )
+        r@ usingeditor = >r
+                                ( blk vmsize-blk ) ( R; editor? )
+        begin
+            swap drop 1+ r@
+                                ( vmsize-blk+ editor? ) ( R; editor? )
+            pkt+
+                                ( vmsize-blk+ packet ) ( R; editor? )
+            swap dup 0>
+                                ( packet vmsize-blk+ enough? ) ( R; editor? )
+        until
+                                ( packet vmsize-blk+ ) ( R; editor? )
+        r> 2drop
+                                ( packet )
+    then
+                                ( packet )
+    unpkt ; 
+                                ( blkbuf )
+
+
+
+
+get the packet length/flags
+set editable
+if it's editable, copy the three linewrap bytes to blkbuf and add 3 to "to"/"from"
+decide if it's compressed
+
+: unpkt   ( packet -- blkbuf )
+                                ( packet )
+    blkbuf 
+                                ( packet blkbuf )
+    >6502
+    brk
+    .byt ld | TOS
+    .byt st | R9                ; blkbuf
+    .byt st | R10               ; "to"
+    .byt sub | ACC
+    .byt st | N2                ; editable?
+    .byt st | N3                ; uncompressed?
+    .byt pull
+    .byt st | N0                ; packet
+    .byt ldd | TOS              ; TOS = packet+2
+    .byt ext
+    .word unpkt16               ; R11 = length
+    .byt st | N1                ; packet header 
+    .byt ld | TOS               ; TOS now okay for me to poop on
+    .byt sub | R11
+    .byt st | R12               ; "from"
+    .byt ld | N1
+    .byt bp , <(unpkt01-*-2)
+    .byt dcr | N2               ; is editable
+    .byt ldd | R12              ; copy 3 bytes of linewrap from packet
+    .byt std | R10
+    .byt ldi | R12
+    .byt sti | R10
+    .byt dcr | R11              ; subtract 3 from length
+    .byt dcr | R11
+    .byt dcr | R11
+unpkt01
+    .byt ld  | N1
+    .byt add | N1
+    .byt bp , <(unpkt02-*-2)
+    .byt dcr | N3               ; is uncompressed
+unpkt02                         ; start stacking it back up
+    .byt ld | R9
+    .byt st | TOS
+    .byt ld | R12
+    .byt push
+    .byt ld | R10
+    .byt push
+    .byt ld | R11
+    .byt push
+    .byt ld | N3
+    .byt push
+    .byt ld | N2
+    .byt push
+    .byt rtn
+#include "toforth.i65"
+    .word iseditable
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word qbranch               ; IF
+    .byt <(unpkt03-*+1)
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word branch
+    .byt <(unpkt04-*+1)
+#include "page.i65"
+unpkt03                         ; ELSE
+    .word rldecode
+#include "page.i65"
+unpkt04                         ; THEN
+    .word exit

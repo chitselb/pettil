@@ -1,3 +1,112 @@
+;--------------------------------------------------------------
+;
+;       ZBITS   ( d -- n )
+;
+; analyzes the double and returns the longest consecutive run of
+; 0 bits in it.  e.g. $ffffffff -> 0, $deadbeef -> 1, 
+; $80806502 -> 7, $00000000 -> 32
+;
+zbits
+    ldy #1
+    jsr locals
+    sty n+2
+    stx storex
+    ldx #32
+zbits02
+    ldy #0
+zbits03
+    lsr tos+1
+    ror tos
+    ror n+1
+    ror n
+    dex
+    bmi zbits04 ; done?
+    bcs zbits02
+    iny
+    cpy n+2
+    bcc zbits03
+    sty n+2
+    bcs zbits03 ; bra
+zbits04
+    ldx storex
+    lda n+2
+    ldy #0
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       WRAP?   ( addr -- flag )
+;
+; Variable reflecting whether the current screen is text (true)
+; or a data block (false)
+; returns true if the three bytes at addr is valid linewrap
+; (containing no double-0 bit pairs)
+;": wrap?  ( 7c00 -- flag )
+;     3c@ ff00 or zbits 2 < ;
+wrapquerylfa
+    .byt $de,$ad
+    .byt (_wrapquery-*-1)|bit7
+    .asc "WRAP","?"|bit7
+_wrapquery
+#include "enter.i65"
+    .word threecfetch
+#include "page.i65"
+    .word plit
+    .word $ff00
+#include "pad.i65"
+    .word orx
+#include "page.i65"
+    .word zbits
+#include "page.i65"
+    .word two
+#include "page.i65"
+    .word lt
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       SCR?   ( addr -- flag )
+;
+; Return true if the packet at addr is a valid text screen
+;
+;": scr?   ( addr -- flag )
+;     dup wrap? over $3e8 + 21 bl skip swap drop 0= or ;
+;
+scrquerylfa
+    .byt $de,$ad
+    .byt (_scrquery-*-1)|bit7
+    .asc "SCR","?"|bit7
+_scrquery
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word _wrapquery
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word plit
+    .word 1000
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word clit
+    .byt 21
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word skip
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word exit
+
 ; xor of two vectors, to switch between Sweet16 and TIM
 brktoggle       .word TIMBRK^SW16
     
