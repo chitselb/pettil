@@ -827,16 +827,30 @@ pscrstore
 ;~wut? need to skip uneditable screens
 ;
 ;": scr!   ( scr -- )
-;     pkt@ blkbuf 2dup            ( pkt blkbuf pkt blkbuf )
-;     mkpkt swap @ vmbuf @        ( pkt blkbuf newsize oldsize vmbuf )
-;     (scr!) move move ;
-;
+;     editable? @
+;     if
+;         pkt@ blkbuf 2dup
+;                               ( pkt blkbuf pkt blkbuf )
+;         mkpkt swap @ vmbuf @
+;                               ( pkt blkbuf newsize oldsize vmbuf )
+;         (scr!)
+;                               ( pkt-newsize+2 newsize vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf+2 )
+;         move move 0
+;     then 
+;     drop ;
 scrstorelfa
     .byt $de,$ad
     .byt (_scrstore-*-1)|bit7
     .asc "SCR","!"|bit7
 _scrstore
 #include "enter.i65"
+    .word iseditable
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qbranch
+    .byt <(scrstore01-*+1)
+#include "pad.i65"
     .word _pktfetch
 #include "page.i65"
     .word _blkbuf
@@ -858,6 +872,11 @@ _scrstore
     .word _move
 #include "page.i65"
     .word _move
+#include "page.i65"
+    .word zero
+#include "page.i65"
+scrstore01
+    .word drop
 #include "page.i65"
     .word exit
 
@@ -1195,7 +1214,7 @@ _scrdel
 
 ;--------------------------------------------------------------
 ;
-;       MKPKT ( blkbuf -- size )
+;       MKPKT ( blkbuf -- size/flags )
 ;
 ; Create a new packet at BLKBUF from the current video screen.
 ; The first three bytes of the packet are the linewrap bits for
