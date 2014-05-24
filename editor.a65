@@ -803,6 +803,81 @@ pktplus01
 
 ;--------------------------------------------------------------
 ;
+;       MKPKT ( blkbuf -- size/flags )
+;
+; Build a packet at BLKBUF from the current video screen.
+; The first three bytes of the packet are the linewrap bits for
+; lines 1..24.  This is followed by RLE-encoded (or stored)
+; screen codes, with the last two bytes being the packet header.
+;
+;": mkpkt   ( blkbuf -- size )
+;     25 wrapabove                  ( blkbuf d )
+;     rot dup >r                    ( d blkbuf ) ( R; blkbuf )
+;     dup 3 + >r                    ( d blkbuf ) ( R; blkbuf blkbuf+3 )
+;     3c!                           ( ) ( R; blkbuf blkbuf+3 )
+;     vidram b/scr -trailing        ( vidram nonblanksiz ) ( R; blkbuf blkbuf+3 )
+;     r> swap                       ( vidram blkbuf+3 nonblanksiz ) ( R; blkbuf )
+;     rlencode                      ( targend ) ( R; blkbuf )
+;     dup 2+ r>                     ( targend targend+2 blkbuf )
+;     - dup rot ! ;                 ( size )
+;
+mkpktlfa
+    .byt $de,$ad
+    .byt (_mkpkt-*-1)|bit7
+    .asc "MKPK","T"|bit7
+_mkpkt
+#include "enter.i65"
+    .word clit
+    .byt 25
+#include "pad.i65"
+    .word wrapabove
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word bperscr
+#include "page.i65"
+    .word _dashtrailing
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word rlencode
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word minus             ; ( addr size )
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;       (SCR!)   ( pkt blkbuf newsize oldsize vmbuf -- blkbuf pkt-newsize+2 newsize vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf+2 )
 ;
 ; Uses Sweet16 to take a lot of the ridiculousness out of the 
@@ -851,17 +926,15 @@ pscrstore
 ; space.  If the current screen is uneditable, SCR! exits
 ; without changing the packet buffer.
 ;
-;~wut? need to skip uneditable screens
-;
 ;": scr!   ( scr -- )
 ;     editable? @
 ;     if
 ;         pkt@ blkbuf 2dup
-;                               ( pkt blkbuf pkt blkbuf )
+;                               ( packet blkbuf packet blkbuf )
 ;         mkpkt swap @ vmbuf @
-;                               ( pkt blkbuf newsize oldsize vmbuf )
+;                               ( packet blkbuf newsize oldsize vmbuf )
 ;         (scr!)
-;                               ( pkt-newsize+2 newsize vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf+2 )
+;                               ( packet-newsize+2 newsize vmbuf vmbuf+oldsize-newsize packet-oldsize-vmbuf+2 )
 ;         move move 0
 ;     then 
 ;     drop ;
@@ -1229,81 +1302,6 @@ _scrdel
     .word vmsiz
 #include "page.i65"
     .word oneminusstore
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       MKPKT ( blkbuf -- size/flags )
-;
-; Create a new packet at BLKBUF from the current video screen.
-; The first three bytes of the packet are the linewrap bits for
-; lines 1..24.  This is followed by RLE-encoded screen codes,
-; and the last two bytes of the packet is the total size.
-;
-;": mkpkt   ( blkbuf -- size )
-;     25 wrapabove                  ( blkbuf d )
-;     rot dup >r                    ( d blkbuf ) ( R; blkbuf )
-;     dup 3 + >r                    ( d blkbuf ) ( R; blkbuf blkbuf+3 )
-;     3c!                           ( ) ( R; blkbuf blkbuf+3 )
-;     vidram b/scr -trailing        ( vidram nonblanksiz ) ( R; blkbuf blkbuf+3 )
-;     r> swap                       ( vidram blkbuf+3 nonblanksiz ) ( R; blkbuf )
-;     rlencode                      ( targend ) ( R; blkbuf )
-;     dup 2+ r>                     ( targend targend+2 blkbuf )
-;     - dup rot ! ;                 ( size )
-;
-mkpktlfa
-    .byt $de,$ad
-    .byt (_mkpkt-*-1)|bit7
-    .asc "MKPK","T"|bit7
-_mkpkt
-#include "enter.i65"
-    .word clit
-    .byt 25
-#include "pad.i65"
-    .word wrapabove
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word _dashtrailing
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rlencode
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word minus             ; ( addr size )
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word store
 #include "page.i65"
     .word exit
 

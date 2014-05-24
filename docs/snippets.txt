@@ -1,1095 +1,236 @@
-: blk+   ( -- packet )
-        vmbuf @ 14 2dup 2dup -      ( vmbuf 14 vmbuf 14 vmbuf-14 )
-        tuck vmbuf !  erase  ! ;    ( vmbuf )
+;--------------------------------------------------------------
+;
+;       RLENCODE ( srcaddr targaddr srclen -- targend uncompressed? )
+;
+; encode length {srclen} bytes from source address {srcaddr} to
+; target address {targaddr}.  Return target end address {targend}
+; and a flag indication if the data was compressed or not.
+;
+; If the length of the target exceeds {srclen}-1, RLENCODE will 
+; return a flag value of $4000 and simply store the data, 
+; otherwise it returns {uncompressed?} = 0.  
+;
+#ifdef HEADERS
+rlencodelfa
+    .byt $de,$ad
+    .byt (rlencode-*-1)|bit7
+    .asc "RLENCOD","E"|bit7
+#endif
+rlencode
+    ldy #2
+    jsr locals      ; TOS = srclen; N0 = srcaddr; N1 = targaddr
+    brk
+    .byt set | R9   ; to check counter overflow
+    .word $100
+rlencode00
+    .byt ld | R9
+rlencode01
+    .byt st | N2    ; set prev char
+    .byt ld | TOS
+    .byt bz, <(rlencode06-*-2)
+    .byt ldi | N0
+    .byt dcr | TOS
+    .byt sti | N1
+    .byt cpr | N2   ; compare to prev
+    .byt bnz, <(rlencode01-*-2) ; different? go get more
 
-: block   ( n -- addr )
-                            ( n )
-dup vmsiz @
-                            ( n n vmsiz )
-<
-                            ( n flag )
-if                          ( block exists, get the packet addr )
-                            ( n )
-    blk@
-                            ( packet )
-else                        ( block does not exist, create it )
-                            ( n )
-    0 swap 1+ vmsiz @
-                            ( 0 n+1 vmsiz )
-    do
-                            ( 0 )
-        drop
-                            ( )
-        blk+
-                            ( packet )
-    loop
-                            ( packet )
-then ;
+    .byt ld | R9
+    .byt st | N3    ; count backwards from 256
+    .byt dcr | N3   ; count the one already in output stream
+rlencode02
+    .byt dcr | N3
+    .byt bz, <(rlencode04-*-2)  ; overflow?
+    .byt ld | TOS
+    .byt bz, <(rlencode04-*-2)  ; end of input?
+    .byt ldi | N0               ; get from input stream
+    .byt dcr | TOS
+    .byt cpr | N2
+    .byt bz, <(rlencode02-*-2)
+;different char
+    .byt inr | TOS              ; un-get from input stream
+    .byt dcr | N0
+;overflow/end of input
+rlencode04
+    .byt ld | R9
+    .byt sub | N3
+    .byt sti | N1               ; write count to output stream
+    .byt br, <(rlencode00-*-2)
 
-
-: blk@   ( n -- packet )
-    blkbuf 2-
-                            ( n packet0 )
-    begin
-        over 0>
-                            ( n packet flag )
-    while
-                            ( n packet )
-        dup @
-                            ( n packet size )
-        -
-                            ( n packet' )
-        swap 1- swap
-                            ( n-1 packet' )
-    repeat
-    swap drop ;
-
-: scr@   ( scr -- )
-    dup scr ! (block)
-                            ( blkbuf flag )
-    scrwrite? !
-                            ( blkbuf )
-    b/buf over scr?
-                            ( blkbuf 1024 flag )
-    if
-        over 3c@ wrap!
-        3 - swap 3 + swap   ( blkbuf+3 1021 )
-    then
-    vidram swap cmove ;
-
-: scr@   ( scr -- )
-    dup scr ! (block)
-    scrwrite? !
-    b/buf over scr?
-    if
-        over 3c@ wrap!
-        3 - swap 3 + swap
-    then
-    vidram swap cmove ;
-
-: scr@   ( scr -- )
-    dup scr ! (block)
-    dup scrwrite? !
-    if
-        scrwrite? on
-        CLR emit
-    else
-        b/buf over scr?
-        dup scrwrite? !
-        if
-            over 3c@ wrap!
-            3 - swap 3 + swap
-        then
-        vidram swap cmove ;
-    then ;
+rlencode06
+    .byt ld | N1
+    .byt st | TOS
+    .byt nxt
 
 
+;--------------------------------------------------------------
+;
+;       MKPKT ( blkbuf -- packetsize )
+;
+; Build a packet at BLKBUF from the current video screen.
+; The first three bytes of the packet are the linewrap bits for
+; lines 1..24.  This is followed by RLE-encoded (or stored)
+; screen codes, with the last two bytes being the packet header.
+;
+: mkpkt   ( blkbuf -- size )
+    25 wrapabove
+                                ( blkbuf d )
+    rot dup >r
+                                ( d blkbuf ) ( R; blkbuf )
+    dup 3 + >r
+                                ( d blkbuf ) ( R; blkbuf blkbuf+3 )
+    3c!
+                                ( ) ( R; blkbuf blkbuf+3 )
+    vidram b/scr -trailing
+                                ( vidram nonblanksiz ) ( R; blkbuf blkbuf+3 )
+    r> swap
+                                ( vidram blkbuf+3 nonblanksiz ) ( R; blkbuf )
+    rlencode
+                                ( targend ) ( R; blkbuf )
+    dup 2+ r>
+                                ( targend targend+2 blkbuf )
+    - dup rot ! ;
+                                ( size )
+
+;--------------------------------------------------------------
+;
+;       (SCR!)   ( pkt blkbuf newsize oldsize vmbuf -- blkbuf pkt-newsize+2 newsize vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf+2 )
+;
+; Uses Sweet16 to take a lot of the ridiculousness out of the 
+; pointer math involved in juggling packets in the buffer.
+; This sets up for two MOVE operations.  The first move opens
+; a hole correctly sized for the replacement packet.  The new
+; packet is then moved into the hole.
+;
+;pscrstorelfa
+;    .byt $de,$ad
+;    .byt (pscrstore-*-1)|bit7
+;    .asc "(SCR!",")"|bit7
+pscrstore
+    ldy #4
+    jsr locals    ; TOS = vmbuf; N0 = pkt; N1 = blkbuf; N2 = newsize; N3 = oldsize
+    brk
+    .byt ld | TOS
+    .byt st | R9                ; vmbuf -> R9
+    .byt ld | N1
+    .byt st | TOS               ; blkbuf
+    .byt ldd | N0               ; pkt += 2
+    .byt ld | N0
+    .byt sub | N2
+    .byt push                   ; pkt-newsize+2
+    .byt ld | N2
+    .byt push                   ; newsize               
+    .byt ld | R9
+    .byt push                   ; vmbuf
+    .byt add | N3
+    .byt sub | N2
+    .byt push                   ; vmbuf+oldsize-newsize
+    .byt ld | N0
+    .byt sub | N3
+    .byt sub | R9
+    .byt push                   ; pkt-oldsize-vmbuf+2
+    .byt nxt
+    
 ;--------------------------------------------------------------
 ;
 ;       SCR!   ( scr -- )
 ;
-; store the current screen in the block buffer.
+; Store the current screen in the block buffer.  It uses a
+; helper word (SCR!) to set up the pointers, then performs 
+; two moves to open the correct amount of space in the packet
+; buffer, and to move the current screen packet into that
+; space.  If the current screen is uneditable, SCR! exits
+; without changing the packet buffer.
 ;
-: scr!   ( scr -- )
-    25 wrapabove
-                                    ( scr d )
-    blkbuf dup 3 + >r 3c!
-                                    ( scr ) ( R; blkbuf+3 )
-    vidram r> 1000 rlencode
-                                    ( scr targend )
-    blkbuf - >r
-                                    ( scr ) ( R; size )
-    blk@                        
-                                    ( packet ) ( R; size )
-    vmbuf dup r@ - r@
-                                    ( packet vmbuf vmbuf-size size )
-    cmove>
-                                    ( packet )
-    r@ - blkbuf swap r>
-                                    ( blkbuf packet-size size )
-    cmove ;
-    
-
-    dup scr ! (block)
-    dup scrwrite? !
-    if
-        CLR emit
-        drop
-    else
-        b/buf over scr?
-        if
-            scrwrite? on
-            over 3c@ wrap!
-            3 - swap 3 + swap
-        then
-        vidram swap cmove ;
-    then ;
-;
-;scrstorelfa
-;    .byt $de,$ad
-;    .byt (_scrstore-*-1)|bit7
-;    .asc "SCR","!"|bit7
+;": scr!   ( scr -- )
+;     editable? @
+;     if
+;         pkt@ blkbuf 2dup
+;                               ( packet blkbuf packet blkbuf )
+;         mkpkt swap @ vmbuf @
+;                               ( packet blkbuf newsize oldsize vmbuf )
+;         (scr!)
+;                               ( packet-newsize+2 newsize vmbuf vmbuf+oldsize-newsize packet-oldsize-vmbuf+2 )
+;         move move 0
+;     then 
+;     drop ;
+scrstorelfa
+    .byt $de,$ad
+    .byt (_scrstore-*-1)|bit7
+    .asc "SCR","!"|bit7
 _scrstore
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
-    .word exit
-
-
-
-: scrdel   ( scr -- packet )
-                                    ( scr )
-    blk@
-                                    ( packet )
-    dup @ 
-                                    ( packet size )
-    vmbuf 2dup +
-                                    ( packet size vmbuf vmbuf+size )
-    dup
-                                    ( packet size vmbuf vmbuf+size vmbuf+size )
-    vmbuf ! rot
-                                    ( packet vmbuf vmbuf+size size  )
-    cmove
-                                    ( packet )
-    vmsiz 1-! ;
-                                    ( packet )
-
-
-;                                     ( scr d )
-;     blkbuf dup 3 + >r 3c!
-
-
-
-put linewrap in the first 3 bytes of blkbuf
-rlencode vidram...vidram+1000 into blkbuf+3
-get target size
-find target address
-insert size bytes
-
-
-: scrins   ( scr -- )
-    25 wrapabove
-                                ( scr d )
-    blkbuf dup dup 3 + >r 3c!
-                                ( scr blkbuf ) ( R; blkbuf+3 )
-    vidram @ r> 1000 rlencode
-                                ( scr blkbuf targend )
-    swap - >r
-                                ( scr ) ( R; size )
-    blk@                        
-                                ( packet ) ( R; size )
-    vmbuf dup r@ - r@
-                                ( packet vmbuf vmbuf-size size ) ( R; size )
-    cmove>
-                                ( packet ) ( R; size )
-    r@ over !
-                                ( packet ) ( R; size )
-    r@ - 2+ blkbuf swap r>
-                                ( blkbuf packet-size+2 size )
-    cmove 
-                                ( )
-    vmsiz 1+! ;
-
-;": scrins   ( scr -- )
-;     25 wrapabove
-;     blkbuf dup dup 3 + >r 3c!
-;     vidram @ r> 1000 rlencode
-;     swap - >r
-;     blk@                        
-;     vmbuf dup r@ - r@
-;     cmove>
-;     r@ over !
-;     r@ - 2+ blkbuf swap r>
-;     cmove 
-;     vmsiz 1+! ;
-;
-; insert the current screen into the packet buffer.
-: scrins   ( scr -- )
-    25 wrapabove
-                                ( scr d )
-    blkbuf dup dup 3 + swap >r >r 3c!
-                                ( scr ) ( R; blkbuf blkbuf+3 )
-    vidram r> 1000 rlencode
-                                ( scr targend ) ( R; blkbuf )
-    r> - >r
-                                ( scr ) ( R; size )
-    blk@                        
-                                ( packet ) ( R; size )
-    vmbuf dup r@ - r@
-                                ( 
-    cmove>
-                                ( 
-    r@ over !
-                                ( 
-    r@ - 2+ blkbuf swap r>
-                                ( 
-    cmove 
-                                ( 
-    vmsiz 1+! ;
-                                ( 
-
-
-
-
-
-
-; move virtual memory between the bottom of the buffer (vmbuf @) 
-; and the bottom of the packet being replaced
-; e.g. if we're changing a 100 byte packet into a 300 byte packet,
-; all the packets below it in memory will have to move down 200 bytes
-; conversely, if we're changing a 300 byte packet into a 10 byte
-; packet, all packets below it have to move upward 290 bytes
-; The packet is presumed to exist
-;
-: mvvm   ( blk# newsize -- )
-
-vmbuf vmbuf+oldsize-newsize packet-oldsize+2-vmbuf cmove
-
-
-
-swap (block) 0=
-                                ( newsize packet packet-exists? )
-if                              ( block exists )
-                                ( newsize packet )
-    >r r@ @ >r
-                                ( newsize ) ( R; packet oldsize )
-    r@ swap -
-                                ( oldsize-newsize ) ( R; packet oldsize )
-    r> r>
-                                ( oldsize-newsize oldsize packet )
-    swap - 2+
-                                ( oldsize-newsize packet-oldsize+2 )
-    vmbuf @ >r r@ -
-                                ( oldsize-newsize packet-oldsize+2-vmbuf ) ( R; vmbuf )
-    swap r@ + swap
-                                ( vmbuf+oldsize-newsize packet-oldsize+2-vmbuf ) ( R; vmbuf )
-    r> -rot 
-                                ( vmbuf vmbuf+oldsize-newsize packet-oldsize+2-vmbuf )
-    cmove
-
-else
-    8 fail                      ( block out of range ) 
-then ;
-
-6000  6000+300-10 
-
-
-
-
-;--------------------------------------------------------------
-;
-;       BLETCH ( -- )
-;
-;
-;
-;
-bletchlfa
-    .byt $de,$ad
-    .byt (bletch-*-1)|bit7
-    .asc "BLETC","H"|bit7
-bletch
-#include "enter.i65"
-    .word plit
-    .word 64000
-#include "pad.i65"
-    .word zero
-#include "page.i65"
-    .word pdo
-#include "page.i65"
-bletch01
-    .word i
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word clit
-    .byt 40
-#include "pad.i65"
-    .word _umslashmod
-#include "page.i65"
-    .word _udot
-#include "page.i65"
-    .word _udot
-#include "page.i65"
-    .word cr
-#include "page.i65"
-    .word ploop
-    .byt <(bletch01-*+1)
-#include "pad.i65"
-    .word exit
-
-r50special      .byt ',','-','?'
-
-;--------------------------------------------------------------
-;
-;       R50CHAR   ( d -- d2 c )
-;
-; Unpack and translate a single character in radix-50
-;
-;r50charlfa
-;    .byt $de,$ad
-;    .byt (r50char-*-1)|bit7
-;    .asc "RAD5","0"|bit7
-_r50char
-#include "enter.i65"
-    .word clit
-    .byt 40
-#include "pad.i65"
-    .word starslashmod
-#include "page.i65"
-    .word qbranch
-    .byt <(r50char01-*+1)
-#include "pad.i65"
-    .word bl
-#include "page.i65"
-    .word branch
-    .byt <(r50char06-*+1)
-#include "pad.i65"
-r50char01
-    .word clit
-    .byt 10
-#include "pad.i65"
-    .word minus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word zlt
-#include "page.i65"
-    .word qbranch
-    .byt <(r50char02-*+1)
-#include "pad.i65"
-    .word clit
-    .byt '0'+9
-#include "pad.i65"
-    .word plus
-#include "page.i65"
-    .word qbranch
-    .byt <(r50char02-*+1)
-#include "pad.i65"
-r50char02
-    .word clit
-    .byt 26
-#include "pad.i65"
-    .word minus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word zlt
-#include "page.i65"
-    .word qbranch
-    .byt <(r50char03-*+1)
-#include "pad.i65"
-    .word clit
-    .byt '@'+26
-#include "pad.i65"
-    .word plus
-#include "page.i65"
-    .word qbranch
-    .byt <(r50char02-*+1)
-#include "pad.i65"
-r50char03
-    .word plit
-    .word r50special
-#include "pad.i65"
-    .word plus
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-r50char06
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       RAD50   ( r -- c1 c2 c3 )
-;
-;"http://en.wikipedia.org/wiki/DEC_Radix-50
-; Unpack a rad-50 (base 40) encoded word into three characters
-; space, 0, 1, 2, 3, 4, 5, 6,
-; 7, 8, 9, a, b, c, d, e
-; f, g, h, i, j, k, l, m,
-; n, o, p, q, r, s, t, u,
-; v, w, x, y, z, comma, dash, question
-;
-rad50lfa
-    .byt $de,$ad
-    .byt (_rad50-*-1)|bit7
-    .asc "RAD5","0"|bit7
-_rad50
-#include "enter.i65"
-    .word _r50char
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word _r50char
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word exit
-
-MOVEDOWN LDY #0
-         LDX SIZEH
-         BEQ MD2
-MD1      LDA (FROM),Y ; move a page at a time
-         STA (TO),Y
-         INY
-         BNE MD1
-         INC FROM+1
-         INC TO+1
-         DEX
-         BNE MD1
-MD2      LDX SIZEL
-         BEQ MD4
-MD3      LDA (FROM),Y ; move the remaining bytes
-         STA (TO),Y
-         INY
-         DEX
-         BNE MD3
-MD4      RTS
-
-original
-cmove
-    ldy #2
-    jsr locals       ; from -> N0; to -> N1
-    stx storex
-    inc tos+1
-    ldx tos
-    beq cmove03
-cmove01
-    lda (n),y
-    sta (n+2),y
-    iny
-    bne cmove02
-    inc n+1
-    inc n+3
-cmove02
-    dex
-    bne cmove01
-cmove03
-    dec tos+1
-    bne cmove01
-    ldx storex
-    jmp pops ; [36]
-
-new
-cmove
-    ldy #2          ; pull two items off the data stack
-    jsr locals      ; howmany = TOS, from = N0, to = N1
-    ;clc
-    ;ldy #0         ; locals returns Y=0 C=0
-    stx storex      ; stash the data stack pointer
-    ldx #0          ; X,Y=0
-cmove01
-    dec tos+1
-    bpl cmove02     ; do a whole page
-    ldx tos         ; last page
-    beq cmove03     ; none at all?
-    sec             ; exit after this iteration
-cmove02
-    lda (n),y
-    sta (n+2),y
-    iny
-    dex
-    bne cmove02
-    inc n+1
-    inc n+3
-    bcc cmove01
-cmove03
-    ldx storex      ; revive the data stack pointer
-    jmp pops    ; [32]
-
-
-original
-cmovegt
-    ldy #2
-    jsr locals               ; from -> N0; to -> N1
-    stx storex
-    lda tos+1
-    ora tos
-    beq cmovegt05
-    lda tos+1
-    pha
-    clc
-    adc n+1
-    sta n+1
-    pla
-    clc
-    adc n+3
-    sta n+3
-    ldy tos
-    beq cmovegt02
-cmovegt01
-    dey
-    lda (n),y
-    sta (n+2),y
-    cpy #0
-    bne cmovegt01
-cmovegt02
-    ldx tos+1
-    beq cmovegt05
-cmovegt03
-    dec n+1
-    dec n+3
-cmovegt04
-    dey
-    lda (n),y
-    sta (n+2),y
-    cpy #0
-    bne cmovegt04
-    dex
-    bne cmovegt03
-cmovegt05
-    ldx storex
-    jmp pops
-
-cmovegt
-    ldy #2
-    jsr locals
-    ;clc
-    ;ldy #0
-    stx storex
-    ldx #0
-cmovegt01
-    dec tos+1
-    bpl cmovegt03
-cmovegt02       ; last page
-    ldx tos
-    beq cmovegt04
-    sec
-cmovegt03
-    lda (n),y
-    sta (n+2),y
-    dey
-    dex
-    bne cmovegt03
-    dec n+1
-    dec n+3
-    bcc cmovegt01
-cmovegt04
-    ldx storex
-    jmp pops
-
-original
-cmovegt
-    ldy #2
-    jsr locals               ; from -> N0; to -> N1
-    stx storex
-    lda tos+1
-    ora tos
-    beq cmovegt05
-    lda tos+1
-    pha
-    clc
-    adc n+1
-    sta n+1
-    pla
-    clc
-    adc n+3
-    sta n+3
-    ldy tos
-    beq cmovegt02
-cmovegt01
-    dey
-    lda (n),y
-    sta (n+2),y
-    cpy #0
-    bne cmovegt01
-cmovegt02
-    ldx tos+1
-    beq cmovegt05
-cmovegt03
-    dec n+1
-    dec n+3
-cmovegt04
-    dey
-    lda (n),y
-    sta (n+2),y
-    cpy #0
-    bne cmovegt04
-    dex
-    bne cmovegt03
-cmovegt05
-    ldx storex
-    jmp pops
-
-
-
-faking out CHRIN to use phantom screen
-    lda #3
-    sta $af     ; DFLTN Default Input Device = 3
-    lda #$0
-    sta $c4
-    sta $c6
-    lda #$7c
-    sta $c5
-    jsr CHRIN
-    cmp #$0d
-
-
-: scr!   ( scr -- )
-    pkt@ blkbuf dup >r mkpkt    ( pkt blkbuf newsize ) ( R; blkbuf )
-    >r over @                   ( pkt blkbuf oldsize ) ( R; blkbuf newsize )
-    
-
-    dup @ vmbuf @               ( blkbuf pkt oldsize vmbuf ) ( R; newsize )
-    2dup +                      ( blkbuf pkt oldsize vmbuf vmbuf+oldsize ) ( R; newsize )
-    r@ -                        ( blkbuf pkt oldsize vmbuf vmbuf+oldsize-newsize ) ( R; newsize )
-
-pkt-oldsize-vmbuf
-|                |
-aaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbb ccccccccccc | ddddd
-|           aaaaaaaaaaaaaaaaaa ddddd ccccccccccc | ddddd
-vmbuf       |
-            vmbuf+oldsize-newsize
-                               |
-                        blkbuf pkt-newsize+2 newsize move
-
-vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf 
-move
-
-blkbuf pkt-newsize+2 newsize
-move
-
-
-;--------------------------------------------------------------
-;
-;       >PASTE   ( paste screen 40|80 -- paste+ screen+ )
-;
-; append the line on the screen to the paste buffer 
-;
-;": >paste
-;     >r swap r@ over c!   ( screen paste ; 40|80 )
-;     1+ 2dup r@ cmove   ( screen paste+1 ) 
-;     r@ + dup off swap r> + ; [37]
-;
-_topaste
-#include "enter.i65"
-    .word tor
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word _twodup
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word exit
-
-
-: wrappaste   ( -- dwrap )
-wrapabove   ( dwrap )
-pad >r
-begin
-    r@ c@ dup   ( dwrap len len )
-    r> + 1+ >r
-while
-    wrap+
-repeat
-r> drop ;   ( d )
-
-code smell goto spaghetti
-wrestling with the notion of standards
-steampunk
-
-
-
-block exists?
-if
-    pkt@
-else
-    begin
-        pkt+
-        1-
-        0=
-    until
-    
-: (block)   ( blk -- addr new? )
-    vmsize @ over -
-                                ( blk vmsize-blk )
-    dup 0>
-                                ( blk vmsize-blk exists? )
-    dup >r
-                                ( blk vmsize-blk exists? ) ( R; exists? )
-    if
-                                ( blk vmsize-blk ) ( R; exists? )
-        drop pkt@
-                                ( pkt ) ( R; exists? )
-    else
-                                ( blk vmsize-blk ) ( R; exists? )
-        begin
-            swap
-                                ( vmsize-blk blk ) ( R; exists? )
-            drop
-                                ( vmsize-blk ) ( R; exists? )
-            1-
-                                ( vmsize-blk-1 ) ( R; exists? )
-            pkt+
-                                ( vmsize-blk-1 pkt ) ( R; exists? )
-            swap dup
-                                ( pkt vmsize-blk-1 vmsize-blk-1 ) ( R; exists? )
-            0<
-                                ( pkt vmsize-blk-1 done? ) ( R; exists? )
-        until
-                                ( pkt vmsize-blk-1 ) ( R; exists? )
-        drop
-                                ( pkt ) ( R; exists? )
-    then
-    r> ;
-
-: pkt+   ( flag -- packet )
-                                ( flag )
-    >r vmbuf @ 14 r@
-                                ( vmbuf 14 flag ) ( R; flag )
-    if
-                                ( vmbuf 14 ) ( R; flag )
-        drop 5
-                                ( vmbuf 5 ) ( R; flag )
-    then
-                                ( vmbuf 5 ) ( R; flag )
-        2dup 2dup 2dup - over
-; clear packet
-                                ( vmbuf 5 vmbuf 5 vmbuf 5 vmbuf-5 5 )
-        erase
-; set packet length
-                                ( vmbuf 5 vmbuf 5 vmbuf 5 )
-        VIDRAM r@ and or swap
-                                ( vmbuf 5 vmbuf 5 VIDRAM|5 vmbuf )
-        !
-; copy flag to first 3 bytes of packet
-                                ( vmbuf 5 vmbuf 5 )
-        - r@ tuck over ! 1+ !
-; packet address
-                                ( vmbuf 5 )
-        drop
-                                ( vmbuf )
-; increment packet counter
-    vmsiz 1+! ;
-
-
-: (block)   ( blk -- addr new? )
-    vmsize @ over -
-                                ( blk vmsize-blk )
-    dup 0>
-                                ( blk vmsize-blk exists? )
-    rfetch usingeditor =
-                                ( blk vmsize-blk exists? editor? )
-    over >r >r
-                                ( blk vmsize-blk exists? ) ( R; exists? editor? )
-    if
-                                ( blk vmsize-blk exists? ) ( R; exists? editor? )
-        drop pkt@
-
-    else
-
-        begin
-            swap
-
-            drop
-
-            1-
-
-            pkt+
-
-            swap dup
-
-            0<
-
-        until
-
-        drop
-
-    then
-    unpkt r> ;
-
-;--------------------------------------------------------------
-;
-;       UNPKT ( packet -- blkbuf )
-;
-; Given the address of a packet (its size word, at the end)
-; this will unpack the packet to the block buffer and return
-; the address of the unpacked block
-;
-: unpkt   ( packet -- blkbuf )
-    >r
-                                ( ) ( R; packet )
-    blkbuf dup 
-                                ( blkbuf blkbuf ) ( R; packet )
-    dup b/buf blank             ( blank the buffer )
-                                ( blkbuf blkbuf ) ( R; packet )
-    r@ @ dup 0<
-                                ( blkbuf blkbuf pkthead flag ) ( R; packet )
-    if
-                                ( blkbuf blkbuf pkthead ) ( R; packet )
-        r@ vidram rot xor
-                                ( blkbuf blkbuf packet pktlen ) ( R; packet )
-        2- 
-                                ( blkbuf blkbuf packet pktlen-2 ) ( R; packet )
-        2dup -
-                                ( blkbuf blkbuf packet pktlen-2 source-3 ) ( R; packet )
-        3c@ wrap!
-                                ( blkbuf blkbuf packet pktlen-2  ) ( R; packet )
-        1- -
-                                ( blkbuf blkbuf packet-pktlen+3  ) ( R; packet )
-
-                                ( blkbuf blkbuf packet-pktlen+2 dwrap ) ( R; packet )
-         wrap! 3 +
-                                ( blkbuf blkbuf packet-pktlen+5 ) ( R; packet )
-    then
-
-    over -
-                                ( blkbuf blkbuf srclen source )
-    -rot                           
-                                ( blkbuf source blkbuf srclen )
-    rldecode ;               
-                                ( blkbuf )
-
-
-
-
-: (block)   ( blk -- addr exists? )
-    vmsize @ over -
-                                ( blk vmsize-blk )
-    dup 0>
-                                ( blk vmsize-blk exists? )
-    dup >r
-                                ( blk vmsize-blk exists? ) ( R; exists? )
-    if
-                                ( blk vmsize-blk ) ( R; exists? editor? )
-        drop pkt@
-                                ( pkt ) ( R; exists? editor? )
-    else
-                                ( blk vmsize-blk ) ( R; exists? editor? )
-        rfetch usingeditor =
-        
-        begin
-            swap drop 1+
-                                ( vmsize-blk+1 ) ( R; exists? editor? )
-            r@ pkt+
-                                ( vmsize-blk+1 packet ) ( R; exists? editor? )
-            swap dup 0>
-
-        until
-
-        drop
-
-    then
-    unpkt r> drop r> ;
-
-
-
-
-
-
-;--------------------------------------------------------------
-;
-;       (BLOCK)   ( blk -- blkbuf )
-;
-; return the buffer address of block N. Create it if necessary.
-; flag is true if the block is new, false if it already exists
-;
-; *** TRICK ALERT ***
-; Uses the address on the return stack to determine if the caller 
-; was the screen editor.  Then does an OR with $8000 (VIDRAM)
-; on the packet length, setting the "editable" flag on the block.
-;
-; Any other caller creates a data block.
-;
-: (block)   ( blk -- blkbuf )
-    vmsize @ over -
-                                ( blk vmsize-blk )
-    dup 0>
-                                ( blk vmsize-blk exists? )
-    if
-                                ( blk vmsize-blk )
-        drop pkt@
-                                ( packet )
-    else
-                                ( blk vmsize-blk )
-        r@ usingeditor = >r
-                                ( blk vmsize-blk ) ( R; editor? )
-        begin
-            swap drop 1+ r@
-                                ( vmsize-blk+ editor? ) ( R; editor? )
-            pkt+
-                                ( vmsize-blk+ packet ) ( R; editor? )
-            swap dup 0>
-                                ( packet vmsize-blk+ enough? ) ( R; editor? )
-        until
-                                ( packet vmsize-blk+ ) ( R; editor? )
-        r> 2drop
-                                ( packet )
-    then
-                                ( packet )
-    unpkt ; 
-                                ( blkbuf )
-
-
-
-
-get the packet length/flags
-set editable
-if it's editable, copy the three linewrap bytes to blkbuf and add 3 to "to"/"from"
-decide if it's compressed
-
-: unpkt   ( packet -- blkbuf )
-                                ( packet )
-    blkbuf 
-                                ( packet blkbuf )
-    >6502
-    brk
-    .byt ld | TOS
-    .byt st | R9                ; blkbuf
-    .byt st | R10               ; "to"
-    .byt sub | ACC
-    .byt st | N2                ; editable?
-    .byt st | N3                ; uncompressed?
-    .byt pull
-    .byt st | N0                ; packet
-    .byt ldd | TOS              ; TOS = packet+2
-    .byt ext
-    .word unpkt16               ; R11 = length
-    .byt st | N1                ; packet header 
-    .byt ld | TOS               ; TOS now okay for me to poop on
-    .byt sub | R11
-    .byt st | R12               ; "from"
-    .byt ld | N1
-    .byt bp , <(unpkt01-*-2)
-    .byt dcr | N2               ; is editable
-    .byt ldd | R12              ; copy 3 bytes of linewrap from packet
-    .byt std | R10
-    .byt ldi | R12
-    .byt sti | R10
-    .byt dcr | R11              ; subtract 3 from length
-    .byt dcr | R11
-    .byt dcr | R11
-unpkt01
-    .byt ld  | N1
-    .byt add | N1
-    .byt bp , <(unpkt02-*-2)
-    .byt dcr | N3               ; is uncompressed
-unpkt02                         ; start stacking it back up
-    .byt ld | R9
-    .byt st | TOS
-    .byt ld | R12
-    .byt push
-    .byt ld | R10
-    .byt push
-    .byt ld | R11
-    .byt push
-    .byt ld | N3
-    .byt push
-    .byt ld | N2
-    .byt push
-    .byt rtn
-#include "toforth.i65"
     .word iseditable
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word qbranch               ; IF
-    .byt <(unpkt03-*+1)
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word branch
-    .byt <(unpkt04-*+1)
-#include "page.i65"
-unpkt03                         ; ELSE
-    .word rldecode
-#include "page.i65"
-unpkt04                         ; THEN
-    .word exit
-
-_pktfetch
-#include "enter.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-pktfetch01
-    .word over
-#include "page.i65"
-    .word zgt
-#include "page.i65"
-    .word qbranch
-    .byt <(pktfetch02-*+1)
-#include "pad.i65"
-    .word dup
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word minus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word oneminus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word branch
-    .byt <(pktfetch01-*+1)
+    .word qbranch
+    .byt <(scrstore01-*+1)
 #include "pad.i65"
-pktfetch02
+    .word _pktfetch
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word _twodup
+#include "page.i65"
+    .word _mkpkt
+#include "page.i65"
     .word swap
 #include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word pscrstore
+#include "page.i65"
+    .word _move
+#include "page.i65"
+    .word _move
+#include "page.i65"
+    .word zero
+#include "page.i65"
+scrstore01
     .word drop
 #include "page.i65"
     .word exit
-;": pkt@   ( n -- packet )
-;     blkbuf 2-
-;     begin
-;         over 0>
-;     while
-;         dup @
-;         - swap 1- swap
-;     repeat
-;     swap drop ;  [35]
 
-_pktfetch
-#include "enter.i65"
-    .word _blkbuf
-    .word swap
-    .word to6502
-    brk
-    .byt ld | TOS
-    .byt st | N0
-    .byt pull
-pktfetch01
-    .byt popd | TOS
-    .byt bz , <(pktfetch02-*-2)
-    .byt dcr | N0
-    .byt bm , <(pktfetch02-*-2)
-    .byt ext
-    .word pktlen16
-    .byt ld | TOS
-    .byt sub | R11
-    .byt st | TOS
-    .byt br , <(pktfetch01-*-2)
-pktfetch02
-    .byt nxt   ; [28]
-    
+
+
+copy the linewrap table to blkbuf..blkbuf+2
+scrsize = find the size of the screen (last non-blank character)
+rlencode or store the current screen to blkbuf+3..+scrsize
+newsize = get total size of new packet (3(wrap) + min(scrsize,rlencoded size) + 2(header))
+or uncompressed? flag
+or editable flag (true because we're storing it)
+store the packet header at blkbuf+newsize-2
+move vmbuf up or down to create a hole newsize bytes
+targdata = calculate target address (packet - newsize + 2)
+copy blkbuf into the hole   blkbuf 
+
+
+scr
+packet address of old copy
+compressed size of current screen
+
+vmbuf
+size of old copy
+
+
+
+
+linewrap blkbuf
+3c!
+
+from to howmany
+rlencode
+
+packetheader targend 
+!
+
+
+vmbuf vmbuf+oldsize-newsize packet-oldsize-vmbuf+2
+move
+
+blkbuf packet-newsize+2 newsize
+move
