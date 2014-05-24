@@ -9458,6 +9458,10 @@ bevlvl          .byt $20,$64,$6f,$79,$62,$f8,$f7,$e3,$a0
 ; encode length {srclen} bytes from source address {srcaddr} to
 ; target address {targaddr}.  Return target end address {targend}
 ;
+; test cases -- 
+; vvwwxxyyyzz
+; xxyyzz
+;
 #ifdef HEADERS
 rlencodelfa
     .byt $de,$ad
@@ -9469,14 +9473,14 @@ rlencode
     jsr locals      ; TOS = srclen; N0 = srcaddr; N1 = targaddr
     brk
     .byt ld | TOS
-    .byt st | R11   ; output counter - when this hits zero, we're in negative compression
     .byt st | R10   ; input counter - when this hits zero, we're done
+    .byt st | R11   ; out counter - when this goes negative, we're in negative compression
 
-    .byt push       ; original size in case we go in the red
     .byt ld | N1
     .byt push       ; original targaddr
     .byt ld | N0
     .byt push       ; original srcaddr
+                    ; ( srclen targaddr srcaddr )
 
     .byt set | R9   ; constant used to initialize (max repeat counter)
     .word $100
@@ -9484,14 +9488,14 @@ rlencode00
     .byt ld | R9    ; also the unfindable prev character
 rlencode01
     .byt st | N2    ; set prev char
-    .byt ld | R11   ; are we done?
+    .byt ld | R10   ; are we done?
     .byt bz , <(rlencode06-*-2)
-    .byt ld | R10   ; are we in the red?
-    .byt bz , <(rlencode07-*-2)
+    .byt ld | R11   ; are we in the red?
+    .byt bm , <(rlencode07-*-2)
     .byt ldi | N0   ; read input stream
-    .byt dcr | R11
-    .byt sti | N1   ; write output stream
     .byt dcr | R10
+    .byt sti | N1   ; write output stream
+    .byt dcr | R11
     .byt cpr | N2   ; compare to prev
     .byt bnz , <(rlencode01-*-2) ; different? go get more
 
@@ -9501,25 +9505,24 @@ rlencode01
 rlencode02
     .byt dcr | N3
     .byt bz , <(rlencode04-*-2)  ; overflow?
-    .byt ld | R11
+    .byt ld | R10
     .byt bz , <(rlencode04-*-2)  ; end of input?
-    .byt ldi | N0               ; get from input stream
-    .byt dcr | R11
+    .byt ldi | N0                ; get from input stream
+    .byt dcr | R10
     .byt cpr | N2
     .byt bz , <(rlencode02-*-2)
 ;different char
-    .byt inr | R11              ; un-get from input stream
+    .byt inr | R10              ; un-get from input stream
     .byt dcr | N0
 ;overflow/end of input
 rlencode04
     .byt ld | R9
     .byt sub | N3
     .byt sti | N1               ; write count to output stream
-    .byt dcr | R10
+    .byt dcr | R11
     .byt br , <(rlencode00-*-2)
 
 rlencode06                      ; win
-    .byt pull
     .byt pull
     .byt pull
     .byt ld | N1
@@ -9529,7 +9532,7 @@ rlencode06                      ; win
     .byt nxt
 
 rlencode07                      ; lose - copy
-    .byt pull
+    .byt ld | TOS
     .byt st | N0
     .byt pull
     .byt st | N1
