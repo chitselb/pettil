@@ -6416,8 +6416,10 @@ warm02
     .byt (warm03-*-1)
     .asc    CLR,"FORTH FOR THE COMMODORE PET 2001",CR
     .asc    "HTTP:","/","/GITHUB.COM/CHITSELB/PETTIL",CR
-    .asc    "VERSION PRE-ALPHA 2014-05-17",CR
-    .asc    "1792 NYSE IS FORMED",CR
+    .asc    "VERSION PRE-ALPHA 2014-05-24",CR
+            ;123456789.123456789.123456789.123456789.
+    .asc    "1607 ENGLISH SETTLERS LAND IN JAMESTOWN", CR
+    .asc    "1844 SAMUEL MORSE SENDS FIRST TELEGRAM",CR
 warm03
 #include "pad.i65"
     .word _rethread
@@ -9466,45 +9468,82 @@ rlencode
     ldy #2
     jsr locals      ; TOS = srclen; N0 = srcaddr; N1 = targaddr
     brk
-    .byt set | R9   ; to check counter overflow
+    .byt ld | TOS
+    .byt st | R11   ; output counter - when this hits zero, we're in negative compression
+    .byt st | R10   ; input counter - when this hits zero, we're done
+
+    .byt push       ; original size in case we go in the red
+    .byt ld | N1
+    .byt push       ; original targaddr
+    .byt ld | N0
+    .byt push       ; original srcaddr
+
+    .byt set | R9   ; constant used to initialize (max repeat counter)
     .word $100
 rlencode00
-    .byt ld | R9
+    .byt ld | R9    ; also the unfindable prev character
 rlencode01
     .byt st | N2    ; set prev char
-    .byt ld | TOS
-    .byt bz, <(rlencode06-*-2)
-    .byt ldi | N0
-    .byt dcr | TOS
-    .byt sti | N1
+    .byt ld | R11   ; are we done?
+    .byt bz , <(rlencode06-*-2)
+    .byt ld | R10   ; are we in the red?
+    .byt bz , <(rlencode07-*-2)
+    .byt ldi | N0   ; read input stream
+    .byt dcr | R11
+    .byt sti | N1   ; write output stream
+    .byt dcr | R10
     .byt cpr | N2   ; compare to prev
-    .byt bnz, <(rlencode01-*-2) ; different? go get more
+    .byt bnz , <(rlencode01-*-2) ; different? go get more
 
     .byt ld | R9
     .byt st | N3    ; count backwards from 256
     .byt dcr | N3   ; count the one already in output stream
 rlencode02
     .byt dcr | N3
-    .byt bz, <(rlencode04-*-2)  ; overflow?
-    .byt ld | TOS
-    .byt bz, <(rlencode04-*-2)  ; end of input?
+    .byt bz , <(rlencode04-*-2)  ; overflow?
+    .byt ld | R11
+    .byt bz , <(rlencode04-*-2)  ; end of input?
     .byt ldi | N0               ; get from input stream
-    .byt dcr | TOS
+    .byt dcr | R11
     .byt cpr | N2
-    .byt bz, <(rlencode02-*-2)
+    .byt bz , <(rlencode02-*-2)
 ;different char
-    .byt inr | TOS              ; un-get from input stream
+    .byt inr | R11              ; un-get from input stream
     .byt dcr | N0
 ;overflow/end of input
 rlencode04
     .byt ld | R9
     .byt sub | N3
     .byt sti | N1               ; write count to output stream
-    .byt br, <(rlencode00-*-2)
+    .byt dcr | R10
+    .byt br , <(rlencode00-*-2)
 
-rlencode06
+rlencode06                      ; win
+    .byt pull
+    .byt pull
+    .byt pull
     .byt ld | N1
     .byt st | TOS
+    .byt sub | ACC
+    .byt push
+    .byt nxt
+
+rlencode07                      ; lose - copy
+    .byt pull
+    .byt st | N0
+    .byt pull
+    .byt st | N1
+    .byt pull
+rlencode08
+    .byt ldi | N0
+    .byt sti | N1
+    .byt dcr | TOS
+    .byt bnz , <(rlencode08-*-2)
+    .byt ld | N1
+    .byt st | TOS
+    .byt set | ACC
+    .word $4000
+    .byt push
     .byt nxt
 
 ;--------------------------------------------------------------
@@ -9532,14 +9571,14 @@ rldecode01
     .byt st | N2        ; set prev to unmatchable value
 rldecode02
     .byt ld | TOS
-    .byt bz, <(rldecode05-*-2)
+    .byt bz , <(rldecode05-*-2)
     .byt ldi | N0       ; read source stream
     .byt dcr | TOS      ; decrement source counter
     .byt sti | N1       ; write target stream
     .byt cpr | N2
     .byt st | N2
     .byt ld | R13
-    .byt bnz, <(rldecode02-*-2)    ; different? go get more
+    .byt bnz , <(rldecode02-*-2)    ; different? go get more
 rldecode03
     .byt ldi | N0       ; get the repeat count
     .byt dcr | TOS      ; decrement source counter
@@ -9550,10 +9589,10 @@ rldecode03
     .byt dcr | N3
 rldecode04
     .byt dcr | N3
-    .byt bz, <(rldecode01-*-2)
+    .byt bz , <(rldecode01-*-2)
     .byt ld | N2
     .byt sti | N1       ; write target stream
-    .byt br, <(rldecode04-*-2)
+    .byt br , <(rldecode04-*-2)
 rldecode05
     .byt pull           ; drop srclen
     .byt nxt
