@@ -628,37 +628,64 @@ _pktfetch
 #include "enter.i65"
     .word _blkbuf
 #include "page.i65"
-    .word twominus
+    .word swap
 #include "page.i65"
+    .word to6502
+    brk                         ; ( blkbuf blk )
+    .byt ld | TOS
+    .byt st | N0
+    .byt pull
 pktfetch01
-    .word over
-#include "page.i65"
-    .word zgt
-#include "page.i65"
-    .word qbranch
-    .byt <(pktfetch02-*+1)
-#include "pad.i65"
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word oneminus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word branch
-    .byt <(pktfetch01-*+1)
-#include "pad.i65"
+    .byt popd | TOS
+    .byt bz , <(pktfetch02-*-2)
+    .byt dcr | N0
+    .byt bm , <(pktfetch02-*-2)
+    .byt ext
+    .word pktheader16
+    .byt ld | TOS
+    .byt sub | R11
+    .byt st | TOS
+    .byt br , <(pktfetch01-*-2)
 pktfetch02
-    .word swap
-#include "page.i65"
-    .word drop
-#include "page.i65"
+    .byt rtn
+#include "toforth.i65"
     .word exit
+
+;_pktfetch
+;#include "enter.i65"
+;    .word _blkbuf
+;#include "page.i65"
+;    .word twominus
+;#include "page.i65"
+;pktfetch01
+;    .word over
+;#include "page.i65"
+;    .word zgt
+;#include "page.i65"
+;    .word qbranch
+;    .byt <(pktfetch02-*+1)
+;#include "pad.i65"
+;    .word dup
+;#include "page.i65"
+;    .word fetch
+;#include "page.i65"
+;    .word minus
+;#include "page.i65"
+;    .word swap
+;#include "page.i65"
+;    .word oneminus
+;#include "page.i65"
+;    .word swap
+;#include "page.i65"
+;    .word branch
+;    .byt <(pktfetch01-*+1)
+;#include "pad.i65"
+;pktfetch02
+;    .word swap
+;#include "page.i65"
+;    .word drop
+;#include "page.i65"
+;    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -901,46 +928,36 @@ _unpkt
 #include "page.i65"
     .word bperbuf
 #include "page.i65"
-    .word _blank
+    .word _blank                ; blank the block buffer
 #include "page.i65"
     .word to6502
     brk                         ; ( packet blkbuf )
     .byt ld | TOS
     .byt st | R9                ; blkbuf
     .byt st | R10               ; "to"
-    .byt sub | ACC
-    .byt st | N2                ; editable?
-    .byt st | N3                ; uncompressed?
     .byt pull
-    .byt st | N0                ; packet
-    .byt ldd | TOS              ; TOS = packet+2
-    .byt ext
-    .word unpkt16               ; R11 = length
-    .byt dcr | R11
-    .byt dcr | R11
-    .byt st | N1                ; packet header 
+    .byt st | N0                ; packet address
+    .byt ldd | TOS              ; get packet header
+    .byt ext             
+    .word pktheader16              ; get R11=packet length, N2=editable? N3=uncompressed? 
     .byt ld | N0
-    .byt sub | R11              ; packet-(len-2) = start of packet
-    .byt st | R12               ; "from"
-    .byt ld | N1
-    .byt bp , <(unpkt01-*-2)
-    .byt dcr | N2               ; is editable
-    .byt ldd | R12              ; copy 3 bytes of linewrap from packet
-    .byt std | R10
-    .byt ldi | R12
+    .byt sub | R11              ; packet data
+    .byt st | R13               ; "from" (don't use R12, it turns the packet into the Sweet16 return stack!)
+    .byt ld | N2
+    .byt bz , <(unpkt01-*-2)    ; data packet?
+    .byt ldi | R13              ; copy 3 bytes of linewrap from packet
     .byt sti | R10
     .byt dcr | R11              ; subtract 3 from length
+    .byt ldi | R13
+    .byt sti | R10
     .byt dcr | R11
+    .byt ldi | R13
+    .byt sti | R10
     .byt dcr | R11
-unpkt01
-    .byt ld  | N1
-    .byt add | N1
-    .byt bp , <(unpkt02-*-2)
-    .byt dcr | N3               ; is uncompressed
-unpkt02                         ; start stacking it back up
+unpkt01                         ; start stacking it back up
     .byt ld | R9
     .byt st | TOS               ; blkbuf
-    .byt ld | R12
+    .byt ld | R13
     .byt push                   ; from
     .byt ld | R10
     .byt push                   ; to
@@ -969,6 +986,7 @@ unpkt03                         ; ELSE
 #include "page.i65"
 unpkt04                         ; THEN
     .word exit
+                                ; ( blkbuf )
 
 ;--------------------------------------------------------------
 ;
@@ -1037,11 +1055,13 @@ _pblock
 #include "pad.i65"
     .word drop
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
     .word _pktfetch
 #include "page.i65"
     .word branch
     .byt <(pblock03-*+1)
-#include "page.i65"
+#include "pad.i65"
 pblock01                        ; ELSE
     .word rfetch
 #include "page.i65"

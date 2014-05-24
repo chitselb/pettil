@@ -286,16 +286,18 @@ to6502lfa
     .asc ">650","2"|bit7
 #endif
 to6502
-    lda ip
-    clc
-    adc #2
-    sta n
-    ldy ip+1
-    bcc to650201
+    ldy ip
     iny
+    clc
+    bne to650201
+    sec
 to650201
-    sty n+1
-    jmp (n)
+    lda ip+1
+    adc #0
+    pha
+    tya
+    pha
+    rts     ; [15]
 
 ;--------------------------------------------------------------
     ; negate the double at n0..n3
@@ -950,8 +952,7 @@ pfind06
     .byt ld | N3
     .byt push
     .byt st | TOS
-    .byt rtn
-    jmp next
+    .byt nxt
 
 ;--------------------------------------------------------------
 ;
@@ -4365,102 +4366,6 @@ _jiffyfetch
 
 ;--------------------------------------------------------------
 ;
-;       SETLFS   ( filenumber device secondary  -- )
-;
-;       set file parameters
-;
-#ifdef HEADERS
-setlfslfa
-    .byt $de,$ad
-    .byt (setlfs-*-1)|bit7
-    .asc "SETLF","S"|bit7
-#endif
-setlfs
-    lda tos
-    sta SA
-    lda stackl,x
-    sta FA
-    inx
-    lda stackl,x
-    sta LA
-    jmp poptwo
-
-;--------------------------------------------------------------
-;
-;       SETNAM   ( addr count  -- )
-;
-;       set file name parameters
-;
-#ifdef HEADERS
-setnamlfa
-    .byt $de,$ad
-    .byt (setnam-*-1)|bit7
-    .asc "SETNA","M"|bit7
-#endif
-setnam
-    lda tos
-    sta FNLEN
-    lda stackl,x
-    sta FNADR
-    lda stackh,x
-    sta 1+FNADR
-    jmp poptwo
-
-;--------------------------------------------------------------
-;
-;       OPEN   ( filenumber device secondary nameaddr count  -- status )
-;
-;       open a file
-;       name is a counted string
-;
-#ifdef HEADERS
-openlfa
-    .byt $de,$ad
-    .byt (_open-*-1)|bit7
-    .asc "OPE","N"|bit7
-#endif
-_open
-#include "enter.i65"
-    .word setnam
-#include "page.i65"
-    .word setlfs
-#include "page.i65"
-    .word to6502
-    stx storex
-    jsr OPEN
-    ldx storex
-    pla
-    sta ip
-    pla
-    sta ip+1
-    ldy #0
-    lda STATUS
-    jmp pushya
-
-;--------------------------------------------------------------
-;
-;       CLOSE   ( filenumber -- status )
-;
-;       close a file
-;
-#ifdef HEADERS
-closelfa
-    .byt $de,$ad
-    .byt (closecfa-*-1)|bit7
-    .asc "CLOS","E"|bit7
-#endif
-closecfa
-    lda tos
-    sta LA
-    stx storex
-    jsr CLOSE
-    ldx storex
-    ldy #0
-    lda STATUS
-    jmp put
-
-;--------------------------------------------------------------
-;
 ;       CMDOFF
 ;
 #ifdef HEADERS
@@ -4532,7 +4437,8 @@ _pabortq
     .word qbranch
     .byt <(pabortq01-*+1)
 #include "pad.i65"
-pabortq02       .word cmdoff
+pabortq02
+    .word cmdoff
 ;#include "page.i65"
 ;               .word _where
 ;#include "page.i65"
@@ -4567,6 +4473,7 @@ abortqlfa
 _abortq
 #include "enter.i65"
     .word _compile
+#include "page.i65"
     .word _pabortq
 #include "page.i65"
     .word clit
@@ -4626,7 +4533,8 @@ _qfind
 #include "page.i65"
     .word fail
 #include "page.i65"
-qfind01         .word exit
+qfind01
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -9663,8 +9571,6 @@ blocklfa
 _block
 #include "enter.i65"
     .word _pblock
-#include "page.i65"
-    .word drop
 #include "page.i65"
     .word exit
 

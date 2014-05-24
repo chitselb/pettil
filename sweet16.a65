@@ -371,6 +371,10 @@ PUSH2
     JMP ST
 
 SW16
+    cli             ; Allow interrupt processing during Sweet16.
+                    ; This will cause problems if Sweet16 is used
+                    ; as part of an IRQ handler.  Not doing this
+                    ; will stop the jiffy clock during Sweet16.
     LDY $0106,X     ;INIT SWEET16 PC
     LDA $0105,X     ;ADDRESS
     SEC
@@ -421,7 +425,6 @@ TOBR
     ; nxt, push, pull, br, ext, rs, rtn
     ; A = addr[low]
     ; X = opcode*2
-    ; Y = 0
     ; N = top/bottom of addr[low]
     ; Z = 0
     ; C = 0 
@@ -572,11 +575,35 @@ xor16
 ;inputs
 ;    ACC (R0) = packet header
 ;returns
+;    N1 = packet header
+;    N2 = editable? $8000 if editable, $0000 if data
+;    N3 = uncompressed? $4000 if uncompressed, $0000 if compressed
 ;    R11 = length
-pktlen16
+pktheader16
+    ;ldy #1
+    dey
+    sty 2*N2
+    sty 2*N3
     lda r0
-    sta r11
-    lda r0+1
+    sta 2*N1                    ; packet header (low)
+    sta r11                     ; packet length (low)
+    ldy r0+1
+    tya
+    sta 1+2*N1                  ; packet header (high)
     and #$7
-    sta r11+1
-    rts
+    sta r11+1                   ; packet length
+    tya
+    and #$80
+    sta 1+2*N2                  ; editable? to N2(high)
+    tya
+    and #$40
+    sta 1+2*N3                  ; uncompressed? to N3(high)
+    ;ldx #r11
+;inputs
+;   X = Sweet16 register address e.g. TOS = 8
+;returns
+;   decrements that 16-bit register twice (X)=(X)-2
+twodec
+    jsr DCR
+    jmp DCR
+
