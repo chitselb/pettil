@@ -847,7 +847,9 @@ _mkpkt
 
 ;--------------------------------------------------------------
 ;
-;       (SCR!)   ( pkt blkbuf newsize oldsize vmbuf -- blkbuf pkt-newsize+2 newsize vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf+2 )
+;       (SCR!)   ( scr blkbuf vmbuf packet blkbuf newsize -- 
+; blkbuf pkt-newsize+2 newsize 
+; vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf+2 )
 ;
 ; Uses Sweet16 to take a lot of the ridiculousness out of the 
 ; pointer math involved in juggling packets in the buffer.
@@ -860,30 +862,46 @@ _mkpkt
 ;    .byt (pscrstore-*-1)|bit7
 ;    .asc "(SCR!",")"|bit7
 pscrstore
-    ldy #4
-    jsr locals    ; TOS = vmbuf; N0 = pkt; N1 = blkbuf; N2 = newsize; N3 = oldsize
     brk
     .byt ld | TOS
-    .byt st | R9                ; vmbuf -> R9
-    .byt ld | N1
-    .byt st | TOS               ; blkbuf
-    .byt ldd | N0               ; pkt += 2
+    .byt st | R10               ; newsize
+    .byt pull                   ; blkbuf
+    .byt add | R10              ; newpacket
+    .byt st | TOS               ; end of new packet
+    .byt ldd | TOS              ; new packetheader
+    .byt ext 
+    .word pktheader16
+;    N1 = packet header
+;    N2 = editable? $8000 if editable, $0000 if data
+;    N3 = uncompressed? $4000 if uncompressed, $0000 if compressed
+;    R11 = length
+    .byt ld | R11
+    .byt st | R9                ; newsize
+    .byt pull
+    .byt st | N0                ; packet
+    .byt ldd | TOS              ; old packetheader
+    .byt ext
+    .word pktheader16
+    .byt pull                   ; vmbuf
+    .byt st | N3
     .byt ld | N0
-    .byt sub | N2
-    .byt push                   ; pkt-newsize+2
-    .byt ld | N2
-    .byt push                   ; newsize               
+    .byt sub | R9
+    .byt st | TOS               ; packet-newsize+2
     .byt ld | R9
+    .byt inr | ACC
+    .byt inr | ACC
+    .byt push                   ; newlength
+    .byt ld | N3
     .byt push                   ; vmbuf
-    .byt add | N3
-    .byt sub | N2
+    .byt add | R11
+    .byt sub | R9
     .byt push                   ; vmbuf+oldsize-newsize
     .byt ld | N0
+    .byt sub | R11
     .byt sub | N3
-    .byt sub | R9
-    .byt push                   ; pkt-oldsize-vmbuf+2
+    .byt push                   ; packet-oldsize-vmbuf
     .byt nxt
-    
+
 ;--------------------------------------------------------------
 ;
 ;       SCR!   ( scr -- )
@@ -897,16 +915,27 @@ pscrstore
 ;
 ;": scr!   ( scr -- )
 ;     editable? @
+;                                 ( scr flag )
 ;     if
-;         pkt@ blkbuf 2dup
-;                               ( packet blkbuf packet blkbuf )
-;         mkpkt swap @ vmbuf @
-;                               ( packet blkbuf newsize oldsize vmbuf )
+;                                 ( scr )
+;         dup pkt@ blkbuf tuck
+;                                 ( scr blkbuf packet blkbuf )
+;         vmbuf @ -rot
+;                                 ( scr blkbuf vmbuf packet blkbuf )
+;         dup mkpkt
+;                                 ( scr blkbuf vmbuf packet blkbuf newsize )
 ;         (scr!)
-;                               ( packet-newsize+2 newsize vmbuf vmbuf+oldsize-newsize packet-oldsize-vmbuf+2 )
-;         move move 0
+;                                 ( scr blkbuf packet-newsize+2 newsize vmbuf vmbuf+oldsize-newsize packet-oldsize-vmbuf+2 )
+;         over vmbuf !
+;                                 ( scr blkbuf packet-newsize+2 newsize vmbuf vmbuf+oldsize-newsize packet-oldsize-vmbuf+2 )
+;         move
+;                                 ( scr blkbuf packet-newsize+2 newsize )
+;         move
+;                                 ( scr )
 ;     then 
+;                                 ( scr )
 ;     drop ;
+;
 scrstorelfa
     .byt $de,$ad
     .byt (_scrstore-*-1)|bit7
@@ -917,34 +946,42 @@ _scrstore
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word qbranch
+    .word qbranch               ; IF
     .byt <(scrstore01-*+1)
 #include "pad.i65"
+    .word
+#include "page.i65"
+    .word dup
+#include "page.i65"
     .word _pktfetch
 #include "page.i65"
     .word _blkbuf
 #include "page.i65"
-    .word _twodup
-#include "page.i65"
-    .word _mkpkt
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word fetch
+    .word _tuck
 #include "page.i65"
     .word vmbuf
 #include "page.i65"
     .word fetch
 #include "page.i65"
+    .word _dashrot
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word _mkpkt
+#include "page.i65"
     .word pscrstore
 #include "page.i65"
-    .word _move
+    .word over
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word store
 #include "page.i65"
     .word _move
 #include "page.i65"
-    .word zero
+    .word _move
 #include "page.i65"
-scrstore01
+scrstore01                      ; THEN
     .word drop
 #include "page.i65"
     .word exit
