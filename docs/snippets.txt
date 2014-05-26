@@ -469,5 +469,135 @@ pscrstore
     .byt nxt
     
     
+;--------------------------------------------------------------
+;
+;       -TRAILING   ( addr +n1 -- addr +n2 )
+;
+; The character count +n1 of a text string beginning at addr
+; is adjusted to exclude trailing spaces.  If +n1 is zero,
+; then +n2 is also zero.  If the entire string consists of
+; spaces, then +n2 is zero.
+;
+;": -trailing   ( addr n1 -- addr n2 )
+;     dup 0
+;     ?do
+;         2dup + 1- c@
+;         bl <>
+;     ?leave
+;         1-
+;     loop ;
+;
+_dashtrailing
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+dashtrailing01
+    .word _twodup
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word ne
+#include "page.i65"
+    .word pqleave
+    .byt <(dashtrailing02-*+1)
+#include "pad.i65"
+    .word oneminus
+#include "page.i65"
+    .word ploop
+    .byt <(dashtrailing01-*+1)
+#include "pad.i65"
+dashtrailing02
+    .word exit
+
+dashtrailing
+    brk
+    .byt ld | TOS
+    .byt st | N0
+    .byt pull
+    .byt ext
+    .word dashtrailing16
+    .byt ld | N0
+    .byt push
+    .byt nxt
+
+sum = addr + size
+
+83e8
+
+bcs exit
+
+size =  3
+        e8
+
+    ldy sum_low
+    lda #0
+    sta sum_low
+tight
+    dey
+    bne a
+
+    bcc nextpage
+    bcs zero
+    dec sum_high
+    dec count_high
+    bne a
+    sec
+
     
-    
+a   lda (sum),y
+    cmp #' '
+    beq tight
+foundnonblank
+    sty sum_low
+    rts
+
+
+two reasons you can exit
+found nonblank
+ran out of string
+
+
+8050
+ 100
+
+8150
+;
+;
+;inputs
+;   TOS (R4) = addr
+;   N0 (R5) = addr+size
+;   N1 (R6) = count 
+;returns
+;   TOS = addr (unchanged)
+;   N0 = addr of last non-blank character (= addr if all are blank)
+    ;clc
+dashtrailing16
+    ldy n                       ; address low byte
+    bne dashtrailing16b
+dashtrailing16a                 ; another page
+    bcs dashtrailing16c
+    dec n+1                     ; address high byte
+    dec n+3                     ; counter high byte
+    bne dashtrailing16b
+    sec                         ; flag last page
+dashtrailing16b
+    dey
+    beq dashtrailing16a
+    lda (n+2),y
+    eor #$20
+    beq dashtrailing16b
+dashtrailing16c
+    sty n
+    rts
+
+   
