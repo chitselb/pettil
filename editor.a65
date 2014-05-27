@@ -1,6 +1,6 @@
 ;--------------------------------------------------------------
 ;
-;       WRAPABOVE   ( logline -- d )
+;       WRAP^   ( logline -- d )
 ;
 ; Reads (a portion of) the linewrap table above the current physical
 ; line (stored at $d8) up to but not including the current logical line.  
@@ -10,7 +10,8 @@
 wrapabovelfa
     .byt $de,$ad
     .byt (wrapabove-*-1)|bit7
-    .asc "WRAPABOV","E"|bit7
+    .asc "WRAP"
+    .byt 94|bit7
 #endif
 wrapabove
     stx storex      ; preserve Forth data stack pointer
@@ -18,8 +19,9 @@ wrapabove
     stx n+1
     stx n
     stx tos+1
-    stx tos
     ldy tos         ; first physical line of this logical line
+    stx tos
+    tya
     beq wrapabove03
     sty n+2
     dex
@@ -333,7 +335,7 @@ eostopaste02
 ; linewrap table $E0-F8, at and below from paste buffer)
 ;
 ;": wrappaste   ( -- dwrap )
-;     wrapabove   ( dwrap )
+;     wrap^   ( dwrap )
 ;     pad >r
 ;     true
 ;     begin
@@ -465,7 +467,7 @@ _flagab
 ;": paste>
 ;     logline ?dup
 ;     if
-;         wrapabove             ( paste screen d )
+;         wrap^             ( paste screen d )
 ;     else
 ;         1 0
 ;     then
@@ -758,7 +760,7 @@ pktplus01
 ; screen codes, with the last two bytes being the packet header.
 ;
 ;": mkpkt   ( blkbuf -- size )
-;     25 wrapabove
+;     25 wrap^
 ;                                 ( blkbuf d )
 ;     rot dup >r
 ;                                 ( d blkbuf ) ( R; blkbuf )
@@ -1312,109 +1314,6 @@ _scrdel
 
 ;--------------------------------------------------------------
 ;
-;       SCRINS   ( scr -- )
-;
-; insert the current screen into the packet buffer.
-;
-;": scrins   ( scr -- )
-;     25 wrapabove
-;     blkbuf dup >r dup 3 + >r 3c!
-;     vidram r> 1000 rlencode
-;     r> - >r
-;     blk@                        
-;     vmbuf @ dup r@ - r@
-;     cmove>
-;     r@ over !
-;     r@ - 2+ blkbuf swap r>
-;     cmove 
-;     vmsiz 1+! ;
-;
-;scrinslfa
-;    .byt $de,$ad
-;    .byt (_scrins-*-1)|bit7
-;    .asc "SCRIN","S"|bit7
-;_scrins
-;#include "enter.i65"
-;    .word clit
-;    .byt 25
-;#include "pad.i65"
-;    .word wrapabove
-;#include "page.i65"
-;    .word _blkbuf
-;#include "page.i65"
-;    .word dup
-;#include "page.i65"
-;    .word tor
-;#include "page.i65"
-;    .word dup
-;#include "page.i65"
-;    .word three
-;#include "page.i65"
-;    .word plus
-;#include "page.i65"
-;    .word tor
-;#include "page.i65"
-;    .word threecstore
-;#include "page.i65"
-;    .word vidram
-;#include "page.i65"
-;    .word rfrom
-;#include "page.i65"
-;    .word plit
-;    .word 1000
-;#include "pad.i65"
-;    .word rlencode
-;#include "page.i65"
-;    .word rfrom
-;#include "page.i65"
-;    .word minus
-;#include "page.i65"
-;    .word tor
-;#include "page.i65"
-;    .word _pktfetch
-;#include "page.i65"
-;    .word vmbuf
-;#include "page.i65"
-;    .word fetch
-;#include "page.i65"
-;    .word dup
-;#include "page.i65"
-;    .word rfetch
-;#include "page.i65"
-;    .word minus
-;#include "page.i65"
-;    .word rfetch
-;#include "page.i65"
-;    .word cmovegt
-;#include "page.i65"
-;    .word rfetch
-;#include "page.i65"
-;    .word over
-;#include "page.i65"
-;    .word store
-;#include "page.i65"
-;    .word rfetch
-;#include "page.i65"
-;    .word minus
-;#include "page.i65"
-;    .word twoplus
-;#include "page.i65"
-;    .word _blkbuf
-;#include "page.i65"
-;    .word swap
-;#include "page.i65"
-;    .word rfrom
-;#include "page.i65"
-;    .word cmove
-;#include "page.i65"
-;    .word vmsiz
-;#include "page.i65"
-;    .word oneplusstore
-;#include "page.i65"
-;    .word exit
-
-;--------------------------------------------------------------
-;
 ;       EDITCOPY   ( -- )
 ;
 ; STOP-C   Copy current line to end of paste buffer
@@ -1628,16 +1527,50 @@ editnowrap01
 
 ;--------------------------------------------------------------
 ;
+;       EDITTO   ( to -- )
+;
+; save current screen, get "to" screen as current
+;
+;": editto
+;     scr @ scr!
+;     0 max scr@ ;
+;
+;edittopscrlfa
+;    .byt $de,$ad
+;    .byt (_edittopscr-*-1)|bit7
+;    .asc "EDITTOPSC","R"|bit7
+_editto
+#include "enter.i65"
+    .word scr
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _scrstore
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word _max
+#include "page.i65"
+    .word _scrfetch
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;       EDITTOPSCR   ( -- )
 ;
 ; restore from the top (first) screen
 ;
 ;edittopscrlfa
 ;    .byt $de,$ad
-;    .byt (edittopscr-*-1)|bit7
+;    .byt (_edittopscr-*-1)|bit7
 ;    .asc "EDITTOPSC","R"|bit7
-edittopscr
+_edittopscr
 #include "enter.i65"
+    .word zero
+#include "page.i65"
+    .word _editto
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1646,27 +1579,22 @@ edittopscr
 ;
 ; restore from the next screen or append a blank one
 ;
+;": editnextscr   ( -- )
+;   scr @ 1+ editto ;
+;
 ;editnextscrlfa
 ;    .byt $de,$ad
-;    .byt (editnextscr-*-1)|bit7
+;    .byt (_editnextscr-*-1)|bit7
 ;    .asc "EDITNEXTSC","R"|bit7
-editnextscr
+_editnextscr
 #include "enter.i65"
     .word scr
 #include "page.i65"
-    .word dup
-#include "page.i65"
     .word fetch
 #include "page.i65"
-    .word _scrstore
+    .word oneplus
 #include "page.i65"
-    .word dup
-#include "page.i65"
-    .word oneplusstore
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _scrfetch
+    .word _editto
 #include "page.i65"
     .word exit
 
@@ -1677,39 +1605,21 @@ editnextscr
 ; restore from the previous screen or insert a blank one
 ;
 ; editprevscr   ( -- )
-;   scr dup @                   ( scr # )
-;   if
-;       dup 1-! 
-;   then 
-;   @ scr@ ;
+;   scr @ 1- editto ;
 ;
 editprevscrlfa
     .byt $de,$ad
-    .byt (editprevscr-*-1)|bit7
+    .byt (_editprevscr-*-1)|bit7
     .asc "EDITPREVSC","R"|bit7
-editprevscr
+_editprevscr
 #include "enter.i65"
     .word scr
 #include "page.i65"
-    .word dup
-#include "page.i65"
     .word fetch
 #include "page.i65"
-    .word dup
+    .word oneminus
 #include "page.i65"
-    .word _scrstore
-#include "page.i65"
-    .word qbranch
-    .byt <(editprevscr01-*+1)
-#include "pad.i65"
-    .word dup
-#include "page.i65"
-    .word oneminusstore
-#include "page.i65"
-editprevscr01
-    .word fetch
-#include "page.i65"
-    .word _scrfetch
+    .word _editto
 #include "page.i65"
     .word exit
 
@@ -1895,10 +1805,10 @@ editmenu01
      .word _editpaste
      .word editdelscr
      .word editinsscr
-     .word edittopscr
+     .word _edittopscr
      .word _editnowrap
-     .word editnextscr
-     .word editprevscr
+     .word _editnextscr
+     .word _editprevscr
 
 ;--------------------------------------------------------------
 ;
