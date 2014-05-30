@@ -204,3 +204,185 @@ new screen packet
 packet data     FF FF FF    three bytes of linewrap for lines 1..24
 packet address  05 80       packet header with editable ($8000) bit set
 
+REHASH
+move everything down to pad in sorted threaded order
+block move the whole thing back
+
+search order
+
+context @
+begin
+    
+while
+    (findvocab)
+    chain to parent vocabulary
+repeat
+(findcore)
+
+
+(findcore)
+search new words
+dhash
+search core by hash
+
+
+create
+
+context @
+current !
+find
+
+
+defining words in a vocabulary 
+    add 2 to the length
+    suffix with the vocabulary link
+
+
+
+
+forget
+
+
+
+
+words
+context @
+collect all the CFAs at pad, with addresses of their symbols
+
+
+
+
+
+core definition symbol
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|         $1467                 | +0 code field
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+[0]             | immediate bit   +2 name field length/flags byte
+| [0]           | smudge bit
+|   [0]_________| vocabulary bit
+|     [    5    ] name length 0..31
++-+-+-+-+-+-+-+-+
+|      A        |                 +3 name field first letter
++-+-+-+-+-+-+-+-+
+|      L        |
++-+-+-+-+-+-+-+-+
+|      L        |
++-+-+-+-+-+-+-+-+
+|      O        |
++-+-+-+-+-+-+-+-+
+|      T        |                 +n name field last letter
++-+-+-+-+-+-+-+-+
+
+vocabulary definition symbol
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|         $22F3                 | +0 code field
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+[0]             | immediate bit   +2 name field length/flags byte
+| [0]           | smudge bit
+|   [1]_________| vocabulary bit
+|     [    4    ] name length (0..31)
++-+-+-+-+-+-+-+-+
+|      E        |                 +3 name field first letter
++-+-+-+-+-+-+-+-+
+|      D        |
++-+-+-+-+-+-+-+-+
+|      I        |
++-+-+-+-+-+-+-+-+
+|      T        |                 +n name field last letter
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|         $7536                 | +n+1 vocabulary link (0 for last)
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+vocabulary entry
++-+-+-+-+-+-+-+-+
+|    jsr        |                 +0 code
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    dovocab                    | +0 code field
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    first word in vocabulary   | +3 first word
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    parent vocab (0 = core)    | +5 parent vocabulary
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+
+
++---------------+
+| video         | $8000-$83ff video memory
++===============+
+| heads         | $7400-$7fff symbol table
++---------------+
+|temp dictionary| $6800-$73ff interpreter/compiler
++---------------+
+| block buffer  | $6400-$67ff 1K block buffer
++---------------+
+| ramdisk       | $63ff
+| packets       |
+|   |           |
+|   |           |
+|   v           |
+|               |
+   ...           
+|               |
+|   ^           | PAD
+|   |           | HERE
+|   |           |
+| dictionary    |
+| bodies        | $0400
++---------------+
+| tape buffers  |
+| and stuff     | $0200-$03ff
++---------------+
+| stack page    | $0100-$01ff
++---------------+
+| zero page     | $0000-$00ff
++---------------+
++-+-+-+-+-+-+-+-+
+|      D        |
++-+-+-+-+-+-+-+-+
+|      I        |
++-+-+-+-+-+-+-+-+
+|      T        |                 +n name field last letter
+
+
+-----symtab---
+8 bytes bloom filter
+32 bytes corehash
+2 bytes newstuff
+
+
+REHASH - high level
+called by COLD to move the symbol table up from PAD to the top of memory
+erase bloom filter
+erase corehash table (formerly lfalist)
+cmove the whole symbol table to pad
+
+target = symtab+8+32+2		; start returning things here
+if called by COLD
+	scan forward for a 0 length.  This delimits the temp dictionary
+	the next word is a himem load address where the temporary dictionary
+	would load
+	copy everything from that point to $7FFF
+else
+	target
+	pad
+	over newstuff @ swap - 		; newstuff-target
+	cmove
+endif
+
+corehash[0] = target
+for ihash = 0 to 15
+	corehash[ihash] = target
+	for ilength = 1 to 31
+		for each symbol
+			set the bloom filter bit.  It does not matter if we do this multiple times.
+			if (ilength = symbol.length) and (ihash = symbol.hash)
+				copy symbol back to symtab
+				target += symbol.length+2
+				if symbol.isvocab
+					target += 2 
+				endif
+			endif
+		next
+	next
+next
+startup ['] abort  over !  @ execute

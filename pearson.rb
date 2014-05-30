@@ -1,73 +1,69 @@
-#hexout = "0123456789abcdef"
-#bucket = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-#pearson = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-#psize=31
-#pearsonmin=9999
-#nybroll = [0,2,4,6,8,10,12,14,1,3,5,7,9,11,13,15]
-#while 1
-#chrc = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-	bucket = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-#	for i in 0..psize
-#		pearson[i]=rand(256)
-#	end
+# pearson.rb
+#
+# given a file containing Forth words, generate random pearson hash
+# tables forever, printing out each one that is more efficient than
+# the best so far.
+
+psize=7
+pearson = Array.new(psize+1,0)
+lowest_so_far=50
+# 128 153 126 204 94 193 211 4
+# 118 208 124 83 15 168 74 126
+wordlist = Array.new
 	file=File.new("t.1", "r")
+	while line=(file.gets) do
+        wordlist += [line.chomp]
+        puts line
+	end
+    file.close
 
-#	while line=(file.gets).chomp
-	line="xyzzy"
+puts "hash = char^pearson[hash&psize]"
+tries = 0
+while true
+    tries +=1
+
+    pearson = Array.new
+    until pearson.length > psize do
+        pearson += [rand(256)]
+        pearson.uniq!
+    end
+
+	bucket = Array.new(16,0)
+    wordlist.each { |line|
+#		hash=0
 		hash=line.length
-		for i in 1..(line.length)
-#			hash = hash^pearson[(line[i]&(psize))]
-#			foo = (hash&psize)
-			hash = hash^line[i]
-#			foo = hash^line[i]
-#			hash = hash^pearson[foo&psize]^pearson[psize-((line[i]-i)&psize)]
-#			hash = hash^line[i]^nybroll[i&15]
-#			hash = (hash&255)
-		end
-		h1 = (hash&240)/16
-		hash = h1^(hash&15)
-		bucket[hash] = bucket[hash]+1
-#		print "#{hexout[hash,1]}"
-	end
+		line.each_byte { |char|
+			hash = char^pearson[hash&psize]
+#			hash ^= pearson[char&psize]
+		}
 
-	for i in 0..15
-		print "#{bucket[i]} "
-	end
+# this really wouldn't work without a larger table
+#		line.each_byte { |char|
+#            index = hash^char
+#			hash = pearson[(index&psize)]
+#		}
+#
+# h := 0
+# for each c in C loop
+#   index := h xor c
+#   h := T[index]
+# end loop
+# return h
 
-foo = <<END
-	off=0
-	for i in 0..15
-			fudge = (bucket[i]-17).abs
-			off = off+fudge
-			off = off+fudge*2   if fudge > 3
-			off = off+fudge*7   if fudge > 6
-	end
 
-	if (pearsonmin > off)
-		bestpearson = pearson
-		pearsonmin = off
-		off = 0
-		for i in 0..15
-			print "#{bucket[i]} "
-			fudge = (bucket[i]-17).abs
-			off = off+fudge
-			off = off+fudge*2   if fudge > 3
-			off = off+fudge*7   if fudge > 6
-		end
-		puts "#{off}"
-		for i in 0..psize
-			print "#{pearson[i]} "
-#			puts "#{i} #{pearson[i]} #{bestpearson[i]} #{(bestpearson[i]-17).abs}"
-		end
-		puts
-	end
-#	for i in 0...(chrc.size)
-#		if chrc[i]>0
-#			print "#{i}_#{chrc[i]} "
-#		end
-#	end
-#	puts
-	file.close
+		hash = ((hash&240)/16)^(hash&15)
+		bucket[hash] += 1
+    }
+    t = bucket.max
+    if t<lowest_so_far
+        lowest_so_far = t
+		pearson.each { |x| print "#{x} " }
+        print "\n"
+		bucket.each { |x| print "#{x} " }
+        print "\n#{t}\n"
+    end
+    if tries > 9999
+        print "."
+        tries = 0
+    end
 end
-puts off
-END
