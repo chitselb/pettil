@@ -3,7 +3,9 @@
     # return a hash with a symbol table entry in it
     def make_symbol(name="", cfa=0)
         # values calculated by pearson.rb
-        pearson = [210, 147, 241, 139, 113, 111, 156, 193]
+        # 14..22		102 162 3 150 98 88 207 149
+        pearson = [102, 162, 3, 150, 98, 88, 207, 149]
+		psize=pearson.length-1
 
         c1 = [cfa.to_i].pack("S<")
     #   puts c1
@@ -12,8 +14,12 @@
         c3 = name.bytes.pack("C")
         nfa = [name.length].pack("C")+name
         data = [cfa.to_i].pack("S<")+nfa
-        eorbyte = data.unpack("C*").inject(0,:^)
-        eornybble = (eorbyte & 15) ^ ((eorbyte ^ 240)/16).to_i
+        
+        hash=name.length
+		name.each_byte { |char|
+			hash = char^pearson[hash&psize]
+		}
+        eornybble = (hash & 15)^((hash ^ 240)/16)
         t = { 
         name: name ,
         data: data , 
