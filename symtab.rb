@@ -79,8 +79,15 @@
 
 	# build a label file for tdict so it can find bodies in pettil
 	compiler_interpreter = ' _allot _comma _ccomma _commadollar _herelsb' +
-		' _commacfa commacfa01 _commaxt commaxt01 _create create02 create03 ' +
-		' _colon '
+		' _commacfa commacfa01 _commaxt commaxt01 _create create02 create03' +
+		' _colon semi _constant _variable user _plusorigin _rethread' +
+		' rethread01 rethread02 _unthread unthread01 unthread02 unthread03' +
+		' boyd boyd01 boyd02 boyd03 boyd04 boyd05 boyd06' +
+		' dhash dhash01 dhash02 dhashfetch bloomstore bloomfetch' +
+		' bloomfetch01 dhashstore dhashstore01 dhashstore02 dhashstore03' +
+		' dhashstore04 dhashstore05 dhashstore06 _forget' +
+		' _abort _lparen _definitions forth _vocabulary _immediate _interpret rolllfa' +
+		' '
     symfile = File.open("syms_tdict.tmp",'w') do |f|
 #       symfile.write(#{a[0]}=#{a[1]}\n")
 		symbols.each do |k, v|

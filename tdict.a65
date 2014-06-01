@@ -16,6 +16,72 @@
 
 #define RVSON       $12
 #define RVSOFF      $92
+
+#define CHRIN       $ffcf
+   ; Input character
+
+#define set $10
+#define ld $20
+#define st $30
+#define ldi $40
+#define sti $50
+#define ldd $60
+#define std $70
+#define pop $80
+#define stpx $90
+#define add $A0
+#define sub $B0
+#define popd $C0
+#define cpr $D0
+#define inr $E0
+#define dcr $F0
+#define rtn   $00
+#define bp    $01
+#define bm    $02
+#define bz    $03
+#define bnz   $04
+#define bm1   $05
+#define bnm1  $06
+#define nxt   $07
+#define push  $08
+#define pull  $09
+#define br    $0a
+#define ext   $0b
+#define bs    $0c
+#define rs    $0d
+#define bc    $0e
+#define bnc   $0f
+#define R0    $0
+#define R1    $1
+#define R2    $2
+#define R3    $3
+#define R4    $4
+#define R5    $5
+#define R6    $6
+#define R7    $7
+#define R8    $8
+#define R9    $9
+#define R10   $a
+#define R11   $b
+#define R12   $c
+#define R13   $d
+#define R14   $e
+#define R15   $f
+#define ACC    $0
+#define UP     $1
+#define IREG   $2
+#define ILIMIT $3
+#define TOS    $4
+#define N0     $5
+#define N1     $6
+#define N2     $7
+#define N3     $8
+#define R0L    $0
+#define R0H    R0L+$1
+#define R14L   R0L+$1c
+#define R14H   R0L+$1d
+#define R15L   R0L+$1e
+#define R15H   R0L+$1f
 #include syms_tdict.tmp
 
 ;--------------------------------------------------------------
@@ -476,3 +542,720 @@ _colon
     .word _rbracket
 #include "page.i65"
     .word _psemi
+
+;--------------------------------------------------------------
+;
+;       ;   ( -- )
+;
+; * 83 compiler
+;
+#ifdef HEADERS
+semilfa
+    .byt $de,$ad
+    .byt (semi-*-1)|bit7|bit6
+    .asc ";"|bit7
+#endif
+semi
+#include "enter.i65"
+    .word _qcsp
+#include "page.i65"
+    .word _compile
+    .word exit
+#include "page.i65"
+    .word _smudge
+#include "page.i65"
+    .word _lbracket
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       CONSTANT   ( n -- )
+;
+; * 83 compiler
+;
+#ifdef HEADERS
+constantlfa
+    .byt $de,$ad
+    .byt (_constant-*-1)|bit7
+    .asc "CONSTAN","T"|bit7
+#endif
+_constant
+#include "enter.i65"
+    .word _create
+#include "page.i65"
+    .word _comma
+#include "page.i65"
+    .word _psemi
+;doconst
+;    pla
+;    sta n
+;    pla
+;    sta n+1
+;    ldy #2
+;    lda (n),y
+;    sta n+2         ; high byte
+;    dey
+;    lda (n),y       ; low byte
+;    ldy n+2
+;    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       VARIABLE   ( -- )
+;
+; * 83 compiler
+;
+#ifdef HEADERS
+variablelfa
+    .byt $de,$ad
+    .byt (_variable-*-1)|bit7
+    .asc "VARIABL","E"|bit7
+#endif
+_variable
+#include "enter.i65"
+    .word _create
+#include "page.i65"
+    .word two
+#include "page.i65"
+    .word _allot
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       USER   ( n -- )
+;
+#ifdef HEADERS
+userlfa
+    .byt $de,$ad
+    .byt (user-*-1)|bit7
+    .asc "USE","R"|bit7
+#endif
+user
+#include "enter.i65"
+    .word _constant
+#include "page.i65"
+    .word _psemi
+;uservar
+;    pla
+;    tay
+;    pla
+;    sta n+1
+;    iny
+;    bne uservar01
+;    inc n+1
+;uservar01
+;    sty n
+;    ldy #0
+;    clc
+;    lda up
+;    adc (n),y
+;    sta n
+;    lda up+1
+;    adc #0
+;    tay
+;    lda n
+;    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       +ORIGIN
+;
+#ifdef HEADERS
+plusoriginlfa
+    .byt $de,$ad
+    .byt (_plusorigin-*-1)|bit7
+    .asc "+ORIGI","N"|bit7
+#endif
+_plusorigin
+#include "enter.i65"
+    .word plit
+    .word userarea
+#include "pad.i65"
+    .word plus
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       BRINGOUTYERDEAD   ( addr -- deadlfa|0 )
+;
+; scans forward in memory returning the address of the next $DE $AD
+; in memory that is followed by a name
+;" http://www.youtube.com/watch?v=grbSQ6O6kbs
+;
+;#ifdef HEADERS
+;boydlfa
+;    .byt $de,$ad
+;    .byt (boyd-*-1)|bit7
+;    .asc "BRINGOUTYERDEA","D"|bit7
+;#endif
+boyd
+    brk
+    .byt set  | R10
+    .word $de
+    .byt set  | R11
+    .byt $de,$ad
+    .byt set  | N0
+    .word userdp-userarea
+    .byt ld   | UP
+    .byt add  | N0
+    .byt st   | N0
+    .byt ldd  | N0
+    .byt st   | N0          ; here
+    .byt ldd  | N0
+    .byt popd | N0          ; restore N0
+    .byt st   | N1
+    .byt ld   | R11
+    .byt std  | N0          ; here+2 -> N0
+    .byt rtn
+boyd01
+    brk
+    .byt ldi  | TOS
+    .byt cpr  | R10
+    .byt bnz, <(boyd01-*-1)
+    .byt dcr  | TOS
+    .byt ldd  | TOS
+    .byt cpr  | R11
+    .byt bz,  <(boyd02-*-2)
+    .byt dcr  | TOS
+    .byt br,  <(boyd01-*-1)
+boyd02
+    .byt ld   | TOS
+    .byt cpr  | N0          ; TOS=here+2?
+    .byt bnz, <(boyd03-*-2)
+    .byt sub  | ACC
+    .byt st   | TOS
+    .byt br,  <(boyd06-*-2)
+boyd03
+    .byt rtn                ; TOS points to probable NFA
+    ldy #0
+    lda (tos),y
+    bpl boyd01              ; NFA length must be negative
+    and #$1f
+    tay
+    lda (tos),y
+    bpl boyd01              ; last NFA byte must be negative
+boyd04
+    dey
+    beq boyd05
+    lda (tos),y
+    bpl boyd04
+    bmi boyd01              ; middle NFA bytes must be positive
+boyd05
+    brk
+    .byt popd | TOS         ; point at the LFA
+boyd06
+    .byt popd | N0          ; back up the pointer
+    .byt ld   | N1
+    .byt std  | N0          ; restore previous contents of here
+    .byt nxt
+
+;--------------------------------------------------------------
+;
+;       DHASH   ( nfa -- hash1 hash2 )
+;
+; input is NFA or address of a counted string
+; hash1 is the thread index for the core vocabulary (0-15)
+; hash2 is used by the Bloom filter
+;
+;symbol table 
+;+---------------+
+;|    CFA[low]   |  +0      Code field address
+;|    CFA[high]  |
+;+-+-+-+-+-+-+-+-+
+;|     [   len   ]  +2      Length field
+;[I]             |          Immediate bit
+;| [V]           |          Vocabulary bit
+;|   [S]         |          Smudge bit
+;+-+-+-+-+-+-+-+-+
+;|   name[1]     |  +3      Name field
+;|           ... |
+;|   name[len]   |
+;+~~~~~~~~~~~~~~~+
+;?    LFA[low]   ?  +len+3  Link field address
+;?    LFA[high]  ?		   (present iff Vocabulary)
+;+~~~~~~~~~~~~~~~+
+;
+#ifdef HEADERS
+dhashlfa
+    .byt $de,$ad
+    .byt (dhash-*-1)|bit7
+    .asc "DHAS","H"|bit7
+#endif
+dhash
+    stx storex
+    ldy #0
+    lda (tos),y
+    and #$3f                ; turn off 7 and 6, not 5 (smudge)
+    sta n                   ; seed hash1 with length
+    sty n+1                 ; seed hash2 with 0
+    tay                     ; count backwards to 1 from length
+    iny                     ;       hash2   hash1
+dhash01
+    dey                             ;[2]
+    beq dhash02                     ;[2]
+    ; the pearson hash should return an evenly distributed
+    ; value between $00-$0f based on the wordset in the
+    ; core dictionary.  In other words, all 16 threads
+    ; are initially balanced with the same number of words,
+    ; to reduce searches to (on average) 1/16th of the
+    ; dictionary.
+    lda (tos),y                     ;[5]
+    ;sec                             ;[2] ~wut? doesn't and 7 make this unnecessary?
+    ;sbc #$20                        ;[2] control chars
+    and #(pearsonx-pearson-1)       ;[2]
+    tax                             ;[2]
+    lda n                           ;[3]
+    eor pearson,x                   ;[4]
+    sta n                           ;[3]
+    ; the bloom filter hash tries to answer the question,
+    ; 'is this a number or does it contain numbers?'
+    ; returning zero (no digits present) or the sum (mod64)
+    ; of all digits in this word
+    lda (tos),y             ;[5]
+    and #$7f                ;[2]    ; ignore bit7
+    clc                     ;[2]
+    adc #$FF-('9')          ;[2]
+    adc #'9'-'0'+1          ;[2]    ; carry is set only
+    ; for digits '0'-'9'
+    bcc dhash01             ;[3]  [12]hash2 [27]hash1
+    adc n+1                 ; 0> -1 0 1 2 3 0= 0< 0<> sp0 rp0
+    sta n+1                 ; 1+ 1- 2+ 2- 2/ 2* forth-83 dr0 dr1
+    jmp dhash01             ; 2drop 2dup 2over 2rot 2swap 2! 2@
+    ; 2constant 2variable d0= d2/ d2*
+dhash02
+    lda n
+    lsr
+    lsr                     ; xor the pearson hash byte
+    lsr                     ; into a single nybble
+    lsr                     ; - - - - [ 7 6 5 4 ]
+    eor n                   ; 7 6 5 4 [ 3 2 1 0 ]
+    and #$0f                ; - - - - [4bit hash]
+; DEBUG
+;    jsr debug               ; print out some entertainment
+; /DEBUG
+    sta tos
+    sty tos+1       ; for both hashes, high byte always 0
+    lda n+1         ; sum of all digits 0..9
+    ldx storex
+    jmp pushya
+
+;DEBUG
+; hex dump the byte in A
+;debug
+;    pha
+;    pha
+;    and #$0f
+;    jsr print
+;    pla
+;    lsr
+;    lsr
+;    lsr
+;    lsr
+;    jsr print
+;    pla
+;dbout
+;    rts
+;print
+;    sed
+;    cmp #10
+;    adc #'0'
+;    cld
+;    jmp CHROUT
+; ;/DEBUG
+
+;--------------------------------------------------------------
+;
+;       DHASH@   ( hashkey -- LFA )
+;
+; retrieve the head of this hash thread
+;
+;#ifdef HEADERS
+;dhashfetchlfa
+;  .byt $de,$ad
+;    .byt (dhashfetch-*-1)|bit7
+;    .asc "DHASH","@"|bit7
+;#endif
+dhashfetch
+    brk
+    .byt set  | ACC
+    .word lfalist
+    .byt add  | TOS
+    .byt add  | TOS
+    .byt st   | TOS
+    .byt ldd  | TOS
+    .byt st   | TOS
+    .byt nxt
+
+;--------------------------------------------------------------
+;
+;       BLOOM!   ( hash -- )
+;
+; set the bit in the dictionary's bloom filter
+;
+; hash is an 8-bit hash code indexing a 256-bit bitfield
+;#ifdef HEADERS
+;bloomstorelfa
+;  .byt $de,$ad
+;    .byt (bloomstore-*-1)|bit7
+;    .asc "BLOOM","!"|bit7
+;#endif
+bloomstore
+    lda tos                 ; set bloom filter bit for hash2
+    and #7
+    tay
+    lda power2,y
+    sta n
+    lda tos
+    lsr
+    lsr
+    lsr
+    and #(bloomx-bloom-1)   ; don't write outside filter area
+    tay
+    lda n
+    ora bloom,y
+    sta bloom,y
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       BLOOM@   ( hash -- flag )
+;
+; test a bit in the filter
+; hash indexes a single bit in the bloom filter
+; input value is in the range 0-63, representing which bit to test
+;
+; flag values
+; false = it can't be in there (bit was clear)
+; true = it might be in there (bit was set)
+;#ifdef HEADERS
+;bloomfetchlfa
+;    .byt $de,$ad
+;    .byt (bloomfetch-*-1)|bit7
+;    .asc "BLOOM","@"|bit7
+;#endif
+bloomfetch
+    lda tos                 ; read bloom filter bit for hash2
+    and #7
+    tay
+    lda power2,y
+    sta n
+    lda tos
+    lsr
+    lsr
+    lsr
+    and #(bloomx-bloom-1)   ; don't read outside filter area
+    tay
+    lda bloom,y
+    ldy #0
+    and n
+    beq bloomfetch01
+    dey
+bloomfetch01
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       DHASH!   ( LFAnew hash1 -- )
+;
+; links the current LFA onto the top of this hash' thread
+;
+; When we're done, the word whose LFAnew is on the stack will become
+; the new top of this hash thread, and the new word's LFA will link
+; to the previous top of the chain.
+;
+; sweet16 saved 51 bytes vs. 6502
+;#ifdef HEADERS
+;dhashstorelfa
+;    .byt $de,$ad
+;    .byt (dhashstore-*-1)|bit7
+;    .asc "DHASH","!"|bit7
+;#endif
+dhashstore
+    ldy #1
+    jsr locals               ; LFAnew -> N0
+    brk
+    .byt set  | R11
+    .word lfalist
+    .byt sub  | ACC
+    .byt st   | N2          ; 0 -> N2
+    .byt ld   | R11
+    .byt add  | TOS
+    .byt add  | TOS
+    .byt st   | R11         ; R11+hash1*2 -> R11
+    .byt ldd  | R11
+    .byt popd | R11         ; back up the pointer
+    .byt bnz, <(dhashstore01-*-2)
+    .byt set  | ACC
+    .word rootlfa
+    .byt std  | R11
+    .byt popd | R11
+dhashstore01
+    .byt st   | N1          ; head -> N1
+    .byt rtn
+    ldy #2
+    lda (n),y
+    and #$1f
+    sta n+7                 ; length of name being inserted
+dhashstore02
+    lda (n+2),y
+    and #$1f
+    sta n+6
+    lda n+7
+    cmp n+6                 ; compare lengths
+    bcc dhashstore05
+    bne dhashstore04
+    ;sec
+    adc #1
+    tay                     ; last char in names
+dhashstore03
+    lda (n),y
+    eor (n+2),y
+    asl                     ; compare char ignoring bit7
+    bne dhashstore04
+    dey
+    cpy #2
+    bne dhashstore03        ; stop at first char
+    dey
+    brk
+    .byt set  | ACC
+    .byt $de,$ad
+    .byt std  | N1
+    .byt rtn
+dhashstore04
+    brk
+    .byt ld   | N1
+    .byt st   | N2          ; keep track of where we've just been
+    .byt ldd  | N1
+    .byt st   | N1          ; (N1) -> N1
+    .byt rtn
+    ldy #2
+    bne dhashstore02
+dhashstore05
+    brk
+    .byt ld   | N2
+    .byt bnz, <(dhashstore06-*-2)
+    .byt ld   | R11         ; empty list, insert at the head
+    .byt st   | N2          ; head -> N2
+dhashstore06
+    .byt ld   | N0
+    .byt std  | N2          ; N0 -> (N2)
+    .byt ld   | N1
+    .byt std  | N0          ; N1 -> (N0)
+    .byt pull               ; drop the hash
+    .byt nxt
+
+;--------------------------------------------------------------
+;
+;       RETHREAD   ( -- )
+;
+; When the system is first loaded, all LFAs contain $DE $AD.
+; The reason for this is twofold.  PETTIL uses a hash-threaded
+; dictionary, and calculating the hash values and link fields
+; by hand would be an extremely cumbersome activity.
+; More importantly, FORGET might wipe away words that are linked in
+; this fashion and break the link chains.  So when FORGET is invoked,
+; first it performs UNTHREAD (to mark all LFAs as DEAD) then it moves
+; the dictionary pointer (DP) to where it belongs, then it does RETHREAD
+;
+; This word builds the LFA field in every word up to this point.
+; It also marks the last word in the core dictionary.
+; links all LFAs
+;" : rethread   ( -- )
+;       lfalist 40 erase
+;       0 +origin
+;       begin   bringoutyerdead
+;               ?dup
+;       while   dup dup 2+
+;               dhash
+;               bloom!
+;               dhash!
+;       until ;
+;
+;#ifdef HEADERS
+;rethreadlfa
+;    .byt $de,$ad
+;    .byt (_rethread-*-1)|bit7
+;    .asc "RETHREA","D"|bit7
+;#endif
+_rethread
+#include "enter.i65"
+    .word plit
+    .word bloom
+#include "pad.i65"
+    .word clit
+    .byt 40                 ; bloom filter (8) and lfalist (32)
+#include "pad.i65"
+    .word _erase
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word _plusorigin
+#include "page.i65"
+rethread01
+    .word boyd              ; begin boyd ?dup while ... repeat
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(rethread02-*+1)
+#include "pad.i65"
+    .word dup               ; ( lfa lfa )
+#include "page.i65"
+    .word dup               ; ( lfa lfa lfa )
+#include "page.i65"
+    .word twoplus           ; ( lfa lfa nfa )
+#include "page.i65"
+    .word dhash             ; ( lfa lfa hash1 hash23 )
+#include "page.i65"
+    .word bloomstore        ; ( lfa lfa hash1 )
+#include "page.i65"
+    .word dhashstore        ; ( lfa )
+#include "page.i65"
+    .word branch
+    .byt <(rethread01-*+1)
+#include "pad.i65"
+rethread02
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       UNTHREAD   ( -- )
+;
+; iterate through all LFAs and reset them to $DEAD
+;
+;" : unthread
+;       16 0 do                         ( )
+;               i dhash@                ( lfa1 )
+;               begin
+;                       dup             ( lfa1 lfa1 )
+;                       @               ( lfa1 lfa2 )
+;                       ?dup            ( lfa1 lfa2 true | lfa1 false )
+;               while                   ( lfa1 lfa2 )
+;                       $dead           ( lfa1 lfa2 $dead )
+;                       rot             ( lfa2 $dead lfa1 )
+;~ dup 2- ( nfa ) dup c@ ( nfa len ) $80 or ( nfa len ) swap c! ( )
+;                       !               ( lfa2 )
+;               repeat
+;                                       ( lfa )
+;               drop                    ( )
+;       loop
+;
+;#ifdef HEADERS
+;unthreadlfa
+;    .byt $de,$ad
+;    .byt (_unthread-*-1)|bit7
+;    .asc "UNTHREA","D"|bit7
+;#endif
+_unthread
+#include "enter.i65"
+    .word clit
+    .byt 16
+#include "pad.i65"
+    .word zero
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+unthread01      .word i
+#include "page.i65"
+    .word dhashfetch
+#include "page.i65"
+unthread02      .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qbranch
+    .byt <(unthread03-*+1)
+#include "pad.i65"
+    .word plit
+    .byt $de,$ad
+#include "pad.i65"
+    .word rot
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word branch
+    .byt <(unthread02-*+1)
+#include "page.i65"
+unthread03      .word drop
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word dhashstore
+#include "page.i65"
+    .word ploop
+    .byt <(unthread01-*+1)
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       EXPECT2   ( addr +n -- )
+;
+; A variant of EXPECT, this uses a phantom screen
+;
+#ifdef HEADERS
+expect2lfa
+    .byt $de,$ad
+    .byt (expect2-*-1)|bit7
+    .asc "EXPECT","2"|bit7
+#endif
+expect2
+    jmp expect2vector
+expect2vector
+    ldy #1
+    jsr locals
+    stx storex
+
+    lda #3      ; Screen = device 3
+    sta $af     ; DFLTN Default Input Device = screen
+    lda #$0
+    sta $c4     ; PNT pointer - current scren line address
+    sta $c6     ; PNTR cursor column on current line
+    lda #$7c
+    sta $c5     ; PNT
+    lda #39
+    sta $d5     ; LNMX physical screen line length
+
+    dey
+expect201
+    iny
+    cpy tos
+    bcs expect202
+    jsr CHRIN
+    cmp #$0d
+    beq expect202
+    sta (n),y
+    bne expect201
+expect202
+    tya
+    ldy span+3
+    sta (up),y
+    iny
+    lda #0
+    sta (up),y
+    ldx storex
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       FORGET
+;
+; * 83 interpreter
+;
+; unthread, move DP, then rethread
+; don't forget to rechain vocabularies!
+; ~ work this over to use pointers only (no RETHREAD/UNTHREAD)
+#ifdef HEADERS
+forgetlfa
+    .byt $de,$ad
+    .byt (_forget-*-1)|bit7
+    .asc "FORGE","T"|bit7
+#endif
+_forget
+#include "enter.i65"
+    .word exit
+
