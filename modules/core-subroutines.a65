@@ -1,0 +1,74 @@
+;subroutines.a65
+
+;--------------------------------------------------------------
+; using ROM tape I/O drops to BASIC if there's a problem.
+; we'd like the user to be able to type RUN and pick up
+; more or less at the dropping off point if this happens.
+; this subroutine performs that BASIC/PETTIL zp switch
+; between $00-$8C inclusive.
+swapzp
+    stx storex      ; preserve Forth data stack pointer
+    ldx #TIME       ; everything below the jiffy clock
+swapzp01
+    lda $ff,x
+    ldy zpbuf-1,x
+    sty $ff,x
+    sta zpbuf-1,x
+    dex
+    bne swapzp01
+    ldx storex      ; restore Forth data stack pointer
+    rts
+
+;--------------------------------------------------------------
+; Pops cells from the split stack to N area, working backwards.
+; Used for setting up primitives that consume multiple arguments
+;
+; input
+; Y = how many words to pop
+;
+; returns
+; Y = 0
+; C = clear
+; TOS unchanged
+;
+; Y     1         2         3         4
+; 2OS-->N0
+; 2OS-->N1; 3OS-->N0
+; 2OS-->N2; 3OS-->N1; 4OS-->N0
+; 2OS-->N3; 3OS-->N2; 4OS-->N1; 5OS-->N0
+;
+; inverts the order in the N area from what was on the stack
+;
+locals
+    tya
+    asl     ; doubled, now Y is a countdown index, also clc
+    tay
+locals01
+    lda stackh,x
+    dey
+    sta n,y
+    lda stackl,x
+    inx
+    dey
+    sta n,y
+    bne locals01
+    rts
+
+;--------------------------------------------------------------
+    ; negate the double at n0..n3
+dnegaten
+    ldy #0
+    sec
+    tya
+    sbc n+2
+    sta n+2         ; low order byte
+    tya
+    sbc n+3
+    sta n+3
+    tya
+    sbc n
+    sta n
+    tya
+    sbc n+1
+    sta n+1         ; high order byte
+    rts

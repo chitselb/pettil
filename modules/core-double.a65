@@ -1,0 +1,484 @@
+;core-double.a65
+
+;--------------------------------------------------------------
+;
+;       D+   ( d1 d2 -- d1+d2 )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+dpluslfa
+    .byt $de,$ad
+    .byt (dplus-*-1)|bit7
+    .asc "D","+"|bit7
+#endif
+dplus
+    clc
+    lda stackl,x
+    adc stackl+2,x
+    sta stackl+2,x
+    lda stackh,x
+    adc stackh+2,x
+    sta stackh+2,x
+    lda tos
+    adc stackl+1,x
+    pha
+    lda tos+1
+    adc stackh+1,x
+    tay
+    pla
+    inx
+    inx
+    jmp put            ; [29]
+
+;--------------------------------------------------------------
+;
+;       D<   ( d1 d2 -- flag )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+dltlfa
+    .byt $de,$ad
+    .byt (dlt-*-1)|bit7
+    .asc "D","<"|bit7
+#endif
+dlt
+    ldy #0          ; false
+    jsr dcmp
+    bvc dlt01
+    eor #$80
+dlt01
+    bpl dlt02
+    dey             ; true
+dlt02
+    sty tos
+    sty tos+1
+    inx
+    inx
+    inx
+    jmp next
+dcmp
+    sec
+    lda stackl+2,x
+    sbc stackl,x
+    lda stackh+2,x
+    sbc stackh,x
+    lda stackl+1,x
+    sbc tos
+    lda stackh+1,x
+    sbc tos+1
+    rts
+
+;--------------------------------------------------------------
+;
+;       DNEGATE   ( d -- -d )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+dnegatelfa
+    .byt $de,$ad
+    .byt (dnegate-*-1)|bit7
+    .asc "DNEGAT","E"|bit7
+#endif
+dnegate
+    jsr dodnegate
+    jmp next
+dodnegate
+    sec
+    lda #0
+    sbc stackl,x
+    sta stackl,x
+    lda #0
+    sbc stackh,x
+    sta stackh,x
+    jmp neg2
+
+;--------------------------------------------------------------
+;
+;       DABS
+;
+#ifdef HEADERS
+dabslfa
+    .byt $de,$ad
+    .byt (dabs-*-1)|bit7
+    .asc "DAB","S"|bit7
+#endif
+dabs
+    lda tos+1
+    bpl dabs01
+    jmp dnegate
+dabs01
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       2DUP   ( n1 n2 -- n1 n2 n1 n2 )
+;
+#ifdef HEADERS
+twoduplfa
+    .byt $de,$ad
+    .byt (_twodup-*-1)|bit7
+    .asc "2DU","P"|bit7
+#endif
+_twodup
+#include "enter.i65"
+    .word over
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       2OVER   ( n1 n2 n3 n4 -- n1 n2 n3 n4 n1 n2 )
+;
+#ifdef HEADERS
+twooverlfa
+    .byt $de,$ad
+    .byt (twoover-*-1)|bit7
+    .asc "2OVE","R"|bit7
+#endif
+twoover
+    dex
+    dex
+    lda tos+1
+    sta stackh+1,x
+    lda tos
+    sta stackl+1,x
+    lda stackh+4,x
+    sta stackh,x
+    lda stackl+4,x
+    sta stackl,x
+    lda stackh+3,x
+    sta tos+1
+    lda stackl+3,x
+    sta tos
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       2ROT   ( lo3 hi3 lo2 hi2 lo1 hi1 -- lo2 hi2 lo1 hi1 lo3 hi3 )
+;
+; hi1 is stored in TOS, the rest in stackl/stackh ... stack+4
+#ifdef HEADERS
+tworotlfa
+    .byt $de,$ad
+    .byt (tworot-*-1)|bit7
+    .asc "2RO","T"|bit7
+#endif
+tworot
+    ldy stackh+4,x
+    lda stackh+2,x
+    sta stackh+4,x
+    lda stackh,x
+    sta stackh+2,x
+    sty stackh,x
+    ldy stackl+4,x
+    lda stackl+2,x
+    sta stackl+4,x
+    lda stackl,x
+    sta stackl+2,x
+    sty stackl,x            ; done moving lo words
+    ldy stackh+3,x
+    lda stackh+1,x
+    sta stackh+3,x
+    lda tos+1
+    sta stackh+1,x
+    sty tos+1
+    ldy stackl+3,x
+    lda stackl+1,x
+    sta stackl+3,x
+    lda tos
+    sta stackl+1,x
+    sty tos                 ; done moving hi words
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       2SWAP   ( hi2 lo2 hi1 lo1 -- hi1 lo1 hi2 lo2 )
+;
+#ifdef HEADERS
+twoswaplfa
+    .byt $de,$ad
+    .byt (twoswap-*-1)|bit7
+    .asc "2SWA","P"|bit7
+#endif
+twoswap
+    ldy tos+1
+    lda stackh+1,x
+    sta tos+1
+    sty stackh+1,x
+    ldy tos
+    lda stackl+1,x
+    sta tos
+    sty stackl+1,x
+    ldy stackh,x
+    lda stackh+2,x
+    sta stackh,x
+    sty stackh+2,x
+    ldy stackl,x
+    lda stackl+2,x
+    sta stackl,x
+    sty stackl+2,x
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       2!   ( hi lo addr -- )
+;
+#ifdef HEADERS
+twostorelfa
+    .byt $de,$ad
+    .byt (twostore-*-1)|bit7
+    .asc "2","!"|bit7
+#endif
+twostore
+    ldy #0
+twostore01
+    lda stackh,x
+    sta (tos),y
+    iny
+    lda stackl,x
+    sta (tos),y
+    iny
+    inx
+    cpy #4
+    bne twostore01
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       2@   ( addr -- hi lo )
+;
+#ifdef HEADERS
+twofetchlfa
+    .byt $de,$ad
+    .byt (twofetch-*-1)|bit7
+    .asc "2","@"|bit7
+#endif
+twofetch
+    ldy #3
+    dex
+    lda (tos),y
+    sta stackh,x
+    dey
+    lda (tos),y
+    sta stackl,x
+    dey
+    lda (tos),y
+    sta n
+    dey
+    lda (tos),y
+    ldy n
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       D-
+;
+#ifdef HEADERS
+dminuslfa
+    .byt $de,$ad
+    .byt (dminus-*-1)|bit7
+    .asc "D","-"|bit7
+#endif
+dminus
+    jsr dodnegate
+    jmp dplus
+
+;--------------------------------------------------------------
+;
+;       D0=   ( d -- flag )
+;
+#ifdef HEADERS
+dzeqlfa
+    .byt $de,$ad
+    .byt (dzeq-*-1)|bit7
+    .asc "D0","="|bit7
+#endif
+dzeq
+    ldy #0
+    lda tos
+    ora tos+1
+    ora stackl,x
+    ora stackh,x
+    bne dzeq01
+    dey
+dzeq01
+    inx
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       D=   ( hi2 lo2 hi1 lo1 -- flag )
+;
+#ifdef HEADERS
+deqlfa
+    .byt $de,$ad
+    .byt (deq-*-1)|bit7
+    .asc "D","="|bit7
+#endif
+deq
+    ldy #0
+    lda tos
+    eor stackl+1,x
+    bne deq01
+    lda tos+1
+    eor stackh+1,x
+    bne deq01
+    lda stackl,x
+    eor stackl+2,x
+    bne deq01
+    lda stackh,x
+    eor stackh+2,x
+    bne deq01
+    dey
+deq01           inx
+    inx
+    inx
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       DU<
+;
+#ifdef HEADERS
+dultlfa
+    .byt $de,$ad
+    .byt (dult-*-1)|bit7
+    .asc "DU","<"|bit7
+#endif
+dult
+    jsr dcmp
+    bcs dult01
+    dey
+dult01
+;    sty stack+6,x
+;    sty stack+7,x
+    inx
+    inx
+    jmp poptwo
+
+;--------------------------------------------------------------
+;
+;       D2/   ( hi lo -- hi/2 lo/2 )
+;
+#ifdef HEADERS
+dtwoslashlfa
+    .byt $de,$ad
+    .byt (dtwoslash-*-1)|bit7
+    .asc "D2","/"|bit7
+#endif
+dtwoslash
+    lsr stackh,x
+    ror stackl,x
+    ror tos+1
+    ror tos
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       D2*   ( hi lo -- hi*2 lo*2 )
+;
+#ifdef HEADERS
+dtwostarlfa
+    .byt $de,$ad
+    .byt (dtwostar-*-1)|bit7
+    .asc "D2","*"|bit7
+#endif
+dtwostar
+    asl stackl,x
+    rol stackh,x
+    rol tos
+    rol tos+1
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       D>
+;
+#ifdef HEADERS
+dgtlfa
+    .byt $de,$ad
+    .byt (_dgt-*-1)|bit7
+    .asc "D",">"|bit7
+#endif
+_dgt
+#include "enter.i65"
+    .word twoswap
+#include "page.i65"
+    .word dlt
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       DMIN
+;
+#ifdef HEADERS
+dminlfa
+    .byt $de,$ad
+    .byt (_dmin-*-1)|bit7
+    .asc "DMI","N"|bit7
+#endif
+_dmin
+#include "enter.i65"
+    .word twoover
+#include "page.i65"
+    .word twoover
+#include "page.i65"
+    .word _dgt
+#include "page.i65"
+    .word qbranch
+    .byt <(dmin01-*+1)
+#include "pad.i65"
+    .word twoswap
+#include "page.i65"
+dmin01          .word twodrop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       DMAX
+;
+#ifdef HEADERS
+dmaxlfa
+    .byt $de,$ad
+    .byt (_dmax-*-1)|bit7
+    .asc "DMA","X"|bit7
+#endif
+_dmax
+#include "enter.i65"
+    .word twoover
+#include "page.i65"
+    .word twoover
+#include "page.i65"
+    .word dlt
+#include "page.i65"
+    .word qbranch
+    .byt <(dmax01-*+1)
+#include "pad.i65"
+    .word twoswap
+#include "page.i65"
+dmax01          .word twodrop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       2DROP
+;
+#ifdef HEADERS
+twodroplfa
+    .byt $de,$ad
+    .byt (twodrop-*-1)|bit7
+    .asc "2DRO","P"|bit7
+#endif
+twodrop
+    jmp poptwo
+

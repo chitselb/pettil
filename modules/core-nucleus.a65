@@ -1,0 +1,2350 @@
+;core-nucleus.a65
+
+;--------------------------------------------------------------
+;
+;       2+
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+twopluslfa
+    .byt $de,$ad
+    .byt (twoplus-*-1)|bit7
+    .asc "2","+"|bit7
+#endif
+twoplus
+    clc
+    lda tos
+    adc #2
+    sta tos
+    bcc twoplus01
+    inc tos+1
+twoplus01
+    jmp next
+
+;"~ check http://6502.org/source/ for multiply and divide and stuff
+;--------------------------------------------------------------
+;
+;       UM*   ( u1 u2 -- ud )
+;
+; * 83 nucleus divstar
+;
+; multiply u1 times u2 returning the double length product ud.
+; All values and arithmetic are unsigned.
+#ifdef HEADERS
+umstarlfa
+    .byt $de,$ad
+    .byt (umstar-*-1)|bit7
+    .asc "UM","*"|bit7
+#endif
+umstar
+    lda stackl,x
+    sta n+4
+    lda stackh,x            ;multiplicand in tos
+    sta n+5                 ;multiplier in N2
+    jsr multiply            ;16 bit unsigned multiply
+    lda n
+    sta stackl,x
+    lda n+1
+    sta stackh,x
+    lda n+2
+    sta tos
+    lda n+3
+    sta tos+1
+    jmp next
+
+multiply
+    lda #0                  ; unsigned multiply tos*N2 destroys tos
+    sta n+2                 ;clear upper half of product
+    sta n+3
+    ldy #16
+rshift
+    lsr tos+1
+    ror tos
+    bcc rrot                ;Go rotate right if c = 0
+    clc                     ; and add multiplicand to
+    lda n+2                 ;Get upper half of product
+    adc n+4                 ; it
+    sta n+2
+    lda n+3
+    adc n+5
+rrot
+    ror                     ;shift partial product right
+    sta n+3
+    ror n+2
+    ror n+1
+    ror n
+    dey                     ;Decrement bit count and
+    bne rshift
+    rts
+;You beat me to the punch, but there is some unnecessary code in there (you don't need to clear the carry before a LSR). And trashing X is unnecessary since you can test for zero just as fast with LDA $02. Or with some crazy jujitsu to save a byte...
+;Here's my version, handles 8-bit operands:
+;--$00 holds operand 1
+;--$01 (low byte) and $02 (high byte) hold operand 2
+;--$03 (low byte) and $04 (high byte) hold product
+;       cld
+;Loop
+;    lsr $00
+;    bcc NoAdd
+;    clc
+;    lda $03
+;    adc $01
+;    sta $03
+;    lda $04
+;    adc $02
+;    sta $04
+;    .byte $2C
+;NoAdd
+;    beq Done
+;    asl $01
+;    rol $02
+;    bcc Loop        ;this assumes that operand 2 is 8-bit
+;Done
+;
+;A proper 6502 assembler solution.
+;
+;Features
+;- multiplies two 8-bit numbers with 16 bit result
+;- inner loop of only 17 clock cycles per iteration
+;- worst case behaviour of 40 clock cycles per iteration
+;- minimizes number of iterations
+;- total execution time 25 - 320 cycles
+;(i.e. only 3x slower (worst case) than MUL on Intel 8088)
+;- 43 bytes size
+;- relocatable to about anywhere in address space
+;- uses C64-friendly memory locations
+; INPUT  = op1 in A, op2 in X
+; OUTPUT = low byte in X, high byte in Y
+; memory locations used as temp space = $fb, $fc, $fd
+;    stx $fc    ; save op2
+;    cmp $fc    ; compare both operands
+;    bcc noswap ; swap them unless op1 < op2
+;    sta $fc    ; save op1 instead of op2
+;    txa        ; swap op2 for op1
+;noswap
+;    ldx #$00   ; prepare result low byte
+;    stx $fd    ; clear high byte of op2
+;    ldy #$00   ; prepare result high byte
+;    beq begin  ; skip shift of op2 for first iteration
+;loop
+;    asl $fc    ; multiply op2 by 2, low byte
+;    rol $fd    ; multiply op2 by 2, high byte
+;begin
+;    lsr        ; divide op1 by 2
+;    bcs add    ; if op1 was odd before division, add op2
+;    bne loop   ; if op1 is not zero repeat loop
+;    rts        ; otherwise return result
+;add
+;    sta $fb    ; save current value of op1
+;    clc        ; prepare addition
+;    txa        ; fetch low byte
+;    adc $fc    ; add op2, low byte
+;    tax        ; store low byte
+;    tya        ; fetch high byte
+;    adc $fd    ; add op2, high byte
+;    tay        ; store high byte
+;    lda $fb    ; restore op1
+;    bne loop   ; if op1 is not zero repeat loop
+;    rts        ; otherwise return result
+;
+
+;--------------------------------------------------------------
+;
+;       UD/MOD   ( d1 n1 -- n2 d2 )
+;
+; * divstar
+;
+; d2 is the double quotient of d1/n1.  n2 is the remainder.  All
+; values are unsigned.
+; ~ make this 32-bit divisor?
+; ~ fix for /0
+#ifdef HEADERS
+udslashmodlfa
+    .byt $de,$ad
+    .byt (udslashmod-*-1)|bit7
+    .asc "UD/MO","D"|bit7
+#endif
+udslashmod
+    ldy #2
+    jsr locals               ; udlo -> N0; udhi -> N1
+    jsr divmod              ; (unsigned) u31/u16 -> quo31 rem16
+    dex
+    lda n+1
+    sta stackh,x
+    lda n
+    sta stackl,x            ; remainder
+    lda n+9
+    sta tos+1
+    lda n+8
+    sta tos
+    ldy n+11
+    lda n+10
+    jmp pushya
+
+divmod
+    stx storex
+    ldx #7
+divmod00
+    sty n+4,x               ; zero the divisor & quotient
+    dex
+    bpl divmod00
+    ldx storex
+    lda tos+1
+    ora tos
+    beq divmod05            ; error division by zero
+    ldy #33
+divmod01
+    lsr tos+1
+    ror tos                 ; divisor = divisor/2
+    ror n+7
+    ror n+6                 ; shift it in until we hit zero
+    ror n+5
+    ror n+4
+    dey
+    lda tos+1
+    ora tos
+    bne divmod01
+divmod02
+    asl n+8
+    rol n+9                 ; quotient low
+    rol n+10
+    rol n+11                ; double the quotient here
+    sec
+    lda n
+    sbc n+4
+    pha
+    lda n+1
+    sbc n+5
+    pha
+    lda n+2
+    sbc n+6
+    pha
+    lda n+3
+    sbc n+7
+    bcc divmod03
+    sta n+3
+    pla
+    sta n+2
+    pla
+    sta n+1
+    pla
+    sta n
+    inc n+8                 ; add 1 to quotient
+    bcs divmod04            ; bra
+divmod03
+    pla
+    pla
+    pla                     ; discard result of subtraction
+divmod04
+    lsr n+7
+    ror n+6
+    ror n+5
+    ror n+4                 ; divisor /2
+    dey
+    bne divmod02
+divmod05
+    rts
+
+;--------------------------------------------------------------
+;
+;       UM/MOD   ( ud u -- rem quot )
+;
+; * 83 nucleus divstar
+;
+;       ~ needs a lot of work
+;"      http://6502.org/source/integers/ummodfix/ummodfix.htm
+#ifdef HEADERS
+umslashmodlfa
+    .byt $de,$ad
+    .byt (_umslashmod-*-1)|bit7
+    .asc "UM/MO","D"|bit7
+#endif
+_umslashmod
+#include "enter.i65"
+    .word udslashmod
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       AND   ( n1 n2 -- n1&n2 )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+andxlfa
+    .byt $de,$ad
+    .byt (andx-*-1)|bit7
+    .asc "AN","D"|bit7
+#endif
+andx
+    lda tos
+    and stackl,x
+    sta tos
+    lda tos+1
+    and stackh,x
+    sta tos+1
+    inx
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       OR   ( n1 n2 -- n1|n2 )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+orxlfa
+    .byt $de,$ad
+    .byt (orx-*-1)|bit7
+    .asc "O","R"|bit7
+#endif
+orx
+    lda tos
+    ora stackl,x
+    sta tos
+    lda tos+1
+    ora stackh,x
+    sta tos+1
+    inx
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       XOR   ( n1 n2 -- n1^n2 )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+xorlfa
+    .byt $de,$ad
+    .byt (xor-*-1)|bit7
+    .asc "XO","R"|bit7
+#endif
+xor
+    lda tos
+    eor stackl,x
+    sta tos
+    lda tos+1
+    eor stackh,x
+    sta tos+1
+    inx
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       NOT   ( n -- !n )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+notlfa
+    .byt $de,$ad
+    .byt (not-*-1)|bit7
+    .asc "NO","T"|bit7
+#endif
+not
+    lda tos
+    eor #$ff
+    sta tos
+    lda tos+1
+    eor #$ff
+    sta tos+1
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       >R   ( n -- )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+torlfa
+    .byt $de,$ad
+    .byt (tor-*-1)|bit7
+    .asc ">","R"|bit7
+#endif
+tor
+    lda tos+1
+    pha
+    lda tos
+    pha
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       R>   ( -- n )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+rfromlfa
+    .byt $de,$ad
+    .byt (rfrom-*-1)|bit7
+    .asc "R",">"|bit7
+#endif
+rfrom
+    pla
+    sta storex
+    pla
+    tay
+    lda storex
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       R@   ( -- n )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+rfetchlfa
+    .byt $de,$ad
+    .byt (rfetch-*-1)|bit7
+    .asc "R","@"|bit7
+#endif
+rfetch
+    stx storex  ; [3]
+    tsx         ; [2]
+    ldy $0102,x ; [4]
+    lda $0101,x ; [4]
+    ldx storex  ; [3]
+    jmp pushya ; [14|15]
+    
+;--------------------------------------------------------------
+;
+;       DUP>R   ( n -- )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+duptorlfa
+    .byt $de,$ad
+    .byt (duptor-*-1)|bit7
+    .asc "DUP>","R"|bit7
+#endif
+duptor
+    jsr slip
+    jmp tor
+
+;--------------------------------------------------------------
+;
+;       0>   ( n -- flag )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+zgtlfa
+    .byt $de,$ad
+    .byt (zgt-*-1)|bit7
+    .asc "0",">"|bit7
+#endif
+zgt
+    ldy #0
+    lda tos+1
+    bmi zgt01                   ; check the sign
+    ora tos                     ; check for nonzero
+    beq zgt01
+    dey
+zgt01
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       <>   ( n1 n2 -- flag )
+;
+#ifdef HEADERS
+nelfa
+    .byt $de,$ad
+    .byt (ne-*-1)|bit7
+    .asc "<",">"|bit7
+#endif
+ne
+    ldy #$ff                ; assume inequality
+    lda tos
+    eor stackl,x
+    bne ne01
+    lda tos+1
+    eor stackh,x
+    bne ne01
+    iny                     ; they're equal
+ne01
+    tya
+    inx
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       ON   ( addr -- )
+;
+; store -1 at ADDR
+#ifdef HEADERS
+onlfa
+    .byt $de,$ad
+    .byt (on-*-1)|bit7
+    .asc "O","N"|bit7
+#endif
+on
+    lda #$ff
+on1
+    ldy #0
+    sta (tos),y
+    iny
+    sta (tos),y
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       OFF   ( addr -- )
+;
+; store 0 at ADDR
+#ifdef HEADERS
+offlfa
+    .byt $de,$ad
+    .byt (off-*-1)|bit7
+    .asc "OF","F"|bit7
+#endif
+off
+    lda #$00
+    beq on1
+
+;--------------------------------------------------------------
+;
+;       +   ( n1 n2 -- n1+n2 )
+;
+; * 83 nucleus
+;
+; 09/15/10 cah
+#ifdef HEADERS
+pluslfa
+    .byt $de,$ad
+    .byt (plus-*-1)|bit7
+    .asc "+"|bit7
+#endif
+plus
+    clc
+    lda tos
+    adc stackl,x
+    sta tos
+    lda tos+1
+    adc stackh,x
+    sta tos+1
+    inx
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       NEGATE   ( n -- -n )
+;
+; * 83 nucleus
+;
+; 09/15/10 cah
+#ifdef HEADERS
+negatelfa
+    .byt $de,$ad
+    .byt (negate-*-1)|bit7
+    .asc "NEGAT","E"|bit7
+#endif
+negate
+    jsr donegate
+    jmp next
+donegate
+    sec
+neg2
+    lda #0
+    sbc tos
+    sta tos
+    lda #0
+    sbc tos+1
+    sta tos+1
+    rts
+
+;--------------------------------------------------------------
+;
+;       OVER   ( n1 n2 -- n1 n2 n1 )
+;
+; * 83 nucleus
+;
+; 09/15/10 cah
+#ifdef HEADERS
+overlfa
+    .byt $de,$ad
+    .byt (over-*-1)|bit7
+    .asc "OVE","R"|bit7
+#endif
+over
+    ldy stackh,x
+    lda stackl,x
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       DROP   ( n -- )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+droplfa
+    .byt $de,$ad
+    .byt (drop-*-1)|bit7
+    .asc "DRO","P"|bit7
+#endif
+drop
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       SWAP   ( n1 n2 -- n2 n1 )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+swaplfa
+    .byt $de,$ad
+    .byt (swap-*-1)|bit7
+    .asc "SWA","P"|bit7
+#endif
+swap
+    ldy tos+1
+    lda stackh,x
+    sta tos+1
+    sty stackh,x
+    ldy tos
+    lda stackl,x
+    sta tos
+    sty stackl,x
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       TUCK   ( n1 n2 -- n2 n1 n2 )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+tucklfa
+    .byt $de,$ad
+    .byt (_tuck-*-1)|bit7
+    .asc "TUC","K"|bit7
+#endif
+_tuck
+#include "enter.i65"
+    .word swap
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       NIP   ( n1 n2 -- n2 )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+niplfa
+    .byt $de,$ad
+    .byt (_nip-*-1)|bit7
+    .asc "NI","P"|bit7
+#endif
+_nip
+#include "enter.i65"
+    .word swap
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       DUP   ( n -- n n )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+duplfa
+    .byt $de,$ad
+    .byt (dup-*-1)|bit7
+    .asc "DU","P"|bit7
+#endif
+dup
+    jsr slip
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       +!   ( n addr -- )
+;
+; * 83 nucleus
+;
+; add N to the cell at ADDR
+#ifdef HEADERS
+plusstorelfa
+    .byt $de,$ad
+    .byt (plusstore-*-1)|bit7
+    .asc "+","!"|bit7
+#endif
+plusstore
+    ldy #0
+    clc
+    lda stackl,x
+    adc (tos),y
+    sta (tos),y
+    iny
+    lda stackh,x
+    adc (tos),y
+    sta (tos),y
+    jmp poptwo
+
+;--------------------------------------------------------------
+;
+;       TOGGLE   ( addr bitmask -- )
+;
+; Toggles setting of bits with bitmask at addr
+
+#ifdef HEADERS
+togglelfa
+    .byt $de,$ad
+    .byt (toggle-*-1)|bit7
+    .asc "TOGGL","E"|bit7
+#endif
+toggle
+    lda stackl,x
+    sta n
+    lda stackh,x
+    sta n+1
+    ldy #0
+    lda (n),y
+    eor tos
+    sta (n),y
+    jmp poptwo
+
+;--------------------------------------------------------------
+;
+;       @   ( addr -- n )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+fetchlfa
+    .byt $de,$ad
+    .byt (fetch-*-1)|bit7
+    .asc "@"|bit7
+#endif
+fetch
+    ldy #0
+    lda (tos),y
+    pha
+    iny
+    lda (tos),y
+    sta tos+1
+    pla
+    sta tos
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       C@   ( addr -- 8b )
+;
+; * 83 nucleus
+;
+; "c-fetch"
+; 8b is the contents of the byte at addr.
+;
+#ifdef HEADERS
+cfetchlfa
+    .byt $de,$ad
+    .byt (cfetch-*-1)|bit7
+    .asc "C","@"|bit7
+#endif
+cfetch
+    ldy #0
+    lda (tos),y
+    sta tos
+    sty tos+1
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       !   ( 16b addr -- )
+;
+; * 83 nucleus
+;
+
+
+; "store"
+; 16b is stored at addr.
+#ifdef HEADERS
+storelfa
+    .byt $de,$ad
+    .byt (store-*-1)|bit7
+    .asc "!"|bit7
+#endif
+store
+    ldy #0
+    lda stackl,x
+    sta (tos),y
+    iny
+    lda stackh,x
+    sta (tos),y
+    jmp poptwo
+
+;--------------------------------------------------------------
+;
+;       C!   ( 8b addr --
+;
+; * 83 nucleus
+;
+; "c-store"
+; The least-significant 8 bits of 16b are stored into the byte
+; at addr.
+;
+#ifdef HEADERS
+cstorelfa
+    .byt $de,$ad
+    .byt (cstore-*-1)|bit7
+    .asc "C","!"|bit7
+#endif
+cstore
+    lda stackl,x
+    ldy #0
+    sta (tos),y
+    jmp poptwo
+
+;--------------------------------------------------------------
+;
+;       TIB   ( -- addr )
+;
+; * 83 interpreter tdict
+;
+#ifdef HEADERS
+tiblfa
+    .byt $de,$ad
+    .byt (tib-*-1)|bit7
+    .asc "TI","B"|bit7
+#endif
+tib
+    jsr doconst
+    .word BUF       ; $0200
+
+;--------------------------------------------------------------
+;
+;       -1   ( -- -1 )
+;
+#ifdef HEADERS
+minusonelfa
+    .byt $de,$ad
+    .byt (minusone-*-1)|bit7
+    .asc "-","1"|bit7
+#endif
+minusone
+    jmp true
+
+;--------------------------------------------------------------
+;
+;       0   ( -- 0 )
+;
+#ifdef HEADERS
+zerolfa
+    .byt $de,$ad
+    .byt (zero-*-1)|bit7
+    .asc "0"|bit7
+#endif
+zero
+    jmp false
+
+;--------------------------------------------------------------
+;
+;       1   ( -- 1 )
+;
+#ifdef HEADERS
+onelfa
+    .byt $de,$ad
+    .byt (one-*-1)|bit7
+    .asc "1"|bit7
+#endif
+one
+    jsr doconst
+    .word 1
+
+;--------------------------------------------------------------
+;
+;       2   ( -- 2 )
+;
+#ifdef HEADERS
+twolfa
+    .byt $de,$ad
+    .byt (two-*-1)|bit7
+    .asc "2"|bit7
+#endif
+two
+    jsr doconst
+    .word 2
+
+;--------------------------------------------------------------
+;
+;       3   ( -- 3 )
+;
+#ifdef HEADERS
+threelfa
+    .byt $de,$ad
+    .byt (three-*-1)|bit7
+    .asc "3"|bit7
+#endif
+three
+    jsr doconst
+    .word 3
+
+;--------------------------------------------------------------
+;
+;       BL   ( -- n )
+;
+#ifdef HEADERS
+bllfa
+    .byt $de,$ad
+    .byt (bl-*-1)|bit7
+    .asc "B","L"|bit7
+#endif
+bl
+    jsr doconst
+    .word $20
+
+;--------------------------------------------------------------
+;
+;       TRUE   ( -- -1 )
+;
+#ifdef HEADERS
+truelfa
+    .byt $de,$ad
+    .byt (true-*-1)|bit7
+    .asc "TRU","E"|bit7
+#endif
+true
+    lda #$ff
+    tay
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       FALSE   ( -- 0 )
+;
+#ifdef HEADERS
+falselfa
+    .byt $de,$ad
+    .byt (false-*-1)|bit7
+    .asc "FALS","E"|bit7
+#endif
+false
+    lda #0
+    tay
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       0=
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+zeqlfa
+    .byt $de,$ad
+    .byt (zeq-*-1)|bit7
+    .asc "0","="|bit7
+#endif
+zeq
+    ldy #$ff
+    lda tos
+    ora tos+1
+    beq zeq01
+    iny
+zeq01
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       0<
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+zltlfa
+    .byt $de,$ad
+    .byt (zlt-*-1)|bit7
+    .asc "0","<"|bit7
+#endif
+zlt
+    ldy #0
+    bit tos+1
+    bpl zlt01
+    dey
+zlt01
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       0<>
+;
+#ifdef HEADERS
+znelfa
+    .byt $de,$ad
+    .byt (zne-*-1)|bit7
+    .asc "0<",">"|bit7
+#endif
+zne
+    lda tos
+    ora tos+1
+    beq zne01
+    lda #$ff
+zne01
+    tay
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       1+
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+onepluslfa
+    .byt $de,$ad
+    .byt (oneplus-*-1)|bit7
+    .asc "1","+"|bit7
+#endif
+oneplus
+    inc tos
+    bne oneplus01
+    inc tos+1
+oneplus01
+    jmp next
+
+;--------------------------------------------------------------
+
+;
+;       1-
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+oneminuslfa
+    .byt $de,$ad
+    .byt (oneminus-*-1)|bit7
+    .asc "1","-"|bit7
+#endif
+oneminus
+    lda tos
+    bne oneminus01
+    dec tos+1
+oneminus01      dec tos
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       2-
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+twominuslfa
+    .byt $de,$ad
+    .byt (twominus-*-1)|bit7
+    .asc "2","-"|bit7
+#endif
+twominus
+    sec
+    lda tos
+    sbc #2
+    sta tos
+    bcs twominus01
+    dec tos+1
+twominus01
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       2/
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+twoslashlfa
+    .byt $de,$ad
+    .byt (twoslash-*-1)|bit7
+    .asc "2","/"|bit7
+#endif
+twoslash
+    lsr tos+1
+    ror tos
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       2*
+;
+#ifdef HEADERS
+twostarlfa
+    .byt $de,$ad
+    .byt (twostar-*-1)|bit7
+    .asc "2","*"|bit7
+#endif
+twostar
+    asl tos
+    rol tos+1
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       -
+;
+; * 83 nucleus
+;
+; 09/15/10 cah
+#ifdef HEADERS
+minuslfa
+    .byt $de,$ad
+    .byt (minus-*-1)|bit7
+    .asc "-"|bit7
+#endif
+minus
+    jsr donegate
+    jmp plus
+
+;--------------------------------------------------------------
+;
+;       =   ( n1 n2 -- flag )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+eqlfa
+    .byt $de,$ad
+    .byt (eq-*-1)|bit7
+    .asc "="|bit7
+#endif
+eq
+    ldy #0
+    lda tos
+    cmp stackl,x
+    bne cmpout
+    lda tos+1
+    cmp stackh,x
+    bne cmpout
+    dey
+cmpout
+    inx
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       U<
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+ultlfa
+    .byt $de,$ad
+    .byt (ult-*-1)|bit7
+    .asc "U","<"|bit7
+#endif
+ult
+    ldy #0
+    lda stackl,x
+    cmp tos
+    lda stackh,x
+    sbc tos+1
+    bcs cmpout
+    dey
+    bmi cmpout
+
+;--------------------------------------------------------------
+;
+;       <   ( n1 n2 -- flag )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+ltlfa
+    .byt $de,$ad
+    .byt (lt-*-1)|bit7
+    .asc "<"|bit7
+#endif
+lt
+    ldy #0
+    lda stackl,x
+    cmp tos
+    lda stackh,x
+    sbc tos+1
+sgntst
+    bvc lt01
+    eor #bit7
+lt01
+    bpl cmpout
+    dey
+    bmi cmpout
+
+;--------------------------------------------------------------
+;
+;       >   ( n1 n2 -- flag )
+;
+; * 83 nucleus
+;
+; V is the exclusive or of the carrys out of bits 6 and 7 - Bogax
+#ifdef HEADERS
+gtlfa
+    .byt $de,$ad
+    .byt (gt-*-1)|bit7
+    .asc ">"|bit7
+#endif
+gt
+    ldy #0
+    lda tos
+    cmp stackl,x
+    lda tos+1
+    sbc stackh,x
+    jmp sgntst
+
+;--------------------------------------------------------------
+;
+;       ROT   ( a b c -- b c a )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+rotlfa
+    .byt $de,$ad
+    .byt (rot-*-1)|bit7
+    .asc "RO","T"|bit7
+#endif
+rot
+    ldy stackh+1,x
+    lda stackh,x
+    sta stackh+1,x
+    lda tos+1
+    sta stackh,x
+    sty tos+1
+    ldy stackl+1,x
+    lda stackl,x
+    sta stackl+1,x
+    lda tos
+    sta stackl,x
+    sty tos
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       -ROT   ( a b c -- c a b )
+;
+;": -rot   ( a b c -- c a b )
+;     rot rot ;
+;
+;dashrot
+;    ldy tos+1       ; c
+;    lda stackh,x
+;    sta tos+1       ; b -> tos
+;    lda stackh+1,x
+;    sta stackh,x    ; a -> 2os
+;    sty stackh+1,x  ; c -> 3os
+;    ldy tos
+;    lda stackl,x
+;    sta tos
+;    lda stackl+1,x
+;    sta stackl,x
+;    sty stackl+1,x
+;    jmp next
+;
+#ifdef HEADERS
+dashrotlfa
+    .byt $de,$ad
+    .byt (_dashrot-*-1)|bit7
+    .asc "-RO","T"|bit7
+#endif
+_dashrot
+#include "enter.i65"
+   .word rot
+#include "page.i65"
+   .word rot
+#include "page.i65"
+   .word exit
+
+;--------------------------------------------------------------
+;
+;       THIRD   ( n1 n2 n3 -- n1 n2 n3 n1 )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+thirdlfa
+    .byt $de,$ad
+    .byt (third-*-1)|bit7
+    .asc "THIR","D"|bit7
+#endif
+third
+    lda stackl+1,x
+    ldy stackh+1,x
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       +UNDER   ( n1 n2 n3 -- n1+n3 n2 )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+plusunderlfa
+    .byt $de,$ad
+    .byt (plusunder-*-1)|bit7
+    .asc "+UNDE","R"|bit7
+#endif
+plusunder
+    clc
+    lda tos
+    adc stackl+1,x
+    sta stackl+1,x
+    lda tos+1
+    adc stackh+1,x
+    sta stackh+1,x
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       ?DUP   ( 0 -- 0 | n -- n n )
+;
+; * 83 nucleus
+;
+; DUP if top of stack is nonzero
+#ifdef HEADERS
+qduplfa
+    .byt $de,$ad
+    .byt (qdup-*-1)|bit7
+    .asc "?DU","P"|bit7
+#endif
+qdup
+    lda tos
+    ora tos+1
+    beq qdup01
+    lda tos
+    ldy tos+1
+    jmp pushya
+qdup01
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       3C@   ( addr -- d )
+;
+; fetches three bytes as a double.  Useful for retrieving screen
+; linewrap bits from the beginning of the block buffer or the jiffy
+; clock
+;
+; msb addr+0
+; 2sb addr+1
+; lsb addr+2
+;
+;": 3c@   ( addr -- d )
+;     dup 1+ @ swap c@ ;
+;
+#ifdef HEADERS
+threecfetchlfa
+    .byt $de,$ad
+    .byt (threecfetch-*-1)|bit7
+    .asc "3C","@"|bit7
+#endif
+threecfetch
+    jsr slip
+    ldy #2
+    lda (tos),y         ; msb
+    sta stackl,x
+    dey
+    lda (tos),y
+    sta stackh,x
+    dey
+    lda (tos),y
+    jmp put             ; [20]
+
+;--------------------------------------------------------------
+;
+;       3C!   ( d addr -- )
+;
+; store low 3 bytes of d at addr in jiffy clock order
+;
+; msb addr
+; 2sb addr+1
+; lsb addr+2
+;
+;": 3c!    ( d addr -- )
+;     2dup c!  nip 1+ ! ;
+;
+;_threecstore
+;#include "enter.i65"
+;    .word _twodup
+;#include "page.i65"
+;    .word cstore
+;#include "page.i65"
+;    .word _nip
+;#include "page.i65"
+;    .word oneplus
+;#include "page.i65"
+;    .word store
+;#include "page.i65"
+;    .word exit
+;
+#ifdef HEADERS
+threecstorelfa
+    .byt $de,$ad
+    .byt (threecstore-*-1)|bit7
+    .asc "3C","!"|bit7
+#endif
+threecstore
+    ldy #0
+    lda stackl,x                ; msb
+    sta (tos),y
+    iny
+    lda stackh+1,x              ; 2sb
+    sta (tos),y
+    iny
+    lda stackl+1,x              ; lsb
+    sta (tos),y
+    inx                         ; discard 3 cells
+    jmp poptwo
+
+;--------------------------------------------------------------
+;
+;       ERASE
+;
+#ifdef HEADERS
+eraselfa
+    .byt $de,$ad
+    .byt (_erase-*-1)|bit7
+    .asc "ERAS","E"|bit7
+#endif
+_erase
+#include "enter.i65"
+    .word zero
+#include "page.i65"
+    .word fill
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       BLANK
+;
+#ifdef HEADERS
+blanklfa
+    .byt $de,$ad
+    .byt (_blank-*-1)|bit7
+    .asc "BLAN","K"|bit7
+#endif
+_blank
+#include "enter.i65"
+    .word bl
+#include "page.i65"
+    .word fill
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       CMOVE   ( from to howmany -- )
+;
+; * 83 nucleus
+;
+;"~ see http://6502.org/source/general/memory_move.html
+#ifdef HEADERS
+cmovelfa
+    .byt $de,$ad
+    .byt (cmove-*-1)|bit7
+    .asc "CMOV","E"|bit7
+#endif
+cmove
+    ldy #2          ; pull two items off the data stack
+    jsr locals      ; howmany = TOS, from = N0, to = N1
+    ;clc
+    ;ldy #0         ; locals returns Y=0 C=0
+    stx storex      ; stash the data stack pointer
+    ldx #0          ; X,Y=0
+cmove01
+    dec tos+1
+    bpl cmove02     ; do a whole page
+    ldx tos         ; last page
+    beq cmove03     ; none at all?
+    sec             ; exit after this iteration
+cmove02
+    lda (n),y
+    sta (n+2),y
+    iny
+    dex
+    bne cmove02
+    inc n+1
+    inc n+3
+    bcc cmove01
+cmove03
+    ldx storex      ; revive the data stack pointer
+    jmp pops    ; [37]
+
+;--------------------------------------------------------------
+;
+;       CMOVE>   ( from to howmany -- )
+;
+; * 83 nucleus
+;
+; Move the u bytes beginning at address addr1 to
+; addr2.  The move begins by moving the byte at
+; (addr1 plus u minus 1) to (addr2 plus u minus 1)
+; and proceeds to successively lower addresses
+; for u bytes.  If u is zero nothing is moved.
+; Useful for sliding a string towards higher addresses.
+;
+#ifdef HEADERS
+cmovegtlfa
+    .byt $de,$ad
+    .byt (cmovegt-*-1)|bit7
+    .asc "CMOVE",">"|bit7
+#endif
+cmovegt
+    brk
+    .byt ld | TOS
+    .byt st | N2                ; howmany
+    .byt dcr | N2
+    .byt pull
+    .byt add | N2
+    .byt st | N1                ; to
+    .byt pull
+    .byt add | N2
+    .byt st | N0                ; from
+    .byt ld | N2
+    .byt bp, <(cmovegt06-*-2)
+    .byt pull
+    .byt nxt
+cmovegt06
+    .byt inr | N2
+    .byt rtn
+    clc
+    ldy #0                     ; done by Sweet16
+    stx storex
+    ldx #0
+cmovegt01
+    dec n+5
+    bpl cmovegt03
+cmovegt02       ; last page
+    ldx n+4                         
+    beq cmovegt05
+    sec
+cmovegt03
+    lda (n),y
+    sta (n+2),y
+    tya
+    bne cmovegt04
+    dec n+1
+    dec n+3
+cmovegt04
+    dey
+    dex
+    bne cmovegt03
+    bcc cmovegt01
+cmovegt05
+    ldx storex
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       MOVE   ( from to howmany -- )
+;
+; Move the u bytes beginning at address addr1 to
+; addr2.  Overlap clobber does not occur in either direction
+;
+;": move   ( from to howmany -- )
+;     >r 2dup u< r> swap
+;     if
+;         cmove>
+;     else
+;         cmove
+;     then ;
+;
+#ifdef HEADERS
+movelfa
+    .byt $de,$ad
+    .byt (_move-*-1)|bit7
+    .asc "MOV","E"|bit7
+#endif
+_move
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word _twodup
+#include "page.i65"
+    .word ult
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word qbranch
+    .byt <(move01-*+1)
+#include "pad.i65"
+    .word cmovegt
+#include "page.i65"
+    .word branch
+    .byt <(move02-*+1)
+#include "pad.i65"
+move01
+    .word cmove
+#include "page.i65"
+move02
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       FILL   ( addr howmany value -- )
+;
+; * 83 nucleus
+;
+; howmany has an upper limit of 32K bytes
+;
+#ifdef HEADERS
+filllfa
+    .byt $de,$ad
+    .byt (fill-*-1)|bit7
+    .asc "FIL","L"|bit7
+#endif
+fill
+    ldy #2
+    jsr locals      ; addr -> N0; howmany -> N1
+    ;clc            ; C cleared by setup
+    ;ldy #0
+    lda tos
+fill01
+    dec n+3
+    bpl fill02
+    sec             ; fill a partial page then exit
+    ldy n+2
+    beq fill03      ; nothing to do?
+fill02
+    dey
+    sta (n),y
+    bne fill02
+    inc n+1
+    bcc fill01
+fill03
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       HERE
+;
+; * 83 interpreter 
+;
+#ifdef HEADERS
+herelfa
+    .byt $de,$ad
+    .byt (here-*-1)|bit7
+    .asc "HER","E"|bit7
+#endif
+here
+    ldy #(userdp-userarea)
+    lda (up),y
+    pha
+    iny
+    lda (up),y
+    tay
+    pla
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       PAD   ( -- addr )
+;
+; * 83 interpreter 
+;
+; The lower address of a scratch area used to hold data for
+; intermediate processing.  The address or contents of PAD may
+; change and the data lost if the address of the next
+; available dictionary location is changed.  The minimum
+; capacity of PAD is 84 characters.
+
+#ifdef HEADERS
+padlfa
+    .byt $de,$ad
+    .byt (_pad-*-1)|bit7
+    .asc "PA","D"|bit7
+#endif
+_pad
+    ; ~wut? might want to rename the page-hopping primitive 'pad' to avoid confusion
+#include "enter.i65"
+    .word here
+#include "page.i65"
+    .word clit
+    .byt 80
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       S>D
+;
+#ifdef HEADERS
+stodlfa
+    .byt $de,$ad
+    .byt (_stod-*-1)|bit7
+    .asc "S>","D"|bit7
+#endif
+_stod
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       ABS   ( n -- +n )
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+abslfa
+    .byt $de,$ad
+    .byt (abs-*-1)|bit7
+    .asc "AB","S"|bit7
+#endif
+abs
+    lda tos+1
+    bpl abs01
+    jmp negate
+abs01
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       SGN   ( n -- -1|0|1 )
+;
+; return the sign of n
+;
+#ifdef HEADERS
+sgnlfa
+    .byt $de,$ad
+    .byt (sgn-*-1)|bit7
+    .asc "SG","N"|bit7
+#endif
+sgn
+    ldy #$ff
+    lda tos+1
+    bmi sgn01       ; negative
+    iny
+    ora tos
+    beq sgn01       ; zero
+    lda #1          ; positive
+    .byt $24        ; BIT zp to skip over tya
+sgn01
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       RANDU   ( -- r )
+;
+; return a random number in the range 0..255
+; from the First Book of KIM-1
+;
+#ifdef HEADERS
+randulfa
+    .byt $de,$ad
+    .byt (randu-*-1)|bit7
+    .asc "RAND","U"|bit7
+#endif
+randu
+    stx storex
+    sec
+    lda rnd+1
+    adc rnd+4
+    adc rnd+5
+    sta rnd
+    ldx #4
+rpl
+    lda rnd,x
+    sta rnd+1,x
+    dex
+    bpl rpl
+    ldx storex
+    ldy #0
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       1+!   ( n -- )
+;
+; increments the word addressed by n
+;
+#ifdef HEADERS
+oneplusstorelfa
+    .byt $de,$ad
+    .byt (oneplusstore-*-1)|bit7
+    .asc "1+","!"|bit7
+#endif
+oneplusstore
+    ldy #$FF
+    lda #0
+    sec
+oneplusstore01
+    iny
+    adc (tos),y
+    sta (tos),y
+    tya
+    beq oneplusstore01
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       1-!   ( n -- )
+;
+; decrements the word addressed by n
+;
+#ifdef HEADERS
+oneminusstorelfa
+    .byt $de,$ad
+    .byt (oneminusstore-*-1)|bit7
+    .asc "1-","!"|bit7
+#endif
+oneminusstore
+    ldy #$ff
+    clc
+oneminusstore01
+    iny
+    lda (tos),y
+    sbc #0
+    sta (tos),y
+    tya
+    beq oneminusstore01
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       MIN
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+minlfa
+    .byt $de,$ad
+    .byt (_min-*-1)|bit7
+    .asc "MI","N"|bit7
+#endif
+_min
+#include "enter.i65"
+    .word _twodup
+#include "page.i65"
+    .word gt
+#include "page.i65"
+    .word qbranch
+    .byt <(min01-*+1)
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+min01
+    .word drop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       MAX
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+maxlfa
+    .byt $de,$ad
+    .byt (_max-*-1)|bit7
+    .asc "MA","X"|bit7
+#endif
+_max
+#include "enter.i65"
+    .word _twodup
+#include "page.i65"
+    .word lt
+#include "page.i65"
+    .word qbranch
+    .byt <(max01-*+1)
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+max01
+    .word drop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       M*   ( n1 n2 -- d )
+;
+; * divstar
+;
+; multiply two signed words, leaving the double product on the stack
+#ifdef HEADERS
+mstarlfa
+    .byt $de,$ad
+    .byt (mstar-*-1)|bit7
+    .asc "M","*"|bit7
+#endif
+mstar
+    jsr mult
+    jmp next
+mult
+    lda stackl,x
+    sta n+4
+    lda stackh,x
+    sta n+5
+    eor tos+1
+    php                     ; we only care about the sign bit
+    bit tos+1
+    bpl mult01
+    jsr donegate
+mult01
+    bit n+5
+    bpl mult02
+    sec
+    lda #0
+    sbc n+4
+    sta n+4
+    lda #0
+    sbc n+5
+    sta n+5
+mult02
+    jsr multiply
+    lda n+1
+    sta stackh,x
+    lda n
+    sta stackl,x
+    lda n+3
+    sta tos+1
+    lda n+2
+    sta tos
+    plp
+    bpl mult03
+    jmp dodnegate
+mult03
+    rts
+
+;--------------------------------------------------------------
+;
+;       M/   ( d n -- rem quotient )
+;
+#ifdef HEADERS
+mslashlfa
+    .byt $de,$ad
+    .byt (mslash-*-1)|bit7
+    .asc "M","/"|bit7
+#endif
+mslash
+    jsr domslash
+    jmp next
+domslash
+    cpx #$6f
+    bcc domslash02
+domslash01
+    ldx #bos
+    ;       sty stack,x
+    ;       sty stack+1,x
+    tya
+    rts
+domslash02
+    ;      lda stack,x
+    ;       ora stack+1,x
+    beq domslash01
+    ;       lda stack+1,x
+    pha
+    ;       lda stack,x
+    pha
+    ;       lda stack+1,x
+    ;       eor stack+3,x
+    pha
+    ;       lda stack+1,x
+    pha
+    bpl domslash03
+    jsr donegate
+domslash03
+    ;       lda stack+3,x
+    bpl domslash04
+    inx
+    inx
+    jsr dnegate
+    dex
+    dex
+domslash04
+    jsr divmod
+    pla
+    bpl domslash05
+    jsr remult
+domslash05
+    pla
+    bpl domslash07
+    jsr donegate
+    ;       lda stack+2,x
+    ;       ora stack+3,x
+    beq domslash07
+    ;       lda stack,x
+    bne domslash06
+    ;       dec stack+1,x
+domslash06
+    ;       dec stack,x
+    jsr remult
+    clc
+    pla
+    ;       adc stack+2,x
+    ;       sta stack+2,x
+    pla
+    ;       adc stack+3,x
+    ;       sta stack+3,x
+    rts
+domslash07
+    pla
+    pla
+    rts
+remult
+    inx
+    inx
+    jsr donegate
+    dex
+    dex
+    rts
+
+;--------------------------------------------------------------
+;
+;       M*/   ( n1 n2 n3 -- d )
+;
+; * divstar
+;
+; multiplies n1*n2 giving an intermediate 16-bit value, and divides
+; that by n3 yielding a 16-bit quotient.  Remainder is ignored,
+; all values are signed.
+;
+#ifdef HEADERS
+mstarslashlfa
+    .byt $de,$ad
+    .byt (mstarslash-*-1)|bit7
+    .asc "M*","/"|bit7
+#endif
+mstarslash
+
+;--------------------------------------------------------------
+;
+;       *   ( n1 n2 -- n1*n2 )
+;
+; * 83 nucleus divstar
+;
+; multiply two signed words
+#ifdef HEADERS
+starlfa
+    .byt $de,$ad
+    .byt (star-*-1)|bit7
+    .asc "*"|bit7
+#endif
+star
+    jsr mult
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       /MOD    ( n1 n2 -- n3 n4 )
+;
+; * 83 nucleus divstar
+;
+; n3 is the remainder and n4 the floor of the
+; quotient of n1 divided by the divisor n2.  n3
+; has the same sign as n2 or is zero.  An error
+; condition results if the divisor is zero or if
+; the quotient falls outside the range {-32,768
+; ... 32,676}.
+; ~wut? should probably use ud/mod and then set signs
+#ifdef HEADERS
+slashmodlfa
+    .byt $de,$ad
+    .byt (slashmod-*-1)|bit7
+    .asc "/MO","D"|bit7
+#endif
+slashmod
+    jsr doslashmod
+    jmp next
+doslashmod
+    ;       lda stack+1,x
+    pha
+    ;       lda stack,x
+    pha
+    ;       lda stack+3,x
+    bpl doslashmod01
+    dey
+doslashmod01
+    ;       sty stack,x
+    ;       sty stack+1,x
+    dex
+    dex
+    pla
+    ;       sta stack,x
+    pla
+    ;       sta stack+1,x
+    ldy #0
+    jmp domslash
+
+;--------------------------------------------------------------
+;
+;       /   ( n1 n2 -- n3 )
+;
+; * 83 nucleus divstar
+;
+; n3 is the floor of the quotient of n1 divided
+; by the divisor n2.  An error condition results
+; if the divisor is zero or if the quotient falls
+; outside the range {-32,768 ... 32,767}.
+#ifdef HEADERS
+slashlfa
+    .byt $de,$ad
+    .byt (slash-*-1)|bit7
+    .asc "/"|bit7
+#endif
+slash
+    jsr doslashmod
+    ;       lda stack,x
+    ;       sta stack+2,x
+    ;       lda stack+1,x
+    ;       sta stack+3,x
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       MOD   ( n1 n2 -- n3 )
+;
+; * 83 nucleus divstar
+;
+; n3 is the remainder after dividing n1 by the
+; divisor n2.  n3 has the same sign as n2 or is
+; zero.  An error condition results if the
+; divisor is zero or if the quotient falls out-
+; side the range {32,768...32,768}.
+;
+#ifdef HEADERS
+modlfa
+    .byt $de,$ad
+    .byt (mod-*-1)|bit7
+    .asc "MO","D"|bit7
+#endif
+mod
+    jsr doslashmod
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       */MOD   ( n1 n2 n3 -- n4 n5 )
+;
+; * 83 nucleus divstar
+;
+; n1 is first multiplied by n2 producing an inter-
+; mediate 32 bit result.  n4 is the remainder and
+; n5 is the floor of the quotient of the inter-
+; mediate 32-bit result divided by the divisor
+; n3.  A 32-bit intermediate product is used for
+; */ .  n4 has the same sign as n3 or is zero.
+; An error condition results if the divisor is
+; zero or if the quotient falls outside of the
+; range {-32,768...32,767}.
+;
+#ifdef HEADERS
+starslashmodlfa
+    .byt $de,$ad
+    .byt (starslashmod-*-1)|bit7
+    .asc "*/MO","D"|bit7
+#endif
+starslashmod
+    jsr dostarslashmod
+    jmp next
+dostarslashmod
+    ;       lda stack+1,x
+    pha
+    ;       lda stack,x
+    pha
+    inx
+    inx
+    jsr mult
+    dex
+    dex
+    pla
+    ;       sta stack,x
+    pla
+    ;       sta stack+1,x
+    jmp domslash
+
+;--------------------------------------------------------------
+;
+;       */   ( n1 n2 n3 -- n4 )
+;
+; * 83 nucleus divstar
+;
+; n1 is first multiplied by n2 producing an inter-
+; mediate 32-bit result.  n4 is the floor of the
+; quotient of the intermediate 32-bit result
+; divided by the divisor n3.  The product of n1
+; times n2 is maintained as an intermediate 32-
+; bit result for greater precision than the other-
+; wise equivalent sequence n1 n2 * n3 / .  An
+; error condition results if the divisor is zero
+; or if the quotient falls outside the range
+; {-32,768...32,767}.
+;
+#ifdef HEADERS
+starslashlfa
+    .byt $de,$ad
+    .byt (starslash-*-1)|bit7
+    .asc "*","/"|bit7
+#endif
+starslash
+    jsr dostarslashmod
+    ;       lda stack,x
+    ;       sta stack+2,x
+    ;       lda stack+1,x
+    ;       sta stack+3,x
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       M/MOD   ( d n1 -- n2 n3 )
+;
+; * divstar
+;
+; n2 is the remainder and n3 is the floor of the
+; quotient after dividing d by the divisor n1.
+; All values and arithmetic are unsigned.  An er-
+; ror condition results if the divisor is zero or
+; if the quotient lies outside the range
+; {-32,768...32,767}.
+;
+#ifdef HEADERS
+mslashmodlfa
+    .byt $de,$ad
+    .byt (mslashmod-*-1)|bit7
+    .asc "M/MO","D"|bit7
+#endif
+mslashmod
+    ldy #2
+    jsr locals       ; udhi -> N0; udlo -> N1
+    lda tos+1
+    pha
+    bpl mslashmod01
+    jsr donegate
+mslashmod01
+    pla
+    eor n+1         ; xor the sign bits
+    sta n+7
+    lda n+1
+    sta n+6         ; original sign of divisor
+    bpl mslashmod02
+    jsr dnegaten    ; negate the double at n..n+3
+mslashmod02
+    jsr divmod
+    sty n+1
+    sta n           ; stash the quotient
+    lda n+6
+    bpl mslashmod03
+    jsr donegate
+mslashmod03
+    lda n+7
+    bpl mslashmod04
+    jsr dnegaten
+mslashmod04
+    ldy n+1
+    lda n
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       PICK   ( an ... a3 a2 a1 n -- an ... a3 a2 a1 an )
+;
+; * 83 nucleus
+;
+; 0 pick = same as dup
+; 1 pick = same as over
+#ifdef HEADERS
+picklfa
+    .byt $de,$ad
+    .byt (pick-*-1)|bit7
+    .asc "PIC","K"|bit7
+#endif
+pick
+    txa
+    clc
+    adc tos
+    tay
+    lda stackl,y
+    sta tos
+    lda stackh,y
+    sta tos+1
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       ROLL   ( an ... a3 a2 a1 n -- an-1 ... a3 a2 a1 an )
+;
+; * 83 nucleus
+;
+; remove the nth stack element (excluding n itself) to TOS, dropping n
+;
+; 2 roll = rot
+; 1 roll = swap
+; 0 roll has no effect
+;
+#ifdef HEADERS
+rolllfa
+    .byt $de,$ad
+    .byt (roll-*-1)|bit7
+    .asc "ROL","L"|bit7
+#endif
+roll
+    stx storex
+    txa
+    clc
+    adc tos
+    tax
+    lda stackh,x
+    sta tos+1
+    lda stackl,x
+    sta tos
+roll01
+    cpx storex
+    beq roll02
+    lda stackh+$ff,x
+    sta stackh,x
+    lda stackl+$ff,x        ; ~wut? probably not work!
+    sta stackl,x
+    dex
+    bne roll01
+roll02
+    inx
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       DEPTH
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+depthlfa
+    .byt $de,$ad
+    .byt (depth-*-1)|bit7
+    .asc "DEPT","H"|bit7
+#endif
+depth
+    txa
+    eor #$ff
+    sec
+    adc #<bos
+    ldy #0
+    jmp pushya
+

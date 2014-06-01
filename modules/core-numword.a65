@@ -1,0 +1,1225 @@
+;core-numword.a65
+
+;--------------------------------------------------------------
+;
+;       DIGIT    ( char base -- digit true | false )
+;
+; Converts a single character to a digit using the current number
+; base.  A flag on TOS indicates whether the conversion succeeded.
+;~wut? possible to code golf this down with BCD tricks?
+;"http://www.6502.org/tutorials/decimal_mode.html
+#ifdef HEADERS
+digitlfa
+    .byt $de,$ad
+    .byt (digit-*-1)|bit7
+    .asc "DIGI","T"|bit7
+#endif
+digit
+    ldy #$ff        ; assume success
+    lda stackl,x    ; get the character
+    sec
+    sbc #'0'
+    bcc digit02     ; char was < '0'? not a digit, fail
+    cmp #10
+    bcc digit01     ; digit is in the range 00-09
+    sbc #7          ; no? alphabet adjust 'A' --> $0a
+digit01
+    cmp tos         ; compare to current number base
+    bcs digit02     ; not in current number base? fail
+    sta stackl,x    ; digit in the current number base
+    .byt $2c        ; BIT xxyy, skip the next two bytes
+digit02
+    iny             ; fail, set flag to 0
+    inx             ; drop the stack
+
+    tya             ; ya = flag word $0000 or $ffff
+    jmp put         ; next!
+
+;--------------------------------------------------------------
+;
+;       SKIP   ( addr1 size1 char -- addr2 count2 )
+;
+; * headerless
+;
+; addr1 is the starting address in the input stream where up
+; to size1 bytes are skipped *WHILE* they match char.  Returns
+; addr2 as the address of the first non-matching character and
+; count2 as the remaining number of bytes in the buffer.
+skip
+    brk
+    .byt bs, <(skipscan01-*-2)      ; setup
+skip01
+    .byt bs, <(skipscan02-*-2)      ; next char
+    .byt bz, <(skip01-*-2)
+    .byt br, <(skipscan04-*-2)      ; exit
+
+;--------------------------------------------------------------
+;
+;       SCAN   ( addr count char -- addr count )
+;
+; * headerless
+;
+; addr1 is the starting address in the input stream where up
+; to count1 bytes are skipped *UNTIL* they match char.  Returns
+; addr2 as the address of the first non-matching character and
+; count2 as the remaining number of bytes in the buffer.
+scan
+    brk
+    .byt bs, <(skipscan01-*-2)      ; setup
+scan01
+    .byt bs, <(skipscan02-*-2)      ; next char
+    .byt bnz, <(scan01-*-2)
+    .byt br, <(skipscan04-*-2)
+
+skipscan01
+    .byt ld | TOS   ; char
+    .byt st | N1
+    .byt pull
+    .byt st | N0
+    .byt pull       ; addr
+    .byt rs
+skipscan02
+    .byt ldi | TOS
+    .byt dcr | N0
+    .byt bm1 , <(skipscan03-*-2)    ; leave if count < 0
+    .byt sub | N1
+    .byt rs
+skipscan03
+    .byt popd | R12 ; drop the BS return
+skipscan04
+    .byt dcr | TOS
+    .byt inr | N0
+    .byt rtn
+    lda n
+    ldy n+1
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       COUNT   ( addr1 -- addr2 n1 )
+;
+; * 83 nucleus
+;
+; Leaves the address, addr2 and the character
+; count +n of text beginning at addr1.
+; addr2 is addr1+1 and n1 is the length of the
+; counted string at addr1.  The byte at addr1 con-
+; tains the byte count +n.  Range of +n is
+; {0...255}.
+#ifdef HEADERS
+countlfa
+    .byt $de,$ad
+    .byt (count-*-1)|bit7
+    .asc "COUN","T"|bit7
+#endif
+count
+    ldy #0
+    lda (tos),y
+    inc tos
+    bne count01
+    inc tos+1
+count01         jmp pushya
+
+;--------------------------------------------------------------
+;
+;       TYPE   ( addr count -- )
+;
+; * 83 device
+;
+#ifdef HEADERS
+typelfa
+    .byt $de,$ad
+    .byt (type-*-1)|bit7
+    .asc "TYP","E"|bit7
+#endif
+type
+    ldy #1
+    jsr locals
+    clc
+    lda tos
+    ldy numout+3
+    adc (up),y
+    sta (up),y
+    iny
+    lda tos+1
+    adc (up),y
+    sta (up),y
+    ldy #0
+type01
+    cpy tos
+    bne type02
+    dec tos+1
+    bpl type02
+    jmp pops
+type02
+    lda (n),y
+    jsr CHROUT
+    iny
+    bne type01
+    inc n+1
+    bne type01
+
+;--------------------------------------------------------------
+;
+;       -TRAILING   ( addr +n1 -- addr +n2 )
+;
+; The character count +n1 of a text string beginning at addr
+; is adjusted to exclude trailing spaces.  If +n1 is zero,
+; then +n2 is also zero.  If the entire string consists of
+; spaces, then +n2 is zero.
+;
+;": -trailing   ( addr n1 -- addr n2 )
+;     dup 0
+;     ?do
+;         2dup + 1- c@
+;         bl <>
+;     ?leave
+;         1-
+;     loop ;
+;
+#ifdef HEADERS
+dashtrailinglfa
+    .byt $de,$ad
+    .byt (dashtrailing-*-1)|bit7
+    .asc "-TRAILIN","G"|bit7
+#endif
+dashtrailing
+    brk
+    .byt ld | TOS
+    .byt st | N1
+    .byt pull
+    .byt add | N1
+    .byt st | N0
+    .byt ext
+    .word dashtrailing16
+    .byt ld | N0
+    .byt sub | TOS
+    .byt push
+    .byt nxt
+
+;--------------------------------------------------------------
+;
+;       HOLD   ( char -- )
+;
+; * 83 interpreter
+;
+; Inserts  character into a pictured numeric out-
+; put string.
+; char is inserted into a pictured numeric output
+; string.  Typically used between  <#  and  #> .
+#ifdef HEADERS
+holdlfa
+    .byt $de,$ad
+    .byt (_hold-*-1)|bit7
+    .asc "HOL","D"|bit7
+#endif
+_hold
+#include "enter.i65"
+    .word minusone
+#include "page.i65"
+    .word hld
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+    .word hld
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       'STREAM   ( -- addr size )
+;
+;" : 'stream
+;       blk @ ?dup
+;       if      block b/buf
+;       else    tib #tib @
+;       then
+;       >in @ over min >r swap r@ + swap r> - ;
+#ifdef HEADERS
+tickstreamlfa
+   .byt $de,$ad
+    .byt (_tickstream-*-1)|bit7
+    .asc "'STREA","M"|bit7
+#endif
+_tickstream
+#include "enter.i65"
+    .word blk
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qdup              ; ( 0 | blk blk )
+#include "page.i65"
+    .word qbranch           ; IF
+    .byt <(tickstream01-*+1)
+#include "pad.i65"
+    ; input from block device
+    .word plover            ; unimplemented
+#include "page.i65"
+    ; this is where the BLOCK i/o goes
+    ; _block bperbuf        ; ( addr )
+    .word branch            ; ELSE
+    .byt <(tickstream02-*+1)
+#include "pad.i65"
+tickstream01                ; input from terminal
+    .word tib               ; ( tib )
+#include "page.i65"
+    .word numtib            ; ( tib #tib.uarea )
+#include "page.i65"
+    .word fetch             ; ( tib #tib )
+#include "page.i65"         ; THEN
+tickstream02
+    .word toin              ; ( buf size >in )
+#include "page.i65"
+    .word fetch             ; ( buf size offset )
+#include "page.i65"
+    .word over              ; ( buf size offset size )
+#include "page.i65"
+    .word _min              ; ( buf size offset )
+#include "page.i65"
+    .word tor               ; ( buf size )
+#include "page.i65"
+    .word swap              ; ( size buf )
+#include "page.i65"
+    .word rfetch            ; ( size buf offset )
+#include "page.i65"
+    .word plus              ; ( size addr )
+#include "page.i65"
+    .word swap              ; ( addr size )
+#include "page.i65"
+    .word rfrom             ; ( addr size offset )
+#include "page.i65"
+    .word minus             ; ( addr remaining )
+#include "page.i65"
+    .word exit
+
+;               .word to6502
+;               ldy #2
+;               jsr locals
+;               brk
+;               .byt ldd  | TOS         ; >in @
+;               .byt cpr  | N0          ; #tib or b/buf
+;               .byt bm,  <(tickstream03-*-2)
+;               .byt ld   | N0
+;tickstream03   .byt st   | N2          ; smaller of (#tib or b/buf, >in)
+;               .byt ld   | N1          ; tib
+;               .byt add  | N2          ; cursor position
+;               .byt st   | TOS
+;               .byt ld   | N0
+;               .byt sub  | N2          ; bytes remaining
+;               .byt push               ; ( addr remaining )
+;               .byt rtn
+;               jmp exit
+;#include "toforth.i65"
+;               .word exit
+
+;--------------------------------------------------------------
+;
+;       WORD   ( char -- addr )
+;
+; * 83 interpreter 
+;
+; Generates a counted string by non-destructively accepting
+; characters from the input stream until the delimiting
+; character char is encountered or the input stream is
+; exhausted.  Leading delimiters are ignored.  The entire
+; character string is stored in memory beginning at addr as a
+; sequence of bytes.  The string is followed by a blank which
+; is not included in the count.  The first byte of the string
+; is the number of characters {0..255}.  If the string is
+; longer than 255 characters, the count is unspecified.  If
+; the input stream is already exhausted as WORD is called,
+; then a zero length character string will result.
+;
+; If the delimiter is not found the value of >IN is the size
+; of the input stream.  If the delimiter is found >IN is
+; adjusted to indicate the offset to the character following
+; the delimiter.  #TIB is unmodified.           ; ( 0100 0104 0107 0009 )
+;
+; The counted string returned by WORD may reside in the "free"
+; dictionary area at HERE or above.  Note that the text
+;"interpreter may also use this area.
+;"See: http://forth.sourceforge.net/std/fst83/fst83-5.htm#input.stream
+;
+; fig high level
+;" : word   ( c -- addr )
+;       blk @  if  blk @ block  else  tib @  then
+;       >in @ + swap enclose here 34 blank >in +!
+;       over - >r r@ here c! + here 1+ r> cmove ;
+;
+;" : word   ( c -- nfa )
+;       >r                              ; ( -- ) r( c )
+;       'stream
+;       over swap
+;       r@ skip
+;       over swap
+;       r> scan
+;       drop 2dup swap -
+;       >r
+;       rot - 1+
+;       >in +!
+;       r> here
+;       2dup c!
+;       1+ swap cmove
+;       here bl over
+;       count + c! ;
+;       here dup count +
+;       bl swap c! ;
+#ifdef HEADERS
+wordlfa
+    .byt $de,$ad
+    .byt (_word-*-1)|bit7
+    .asc "WOR","D"|bit7
+#endif
+_word
+                                ; ( char )
+#include "enter.i65"
+    .word tor                   ; ( )
+#include "page.i65"
+    .word _tickstream           ; ( addr size )
+#include "page.i65"
+    .word over                  ; ( addr size addr )
+#include "page.i65"
+    .word swap                  ; ( addr addr size )
+#include "page.i65"
+    .word rfetch                ; ( addr addr size char )
+#include "page.i65"
+    .word skip                  ; ( addr addr2 size )
+#include "page.i65"
+    .word over                  ; ( addr addr2 size addr2 )
+#include "page.i65"
+    .word swap                  ; ( addr addr2 addr2 size )
+#include "page.i65"
+    .word rfrom                 ; ( addr addr2 addr2 size char )
+#include "page.i65"
+    .word scan                  ; ( addr addr2 addr3 size )
+#include "page.i65"
+    .word drop                  ; ( addr addr2 addr3 )
+#include "page.i65"
+    .word _twodup               ; ( addr addr2 addr3 addr2 addr3 )
+#include "page.i65"
+    .word swap                  ; ( addr addr2 addr3 addr3 addr2 )
+#include "page.i65"
+    .word minus                 ; ( addr addr2 addr3 wordlen )
+#include "page.i65"
+    .word tor                   ; ( addr addr2 addr3 )
+#include "page.i65"
+    .word rot                   ; ( addr2 addr3 addr )
+#include "page.i65"
+    .word minus                 ; ( addr2 offset )
+#include "page.i65"
+    .word oneplus               ; ( addr2 offset )
+#include "page.i65"
+    .word toin                  ; ( addr2 offset toin )
+#include "page.i65"
+    .word plusstore             ; ( addr2 )
+#include "page.i65"
+    .word rfrom                 ; ( addr2 size )
+#include "page.i65"
+    .word here                  ; ( addr2 size here )
+#include "page.i65"
+    .word twoplus               ; ( addr2 size here+2 )
+#include "page.i65"
+    .word _twodup               ; ( addr2 size here+2 size here+2 )
+#include "page.i65"
+    .word cstore                ; ( addr2 size here+2 )
+#include "page.i65"
+    .word oneplus               ; ( addr2 size here+3 )
+#include "page.i65"
+    .word swap                  ; ( addr2 here+3 size )
+#include "page.i65"
+    .word cmove                 ; ( )
+#include "page.i65"
+    .word here                  ; ( here )
+#include "page.i65"
+    .word twoplus               ; ( here+2 )
+#include "page.i65"
+    .word bl                    ; ( here+2 bl )
+#include "page.i65"
+    .word over                  ; ( here+2 bl here+2 )
+#include "page.i65"
+    .word count                 ; ( here+2 bl here+3 size )
+#include "page.i65"
+    .word plus                  ; ( here+2 bl here+size+3 )
+#include "page.i65"
+    .word cstore                ; ( here+2 )
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       CONVERT   ( addr -- addr )
+;
+; * 83 interpreter
+;
+;": convert
+;       begin
+;               1+ dup >r c@ base @ digit
+;       while
+;               swap base @ um* drop rot base @ um* d+
+;               dpl @ 1+
+;               if
+;                       1 dpl +!
+;               then
+;               r>
+;       repeat
+;       r> ;
+;
+;#ifdef HEADERS
+;convertlfa
+;    .byt $de,$ad
+;    .byt (_convert-*-1)|bit7
+;    .asc "CONVER","T"|bit7
+;#endif
+_convert
+#include "enter.i65"
+convert01       .word oneplus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word base
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word digit
+#include "page.i65"
+    .word qbranch
+    .byt <(convert03-*+1)
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+    .word base
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word umstar
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word base
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word umstar
+#include "page.i65"
+    .word dplus
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word qbranch
+    .byt <(convert02-*+1)
+#include "pad.i65"
+    .word one
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+convert02
+    .word rfrom
+#include "page.i65"
+    .word branch
+    .byt <(convert01-*+1)
+#include "pad.i65"
+convert03
+    .word rfrom
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       NUMBER    ( addr -- d )
+;
+; Convert the counted string at addr, to a signed
+; 32-bit integer, using the value of BASE .  If numeric
+; conversion is not possible, an error condition exists.  The
+; string may contain a preceding minus sign.
+;
+;( There is a string that is probably a number stored from addrlow..addrhigh -- caveat -- this probably has some bugs )
+;": NUMBER  ( addr -- d ; convert a counted string to a signed double, keeping track of the decimal )
+;   0 0 ROT COUNT   ( -- 0 0 addr+1 len )
+;   OVER C@ [ ASCII - ] LITERAL  =   ( -- 0 0 addr+1 len negative? )
+;"  DUP >R   ( -- 0 0 addr+1 len negative? ) ( R: -- negative? )
+;   +   ( -- 0 0 addr+1 lenadj ; adjust length for sign char )
+;   OVER + 1+   ( -- 0 0 addr+1 addrhigh+1 )
+;   SWAP  R@ -   ( -- 0 0 addrhigh+1 addrlow )
+;   DPL ON
+;   ?DO   ( d )
+;"     BASE @ >R   ( -- d ) ( R: -- base negative? )
+;      I C@  R@  DIGIT   ( -- d currdigit~?~ flag )
+;      IF
+;         SWAP R@ UM*
+;         DROP ROT
+;         R@ UM* D+
+;         DPL @ 1+  IF  DPL 1+!  THEN
+;      ELSE
+;         I C@ [ ASCII . ] LITERAL  =
+;         DPL @ 0<  AND
+;         IF
+;            DPL OFF
+;         ELSE
+;            3 FAIL ( ABORT" NOT FOUND" - do not pass go do not collect $200 )
+;         THEN
+;      THEN
+;"     R> DROP   ( R: -- negative? ; discard base )
+;   LOOP
+;   R>  IF  DNEGATE  THEN ;
+;
+; Blazin' does it like this --
+;": number   ( addr -- double )
+;       true over count over + swap   ( addr true lastchar firstchar )
+;       ?do
+;               i c@  base @  digit
+;               if
+;                       2drop false leave
+;               then
+;       loop
+;       ?find
+;       0 0 rot dup 1+
+;       c@ [ ascii - ] =
+;       dup >r -
+;       dpl on
+;       begin
+;               convert dup c@ punct?
+;       while
+;               dpl off
+;       repeat
+;       c@ bl <>
+;       ?find  r>
+;       if
+;               dnegate
+;       then ;
+;
+#ifdef HEADERS
+numberlfa
+    .byt $de,$ad
+    .byt (_number-*-1)|bit7
+    .asc "NUMBE","R"|bit7
+#endif
+_number
+#include "enter.i65"
+    .word zero
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word clit
+    .byt '-'
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word qbranch
+    .byt <(number01-*-1)
+#include "pad.i65"
+    .word oneminus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+number01
+    .word over
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word pqdo
+    .byt <(number01-*-1)
+#include "pad.i65"
+    .word base
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word digit
+#include "page.i65"
+    .word qbranch
+    .byt <(number02-*-1) 
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word umstar
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word umstar
+#include "page.i65"
+    .word dplus
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word qbranch
+    .byt <(number02-*-1)
+#include "pad.i65"
+    .word dpl
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+number02
+    .word i
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word clit
+    .byt '.'
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word qbranch
+    .byt <(number01-*-1)
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word off
+#include "page.i65"
+
+    .word three
+#include "page.i65"
+    .word fail
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word ploop
+    .byt <(number01-*-1)
+#include "pad.i65"
+    .word rfrom
+#include "page.i65"
+    .word qbranch
+    .byt <(number01-*-1)
+#include "pad.i65"
+    .word dnegate
+#include "page.i65"
+
+    .word exit
+
+
+;--------------------------------------------------------------
+;
+;       <#   ( -- )
+;
+; * 83 interpreter
+;
+#ifdef HEADERS
+ltsharplfa
+    .byt $de,$ad
+    .byt (_ltsharp-*-1)|bit7
+    .asc "<","#"|bit7
+#endif
+_ltsharp
+#include "enter.i65"
+    .word _pad              ; ( pad )
+#include "page.i65"
+    .word hld               ; ( pad hld )
+#include "page.i65"
+    .word store             ; ( )
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       #>
+;
+; * 83 interpreter
+;
+#ifdef HEADERS
+sharpgtlfa
+    .byt $de,$ad
+    .byt (_sharpgt-*-1)|bit7
+    .asc "#",">"|bit7
+#endif
+_sharpgt
+#include "enter.i65"
+    .word twodrop
+#include "page.i65"
+    .word hld
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       SIGN    ( n -- )
+;
+; * 83 interpreter
+;
+; If n is negative, an ASCII "-" (minus sign) is appended to the
+; pictured numeric output string.  Typically used between <# and #> .
+;
+#ifdef HEADERS
+signlfa
+    .byt $de,$ad
+    .byt (_sign-*-1)|bit7
+    .asc "SIG","N"|bit7
+#endif
+_sign
+#include "enter.i65"
+    .word zlt
+#include "page.i65"
+    .word qbranch
+    .byt <(sign01-*+1)
+#include "pad.i65"
+    .word clit
+    .byt '-'
+#include "pad.i65"
+    .word _hold
+#include "page.i65"
+sign01
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       #   ( +d1 -- +d2 )
+;
+; * 83 interpreter
+;
+; +d1 is divided by BASE and the quotient is
+; placed onto the stack.  The remainder is con-
+; verted to an ASCII character and appended to
+; the output string toward lower memory ad-
+; dresses.
+; The remainder of +d1 divided by the value of
+; BASE is converted to an ASCII character and ap-
+; pended to the output string toward lower memory
+; addresses.  +d2 is the quotient and is main-
+; tained for further processing.  Typically used
+; between <# and #> .
+#ifdef HEADERS
+sharplfa
+    .byt $de,$ad
+    .byt (_sharp-*-1)|bit7
+    .asc "#"|bit7
+#endif
+_sharp
+#include "enter.i65"
+    .word base              ; ( d base )
+#include "page.i65"
+    .word fetch             ; ( d @base )
+#include "page.i65"
+    .word udslashmod        ; ( rem d )
+#include "page.i65"
+    .word rot               ; ( d rem )
+#include "page.i65"
+    .word to6502
+    lda tos
+    sed
+    cmp #10
+    adc #'0'
+    cld
+    sta tos                 ; ( d char )
+#include "toforth.i65"
+    .word _hold             ; ( d )
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       #S   ( d -- )
+;
+; * 83 interpreter
+;
+#ifdef HEADERS
+sharpslfa
+    .byt $de,$ad
+    .byt (_sharps-*-1)|bit7
+    .asc "#","S"|bit7
+#endif
+_sharps
+#include "enter.i65"
+sharps01        .word _sharp            ; ( d )
+#include "page.i65"
+    .word _twodup           ; ( d d )
+#include "page.i65"
+    .word dzeq              ; ( d flag )
+#include "page.i65"
+    .word qbranch
+    .byt <(sharps01-*+1)
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       (U.)
+;
+;#ifdef HEADERS
+;pudotlfa
+;    .byt $de,$ad
+;    .byt (_pudot-*-1)|bit7
+;    .asc "(U.",")"|bit7
+;#endif
+_pudot
+#include "enter.i65"
+    .word zero
+#include "page.i65"
+    .word _ltsharp
+#include "page.i65"
+    .word _sharps
+#include "page.i65"
+    .word _sharpgt
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       U.
+;
+; * 83 interpreter
+;
+#ifdef HEADERS
+udotlfa
+    .byt $de,$ad
+    .byt (_udot-*-1)|bit7
+    .asc "U","."|bit7
+#endif
+_udot
+#include "enter.i65"
+    .word _pudot
+#include "page.i65"
+    .word type
+#include "page.i65"
+    .word _space
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       U.R    ( u n -- )
+;
+; u is converted using the value of BASE and then
+; displayed as an unsigned number right-aligned
+; in a field +n characters wide.  If the number
+; of characters required to display u is greater
+; than +n, an error condition exists.
+
+#ifdef HEADERS
+udotrlfa
+    .byt $de,$ad
+    .byt (_udotr-*-1)|bit7
+    .asc "U.","R"|bit7
+#endif
+_udotr
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word _pudot
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _spaces
+#include "page.i65"
+    .word type
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       (.)   ( n -- )
+;
+;#ifdef HEADERS
+;pdotlfa
+;    .byt $de,$ad
+;    .byt (_pdot-*-1)|bit7
+;    .asc "(.",")"|bit7
+;#endif
+_pdot
+#include "enter.i65"
+    .word dup               ; ( n n )
+#include "page.i65"
+    .word abs               ; ( n +n )
+#include "page.i65"
+    .word zero              ; ( n +d )
+#include "page.i65"
+    .word _ltsharp          ; ( n +d )
+#include "page.i65"
+    .word _sharps           ; (
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word _sign
+#include "page.i65"
+    .word _sharpgt
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       .   ( n -- )
+;
+; * 83 interpreter
+;
+; The value of n is displayed in a free field for-
+; mat with a leading minus sign if n is negative.
+#ifdef HEADERS
+dotlfa
+    .byt $de,$ad
+    .byt (_dot-*-1)|bit7
+    .asc "."|bit7
+#endif
+_dot
+#include "enter.i65"
+    .word _pdot             ; ( addr count )
+#include "page.i65"
+    .word type              ; ( )
+#include "page.i65"
+    .word _space            ; ( )
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       .R
+;
+#ifdef HEADERS
+dotrlfa
+    .byt $de,$ad
+    .byt (_dotr-*-1)|bit7
+    .asc ".","R"|bit7
+#endif
+_dotr
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word _pdot
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _spaces
+#include "page.i65"
+    .word type
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       (UD.)
+;
+;#ifdef HEADERS
+;puddotlfa
+;    .byt $de,$ad
+;    .byt (_puddot-*-1)|bit7
+;    .asc "(UD.",")"|bit7
+;#endif
+_puddot
+#include "enter.i65"
+    .word _ltsharp
+#include "page.i65"
+    .word _sharps
+#include "page.i65"
+    .word _sharpgt
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       UD.
+;
+#ifdef HEADERS
+uddotlfa
+    .byt $de,$ad
+    .byt (_uddot-*-1)|bit7
+    .asc "UD","."|bit7
+#endif
+_uddot
+#include "enter.i65"
+    .word _puddot
+#include "page.i65"
+    .word type
+#include "page.i65"
+    .word _space
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       UD.R
+;
+#ifdef HEADERS
+uddotrlfa
+    .byt $de,$ad
+    .byt (_uddotr-*-1)|bit7
+    .asc "UD.","R"|bit7
+#endif
+_uddotr
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word _puddot
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _spaces
+#include "page.i65"
+    .word type
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       (D.)
+;
+;#ifdef HEADERS
+;pdddotlfa
+;    .byt $de,$ad
+;    .byt (_pddot-*-1)|bit7
+;    .asc "(D.",")"|bit7
+;#endif
+_pddot
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word dabs
+#include "page.i65"
+    .word _ltsharp
+#include "page.i65"
+    .word _sharps
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word _sign
+#include "page.i65"
+    .word _sharpgt
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       D.
+;
+#ifdef HEADERS
+ddotlfa
+    .byt $de,$ad
+    .byt (_ddot-*-1)|bit7
+    .asc "D","."|bit7
+#endif
+_ddot
+#include "enter.i65"
+    .word _pddot
+#include "page.i65"
+    .word type
+#include "page.i65"
+    .word _space
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       D.R
+;
+#ifdef HEADERS
+ddotrlfa
+    .byt $de,$ad
+    .byt (_ddotr-*-1)|bit7
+    .asc "D.","R"|bit7
+#endif
+_ddotr
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word _pddot
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _spaces
+#include "page.i65"
+    .word type
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       ?
+;
+#ifdef HEADERS
+questionlfa
+    .byt $de,$ad
+    .byt (_question-*-1)|bit7
+    .asc "?"|bit7
+#endif
+_question
+#include "enter.i65"
+    .word fetch
+#include "page.i65"
+    .word _dot
+#include "page.i65"
+    .word exit
+

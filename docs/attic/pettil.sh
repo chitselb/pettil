@@ -9,7 +9,7 @@
 #
 # 
 alias xpetp='xpet -moncommand pettil.mon pettil.obj'
-alias xap='xa -x pettil.a65;ruby symtab.rb;cat pettil.obj pettil.sym > t.t;mv t.t pettil.obj;./pettil.sh'
+alias xap='./xap.sh --norun'
 
 # make the symbol list for the xpet monitor
 sed 's/^\([_a-zA-Z0-9]*\),\ 0x\(....\).*$/al C\:\2 \.\1/g' < pettil.lab | sort > pettil.mon
@@ -19,6 +19,7 @@ echo "disable 1">>pettil.mon
 echo break .exit>>pettil.mon	# debugging secondaries
 echo "disable 2">>pettil.mon
 #echo "watch store 2 3">>pettil.mon	# UP
+echo break .ice>>pettil.mon
 echo break .xyzzy>>pettil.mon
 #echo break ._block>>pettil.mon
 #echo break ._jiffyfetch>>pettil.mon

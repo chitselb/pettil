@@ -10,11 +10,11 @@ lowest_so_far=50
 # 128 153 126 204 94 193 211 4
 # 118 208 124 83 15 168 74 126
 wordlist = Array.new
-	file=File.new("t.1", "r")
-	while line=(file.gets) do
+    file=File.new("t.1", "r")
+    while line=(file.gets) do
         wordlist += [line.chomp]
         puts line
-	end
+    end
     file.close
 
 puts "hash = char^pearson[hash&psize]"
@@ -28,21 +28,21 @@ while true
         pearson.uniq!
     end
 
-	bucket = Array.new(16,0)
+    bucket = Array.new(16,0)
     wordlist.each { |line|
-#		hash=0
-#		hash=line.length
-		hash=pearson[line.length&psize]
-		line.each_byte { |char|
-			hash = char^pearson[hash&psize]
-#			hash ^= pearson[char&psize]
-		}
+#       hash=0
+#       hash=line.length
+        hash=pearson[line.length&psize]
+        line.each_byte { |char|
+            hash = char^pearson[hash&psize]
+#           hash ^= pearson[char&psize]
+        }
 
 # this really wouldn't work without a larger table
-#		line.each_byte { |char|
+#       line.each_byte { |char|
 #            index = hash^char
-#			hash = pearson[(index&psize)]
-#		}
+#           hash = pearson[(index&psize)]
+#       }
 #
 # h := 0
 # for each c in C loop
@@ -52,15 +52,15 @@ while true
 # return h
 
 
-		hash = ((hash&240)/16)^(hash&15)
-		bucket[hash] += 1
+        hash = ((hash&240)/16)^(hash&15)
+        bucket[hash] += 1
     }
     t = bucket.max
     if t<lowest_so_far
         lowest_so_far = t
-		pearson.each { |x| print "#{x} " }
+        pearson.each { |x| print "#{x} " }
         print "\n"
-		bucket.each { |x| print "#{x} " }
+        bucket.each { |x| print "#{x} " }
         print "\n#{t}\n"
     end
     if tries > 9999

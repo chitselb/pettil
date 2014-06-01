@@ -1,0 +1,833 @@
+;core-inner.a65
+
+;--------------------------------------------------------------
+; W register, used by EXECUTE
+w1
+    .word $dead             ; (for when you just need a W register)
+    .word exit              ; 'fragment secondary' used by EXECUTE
+
+;--------------------------------------------------------------
+;
+;       EXECUTE
+;
+; * 83 nucleus
+;
+; Executes the definition found at addr.
+;
+;"      : execute ( cfa --- )
+;"              jmp cfa ;
+;
+; [SP+] -> [W1]
+; IP -> [W1+4]
+; W1 -> IP
+; NEXTO
+#ifdef HEADERS
+executelfa
+    .byt $de,$ad
+    .byt (execute-*-1)|bit7
+    .asc "EXECUT","E"|bit7
+#endif
+execute
+    lda tos                 ; <-- code field address
+    sta w1                  ; in direct-threaded models, this
+    lda tos+1               ; contains code instead of a pointer
+    sta w1+1                ; [SP] -> [W1]
+    lda ip+1
+    pha
+    lda ip
+    pha
+    lda #<(w1-2)
+    sta ip
+    lda #>(w1-2)
+    sta ip+1
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;        >6502   ( -- )
+;
+; Drop down from high-level Forth to inline 6502
+;
+#ifdef HEADERS
+to6502lfa
+    .byt $de,$ad
+    .byt (to6502-*-1)|bit7
+    .asc ">650","2"|bit7
+#endif
+to6502
+    ldy ip
+    iny
+    clc
+    bne to650201
+    sec
+to650201
+    lda ip+1
+    adc #0
+    pha
+    tya
+    pha
+    rts     ; [15]
+
+
+;--------------------------------------------------------------
+;
+;       (ABORT")   ( flag -- )
+;
+; * outer interpreter headerless 
+;
+; if the flag is nonzero, types the inline counted string from the
+; dictionary and executes the word in STARTUP.  Otherwise adjusts IP
+; to after the string, paging if necessary
+;
+;#ifdef HEADERS
+;pabortqlfa
+;    .byt $de,$ad
+;    .byt (_pabortq-*-1)|bit7
+;    .asc "(ABORT",'"',")"|bit7
+;#endif
+_pabortq
+#include "enter.i65"
+    .word rfrom
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word qbranch
+    .byt <(pabortq01-*+1)
+#include "pad.i65"
+pabortq02
+    .word cmdoff
+;#include "page.i65"
+;               .word _where
+;#include "page.i65"
+;               .word cr
+;#include "page.i65"
+;               .word type
+#include "page.i65"
+    .word startup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word execute
+pabortq01
+    .word plus
+#include "page.i65"
+    .word to6502
+    jmp skipinline
+
+;--------------------------------------------------------------
+;
+;       (LIT)
+;
+; * inner interpreter headerless
+;
+; push the word of memory following (IP)
+;
+;#ifdef HEADERS
+;plitlfa
+;    .byt $de,$ad
+;    .byt (plit-*-1)|bit7
+;    .asc "(LIT",")"|bit7
+;#endif
+plit
+    jsr slip
+    ldy #3
+    lda (ip),y
+    inc ip
+    ldy #1
+    bne lithi ; bra
+
+;--------------------------------------------------------------
+;
+;       CLIT
+;
+; * inner interpreter headerless
+;
+; takes the byte of memory following and pushes it to the data stack
+;
+;#ifdef HEADERS
+;clitlfa
+;    .byt $de,$ad
+;    .byt (clit-*-1)|bit7
+;    .asc "CLI","T"|bit7
+;#endif
+clit
+    jsr slip
+    lda #0
+    ldy #2
+lithi
+    sta tos+1
+    lda (ip),y
+    sta tos
+    lda #3
+    jmp pad
+
+;--------------------------------------------------------------
+;
+;       HEX
+;
+#ifdef HEADERS
+hexlfa
+  .byt $de,$ad
+    .byt (_hex-*-1)|bit7
+    .asc "HE","X"|bit7
+#endif
+_hex
+#include "enter.i65"
+    .word clit
+    .byt 16
+#include "pad.i65"
+    .word base
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       DECIMAL
+;
+; * 83 interpreter
+;
+#ifdef HEADERS
+decimallfa
+    .byt $de,$ad
+    .byt (_decimal-*-1)|bit7
+    .asc "DECIMA","L"|bit7
+#endif
+_decimal
+#include "enter.i65"
+    .word clit
+    .byt 10
+#include "pad.i65"
+    .word base
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+dodoes       
+    pla
+    sta n
+    pla
+    sta n+1
+    pla
+    sta n+2
+    pla
+    sta n+3
+    lda ip+1
+    pha
+    lda ip
+    pha
+    ldy n
+    bne dodoes01
+    dec n+1
+dodoes01        dey
+    sty ip
+    lda n+1
+    sta ip+1
+    ldy n+3
+    inc n+2
+    bne dodoes02
+    iny
+dodoes02        lda n+2
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       ?BRANCH   ( flag -- )
+;
+; * inner interpreter control headerless
+;
+;#ifdef HEADERS
+;qbranchlfa
+;    .byt $de,$ad
+;    .byt (qbranch-*-1)|bit7
+;    .asc "?BRANC","H"|bit7
+;#endif
+qbranch
+    lda tos
+    ora tos+1       ; check the flag
+    ldy stackl,x
+    sty tos
+    ldy stackh,x
+    sty tos+1
+    inx             ; drop
+    tay             ; to set the Z flag
+    beq branch
+bump
+    lda #3
+    jmp pad
+
+;--------------------------------------------------------------
+;
+;       (?DO)   ( end begin -- )
+;
+; * inner interpreter control headerless
+;
+; Performs a do-loop if end<>begin
+;#ifdef HEADERS
+;pqdolfa
+;    .byt $de,$ad
+;    .byt (pqdo-*-1)|bit7
+;    .asc "(?DO",")"|bit7
+;#endif
+pqdo
+    ldy #1
+    jsr locals               ; end -> N0
+    lda tos
+    eor n
+    sta n+2
+    lda tos+1
+    eor n+1
+    ora n+2                 ; are begin and end loop indices the same?
+    beq pqdo02              ; yes, nada
+    ldy #3
+pqdo01
+    lda zi,y                ; set up for a loop
+    pha
+    lda tos,y               ; tos & n must be adjacent in zeropage ~wut?
+    sta zi,y
+    dey
+    bpl pqdo01              ; Y=FF means perform the loop
+pqdo02
+    jsr slide
+    tya                     ; sets the Z flag
+    bne bump                ; beanie bump!
+;fall through   ;beq branch             ; zero means end = begin (no loop)
+
+;--------------------------------------------------------------
+;
+;       BRANCH   ( -- )
+;
+; * inner interpreter control headerless
+;
+; Compiles an unconditional branch operation.
+;" When used in the form: COMPILE BRANCH
+; an unconditional branch operation is compiled.
+; A one-byte branch offset must immediately follow
+; this compilation address.  The branch address
+; is typically generated by following BRANCH
+; with <RESOLVE or >MARK .
+;
+; IP = address of 'branch' (you are here)
+; IP+2 = relative address of the target, same as for 6502 branches
+;
+;#ifdef HEADERS
+;branchlfa
+;    .byt $de,$ad
+;    .byt (branch-*-1)|bit7
+;    .asc "BRANC","H"|bit7
+;#endif
+branch
+    ldy #2          ; [2]
+    lda (ip),y      ; [5]   get the offset
+    bmi branch01    ; [2|3]
+    ldy #0          ; [2]
+    .byt $2c        ; [4]
+branch01
+    ldy #$ff        ; [2]
+    sec             ; [2]
+    adc ip          ; [3]
+    sta ip          ; [3]
+    tya             ; [2]
+    adc ip+1        ; [3]
+    sta ip+1        ; [3]
+    jmp nexto       ; [3]   [34 forward |31 backward]
+
+;--------------------------------------------------------------
+;
+;       (+LOOP)   ( n -- )
+;
+; * inner interpreter control headerless
+;
+; add n to inner loop index.  If loop index exceeds loop limit,
+; then iterate to the (do), otherwise skip past the branch and
+; proceed
+;#ifdef HEADERS
+;pplooplfa
+;    .byt $de,$ad
+;    .byt (pploop-*-1)|bit7
+;    .asc "(+LOOP",")"|bit7
+;#endif
+pploop
+    clc
+    lda tos
+    adc zi
+    sta zi
+    lda tos+1
+    adc zi+1
+    sta zi+1
+    lda zi+2
+    cmp zi
+    lda zi+3
+    sbc zi+1
+    ldy tos+1
+    lda stackh,x
+    sta tos+1
+    lda stackl,x
+    sta tos
+    inx
+    tay
+    bcc pploop01
+    eor #$80
+pploop01
+    bmi branch
+    bpl bump
+
+;--------------------------------------------------------------
+;
+;       (LOOP)
+;
+; * inner interpreter control headerless
+;
+;#ifdef HEADERS
+;plooplfa
+;    .byt $de,$ad
+;    .byt (ploop-*-1)|bit7
+;    .asc "(LOOP",")"|bit7
+;#endif
+ploop
+    inc zi
+    bne ploop01
+    inc zi+1
+ploop01
+    lda zi+2
+    eor zi
+    bne branch
+    lda zi+3
+    eor zi+1
+    bne branch
+    pla
+    sta zi
+    pla
+    sta zi+1
+    pla
+    sta zi+2
+    pla
+    sta zi+3
+    jmp bump
+
+;--------------------------------------------------------------
+;
+;       (DO)   ( end begin -- )
+;
+; * inner interpreter control headerless
+;
+; loops from 'begin' to 'end'
+;#ifdef HEADERS
+;pdolfa
+;    .byt $de,$ad
+;    .byt (pdo-*-1)|bit7
+;    .asc "(DO",")"|bit7
+;#endif
+pdo
+    lda stackh,x
+    sta n+1
+    lda stackl,x
+    sta n                   ; end -> N0
+    ldy #3
+pdo01
+    lda zi,y                ; set up for a loop
+    pha
+    lda tos,y               ; takes advantage of tos being
+    sta zi,y                ; adjacent to zi area
+    dey
+    bpl pdo01
+poptwo
+    inx
+pops
+    ldy stackh,x
+    lda stackl,x
+    inx
+put
+    sty tos+1
+    sta tos
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       I
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+ilfa
+    .byt $de,$ad
+    .byt (i-*-1)|bit7
+    .asc "I"|bit7
+#endif
+i
+    ldy zi+1
+    lda zi
+    ; pass YA = value to push/put on stack
+pushya
+    pha
+    jsr slip
+    pla
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       J
+;
+; * 83 nucleus
+;
+#ifdef HEADERS
+jlfa
+    .byt $de,$ad
+    .byt (j-*-1)|bit7
+    .asc "J"|bit7
+#endif
+j
+    stx storex
+    tsx
+    ldy $0102,x
+    lda $0101,x             ; ~ test this
+    ldx storex
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       (LEAVE)
+;
+; * inner interpreter control headerless
+;
+;#ifdef HEADERS
+;pleavelfa
+;    .byt $de,$ad
+;    .byt (pleave-*-1)|bit7
+;    .asc "(LEAVE",")"|bit7
+;#endif
+pleave
+    pla
+    sta zi
+    pla
+    sta zi+1
+    pla
+    sta zi+2
+    pla
+    sta zi+3
+    jmp branch
+
+;--------------------------------------------------------------
+;
+;       (?LEAVE)
+;
+; * inner interpreter control headerless
+;
+;#ifdef HEADERS
+;pqleavelfa
+;    .byt $de,$ad
+;    .byt (pqleave-*-1)|bit7
+;    .asc "(?LEAVE",")"|bit7
+;#endif
+pqleave
+    lda tos
+    ora tos+1
+    php
+    jsr slide
+    plp
+    bne pleave
+    jmp bump
+
+;--------------------------------------------------------------
+;
+;       SP@   ( -- sp )
+;
+#ifdef HEADERS
+spfetchlfa
+    .byt $de,$ad
+    .byt (spfetch-*-1)|bit7
+    .asc "SP","@"|bit7
+#endif
+spfetch
+    txa
+    ldy #0
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       SP!   ( -- )
+;
+#ifdef HEADERS
+spstorelfa
+    .byt $de,$ad
+    .byt (spstore-*-1)|bit7
+    .asc "SP","!"|bit7
+#endif
+spstore
+    ldy #usersp0-userarea
+    lda (up),y
+    tax
+    dex             ; because it's 1> to make ?stack faster
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       RP!   ( -- )
+;
+; Ordinarily the 6502 machine stack (aka PETTIL return stack) is
+; initialized to $01ff by BASIC, but the value stored at RP0 defaults
+; to $01fe instead.  This is because the PET ROM stores a line of
+; input at $0200 (where TIB points) and INTERPRET will be storing a
+; count of the first word on the line at $01ff
+#ifdef HEADERS
+rpstorelfa
+    .byt $de,$ad
+    .byt (rpstore-*-1)|bit7
+    .asc "RP","!"|bit7
+#endif
+rpstore
+    stx storex
+    ldy #userrp0-userarea
+    lda (up),y
+    tax
+    txs
+    ldx storex
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       EXIT   ( -- )
+;
+; * 83 nucleus
+;
+;               [RP+] -> IP
+;               NEXT
+;
+;#ifdef HEADERS
+;exitlfa
+;    .byt $de,$ad
+;    .byt (exit-*-1)|bit7
+;    .asc "EXI","T"|bit7
+;#endif
+exit
+    pla
+    sta ip
+    pla
+    sta ip+1        ; [RP+] -> IP
+    jmp next        ; NEXT
+
+;--------------------------------------------------------------
+;
+;       DOCREATE
+;
+; the business end of words created by CREATE
+;
+docreate
+    pla
+    clc
+    adc #1
+    sta n
+    pla
+    tay
+    bcc docreate01
+    iny
+docreate01
+    lda n
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       ENTER
+;
+;               IP -> -[RP]
+;               W -> IP
+;               NEXT
+;
+enter
+    pla             ;[4]
+    tay             ;[2]
+    pla             ;[4]
+    sta storex      ;[3]
+    lda ip+1        ;[3]
+    pha             ;[3]
+    lda ip          ;[3]
+    pha             ;[3]
+    lda storex      ;[3]
+    sta ip+1        ;[3]
+    iny             ;[2]
+    beq enter02     ;[2]
+enter01
+    sty ip          ;[3]
+    jmp nexto       ;[3]
+enter02
+    inc ip+1
+    bne enter01     ; bra
+
+;--------------------------------------------------------------
+;
+;       DOCONST
+;
+doconst
+    pla
+    sta n
+    pla
+    sta n+1
+    ldy #2
+    lda (n),y
+    sta n+2         ; high byte
+    dey
+    lda (n),y       ; low byte
+    ldy n+2
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       IRQ^   ( -- )
+;
+; toggle the processor IRQ flag
+;
+#ifdef HEADERS
+irqfliplfa
+    .byt $de,$ad
+    .byt (irqflip-*-1)|bit7
+    .asc "IRQ",94|bit7
+#endif
+irqflip
+    php
+    pla
+    eor #$04        ; toggle I flag
+    pha
+    plp
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       TOGGLEVECTOR   ( eorvalue $90|$92 -- )
+;
+; Apply a difference value to the interrupt vector, pointing
+; it to a new destination.  The same difference value restores the
+; original target.
+;
+#ifdef HEADERS
+togglevectorlfa
+    .byt $de,$ad
+    .byt (togglevector-*-1)|bit7
+    .asc "TOGGLEVECTO","R"|bit7
+#endif
+togglevector
+    sei
+    ldy #0
+    lda (tos),y
+    eor stackl,x
+    sta (tos),y
+    iny
+    lda (tos),y
+    eor stackh,x
+    sta (tos),y
+    cli
+    jmp poptwo          ; [20]
+
+;--------------------------------------------------------------
+;
+;       ?STACK
+;
+; inspect data stack pointer for sanity, abort if trouble
+#ifdef HEADERS
+qstacklfa
+    .byt $de,$ad
+    .byt (qstack-*-1)|bit7
+    .asc "?STAC","K"|bit7
+#endif
+qstack
+    ldy #usersp0-userarea           ; 2 = stack full
+    txa
+    bmi error
+    cmp (up),y
+    dey                             ; 1 = stack empty
+    bcs error       ; stack empty
+    jmp next
+
+;--------------------------------------------------------------
+; Jump up to high-level Forth from inline 6502
+;
+; Page boundary crossing is handled by the compiler inserting 'page'
+; when the DP gets to $xxFD or $xxFE.  IP = $xxFF is never supposed
+; to occur, and indicates an error in the compiler.
+;
+; Pad is used by LITERAL and string routines to offset IP at runtime
+;
+;~" todo: make an ASSEMBLER vocabulary word >FORTH to insert the call
+; and handle pagination properly like the "toforth.i65" include file
+;
+; also a general-purpose error handler to print a string and abort
+; pass in the error # in Y
+;       1 stack empty
+;       2 stack full
+error
+    sty tos
+    ldy #0
+    sty tos+1
+    lda #>(fail)
+    pha
+    lda #<(fail)    ; transfer control to fail, which
+    ; prints a numbered error and aborts
+    pha
+toforth
+    pla
+    sta ip
+    pla
+    sta ip+1
+    lda #1
+pad
+    clc                     ; pass A = offset added to IP
+    adc ip
+    bcs pagen               ; check for page boundary crossing
+    cmp #$ff
+    bne pado                ; check for xxFF at end of page
+page
+    lda #0
+pagen
+    inc ip+1                ; cross the page
+pado
+    sta ip
+    jmp nexto
+
+;--------------------------------------------------------------
+;
+;       FAIL    ( err# -- )
+;
+; optionally print an error message and abort
+;
+#ifdef HEADERS
+faillfa
+    .byt $de,$ad
+    .byt (fail-*-1)|bit7
+    .asc "FAI","L"|bit7
+#endif
+fail
+#include "enter.i65"
+    .word oneminus
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word errmess
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(fail01-*+1)
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word type
+#include "page.i65"
+fail01
+    .word startup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word execute
+
+
