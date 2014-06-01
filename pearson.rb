@@ -31,7 +31,8 @@ while true
 	bucket = Array.new(16,0)
     wordlist.each { |line|
 #		hash=0
-		hash=line.length
+#		hash=line.length
+		hash=pearson[line.length&psize]
 		line.each_byte { |char|
 			hash = char^pearson[hash&psize]
 #			hash ^= pearson[char&psize]

@@ -1,8 +1,19 @@
 #!/bin/bash
 # pettil.sh
+
+# general purpose shell script for PETTIL development builds
+# usage:
+#
+# to get the xap (build it) and xpetp (run it) aliases
+# $ source ./pettil.sh
+#
+# 
 alias xpetp='xpet -moncommand pettil.mon pettil.obj'
 alias xap='xa -x pettil.a65;ruby symtab.rb;cat pettil.obj pettil.sym > t.t;mv t.t pettil.obj;./pettil.sh'
+
+# make the symbol list for the xpet monitor
 sed 's/^\([_a-zA-Z0-9]*\),\ 0x\(....\).*$/al C\:\2 \.\1/g' < pettil.lab | sort > pettil.mon
+
 echo break .nexto>>pettil.mon	# debugging secondaries
 echo "disable 1">>pettil.mon
 echo break .exit>>pettil.mon	# debugging secondaries

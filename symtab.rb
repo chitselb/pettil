@@ -1,7 +1,7 @@
 
     # given a string (name) and address (symbol), construct and
     # return a hash with a symbol table entry in it
-    def make_symbol(name="", cfa=0)
+    def make_symbol(name="", cfa=0, isimmediate)
         # values calculated by pearson.rb
         # 14..22		102 162 3 150 98 88 207 149
         pearson = [102, 162, 3, 150, 98, 88, 207, 149]
@@ -12,9 +12,16 @@
         c2 = [name.length].pack("C")
     #   puts c2
         c3 = name.bytes.pack("C")
-        nfa = [name.length].pack("C")+name
+        namelen = name.length
+        if name[namelen-1].ord < 33
+			namelen |= 0x20		# set vocabulary bit if name ends in a control-character
+        end
+        namelen |= isimmediate
+        nfa = [namelen].pack("C")+name
         data = [cfa.to_i].pack("S<")+nfa
         
+        # the vocabulary identifier byte (if present) is part of the hash
+        # the length bits (and psize) are the seed of the hash
         hash=name.length
 		name.each_byte { |char|
 			hash = char^pearson[hash&psize]
@@ -31,7 +38,7 @@
     # given a string from the .a65 source code, like
     #     .asc "BLOC","K"|bit7
     # returns a string containing just the ascii name of this word, e.g. "DUP"
-    def parse_name(nfaline)
+    def parse_name(nfaline,vocabline)
         while (nfaline =~ /(.*)\|bit[67]$/)
             nfaline = $1
         end
@@ -53,6 +60,9 @@
         while (nfaline =~ /\"(.+)\"$/)
             nfaline = $1
         end
+        if (vocabline =~ /.byt\ (\d+)$/)
+			nfaline += $1.to_i.chr
+        end
         return nfaline
     end
 
@@ -67,6 +77,19 @@
         end
     end
 
+	# build a label file for tdict so it can find bodies in pettil
+	compiler_interpreter = ' _allot _comma _ccomma _commadollar _herelsb' +
+		' _commacfa commacfa01 _commaxt commaxt01 _create create02 create03 ' +
+		' _colon '
+    symfile = File.open("syms_tdict.tmp",'w') do |f|
+#       symfile.write(#{a[0]}=#{a[1]}\n")
+		symbols.each do |k, v|
+			if !(compiler_interpreter.include?(' '+k+' '))
+				f.write("#{k} = $#{v.to_s(16)}\n")
+			end
+		end
+    end
+	
 =begin
 
 #ifdef HEADERS
@@ -91,16 +114,20 @@ _rehash
                 # grab the next few lines
                 lfasymbol = infile.gets
                 dead = infile.gets
-                namelen = infile.gets
+                namelenline = infile.gets
                 nfaline = infile.gets   # this is useful
+                if (namelenline =~ /\|bit5/)
+					vocabline = infile.gets	# belongs to a vocabulary?
+				else
+					vocabline = ""
+                end
                 endifline = infile.gets
                 symbol = infile.gets    # so is this
-                
                 # make a few validation checks
                 if !(dead =~ /^\s+\.byt \$de,\$ad$/)
                     puts "uh oh", symbol, dead
                 end
-                if !(namelen =~ /^\s+\.byt\ \(#{symbol.chomp}-\*-1\)(\|bit6|\|bit7)+$/)
+                if !(namelenline =~ /^\s+\.byt\ \(#{symbol.chomp}-\*-1\)(\|bit5|\|bit6|\|bit7)+$/)
                     puts "uh oh", symbol, namelen
                 end
                 if !(endifline.chomp =~ /^\#endif$/)
@@ -109,11 +136,16 @@ _rehash
 
                 # turn this:    .asc "REHAS","H"|bit7
                 # into this:    REHASH
-                nfaline = parse_name(nfaline)
+                nfaline = parse_name(nfaline,vocabline)
                 puts nfaline            # feed this to pearson.rb
 
+				if (namelenline =~ /\|bit6/) # is immmediate
+					isimmediate = 0x80
+				else
+					isimmediate = 0
+				end
                 # we should have enough (a name and an address)
-                a = make_symbol(nfaline, symbols[symbol.chomp])
+                a = make_symbol(nfaline, symbols[symbol.chomp],isimmediate)
                 b[a[:name]] = a
             end
         
