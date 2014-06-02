@@ -17,7 +17,6 @@ xa -x pettil.a65
 # * a symbol table for the temporary dictionary
 # * a symbol table for the monitor (pettil.mon)
 # * a complete symbol table for both dictionaries
-touch modules/pettil-tdict.lab
 ruby symtab.rb
 #
 # build the temporary dictionary
@@ -31,9 +30,13 @@ cat pettil.obj modules/pettil-tdict.obj pettil.sym > t.t
 mv t.t pettil.obj
 #
 # clean up junk
-mv modules/pettil-tdict.obj modules/pettil-tdict.err pettil.lab modules/pettil-tdict.lab pettil.sym *.err core_syms.tmp  ./junk/
+mv modules/pettil-tdict.obj modules/pettil-tdict.err pettil.lab modules/pettil-tdict.lab *.err core_syms.tmp  ./junk/
 #
 # run it
+if [ -e pettil.dbg ]; then
+	cat pettil.dbg >> pettil.mon
+fi
+#
 if [ "$1" != "--norun" ]; then
 xpet -moncommand pettil.mon pettil.obj
 fi
