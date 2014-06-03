@@ -8,8 +8,17 @@
 alias xap='./xap.sh --norun'
 #
 # runs it
-alias xpetp='xpet -moncommand pettil.mon pettil.obj'
+alias pettil='xpet -moncommand pettil.mon pettil.obj'
 #
+#
+
+
+
+[[ "${BASH_SOURCE[0]}" != "${0}" ]] && echo "script ${BASH_SOURCE[0]} is being sourced ..."
+
+
+
+
 # first build the core from $0400..COLD
 echo
 echo Building PETTIL core
