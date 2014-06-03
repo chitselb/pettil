@@ -80,7 +80,7 @@
     end
 
     # build a label file for tdict so it can find bodies in pettil
-    use_decimal = ' twodec rp0 memsiz '  # fix problems with e.g. bc add in hex address
+    use_decimal = ' twodec _tickstream _puddot '  # fix problems with e.g. bc add in hex address
     symfile = File.open("core_syms.tmp",'w') do |f|
 #       symfile.write(#{a[0]}=#{a[1]}\n")
         symbols.each do |k, v|
@@ -91,6 +91,7 @@
             end
         end
     end
+
     ("modules/pettil-tdict.lab".split " ").each do |filename|
         if File.exist? filename
             result = File.open(filename,'r') do |f|
@@ -186,4 +187,4 @@ _rehash
         a = h[1][:data].bytes
         symfile.write a.pack("C*")
     end
-    symfile.write [0,0,0,0].pack("C*")
+    symfile.write [0].pack("C*")        # null length to end pettil.sym

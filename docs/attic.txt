@@ -4580,3 +4580,261 @@ number05
 #include "page.i65"
 number06
     .word exit
+
+;--------------------------------------------------------------
+;
+;       TOGGLEIRQ   ( -- )
+;
+; Apply a difference value to the IRQ vector at $90, pointing
+; it to a new destination.  The same difference value restores the
+; original target.
+;
+#ifdef HEADERS
+toggleirqlfa
+    .byt $de,$ad
+    .byt (toggleirq-*-1)|bit7
+    .asc "TOGGLEIR","Q"|bit7
+#endif
+toggleirq
+    sei
+    ldy #0
+    lda (tos),y
+    eor stackl,x
+    sta (tos),y
+    iny
+    lda (tos),y
+    eor stackh,x
+    sta (tos),y
+    cli
+    jmp poptwo          ; [20]
+
+;--------------------------------------------------------------
+;
+;       UNTHREAD   ( -- )
+;
+; tdict
+;
+; compiler tdict
+;
+; iterate through all LFAs and reset them to $DEAD
+;
+;" : unthread
+;       16 0 do                         ( )
+;               i dhash@                ( lfa1 )
+;               begin
+;                       dup             ( lfa1 lfa1 )
+;                       @               ( lfa1 lfa2 )
+;                       ?dup            ( lfa1 lfa2 true | lfa1 false )
+;               while                   ( lfa1 lfa2 )
+;                       $dead           ( lfa1 lfa2 $dead )
+;                       rot             ( lfa2 $dead lfa1 )
+;~ dup 2- ( nfa ) dup c@ ( nfa len ) $80 or ( nfa len ) swap c! ( )
+;                       !               ( lfa2 )
+;               repeat
+;                                       ( lfa )
+;               drop                    ( )
+;       loop
+;
+;#ifdef HEADERS
+;unthreadlfa
+;    .byt $de,$ad
+;    .byt (_unthread-*-1)|bit7
+;    .asc "UNTHREA","D"|bit7
+;#endif
+_unthread
+#include "enter.i65"
+    .word clit
+    .byt 16
+#include "pad.i65"
+    .word zero
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+unthread01      .word i
+#include "page.i65"
+    .word dhashfetch
+#include "page.i65"
+unthread02      .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qbranch
+    .byt <(unthread03-*+1)
+#include "pad.i65"
+    .word plit
+    .byt $de,$ad
+#include "pad.i65"
+    .word rot
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word branch
+    .byt <(unthread02-*+1)
+#include "page.i65"
+unthread03      .word drop
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word dhashstore
+#include "page.i65"
+    .word ploop
+    .byt <(unthread01-*+1)
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       RETHREAD   ( -- )
+;
+; tdict
+;
+; compiler tdict
+;
+; When the system is first loaded, all LFAs contain $DE $AD.
+; The reason for this is twofold.  PETTIL uses a hash-threaded
+; dictionary, and calculating the hash values and link fields
+; by hand would be an extremely cumbersome activity.
+; More importantly, FORGET might wipe away words that are linked in
+; this fashion and break the link chains.  So when FORGET is invoked,
+; first it performs UNTHREAD (to mark all LFAs as DEAD) then it moves
+; the dictionary pointer (DP) to where it belongs, then it does RETHREAD
+;
+; This word builds the LFA field in every word up to this point.
+; It also marks the last word in the core dictionary.
+; links all LFAs
+;" : rethread   ( -- )
+;       lfalist 40 erase
+;       0 +origin
+;       begin   bringoutyerdead
+;               ?dup
+;       while   dup dup 2+
+;               dhash
+;               bloom!
+;               dhash!
+;       until ;
+;
+;#ifdef HEADERS
+;rethreadlfa
+;    .byt $de,$ad
+;    .byt (_rethread-*-1)|bit7
+;    .asc "RETHREA","D"|bit7
+;#endif
+_rethread
+#include "enter.i65"
+    .word plit
+    .word bloom
+#include "pad.i65"
+    .word clit
+    .byt 40                 ; bloom filter (8) and lfalist (32)
+#include "pad.i65"
+    .word _erase
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word _plusorigin
+#include "page.i65"
+rethread01
+    .word boyd              ; begin boyd ?dup while ... repeat
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(rethread02-*+1)
+#include "pad.i65"
+    .word dup               ; ( lfa lfa )
+#include "page.i65"
+    .word dup               ; ( lfa lfa lfa )
+#include "page.i65"
+    .word twoplus           ; ( lfa lfa nfa )
+#include "page.i65"
+    .word dhash             ; ( lfa lfa hash1 hash23 )
+#include "page.i65"
+    .word bloomstore        ; ( lfa lfa hash1 )
+#include "page.i65"
+    .word dhashstore        ; ( lfa )
+#include "page.i65"
+    .word branch
+    .byt <(rethread01-*+1)
+#include "pad.i65"
+rethread02
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       BRINGOUTYERDEAD   ( addr -- deadlfa|0 )
+;
+; compiler tdict
+;
+; scans forward in memory returning the address of the next $DE $AD
+; in memory that is followed by a name
+;" http://www.youtube.com/watch?v=grbSQ6O6kbs
+;
+;#ifdef HEADERS
+;boydlfa
+;    .byt $de,$ad
+;    .byt (boyd-*-1)|bit7
+;    .asc "BRINGOUTYERDEA","D"|bit7
+;#endif
+boyd
+    brk
+    .byt set  | R10
+    .word $de
+    .byt set  | R11
+    .byt $de,$ad
+    .byt set  | N0
+    .word userdp-userarea
+    .byt ld   | UP
+    .byt add  | N0
+    .byt st   | N0
+    .byt ldd  | N0
+    .byt st   | N0          ; here
+    .byt ldd  | N0
+    .byt popd | N0          ; restore N0
+    .byt st   | N1
+    .byt ld   | R11
+    .byt std  | N0          ; here+2 -> N0
+    .byt rtn
+boyd01
+    brk
+    .byt ldi  | TOS
+    .byt cpr  | R10
+    .byt bnz, <(boyd01-*-1)
+    .byt dcr  | TOS
+    .byt ldd  | TOS
+    .byt cpr  | R11
+    .byt bz,  <(boyd02-*-2)
+    .byt dcr  | TOS
+    .byt br,  <(boyd01-*-1)
+boyd02
+    .byt ld   | TOS
+    .byt cpr  | N0          ; TOS=here+2?
+    .byt bnz, <(boyd03-*-2)
+    .byt sub  | ACC
+    .byt st   | TOS
+    .byt br,  <(boyd06-*-2)
+boyd03
+    .byt rtn                ; TOS points to probable NFA
+    ldy #0
+    lda (tos),y
+    bpl boyd01              ; NFA length must be negative
+    and #$1f
+    tay
+    lda (tos),y
+    bpl boyd01              ; last NFA byte must be negative
+boyd04
+    dey
+    beq boyd05
+    lda (tos),y
+    bpl boyd04
+    bmi boyd01              ; middle NFA bytes must be positive
+boyd05
+    brk
+    .byt popd | TOS         ; point at the LFA
+boyd06
+    .byt popd | N0          ; back up the pointer
+    .byt ld   | N1
+    .byt std  | N0          ; restore previous contents of here
+    .byt nxt
+

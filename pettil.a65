@@ -1,4 +1,8 @@
 ; pettil.a65
+
+#echo pettil.a65
+#echo PETTIL - Personal Electronics Transactor Threaded Interpretive Language
+
 ;
 ; PETTIL
 ; Personal Electronics Transactor Threaded Interpreted Language
@@ -118,13 +122,15 @@ power2
 ;==== ALL SWEET16 OPERATION HANDLERS MUST BE ON SAME PAGE! ====
 ;==============================================================
 
-#if (* = $04a5)
-    nop
-#else
-#echo PETTIL Build Error - Program counter is not at $04a5!
-#echo Sweet16 needs to start at $04a6.  This is a problem.
-#print *
+    nop                         ; fine tune position of Sweet16
+
+#if (* <> $04a6)
+#echo PETTIL Build Error - Program counter is not at $04a6!
+#echo You moved something, didn't you?  Sweet16 is expected
+#echo to start at $04a6 (1190).  This is a problem. 
 #endif
+#echo PETTIL program counter just before Sweet16 is:
+#print *
 
 #include modules/sweet16.a65
 
@@ -132,8 +138,10 @@ power2
 ;==== ALL SWEET16 OPERATION HANDLERS MUST BE ON SAME PAGE! ====
 ;==============================================================
 
-; xor of two vectors, to switch between Sweet16 and TIM
-brktoggle       .word TIMBRK^SW16
+; xor of two vectors, to switch BRK vector between Sweet16 and TIM
+brktoggle       .word SW16^TIMBRK
+; xor of two vectors, to switch IRQ vector between PETTIL and BASIC
+irqtoggle       .word 0
 
 ;==============================================================
 ; userarea initialization data
@@ -143,15 +151,16 @@ userarea
 ; everything between here and 'userwarm' gets set to these
 ; initial values by WARM
 userup          .word uarea                             ; WARM
-usersp0         .word bos+1             ; =2            ;
+usersp0         .word bos+1                             ;
 userrp0         .word $01fe                             ;
+usercontext     .word 0                                 ;
+usercurrent     .word 0                                 ;
 userwarm
 
-userirq         .word $e455                             ;
 userfence       .word cold                              ; COLD
-userdp          .word 0                                 ;
-usermemsiz      .word VIDRAM                            ;
-userstartup     .word 0
+userdp          .word cold                              ;
+usermemsiz      .word 0     ; set by COLD from BASIC (copy of $34)
+userstartup     .word hot   ; CFA of bootstrap code to run after warm
 usercold
 ; everything before usercold is initialized at COLD start
 
@@ -173,8 +182,6 @@ usererrmess     = usercold+24                           ;
 userscr         = usercold+26                           ;
 userstate       = usercold+28                           ;
 usercsp         = usercold+30                           ;
-usercontext     = usercold+32                           ;
-usercurrent     = usercold+34                           ;
 uservocabid     = usercold+36                           ;
 usernumvocab    = usercold+38                           ;
 
@@ -191,35 +198,28 @@ uarea           .dsb usercold-userarea+48,0
 #include modules/core-numword.a65
 #include modules/core-double.a65
 #include modules/core-string.a65
+#include modules/core-vm.a65
 
 ;--------------------------------------------------------------
 ;
 ;       WARM
 ;
-;reset top of the dictionary
-;ice
-; Preprocessing when PETTIL is started from BASIC
-; swapzp - either with a cold image or with contents prior to BASIC mode
-; distinguish whether this is a cold or warm start (user variable?)
+; Dropping out to BASIC can be accomplished on purpose by the
+; MON word to get to TIM, then .X to get to BASIC.  It also 
+; happens by mistake if cassette i/o is interrupted by the STOP
+; key or any tape error.  There may be other ways.  WARM should
+; be able to bring the system back to a usable state.
 ;
-;cold
-; PETTIL is invoked for the first time after initial load
-; print a welcome banner
-; set up top of memory pointers based on BASIC MEMSIZ variable
-; REHASH to copy the symbol table up to high memory (it's at PAD now)
-; copy TDICT to high memory (it's after the symbol table)
-;
-;warm
-; PETTIL was reinvoked, e.g. after cassette error or after MON
-; print a different welcome banner e.g. "<WARM START>"
-;
-;start
-; Postprocessing when PETTIL restarts, common to cold and warm
-; reset data and return stack
-; set the BRK vector to point to Sweet16
-; print start message CR,"WELCOME TO PETTIL!",CR
-; EMPTYBUFFERS
-; STARTUP @ EXECUTE
+; Tasks
+; * aloha
+; * - swap zero page with zpbuf
+; * - switch Sweet16<-->TIM BRK vector
+; * - switch PETTIL<-->BASIC IRQ vector
+; * reset Forth return stack (machine stack)
+; * reset Forth data stack
+; * empty block buffers (~wut? this might not be very good)
+; * print start message CR,"WELCOME TO PETTIL!",CR
+; * STARTUP @ EXECUTE
 ;
 ;#ifdef HEADERS
 ;warmlfa
@@ -228,14 +228,17 @@ uarea           .dsb usercold-userarea+48,0
 ;    .asc "WAR","M"|bit7
 ;#endif
 warm
-    ldy #userwarm-userarea-1
+    ldy #userwarm-userarea-1    ; init only warm uservariables
+    bne warm01
+cold2warm
+    ldy #usercold-userarea-1    ; init both cold and warm uservariables
 warm01
     tya
     pha
-    jsr aloha                   ; swap zero page and enable Sweet16
+    jsr aloha                   ; swap zero page, enable Sweet16, set IRQ
     pla
     tay
-    lda userup
+    lda userup                  ; initialize user variables
     sta up
     lda userup+1
     sta up+1
@@ -249,22 +252,7 @@ warm02
 #include "page.i65"
     .word spstore
 #include "page.i65"
-    .word _emptybuffers
-#include "page.i65"
-    .word _pdq
-#include "pad.i65"
-;   .word _rethread
-;#include "page.i65"
-warm05
     .word _decimal
-#include "page.i65"
-;    .word forth
-;#include "page.i65"
-;    .word _definitions
-;#include "page.i65"
-    .word context
-#include "page.i65"
-    .word off
 #include "page.i65"
     .word _pdq
     .byt (warm04-*-1)
@@ -279,6 +267,9 @@ warm04
 #include "page.i65"
     .word exit
 
+;==============================================================
+; FENCE  all that comes before this is unforgettable
+;==============================================================
 
 ;--------------------------------------------------------------
 ;
@@ -290,8 +281,6 @@ warm04
 ; the final word in the core dictionary, COLD will FORGET
 ; itself and its address becomes the value of FENCE.
 ; It's a little hairy, I hope my comments will explain.
-;
-;
 ;
 ; the pieces at load time
 ; * 0400-040c   BASIC bootstrap (10 SYS 1037)
@@ -306,7 +295,6 @@ warm04
 ; * swapzp,     and other native 6502 code subroutines
 ; * core,       permanent dictionary (bodies only)
 ;
-;===============fence===========before this is unforgettable===
 ;
 ; * cold,       bootstrap initialization
 ;---------------tdict & symbol table concatenated to there-----
@@ -316,25 +304,30 @@ warm04
 ; * tdict       outer interpreter, compiler, editor, assembler
 ; * symbols,    symbol table data
 ;
-; tasks
+; COLD tasks
 ; * set MEMSIZ from BASIC $34-35
 ; * set SYMTAB as an offset from MEMSIZ
-; * swapzp and turn on Sweet16 BRK vector
 ; * display a banner
-; * call WARM to put us in Forth mode
-; * copy tdict region to high memory
-; * FENCE is already set to ' COLD
-; * STARTUP @ W1 !
-; * push W1-2 to the return stack
-; * put COLD CFA on the data stack
-; * call FORGET in the middle, after the input stream & FIND
-; * when FORGET exits, NEXT will perform ABORT via W1
+; * set STARTUP uservariable to HOT
 ;
-; what WARM does
-; * swap the zero page with BASIC to zpbuf
-; * restore Forth's IRQ and BRK vectors
-; * reset the data stack
-; * reset the return stack
+; * call WARM to put us in Forth mode
+;
+; There is no knowledge in the core dictionary (at the bottom of memory)
+; of what is in the temporary dictionary or where it resides.  To kick
+; things off upstairs, WARM starts Forth, then executes the word HOT
+; via the STARTUP uservariable.  That's where we will pick things up.
+;
+; 'there' has a few pointers and the temporary dictionary (pettil-tdict)
+; ($C9) End address for tape LOAD marks the end of the symbol table
+;
+; HOT tasks
+; * copy tdict region to high memory
+; * copy symbol table to high memory at SYMTAB+8+32+2
+; * find FIND in the symbol table, use it to...
+; * find ABORT in the symbol table
+; * set STARTUP to ABORT
+; * find FORGET in the symbol table
+; * FORGET COLD
 ;
 ; what FORGET does
 ; * when FORGET is invoked by COLD, it uses the CFA on the data stack
@@ -347,18 +340,17 @@ warm04
 ; * when FORGET is invoked by COLD, it uses the address on the data
 ;   stack instead of PAD, and it doesn't copy the symbol table from
 ;   SYMTAB
-; * move the symbols to PAD - all other times, but not this time
+; * move the symbols to PAD
 ; * and MOVE the symbols one by one back to SYMTAB
 ;
 ; when FORGET exits, the return stack sends us to @W1 which runs
 ; the word in STARTUP (typically ABORT)
 ;
-; Dropping out to BASIC can be accomplished by typing MON
-; to get to TIM, then .X to get to BASIC.  It also happens
-; if cassette i/o is interrupted by the STOP key or if a
-; tape read error occurs during cassette i/o.  There may be
-; other ways.  WARM should always be able to bring the system
-; back to a usable state.
+; before warm can do its thing, we need to populate STARTUP with the
+; CFA of ABORT.  The temporary dictionary was compiled separately and
+; we have no idea what that CFA is without searching the symbol table.
+; First, let's move the symbol table to where it belongs, which is
+; at SYMTAB + bloomfilter(8) + hashthreads(32) + new (SYMTAB+8
 ;
 ; COLD expects to find the tdict size, followed by the load
 ; address, then the code bodies for the PETTIL development
@@ -376,8 +368,6 @@ warm04
 ; COLD replaces the vector to itself at pettillaunch with
 ; a JMP WARM instruction.
 ;
-; ICE loads STARTUP with the CFA of COLD
-;
 ; COLD replaces the vector (pettillaunch) to ICE with a
 ; JMP WARM instruction.
 ;
@@ -385,6 +375,7 @@ warm04
 ;
 ; temporary dictionary and symbols are built separately
 ; and concatenated to the PETTIL.OBJ core binary
+;
 ;#ifdef HEADERS
 ;coldlfa
 ;    .byt $de,$ad
@@ -392,6 +383,18 @@ warm04
 ;    .asc "COL","D"|bit7
 ;#endif
 cold
+    lda #<bannermsg             ; display a banner
+    sta TEMPF1
+    lda #>bannermsg
+    sta TEMPF1+1
+    ldy #0
+cold01
+    lda (TEMPF1),y
+    jsr CHROUT
+    iny
+    cpy bannermsg-1
+    bne cold01
+
     lda #<warm                  ; close the door on ourselves
     sta pettillaunch+1          ; runs cold once, warm to reenter
     lda #>warm
@@ -406,55 +409,42 @@ cold
     sbc #$1c                    ; $8000 = MEMSIZ
     sta usersymtab+1
 
-    lda CBINV
-    eor #<SW16
-    sta brktoggle
-    lda CBINV+1
-    eor #>SW16
-    sta brktoggle+1
-
-    lda #<bannermsg
-    sta TEMPF1
-    lda #>bannermsg
-    sta TEMPF1+1
-    ldy #0
-cold01
-    lda (TEMPF1),y
-    jsr CHROUT
-    iny
-    cpy bannermsg-1
-    bne cold01
-
     ; use the BASIC memory move, because we don't have Forth up yet
-    ; it doesn't really matter how long the ice code is, because it
-    ; goes away after it runs once.
-    lda #<there+6               ; bottom of area to be moved
+    ;($55)=Top of area to be moved to + 1
+    ;($57)=Top of area to be moved + 1
+    ;($5C)=Bottom of area to be moved
+    ;hitop=$7240
+    ;.word hitop-6       ; +0 load address so it can be loaded separately on a PET
+    ;.word hitop         ; +2 the effective origin address
+    ;.word endofile      ; +4
+    ;.word $8000-hitop   ; +6 length
+    ;*=hitop             ; +8 temporary dictionary bodies are here
+    lda #<there+8               ; = bottom of area to be moved
     sta $5c
-    lda #>there+6
+    lda #>there+8
     sta $5d
     clc
     lda there+2
-    adc there+4
+    adc there+6
     sta $55
     lda there+3
-    adc there+5
-    sta $56                     ; top of area to be moved to + 1
+    adc there+7                 ; binary size + origin address
+    sta $56                     ; = top of area to be moved to + 1
     clc
-    lda $5c
-    adc there+2
+    lda there+6                 ; binary size + there+8
+    adc #<there+8               ; = top of area to be moved + 1
     sta $57
-    lda $5d
-    adc there+3
-    sta $58
-    jsr BLTU+7                  ; BASIC's open space in memory routine
-                                ; Forgo memory overlap check
+    lda there+7
+    adc #>there+8
+    sta $58                     ; BASIC's open space in memory routine
+    jsr BLTU+7                  ; Forgoing memory overlap check
 
     clc
     lda #<there+8
-    adc there
+    adc there+4
     sta userdp
     lda #>there+8
-    adc there+1
+    adc there+5
     sta userdp+1                ; pointer to symbols (usually PAD) is in DP
     sec                         ; the wrong place, but usable
     lda userdp
@@ -516,95 +506,60 @@ findcold05
     sbc #$0c
     sta usersymtab+1            ; set SYMTAB
 
-    ldy #usercold-userarea
-    bne warm01
+    jmp cold2warm
 
-    .byt (cold02-*-1)
+;--------------------------------------------------------------
+;
+;        HOT   ( -- )
+;
+; The tail end of the one-time only (then disappear) system
+; bootstrap initialization.  HOT runs as the STARTUP word after
+; COLD invokes WARM to kick things off. Hence the name.
+;
+; HOT tasks
+; * set user variable ERRMESS
+; * find FIND
+; * set STARTUP = ABORT
+; * FORGET COLD
+;
+;#ifdef HEADERS
+;hotlfa
+;    .byt $de,$ad
+;    .byt (hot-*-1)|bit7
+;    .asc "HO","T"|bit7
+;#endif
+hot
+#include "enter.i65"
+    .word exit
+
+;--------------------------------------------------------------
+    ; scan through the symbols until we find FIND.
+    ; put its CFA in STARTUP
+findthis
+    .byt 4, "FIND"
+
+    .byt (there-*-1)
 bannermsg
     .asc    CLR,"FORTH FOR THE COMMODORE PET 2001",CR
     .asc    "HTTP:","/","/GITHUB.COM/CHITSELB/PETTIL",CR
-    .asc    "VERSION PRE-ALPHA 2014-05-24",CR
+    .asc    "VERSION PRE-ALPHA 2014-06-02",CR
             ;123456789.123456789.123456789.123456789.
-    .asc    "1607 ENGLISH SETTLERS LAND IN JAMESTOWN", CR
-    .asc    "1844 SAMUEL MORSE SENDS FIRST TELEGRAM",CR
-cold02
-ice
-    ; scan through the symbols until we find COLD.
-    ; put its CFA in STARTUP
-findthis
-    .byt 4, "COLD"
-
-; ICE is the one-time initialization.  It runs once and
-; only once after "pettil.obj" loads, preparing a development
-; environment.  Then it disappears once everything is where
-; it belongs.  Afterward, WARM reinitializes PETTIL if the
-; user drops out to BASIC.
-;
-; Dropping out to BASIC can be accomplished by typing MON
-; to get to TIM, then .X to get to BASIC.  It also happens
-; if cassette i/o is interrupted by the STOP key or if a
-; tape read error occurs during cassette i/o.  There may be
-; other ways.  WARM should always be able to bring the system
-; back to a usable state.
-;
-; COLD expects to find the tdict size, followed by the load
-; address, then the code bodies for the PETTIL development
-; environment.  This follows immediately after ICE
-; itself in RAM.  This block (there) is copied to upper
-; memory.  This binary object must know where it resides,
-; as no relocation is done.  In other words, a 16K PET
-; requires a different build of "there" than a 32K PET.
-;
-; Next COLD invokes REHASH to populate the symbol table at
-; user variable SYMTAB.  Symbols never require relocation,
-; but FIND expects to find them in a specific order, as
-; dictated by REHASH.
-;
-; COLD replaces the vector to itself at pettillaunch with
-; a JMP WARM instruction.
-;
-; ICE loads STARTUP with the CFA of COLD
-;
-; COLD replaces the vector (pettillaunch) to ICE with a
-; JMP WARM instruction.
-;
-; COLD does FENCE @ DP !
-;
+    .asc    "455 SACK OF ROME: VANDALS ENTER ROME,",CR
+    .asc    "AND PLUNDER THE CITY FOR TWO WEEKS",CR
+there
 ; temporary dictionary and symbols are built separately
 ; and concatenated to the PETTIL.OBJ core binary at 'there'
-
-there
-; two byte load address for pettil-tdict.obj
-; two byte length of pettil-tdict.obj from $8000
-; two 
-hitop=$7100
-    .word endofile
-    .word $8000-hitop   ; length
-    .word hitop         ; load address
-*=hitop
-; 
-;--------------------------------------------------------------
 ;
-;        ICE   ( -- )
+;"pettil-tdict.obj looks like this:
+; two byte load address of pettil-tdict.obj
+; two byte ending address of pettil-tdict.obj
+; two byte length of pettil-tdict.obj (backward from $8000)
 ;
-;
-; the pieces at load time
-; * 0400-040c   BASIC bootstrap (10 SYS 1037)
-; * 040d-0410   pettillaunch (JMP ICE)
-; * 0410-049c   zpbuf (partial zero page image $00-$8C)
-; * 049d-04a4   power2 (01 02 04 08 10 20 40 80)
-; * 04a5        unused byte
-; * 04a6-065a   Sweet16
-; * 065b-       slip, slide, Sweet16 extensions
-; * brktoggle,  the EOR of TIM and Sweet16 entry points
-; * userarea,   User variable storage
-; * swapzp,     and other native 6502 code subroutines
-; * core,       permanent dictionary (bodies only)
-; * fence,      everything before this is unforgettable
-;==============================================================
-; * ice,        PETTIL bootstrap initialization routine
-; * there,      2-byte load address of temporary dictionary
-; * there+2,    2-byte size of temporary dictionary
-; * there+4,    temporary dictionary, bodies only
-; * symbols,    symbol table data
-;
+;"pettil.sym looks like this:
+; repeated for each head
+; [
+;  two byte CFA address
+;  one byte length and flags
+;  name
+;  one byte vocabulary identifier, if present
+;  ]

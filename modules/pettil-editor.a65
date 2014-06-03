@@ -1,5 +1,5 @@
-;pettil-editor.a65
-
+; pettil-editor.a65
+#echo pettil-editor.a65         EDITOR Vocabulary (1)
 
 ;--------------------------------------------------------------
 ;
@@ -30,82 +30,6 @@ flipscr01
     iny                     ; [2]
     bne flipscr01           ; [3] 49 * 256 = 12544 clocks
     jmp next
-
-;--------------------------------------------------------------
-;
-;       WRAP^   ( logline -- d )
-;
-; Reads (a portion of) the linewrap table above the current physical
-; line (stored at $d8) up to but not including the current logical line.  
-; Returns a right-aligned double with a copy of those high bit values
-;
-#ifdef HEADERS
-wrapabovelfa
-    .byt $de,$ad
-    .byt (wrapabove-*-1)|bit7|bit5
-    .asc "WRAP",94|bit7
-    .byt 1
-#endif
-wrapabove
-    stx storex      ; preserve Forth data stack pointer
-    ldx #0
-    stx n+1
-    stx n
-    stx tos+1
-    ldy tos         ; first physical line of this logical line
-    stx tos
-    tya
-    beq wrapabove03
-    sty n+2
-    dex
-wrapabove02
-    inx
-    cpx n+2         ; are we there yet?
-    beq wrapabove03 ; leave if done
-    lda $e0,x 
-    asl             ; nondestructively
-    rol tos
-    rol tos+1
-    rol n
-    rol n+1         ; append the next high bit to the double
-    beq wrapabove02 ; this should always take the branch
-wrapabove03
-    lda n
-    ldy n+1         ; high half of the double is going on the stack
-    ldx storex      ; restore Forth data stack pointer
-    jmp pushya
-
-;--------------------------------------------------------------
-;
-;       WRAP+   ( d 40|80 -- d flag )
-;
-; Shift and append one or two bits to the double.  Return nonzero
-; once 25 bits have been stored.  40 = <<,1; 80 = <<,1 <<,0
-;
-#ifdef HEADERS
-wrappluslfa
-    .byt $de,$ad
-    .byt (wrapplus-*-1)|bit7|bit5
-    .asc "WRAP","+"|bit7
-    .byt 1
-#endif
-wrapplus
-    sec             ; always shift in a 1
-wrapplus01
-    ldy stackh,x
-    bne wrapplus03
-    rol stackl+1,x  ; shift in a single bit
-    rol stackh+1,x
-    rol stackl,x
-    rol stackh,x
-    lda #40
-    cmp tos
-    sta tos         ; so we only do this once
-    bcc wrapplus01  ; maybe shift in a 0 (if 80-column)
-wrapplus03
-    ldy stackh,x
-    tya
-    jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -658,272 +582,6 @@ pastefrom04                     ; THEN
 
 ;--------------------------------------------------------------
 ;
-;       PKT@ ( n -- packet )
-;
-; Return the packet address of block n
-;
-;": pkt@   ( n -- packet )
-;     blkbuf 2-
-;     begin
-;         over 0>
-;     while
-;         dup @
-;         - swap 1- swap
-;     repeat
-;     swap drop ;
-;
-#ifdef HEADERS
-pktfetchlfa
-    .byt $de,$ad
-    .byt (_pktfetch-*-1)|bit7|bit5
-    .asc "PKT","@"|bit7
-    .byt 1
-#endif
-_pktfetch
-#include "enter.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word to6502
-    brk                         ; ( blkbuf blk )
-    .byt ld | TOS
-    .byt st | N0
-    .byt pull
-pktfetch01
-    .byt popd | TOS
-    .byt bz , <(pktfetch02-*-2)
-    .byt dcr | N0
-    .byt bm , <(pktfetch02-*-2)
-    .byt ext
-    .word pktheader16
-    .byt ld | TOS
-    .byt sub | R11
-    .byt st | TOS
-    .byt br , <(pktfetch01-*-2)
-pktfetch02
-    .byt rtn
-#include "toforth.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       PKT+ ( editable? -- packet )
-;
-; Append a new packet to the bottom of vmbuf, return its address
-; flag = false for data packet, true for editor packet
-;
-;": pkt+   ( editable? -- packet )
-;                                 ( editable? )
-;     >r vmbuf @ 14 r@
-;                                 ( vmbuf 14 editable? ) ( R; editable? )
-;     if
-;                                 ( vmbuf 14 ) ( R; editable? )
-;         drop 5
-;                                 ( vmbuf 5 ) ( R; editable? )
-;     then
-;                                 ( vmbuf 5 ) ( R; editable? )
-;     2dup 2dup 2dup - over
-;                                 ( vmbuf 5 vmbuf 5 vmbuf 5 vmbuf-5 5 ) ( R; flag )
-;     erase
-;                                 ( vmbuf 5 vmbuf 5 vmbuf 5 ; clear packet ) ( R; flag )
-;     VIDRAM r@ and or swap
-;                                 ( vmbuf 5 vmbuf 5 VIDRAM|5 vmbuf ) ( R; flag )
-;     !
-;                                 ( vmbuf 5 vmbuf 5 ; set packet length ) ( R; flag )
-;     - dup vmbuf !
-;                                 ( vmbuf 5 vmbuf-5 ; update vmbuf to point to new tail )
-;     2+ r> tuck over ! 1+ !
-;                                 ( vmbuf 5 ; set first three bytes of packet = flag )
-;     vmsiz 1+!
-;                                 ( vmbuf 5 ; increment packet counter )
-;     drop ;
-;                                 ( vmbuf ; packet address )
-;
-#ifdef HEADERS
-pktpluslfa
-    .byt $de,$ad
-    .byt (_pktplus-*-1)|bit7|bit5
-    .asc "PKT","+"|bit7
-    .byt 1
-#endif
-_pktplus
-#include "enter.i65"
-    .word tor
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word clit
-    .byt 14
-#include "pad.i65"
-    .word rfetch
-#include "page.i65"
-    .word qbranch
-    .byt <(pktplus01-*+1)
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word clit
-    .byt 5
-#include "pad.i65"
-pktplus01
-    .word _twodup
-#include "page.i65"
-    .word _twodup
-#include "page.i65"
-    .word _twodup
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word _erase
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word _tuck
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word vmsiz
-#include "page.i65"
-    .word oneplusstore
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       MKPKT ( blkbuf -- packetsize )
-;
-; Build a packet at BLKBUF from the current video screen.
-; The first three bytes of the packet are the linewrap bits for
-; lines 1..24.  This is followed by RLE-encoded (or stored)
-; screen codes, with the last two bytes being the packet header.
-;
-;": mkpkt   ( blkbuf -- size )
-;     25 wrap^
-;                                 ( blkbuf d )
-;     rot dup >r
-;                                 ( d blkbuf ) ( R; blkbuf )
-;     dup 3 + >r
-;                                 ( d blkbuf ) ( R; blkbuf blkbuf+3 )
-;     3c!
-;                                 ( ) ( R; blkbuf blkbuf+3 )
-;     vidram b/scr -trailing
-;                                 ( vidram nonblanksize ) ( R; blkbuf blkbuf+3 )
-;     r> swap
-;                                 ( vidram blkbuf+3 nonblanksize ) ( R; blkbuf )
-;     rlencode
-;                                 ( targend uncompressed? ) ( R; blkbuf )
-;     over r> - >r
-;                                 ( targend uncompressed? ) ( R; size )
-;     r@ 2+ or vidram or swap !
-;                                 ( ) ( R; size )
-;     r> ;
-;                                 ( size )
-;
-#ifdef HEADERS
-mkpktlfa
-    .byt $de,$ad
-    .byt (_mkpkt-*-1)|bit7|bit5
-    .asc "MKPK","T"|bit7
-    .byt 1
-#endif
-_mkpkt
-#include "enter.i65"
-    .word clit
-    .byt 25
-#include "pad.i65"
-    .word wrapabove
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word dashtrailing
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rlencode
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
 ;       (SCR!)   ( scr blkbuf vmbuf packet blkbuf newsize -- 
 ; blkbuf pkt-newsize+2 newsize 
 ; vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf+2 )
@@ -1152,6 +810,42 @@ unpkt03                         ; ELSE
 unpkt04                         ; THEN
     .word exit
                                 ; ( blkbuf )
+
+;--------------------------------------------------------------
+;
+;       EMPTY-BUFFERS
+;
+; Unassign all virtual memory.  UPDATEed blocks are not written
+; to mass storage.
+;
+;": empty-buffers   ( -- )
+;     vmsiz off blkbuf 2- dup off vmbuf ! ;
+;
+#ifdef HEADERS
+emptybufferslfa
+    .byt $de,$ad
+    .byt (_emptybuffers-*-1)|bit7
+    .asc "EMPTY-BUFFER","S"|bit7
+#endif
+_emptybuffers
+#include "enter.i65"
+    .word vmsiz
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -2042,7 +1736,7 @@ _editirqtoggle
     .word clit
     .byt <CINV       ; $90
 #include "pad.i65"
-    .word togglevector
+    .word toggleirq
 #include "page.i65"
     .word exit
 
