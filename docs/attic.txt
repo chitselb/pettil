@@ -4838,3 +4838,383 @@ boyd06
     .byt std  | N0          ; restore previous contents of here
     .byt nxt
 
+;--------------------------------------------------------------
+;
+;       TRAVERSE   ( addr n -- addr )
+;
+; * dictionary tdict
+;
+; scan forward (1) or backward (-1) for the next negative byte
+; returns the address of the opposite side of this name field
+;
+;" : TRAVERSE   ( addr n -- addr )
+;"      SWAP
+;"      BEGIN
+;"              OVER +  127  OVER C@  <
+;"      UNTIL
+;"      SWAP DROP ;
+#ifdef HEADERS
+traverselfa
+    .byt $de,$ad
+    .byt (_traverse-*-1)|bit7
+    .asc "TRAVERS","E"|bit7
+#endif
+_traverse
+#include "enter.i65"
+    .word swap
+#include "page.i65"
+traverse01      .word over
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word clit
+    .byt $7f
+#include "pad.i65"
+    .word over
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word lt
+#include "page.i65"
+    .word qbranch
+    .byt <(traverse01-*+1)
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       DHASH   ( nfa -- hash1 hash2 )
+;
+; tdict
+;
+; input is NFA or address of a counted string
+; hash1 is the thread index for the core vocabulary (0-15)
+; hash2 is used by the Bloom filter
+;
+;symbol table 
+;+---------------+
+;|    CFA[low]   |  +0      Code field address
+;|    CFA[high]  |
+;+-+-+-+-+-+-+-+-+
+;|     [   len   ]  +2      Length field
+;[I]             |          Immediate bit
+;| [V]           |          Vocabulary bit
+;|   [S]         |          Smudge bit
+;+-+-+-+-+-+-+-+-+
+;|   name[1]     |  +3      Name field
+;|           ... |
+;|   name[len]   |
+;+~~~~~~~~~~~~~~~+
+;?    LFA[low]   ?  +len+3  Link field address
+;?    LFA[high]  ?         (present iff Vocabulary)
+;+~~~~~~~~~~~~~~~+
+;
+#ifdef HEADERS
+dhashlfa
+    .byt $de,$ad
+    .byt (dhash-*-1)|bit7
+    .asc "DHAS","H"|bit7
+#endif
+dhash
+    stx storex
+    ldy #0
+    lda (tos),y
+    and #$3f                ; turn off 7 and 6, not 5 (smudge)
+    sta n                   ; seed hash1 with length
+    sty n+1                 ; seed hash2 with 0
+    tay                     ; count backwards to 1 from length
+    iny                     ;       hash2   hash1
+dhash01
+    dey                             ;[2]
+    beq dhash02                     ;[2]
+    ; the pearson hash should return an evenly distributed
+    ; value between $00-$0f based on the wordset in the
+    ; core dictionary.  In other words, all 16 threads
+    ; are initially balanced with the same number of words,
+    ; to reduce searches to (on average) 1/16th of the
+    ; dictionary.
+    lda (tos),y                     ;[5]
+    ;sec                             ;[2] ~wut? doesn't and 7 make this unnecessary?
+    ;sbc #$20                        ;[2] control chars
+    and #(pearsonx-pearson-1)       ;[2]
+    tax                             ;[2]
+    lda n                           ;[3]
+    eor pearson,x                   ;[4]
+    sta n                           ;[3]
+    ; the bloom filter hash tries to answer the question,
+    ; 'is this a number or does it contain numbers?'
+    ; returning zero (no digits present) or the sum (mod64)
+    ; of all digits in this word
+    lda (tos),y             ;[5]
+    and #$7f                ;[2]    ; ignore bit7
+    clc                     ;[2]
+    adc #$FF-('9')          ;[2]
+    adc #'9'-'0'+1          ;[2]    ; carry is set only
+    ; for digits '0'-'9'
+    bcc dhash01             ;[3]  [12]hash2 [27]hash1
+    adc n+1                 ; 0> -1 0 1 2 3 0= 0< 0<> sp0 rp0
+    sta n+1                 ; 1+ 1- 2+ 2- 2/ 2* forth-83 dr0 dr1
+    jmp dhash01             ; 2drop 2dup 2over 2rot 2swap 2! 2@
+    ; 2constant 2variable d0= d2/ d2*
+dhash02
+    lda n
+    lsr
+    lsr                     ; xor the pearson hash byte
+    lsr                     ; into a single nybble
+    lsr                     ; - - - - [ 7 6 5 4 ]
+    eor n                   ; 7 6 5 4 [ 3 2 1 0 ]
+    and #$0f                ; - - - - [4bit hash]
+; DEBUG
+;    jsr debug               ; print out some entertainment
+; /DEBUG
+    sta tos
+    sty tos+1       ; for both hashes, high byte always 0
+    lda n+1         ; sum of all digits 0..9
+    ldx storex
+    jmp pushya
+
+;DEBUG
+; hex dump the byte in A
+;debug
+;    pha
+;    pha
+;    and #$0f
+;    jsr print
+;    pla
+;    lsr
+;    lsr
+;    lsr
+;    lsr
+;    jsr print
+;    pla
+;dbout
+;    rts
+;print
+;    sed
+;    cmp #10
+;    adc #'0'
+;    cld
+;    jmp CHROUT
+; ;/DEBUG
+
+;--------------------------------------------------------------
+;
+;       DHASH@   ( hashkey -- LFA )
+;
+; tdict
+;
+; retrieve the head of this hash thread
+;
+;#ifdef HEADERS
+;dhashfetchlfa
+;  .byt $de,$ad
+;    .byt (dhashfetch-*-1)|bit7
+;    .asc "DHASH","@"|bit7
+;#endif
+dhashfetch
+    brk
+    .byt set  | ACC
+    .word lfalist
+    .byt add  | TOS
+    .byt add  | TOS
+    .byt st   | TOS
+    .byt ldd  | TOS
+    .byt st   | TOS
+    .byt nxt
+
+;--------------------------------------------------------------
+;
+;       BLOOM!   ( hash -- )
+;
+; tdict
+;
+; set the bit in the dictionary's bloom filter
+;
+; hash is an 8-bit hash code indexing a 256-bit bitfield
+;#ifdef HEADERS
+;bloomstorelfa
+;  .byt $de,$ad
+;    .byt (bloomstore-*-1)|bit7
+;    .asc "BLOOM","!"|bit7
+;#endif
+bloomstore
+    lda tos                 ; set bloom filter bit for hash2
+    and #7
+    tay
+    lda power2,y
+    sta n
+    lda tos
+    lsr
+    lsr
+    lsr
+;    and #(bloomx-bloom-1)   ; don't write outside filter area  ~wut?
+    and #7   ; don't write outside filter area
+    tay
+    lda n
+    ora bloom,y
+    sta bloom,y
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       BLOOM@   ( hash -- flag )
+;
+; tdict
+;
+; test a bit in the filter
+; hash indexes a single bit in the bloom filter
+; input value is in the range 0-63, representing which bit to test
+;
+; flag values
+; false = it can't be in there (bit was clear)
+; true = it might be in there (bit was set)
+;#ifdef HEADERS
+;bloomfetchlfa
+;    .byt $de,$ad
+;    .byt (bloomfetch-*-1)|bit7
+;    .asc "BLOOM","@"|bit7
+;#endif
+bloomfetch
+    lda tos                 ; read bloom filter bit for hash2
+    and #7
+    tay
+    lda power2,y
+    sta n
+    lda tos
+    lsr
+    lsr
+    lsr
+;    and #(bloomx-bloom-1)   ; don't write outside filter area  ~wut?
+    and #7   ; don't write outside filter area
+    tay
+    lda bloom,y
+    ldy #0
+    and n
+    beq bloomfetch01
+    dey
+bloomfetch01
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       DHASH!   ( LFAnew hash1 -- )
+;
+; tdict
+;
+; links the current LFA onto the top of this hash' thread
+;
+; When we're done, the word whose LFAnew is on the stack will become
+; the new top of this hash thread, and the new word's LFA will link
+; to the previous top of the chain.
+;
+; sweet16 saved 51 bytes vs. 6502
+;#ifdef HEADERS
+;dhashstorelfa
+;    .byt $de,$ad
+;    .byt (dhashstore-*-1)|bit7
+;    .asc "DHASH","!"|bit7
+;#endif
+dhashstore
+    ldy #1
+    jsr locals               ; LFAnew -> N0
+    brk
+    .byt set  | R11
+    .word lfalist
+    .byt sub  | ACC
+    .byt st   | N2          ; 0 -> N2
+    .byt ld   | R11
+    .byt add  | TOS
+    .byt add  | TOS
+    .byt st   | R11         ; R11+hash1*2 -> R11
+    .byt ldd  | R11
+    .byt popd | R11         ; back up the pointer
+    .byt bnz, <(dhashstore01-*-2)
+    .byt set  | ACC
+    .word 0 ; was rootlfa  ~wut?
+    .byt std  | R11
+    .byt popd | R11
+dhashstore01
+    .byt st   | N1          ; head -> N1
+    .byt rtn
+    ldy #2
+    lda (n),y
+    and #$1f
+    sta n+7                 ; length of name being inserted
+dhashstore02
+    lda (n+2),y
+    and #$1f
+    sta n+6
+    lda n+7
+    cmp n+6                 ; compare lengths
+    bcc dhashstore05
+    bne dhashstore04
+    ;sec
+    adc #1
+    tay                     ; last char in names
+dhashstore03
+    lda (n),y
+    eor (n+2),y
+    asl                     ; compare char ignoring bit7
+    bne dhashstore04
+    dey
+    cpy #2
+    bne dhashstore03        ; stop at first char
+    dey
+    brk
+    .byt set  | ACC
+    .byt $de,$ad
+    .byt std  | N1
+    .byt rtn
+dhashstore04
+    brk
+    .byt ld   | N1
+    .byt st   | N2          ; keep track of where we've just been
+    .byt ldd  | N1
+    .byt st   | N1          ; (N1) -> N1
+    .byt rtn
+    ldy #2
+    bne dhashstore02
+dhashstore05
+    brk
+    .byt ld   | N2
+    .byt bnz, <(dhashstore06-*-2)
+    .byt ld   | R11         ; empty list, insert at the head
+    .byt st   | N2          ; head -> N2
+dhashstore06
+    .byt ld   | N0
+    .byt std  | N2          ; N0 -> (N2)
+    .byt ld   | N1
+    .byt std  | N0          ; N1 -> (N0)
+    .byt pull               ; drop the hash
+    .byt nxt
+
+;inputs
+;    TOS (R4) = addr-2 of a counted string
+;    N0 (R5) = current LFA in the dictionary chain (initially the last LFA)
+;    N1 (R6) = length of words
+;returns
+;    C = true if the strings match
+strcomp16    
+    ldy n+2         ; the length
+    iny
+    iny
+strcomp16a
+    lda (n),y
+    eor (tos),y
+    asl             ; ignore bit7
+    bne strcomp16b  ; different? outtie fail
+    dey
+    cpy #2
+    bne strcomp16a  ; C flag is set on successful strcmp
+    sec             ; success!
+    .byt $24        ; BIT zp instruction
+strcomp16b
+    clc             ; fail
+    rol R14H        ; tell Sweet16 about the C flag
+    rts
+

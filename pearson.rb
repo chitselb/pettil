@@ -10,14 +10,21 @@ lowest_so_far=50
 # 128 153 126 204 94 193 211 4
 # 118 208 124 83 15 168 74 126
 wordlist = Array.new
-    file=File.new("t.1", "r")
+    file=File.new("junk/pearson.txt", "r")
     while line=(file.gets) do
         wordlist += [line.chomp]
         puts line
     end
     file.close
 
-puts "hash = char^pearson[hash&psize]"
+		puts "lda (tos),y" 
+		puts "and #(pearsonx-pearson-1)"
+		puts "tax"
+		puts "lda n"
+		puts "eor pearson,x"
+		puts "sta n"
+		puts "dey"
+#puts "char^pearson[hash&psize]"
 tries = 0
 while true
     tries +=1
@@ -32,12 +39,15 @@ while true
     wordlist.each { |line|
 #       hash=0
 #       hash=line.length
-        hash=pearson[line.length&psize]
-        line.each_byte { |char|
-            hash = char^pearson[hash&psize]
+#       hash=pearson[line.length&psize]
+        hash=line.length&31
+                line.reverse.each_byte { |char|
+#            print "#{char.chr} "
+            hash ^= pearson[char&psize]
+            #            hash = char^pearson[hash&psize]
 #           hash ^= pearson[char&psize]
         }
-
+#	puts
 # this really wouldn't work without a larger table
 #       line.each_byte { |char|
 #            index = hash^char

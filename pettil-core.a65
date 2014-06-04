@@ -1,8 +1,7 @@
-; pettil.a65
-
-#echo pettil.a65
-#echo PETTIL - Personal Electronics Transactor Threaded Interpretive Language
-
+; pettil-core.a65
+#echo .       pettil-core.a65
+#echo .       PETTIL - Personal Electronics Transactor Threaded Interpretive Language
+#echo .
 ;
 ; PETTIL
 ; Personal Electronics Transactor Threaded Interpreted Language
@@ -129,7 +128,7 @@ power2
 #echo You moved something, didn't you?  Sweet16 is expected
 #echo to start at $04a6 (1190).  This is a problem. 
 #endif
-#echo PETTIL program counter just before Sweet16 is:
+#echo .       program counter just before Sweet16 should be 1190, is:
 #print *
 
 #include modules/sweet16.a65
@@ -144,47 +143,46 @@ brktoggle       .word SW16^TIMBRK
 irqtoggle       .word 0
 
 ;==============================================================
-; userarea initialization data
-; this gets copied to the uarea
-; and is pointed to by the UP (user pointer)
+; uarea initialization data
 userarea
-; everything between here and 'userwarm' gets set to these
-; initial values by WARM
 userup          .word uarea                             ; WARM
 usersp0         .word bos+1                             ;
 userrp0         .word $01fe                             ;
 usercontext     .word 0                                 ;
 usercurrent     .word 0                                 ;
 userwarm
+; everything before userwarm is initialized at WARM start
 
-userfence       .word cold                              ; COLD
+userfence       .word launch                            ; COLD
 userdp          .word cold                              ;
 usermemsiz      .word 0     ; set by COLD from BASIC (copy of $34)
+usersymtab      .word 0
 userstartup     .word hot   ; CFA of bootstrap code to run after warm
 usercold
 ; everything before usercold is initialized at COLD start
 
-; everything below this is 2 bytes, set to 0 by COLD and untouched
-by WARM
-usersymtab      = usercold                              ; SOFT
-uservmbuf       = usercold+2                            ;
-uservmsiz       = usercold+4                            ;
-userbase        = usercold+6                            ;
-userdpl         = usercold+8                            ;
-userhld         = usercold+10                           ;
-userblk         = usercold+12                           ;
-usertoin        = usercold+14                           ;
-userspan        = usercold+16                           ;
-usertib         = usercold+18                           ;
-usernumout      = usercold+20                           ;
-usernumline     = usercold+22                           ;
-usererrmess     = usercold+24                           ;
-userscr         = usercold+26                           ;
-userstate       = usercold+28                           ;
-usercsp         = usercold+30                           ;
-uservocabid     = usercold+36                           ;
-usernumvocab    = usercold+38                           ;
+; everything below this is set to 0 by COLD and untouched by WARM
+uservmbuf       = usercold                              ; SOFT
+uservmsiz       = usercold+2                            ; (COLD = 0)
+usersymsiz      = usercold+4                            ; 
+usertdict       = usercold+6                            ; 
+userbase        = usercold+8                            ; (WARM = unchanged)
+userdpl         = usercold+10                           ;
+userhld         = usercold+12                           ;
+userblk         = usercold+14                           ;
+usertoin        = usercold+16                           ;
+userspan        = usercold+18                           ;
+usertib         = usercold+20                           ;
+usernumout      = usercold+22                           ;
+usernumline     = usercold+24                           ;
+usererrmess     = usercold+26                           ;
+userscr         = usercold+28                           ;
+userstate       = usercold+30                           ;
+usercsp         = usercold+32                           ;
+uservocabid     = usercold+34                           ;
+usernumvocab    = usercold+36                           ;
 
+; User Pointer (UP) at $0002 points here
 uarea           .dsb usercold-userarea+48,0
 
 ;==============================================================
@@ -204,9 +202,9 @@ uarea           .dsb usercold-userarea+48,0
 ;
 ;       WARM
 ;
-; Dropping out to BASIC can be accomplished on purpose by the
-; MON word to get to TIM, then .X to get to BASIC.  It also 
-; happens by mistake if cassette i/o is interrupted by the STOP
+; Dropping out to BASIC can be accomplished on purpose with
+; MON (to get to TIM), then .X to get to BASIC.  It also will
+; happen by mistake if cassette i/o is interrupted by the STOP
 ; key or any tape error.  There may be other ways.  WARM should
 ; be able to bring the system back to a usable state.
 ;
@@ -217,7 +215,6 @@ uarea           .dsb usercold-userarea+48,0
 ; * - switch PETTIL<-->BASIC IRQ vector
 ; * reset Forth return stack (machine stack)
 ; * reset Forth data stack
-; * empty block buffers (~wut? this might not be very good)
 ; * print start message CR,"WELCOME TO PETTIL!",CR
 ; * STARTUP @ EXECUTE
 ;
@@ -233,7 +230,7 @@ warm
 cold2warm
     ldy #usercold-userarea-1    ; init both cold and warm uservariables
 warm01
-    tya
+    tya                         ; Y is # of bytes of userarea to move
     pha
     jsr aloha                   ; swap zero page, enable Sweet16, set IRQ
     pla
@@ -270,6 +267,175 @@ warm04
 ;==============================================================
 ; FENCE  all that comes before this is unforgettable
 ;==============================================================
+
+;--------------------------------------------------------------
+;
+;        LAUNCH   ( abortcfa 'launch forgetcfa -- )
+;
+launch
+#include "enter.i65"
+launch01
+    .word execute
+#include "page.i65"
+    .word execute
+
+;--------------------------------------------------------------
+;
+;        HOT   ( -- )
+;
+; The tail end of the one-time only (then disappear) system
+; bootstrap initialization.  HOT runs as the STARTUP word after
+; COLD invokes WARM to kick things off. Hence the name.
+;
+; HOT tasks
+; * set user variable ERRMESS
+; * find FIND
+; * ' ABORT DUP STARTUP !
+; * FORGET HOT
+; * ( abort ) EXECUTE
+;
+;#ifdef HEADERS
+;hotlfa
+;    .byt $de,$ad
+;    .byt (hot-*-1)|bit7
+;    .asc "HO","T"|bit7
+;#endif
+hot
+    brk
+    .byt set | R10
+    .word EAL
+    .byt set | R9
+    .word usersymtab
+    .byt set | ACC
+    .word there                 ; points to load address (tdict targ)
+    .byt push
+    .byt ldd | R9               ; "R9 is now okay for me to poop on" -- Triumph
+    .byt st | R9
+    .byt set | ACC
+    .word 42                    ; skip over bloom filter(8), thread pointers(34)
+    .byt add | R9
+    .byt st | R9                ; symbol target address e.g. $642A
+    .byt ldd | R10
+    .byt st | R10               ; load end address
+    .byt ldd | TOS              ; pettil-tdict.obj file load address
+    .byt st | N0                ; tdict target
+    .byt inr | N0               ; add 2 to take care of the offset for the file length
+    .byt inr | N0               ; that was added at the beginning of pettil-tdict.obj
+    .byt ldd | TOS              ; TOS now points to the tdict blob (from1)
+    .byt st | N1                ; tdict size
+    .byt add | TOS
+    .byt st | N2                ; symbol source address
+    .byt ld | N0
+    .byt push                   ; (to1)
+    .byt ld | N1
+    .byt push                   ; (howmany1)
+    .byt ld | N2
+    .byt push                   ; (from2)
+    .byt ld | R9
+    .byt push                   ; (to2)
+    .byt ld | R10
+    .byt sub | N2
+    .byt push                   ; (howmany2)
+    .byt rtn                    ; ( from1 tdict howmany1 from2 symtab+42 howmany2 )
+#include "toforth.i65"
+    .word over                  ; ( from1 tdict howmany1 from2 symtab+42 howmany2 symtab+42 )
+#include "page.i65"
+    .word clit
+    .byt 42                     ; ( from1 tdict howmany1 from2 symtab+42 howmany2 symtab+42 42 )
+#include "pad.i65"
+    .word _twodup               ; ( from1 tdict howmany1 from2 symtab+42 howmany2 symtab+42 42 symtab+42 42 )
+#include "page.i65"
+    .word minus                 ; ( from1 tdict howmany1 from2 symtab+42 howmany2 symtab+42 42 symtab )
+#include "page.i65"
+    .word swap                  ; ( from1 tdict howmany1 from2 symtab+42 howmany2 symtab+42 symtab 42 )
+#include "page.i65"
+    .word _erase                ; ( from1 tdict howmany1 from2 symtab+42 howmany2 symtab+42 )
+#include "page.i65"
+    .word tor                   ; ( from1 tdict howmany1 from2 symtab+42 howmany2 )  ( R; symtab+42 ) 
+#include "page.i65"
+    .word cmove                 ; ( from1 tdict howmany1 ) ( R; symtab+42 ) 
+#include "page.i65"
+    .word over                 ; ( from1 tdict howmany1 tdict ) ( R; symtab+42 ) 
+#include "page.i65"
+    .word tdict                 ; ( from1 tdict howmany1 tdict addr ) ( R; symtab+42 ) 
+#include "page.i65"
+    .word store                 ; ( from1 tdict howmany1 ) ( R; symtab+42 ) 
+#include "page.i65"
+    .word cmove                 ; ( ) ( R; symtab+42 ) 
+#include "page.i65"
+    .word plit
+    .word findabort             ; address of 5,"ABORT"
+#include "pad.i65"
+    .word rfrom                 ; ( findabort symbols )
+#include "page.i65"
+    .word plit
+    .word findforget            ; address of 6,"FORGET"
+#include "pad.i65"
+    .word over                  ; ( findabort symbols findforget symbols )
+#include "page.i65"
+    .word to6502
+    brk
+    .byt bs , <(xfind-*-2)      ; ( findabort symbols ) ACC = forgetcfa )
+    .byt st | R10               ; cfa of FORGET
+    .byt bs , <(xfind-*-2)      ; ( ) cfa of ABORT  
+    .byt push                   ; ( abortcfa )  
+    .byt ld | R10
+    .byt push                   ; ( abortcfa forgetcfa )
+    .byt rtn
+#include "toforth.i65"          ( abort forget )
+    .word plit
+    .word launch
+#include "pad.i65"
+    .word three
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word plit
+    .word launch
+#include "pad.i65"
+    .word launch
+
+xfind
+    .byt ld | TOS
+    .byt st | N0                ; N0 = first nfa
+    .byt pull                   ; TOS = name
+    .byt ldi | TOS              ; get the length of "{searchword}"
+    .byt dcr | TOS
+    .byt st | N1                ; set length of what we're searching for
+xfind01
+    .byt ldd | N0               ; get the CFA of the next word
+    .byt ext
+    .word wordlen16             ; length in R11, smudged? in C
+    .byt ld | R11
+    .byt bc , <(xfind02-*-2)    ; always skip smudged words
+    .byt cpr | N1
+    .byt bnz , <(xfind02-*-2)   ; next if different lengths
+    ; TOS and N0 both point to the first byte of the strings
+    ; both strings are the same length
+    .byt ext
+    .word strcomp16
+    .byt bc , <(xfind03-*-2)   ; winner!
+    .byt ld | N1
+xfind02
+    .byt add | N0
+    .byt st | N0
+    .byt inr | N0
+    .byt br , <(xfind01-*-2)
+xfind03
+    ; N0 points to the nfa of "(FIND)"
+    .byt pull                   ; discard name argument
+    .byt popd | N0              ; got the CFA of (FIND)
+    .byt rs
 
 ;--------------------------------------------------------------
 ;
@@ -409,134 +575,14 @@ cold01
     sbc #$1c                    ; $8000 = MEMSIZ
     sta usersymtab+1
 
-    ; use the BASIC memory move, because we don't have Forth up yet
-    ;($55)=Top of area to be moved to + 1
-    ;($57)=Top of area to be moved + 1
-    ;($5C)=Bottom of area to be moved
-    ;hitop=$7240
-    ;.word hitop-6       ; +0 load address so it can be loaded separately on a PET
-    ;.word hitop         ; +2 the effective origin address
-    ;.word endofile      ; +4
-    ;.word $8000-hitop   ; +6 length
-    ;*=hitop             ; +8 temporary dictionary bodies are here
-    lda #<there+8               ; = bottom of area to be moved
-    sta $5c
-    lda #>there+8
-    sta $5d
-    clc
-    lda there+2
-    adc there+6
-    sta $55
-    lda there+3
-    adc there+7                 ; binary size + origin address
-    sta $56                     ; = top of area to be moved to + 1
-    clc
-    lda there+6                 ; binary size + there+8
-    adc #<there+8               ; = top of area to be moved + 1
-    sta $57
-    lda there+7
-    adc #>there+8
-    sta $58                     ; BASIC's open space in memory routine
-    jsr BLTU+7                  ; Forgoing memory overlap check
-
-    clc
-    lda #<there+8
-    adc there+4
-    sta userdp
-    lda #>there+8
-    adc there+5
-    sta userdp+1                ; pointer to symbols (usually PAD) is in DP
-    sec                         ; the wrong place, but usable
-    lda userdp
-    sbc there+4                 ; this was a bad idea
-    sta userdp
-    sta $55
-    lda userdp+1
-    sbc there+5
-    sta userdp+1
-    sta $56
-
-findcold
-    ldy findthis         ; the length
-findcold01
-    lda ($55),y
-    eor findthis,y
-    bne findcold02      ; different? outtie fail
-    dey
-    bpl findcold01
-    bmi findcold03      ; success!
-findcold02
-    ldy #0
-    lda ($55),y
-    and #$1f
-    tay
-    iny
-    iny
-    tya
-    sec
-    adc $55
-    sta $55
-    bcc findcold
-    inc $56
-    bne findcold
-findcold03
-    sec
-    lda $55
-    sbc #2
-    sta $55
-    bcs findcold04
-    dec $56
-    clc
-findcold04
-    iny
-    lda ($55),y
-    sta w1,y
-    bcs findcold05
-    sec
-    bcs findcold04
-findcold05
-    jmp (w1)
-
-    ;sec
-    lda there+2
-    ;sbc #0
-    sta usersymtab
-    clc
-    lda there+3
-    sbc #$0c
-    sta usersymtab+1            ; set SYMTAB
-
     jmp cold2warm
 
-;--------------------------------------------------------------
-;
-;        HOT   ( -- )
-;
-; The tail end of the one-time only (then disappear) system
-; bootstrap initialization.  HOT runs as the STARTUP word after
-; COLD invokes WARM to kick things off. Hence the name.
-;
-; HOT tasks
-; * set user variable ERRMESS
-; * find FIND
-; * set STARTUP = ABORT
-; * FORGET COLD
-;
-;#ifdef HEADERS
-;hotlfa
-;    .byt $de,$ad
-;    .byt (hot-*-1)|bit7
-;    .asc "HO","T"|bit7
-;#endif
-hot
-#include "enter.i65"
-    .word exit
-
-;--------------------------------------------------------------
-    ; scan through the symbols until we find FIND.
-    ; put its CFA in STARTUP
-findthis
-    .byt 4, "FIND"
+; HOT must scan through the symbol table until it finds FORGET and
+; ABORT
+findabort
+    .byt 5, "ABORT"
+findforget
+    .byt 6, "FORGET"
 
     .byt (there-*-1)
 bannermsg
@@ -545,21 +591,27 @@ bannermsg
     .asc    "VERSION PRE-ALPHA 2014-06-02",CR
             ;123456789.123456789.123456789.123456789.
     .asc    "455 SACK OF ROME: VANDALS ENTER ROME,",CR
-    .asc    "AND PLUNDER THE CITY FOR TWO WEEKS",CR
+    .asc    "    AND PLUNDER THE CITY FOR TWO WEEKS",CR
 there
 ; temporary dictionary and symbols are built separately
-; and concatenated to the PETTIL.OBJ core binary at 'there'
+; as PETTIL-TDICT.OBJ and PETTIL.SYM, then they are both
+; appended to the PETTIL.OBJ core binary
 ;
 ;"pettil-tdict.obj looks like this:
-; two byte load address of pettil-tdict.obj
-; two byte ending address of pettil-tdict.obj
-; two byte length of pettil-tdict.obj (backward from $8000)
+; two byte actual load address of pettil-tdict.obj e.g. $71fe
+; two byte length of pettil-tdict.obj
+;
+; The actual load address is off by -2.  The two bytes for code
+; length are needed by the COLD start routine to figure out where
+; the symbol table is, but the length was "invisibly prepended" to 
+; the file by a Ruby script, not by Commodore's SAVE routine.  All
+; addresses in tdict in this example would be located as though
+; tdict had been assembled and loaded at *=$7200, in spite of the 
+; misleading load address.
 ;
 ;"pettil.sym looks like this:
 ; repeated for each head
-; [
-;  two byte CFA address
-;  one byte length and flags
-;  name
-;  one byte vocabulary identifier, if present
-;  ]
+; [ two byte CFA
+;   one byte length and flags
+;   name
+;   one byte vocabulary identifier, if present ]

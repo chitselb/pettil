@@ -1,5 +1,5 @@
 ; sweet16.a65
-#echo sweet16.a65               Woz's SWEET16 virtual machine, roughly emulates the Cosmac 1802
+#echo .       sweet16.a65               Woz's SWEET16 virtual machine, roughly emulates the Cosmac 1802
 
 ; based on "http://6502.org/source/interpreters/sweet16.htm
 ;
@@ -538,43 +538,110 @@ slide
     inx
     rts
 
-; returns just the low 6 bits of a length byte
+; returns the low 5 bits of a length byte (length only)
+;
 ;inputs
 ;    N0 (R5) = LFA(-ish) address (two below a counted string)
 ;returns
-;    R11 = low bits of length byte at (N0),2 includes smudge bit 0-63
+;    R11 = low bits of length byte at (N0)
+;    C is set if the word is smudged
 wordlen16
-    lda #0
-    sta r11+1       ; clear high byte
-    iny             ;Y=2
+    ;ldy #1         done by Sweet16
+    dey             ;Y=0
+    sty r11+1       ; clear high byte
     lda (n),y
-    and #$3f
+    tay
+    and #$1f
     sta r11         ; R11 = length
+    tya
+    asl             ; c = immediate bit
+    asl             ; c = smudge bit
+    rol R14H
     rts
 
+; strcomp16 compares two strings that are already known to be the same length.
+; sets the Sweet16 C flag if the strings match, otherwise clears it
+;
 ;inputs
-;    TOS (R4) = addr-2 of a counted string
-;    N0 (R5) = current LFA in the dictionary chain (initially the last LFA)
-;    N1 (R6) = length of words
+;    TOS (R4) = addr of a string
+;    N0 (R5) = current NFA in the symbol table (initially the first NFA)
+;    N1 (R6) = length of both strings
+;
 ;returns
-;    C = true if the strings match
+;    C = true iff the strings match
+;
 strcomp16    
+    clc             ; assume fail
     ldy n+2         ; the length
-    iny
-    iny
 strcomp16a
     lda (n),y
     eor (tos),y
-    asl             ; ignore bit7
     bne strcomp16b  ; different? outtie fail
     dey
-    cpy #2
     bne strcomp16a  ; C flag is set on successful strcmp
     sec             ; success!
-    .byt $24        ; BIT zp instruction
 strcomp16b
-    clc             ; fail
     rol R14H        ; tell Sweet16 about the C flag
+    rts
+
+;--------------------------------------------------------------
+pearson
+;    .byt 150,191,252,0,194,202,129,7
+    .byt 80, 63, 253, 57, 173, 24, 93, 2 
+pearsonx
+
+; dhash16 calculates the bloom hash and the pearson hash for the
+; string pointed to by N1.  R11 contains the pearson hash, while
+; R10 contains the bloom hash
+;
+; The carry flag will be set if the pearson hash matches N2, and
+; the bloom hash will be OR'ed into the bloom filter if that is 
+; the case.
+;
+;inputs
+;    N1 (R6) = addr of a string
+;    N2 (R7) = current pearson hash
+;
+;returns
+;    C = true iff the generated hash matched the hash index in N2
+;    R11 = pearson hash
+;    R10 = bloom hash
+;
+;        hash=pearson[line.length&psize]
+;        line.each_byte { |char|
+;            hash = char^pearson[hash&psize]
+dhash16    
+    stx storex
+    ;ldy #1
+    dey
+    sty R14H        ; clear carry
+    lda (n+2),y
+    and #$1f                    ; seed hash with length
+    sta r11
+    iny
+dhash16a
+    dey
+    beq dhash16b
+    lda (n+2),y
+    and #(pearsonx-pearson-1)
+    tax
+    lda r11
+    eor pearson,x       ;        hash=pearson[line.length&psize]
+    sta r11
+    jmp dhash16a
+dhash16b
+    lsr
+    lsr
+    lsr
+    lsr
+    eor r11
+    and #$0f
+    sta r11
+    eor n+4
+    bne dhash16c
+    inc R14H        ; set carry
+dhash16c
+    ldx storex
     rts
 
 ; xor TOS with ACC, leaving the result in ACC
