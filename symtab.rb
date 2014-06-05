@@ -203,7 +203,6 @@ _rehash
                 a = make_symbol(nfaline, symbols[symbol.chomp],isimmediate)
                 b[a[:name]] = a
             end
-
         end
     end
 
@@ -212,7 +211,7 @@ _rehash
         a = h[1][:data].bytes
         symfile.write a.pack("C*")
     end
-    symfile.write [0].pack("C*")        # null length to end pettil.sym
+    symfile.write [0].pack("C*")        # null length ends pettil.sym
 
     symfile = File.open("junk/pearson.txt",'w')
     Hash[b.sort_by { | k, v | v[:hash1]*32+v[:len] }].each do |h|
