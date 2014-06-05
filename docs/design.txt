@@ -345,9 +345,14 @@ vocabulary entry
 
 
 -----symtab---
-8 bytes bloom filter
 32 bytes corehash
-2 bytes newstuff
+===
+
+ 8 bytes pearson table
+ 8 bytes bloom filter
+move pearson/bloom to the end of the core dictionary, so they can be
+directly accessed.  Let FORGET-called-by-COLD add 16 to DP to enclose
+this data. 
 
 
 REHASH - high level
@@ -434,3 +439,39 @@ n4!
    lda stackh,y
    sta 1,y
    jmp poptwo
+
+code nfa+
+    ldy #0
+    lda (tos),y
+    and #$1f
+    clc
+    adc #3
+    adc tos
+    sta tos
+    bcc +
+    inc tos
++   jmp next
+
+[20]
+: nfa+
+	dup c@ $1f and 3 + + ;
+
+code nfa+		( nfa -- nfa+ )
+	brk
+	
+
+: foo 4002 4000 ! 4002 jiffy@ third 2000 0 do >cfa loop drop jiffy@ 2swap d- du. ;
+: >cfa   ( nfa -- cfa )
+    2- @ ;
+code >cfa   ( nfa -- cfa )
+    brk
+    .byt   popd | TOS
+    .byt   st | TOS
+    .byt   nxt
+
+
+
+
+FAIL is vectored like EMIT and KEY
+In the core-only, it just says "ERROR#" and the number, then MON (via WARM?)
+in pettil development environment, it prints a canned message, then ABORT

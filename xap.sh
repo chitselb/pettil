@@ -1,6 +1,8 @@
 #!/bin/bash
-# build a PETTIL.OBJ binary in two sections
+# xap.sh
 #
+# PETTIL build script
+# requires ruby, xa65 packages
 #
 # some handy aliases if we source this script
 #
@@ -44,7 +46,11 @@ ruby symtab.rb
 #
 # assemble the binary pieces
 echo . . . . Packing PETTIL.OBJ binary = PETTIL-CORE.OBJ + PETTIL-TDICT.OBJ + PETTIL.SYM
+ls -la pettil-core.obj
+ls -la modules/pettil-tdict.obj
+ls -la pettil.sym
 cat pettil-core.obj modules/pettil-tdict.obj pettil.sym > pettil.obj
+ls -la pettil.obj
 #
 # clean up junk
 echo . . . . Cleaning up \(look in junk/ folder\)

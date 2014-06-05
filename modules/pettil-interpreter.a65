@@ -1,23 +1,12 @@
-; pettil-outer.a65
-#echo .       pettil-outer.a65          Outer Interpreter
+; pettil-interpreter.a65
+#echo .       pettil-interpreter.a65    Outer Interpreter
 
-;--------------------------------------------------------------
-;
-; Tables used by Pearson hash function and Bloom filter for root
-; vocabulary.  The Pearson hash is used by hash1 to evenly distribute
-; words among the multiple threads of the dictionary. The Bloom
-; filter lets us skip looking for things that we know aren't in
-; the dictionary (e.g. numbers).  For now, keep bloom and lfalist
-; consecutive in memory, with bloom first so RETHREAD won't break
 bloom
-;    .dsb 8,$b1      ; 64-bit, used by hash2 (bloom filter)
+    .dsb 8,0      ; 64 bits, used by hash2 (bloom filter)
 bloomx
-
-lfalist
-;    .word $efbe,$efbe,$efbe,$efbe,$efbe,$efbe,$efbe,$efbe
-;    .word $efbe,$efbe,$efbe,$efbe,$efbe,$efbe,$efbe,$efbe
-    ; heads of link threads for root vocabulary
-
+pearson
+    .byt 80, 63, 253, 57, 173, 24, 93, 2 
+pearsonx
 
 ;==============================================================
 ;==== Error messages                                       ====
@@ -217,7 +206,7 @@ _abort
 ;"This is the infinite outer interpreter loop:
 ;       - resets the return stack (RP!)
 ;       - outputs a carriage return (CR)
-;       - waits for a line of user input (QUERY)
+;       - waits for a line of input (QUERY)
 ;       - interprets that line
 ; * 83 interpreter outer
 ;
@@ -449,7 +438,7 @@ dhash02
 ;
 ;       DHASH@   ( hashkey -- LFA )
 ;
-; tdict
+; ~wut? rewrite
 ;
 ; retrieve the head of this hash thread
 ;
@@ -462,7 +451,7 @@ dhash02
 dhashfetch
     brk
     .byt set  | ACC
-    .word lfalist
+;    .word lfalist
     .byt add  | TOS
     .byt add  | TOS
     .byt st   | TOS
@@ -548,7 +537,7 @@ bloomfetch01
 ;
 ;       DHASH!   ( LFAnew hash1 -- )
 ;
-; tdict
+; ~wut? rewrite
 ;
 ; links the current LFA onto the top of this hash' thread
 ;
@@ -568,7 +557,7 @@ dhashstore
     jsr locals               ; LFAnew -> N0
     brk
     .byt set  | R11
-    .word lfalist
+;    .word lfalist
     .byt sub  | ACC
     .byt st   | N2          ; 0 -> N2
     .byt ld   | R11
@@ -637,6 +626,7 @@ dhashstore06
     .byt pull               ; drop the hash
     .byt nxt
 
+
 ;--------------------------------------------------------------
 ;
 ;       (FIND)   ( name nfa fflag -- name false | cfa flag )
@@ -646,8 +636,8 @@ dhashstore06
 ; name is the address of a counted string we are searching for.
 ; nfa is the first nfa in the list
 ; fflag is the type of search we are doing
-;	0 = corelist - names are in ascending order by size
-;	1 = newlist - names are random sizes, with a 0-length name to terminate
+;   0 = corelist - names are in ascending order by size
+;   1 = newlist - names are random sizes, with a 0-length name to terminate
 ;
 ; returns
 ;       ( cfa -1 ) if found normal word
@@ -728,7 +718,7 @@ findlfa
     .asc "FIN","D"|bit7
 #endif
 _find
-#include "enter.i65"                    ; ( name )
+#include "enter.i65"        ; ( name )
     .word context           ; ( name context )
 #include "page.i65"
     .word fetch             ; ( name vocabulary )
@@ -813,28 +803,28 @@ _existsq
     .word exit
 ;--------------------------------------------------------------
 ;
-;		>SYMS   ( -- addr )
+;       >SYMS   ( -- addr )
 ;
 ; returns the address of the symbol portion of the symbol table
 ;
 #ifdef HEADERS
 tosymslfa
-	.byt $de,$ad
-	.byt (_tosyms-*-1)|bit7
-	.asc ">SYM","S"|bit7
+    .byt $de,$ad
+    .byt (_tosyms-*-1)|bit7
+    .asc ">SYM","S"|bit7
 #endif
 _tosyms
 #include "enter.i65"
-	.word symtab
+    .word symtab
 #include "page.i65"
-	.word fetch
+    .word fetch
 #include "page.i65"
-	.word clit
-	.byt 42
+    .word clit
+    .byt 42
 #include "page.i65"
-	.word plus
+    .word plus
 #include "page.i65"
-	.word exit
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -844,37 +834,91 @@ _tosyms
 ;
 #ifdef HEADERS
 symsizlfa
-	.byt $de,$ad
-	.byt (_symsiz-*-1)|bit7
-	.asc "SYMSI","Z"|bit7
+    .byt $de,$ad
+    .byt (_symsiz-*-1)|bit7
+    .asc "SYMSI","Z"|bit7
 #endif
 _symsiz
 #include "enter.i65"
-	.word _tosyms
+    .word _tosyms
 #include "page.i65"
-	.word dup
+    .word dup
 #include "page.i65"
 symsiz01
-	.word oneplus
+    .word oneplus
 #include "page.i65"
-	.word dup
+    .word dup
 #include "page.i65"
-	.word cfetch
+    .word cfetch
 #include "page.i65"
-	.word zeq
+    .word zeq
 #include "page.i65"
-	.word qbranch
-	.byt <(symsiz01-*+1)
+    .word qbranch
+    .byt <(symsiz01-*+1)
 #include "pad.i65"
-	.word swap
+    .word swap
 #include "page.i65"
-	.word minus
+    .word minus
 #include "page.i65"
-	.word exit
+    .word exit
+
+; dhash16 calculates the bloom hash and the pearson hash for the
+; string pointed to by N1.  R11 contains the pearson hash, while
+; R10 contains the bloom hash
+;
+; The carry flag will be set if the pearson hash matches N2, and
+; the bloom hash will be OR'ed into the bloom filter if that is 
+; the case.
+;
+;inputs
+;    N1 (R6) = addr of a string
+;    N2 (R7) = current pearson hash
+;
+;returns
+;    C = true iff the generated hash matched the hash index in N2
+;    R11 = pearson hash
+;    R10 = bloom hash
+;
+;        hash=pearson[line.length&psize]
+;        line.each_byte { |char|
+;            hash = char^pearson[hash&psize]
+dhash16    
+    stx storex
+    ;ldy #1
+    dey
+    sty R14H        ; clear carry
+    lda (n+2),y
+    and #$1f                    ; seed hash with length
+    sta r11
+    iny
+dhash16a
+    dey
+    beq dhash16b
+    lda (n+2),y
+    and #(pearsonx-pearson-1)
+    tax
+    lda r11
+    eor pearson,x       ;        hash=pearson[line.length&psize]
+    sta r11
+    jmp dhash16a
+dhash16b
+    lsr
+    lsr
+    lsr
+    lsr
+    eor r11
+    and #$0f
+    sta r11
+    eor n+4
+    bne dhash16c
+    inc R14H        ; set carry
+dhash16c
+    ldx storex
+    rts
 
 ;--------------------------------------------------------------
 ;
-;		(REHASH)   ( symbols symdex pad hashnow here -- )
+;       (REHASH)   ( symbols symdex pad hashnow here -- )
 ;
 ; make a pass through pad, calculating hashes for each word.
 ; copy it to symtab iff
@@ -885,47 +929,47 @@ symsiz01
 ;
 ;#ifdef HEADERS
 ;prehashlfa
-;	.byt $de,$ad
-;	.byt (prehash-*-1)|bit7
-;	.asc "(REHASH",")"|bit7
+;   .byt $de,$ad
+;   .byt (prehash-*-1)|bit7
+;   .asc "(REHASH",")"|bit7
 ;#endif
 prehash
-	ldy #5			; TOS       N0     N1  N2   N3    R9      R2
-	jsr locals 		; here symbols symdex pad hash tdict thislen 
-	brk
+    ldy #5          ; TOS       N0     N1  N2   N3    R9      R2
+    jsr locals      ; here symbols symdex pad hash tdict thislen 
+    brk
 nextsym
-	.byt ldd | N0				; get CFA
-	.byt cpr | TOS				; compare to HERE
-	.byt bnc , <(seemsok-*-2)	; cfa < here?  we're good!
-	.byt cpr | R9				; well how about compare to threadindex?
-	.byt bp , <(seemsok-*-2)	; cfa is in high dictionary?  we're good!
+    .byt ldd | N0               ; get CFA
+    .byt cpr | TOS              ; compare to HERE
+    .byt bnc , <(seemsok-*-2)   ; cfa < here?  we're good!
+    .byt cpr | R9               ; well how about compare to threadindex?
+    .byt bp , <(seemsok-*-2)    ; cfa is in high dictionary?  we're good!
 notverygood
-	.byt ext
-	.word wordlen16
-	.byt bz , <(weredone-*-2)
+    .byt ext
+    .word wordlen16
+    .byt bz , <(weredone-*-2)
 nexthop
-	.byt set | ACC
-	.word 3
-	.byt add | R11
-	.byt add | N1
-	.byt st | N1
-	.byt br , <(nextsym-*-2)
+    .byt set | ACC
+    .word 3
+    .byt add | R11
+    .byt add | N1
+    .byt st | N1
+    .byt br , <(nextsym-*-2)
 seemsok
-	.byt ext
-	.word wordlen16
-	.byt bz , <(weredone-*-2)
-	.byt ld | R11
-	.byt cpr | R2			; check the length
-	.byt bnz , <(nexthop-*-2)
-	.byt ext
-	.word dhash16
-	.byt ld | R11
-	.byt cpr | N2
-	.byt bnz , <(nexthop-*-2)
-	
+    .byt ext
+    .word wordlen16
+    .byt bz , <(weredone-*-2)
+    .byt ld | R11
+    .byt cpr | R2           ; check the length
+    .byt bnz , <(nexthop-*-2)
+    .byt ext
+    .word dhash16
+    .byt ld | R11
+    .byt cpr | N2
+    .byt bnz , <(nexthop-*-2)
+    
 weredone
-	.byt pull
-	.byt rtn
+    .byt pull
+    .byt rtn
 
 ;--------------------------------------------------------------
 ;
@@ -941,70 +985,70 @@ rehashlfa
 #endif
 _rehash
 #include "enter.i65"
-	.word symtab				; ( addr )
+    .word symtab                ; ( addr )
 #include "page.i65"
-	.word fetch					; ( symtab )
+    .word fetch                 ; ( symtab )
 #include "page.i65"
-	.word clit
-	.byt 42						; ( symtab 42 )
+    .word clit
+    .byt 42                     ; ( symtab 42 )
 #include "pad.i65"
-	.word _erase				; ( )
+    .word _erase                ; ( )
 #include "pad.i65"
-	.word _tosyms				; ( symbols )
+    .word _tosyms               ; ( symbols )
 #include "page.i65"
-	.word duptor				; ( symbols ) ( R; symbols )
+    .word duptor                ; ( symbols ) ( R; symbols )
 #include "page.i65"
-	.word _pad					; ( symbols pad )
+    .word _pad                  ; ( symbols pad )
 #include "page.i65"
-	.word _symsiz				; ( symbols pad size )
+    .word _symsiz               ; ( symbols pad size )
 #include "page.i65"
-    .word cmove					; ( ) ( R; symbols )
+    .word cmove                 ; ( ) ( R; symbols )
 #include "page.i65"
-	.word rfrom					; ( symbols ) 
+    .word rfrom                 ; ( symbols ) 
 #include "page.i65"
-	.word symtab				; ( symbols addr ) 
+    .word symtab                ; ( symbols addr ) 
 #include "page.i65"
-	.word fetch					; ( symbols symtab )
+    .word fetch                 ; ( symbols symtab )
 #include "page.i65"
-	.word clit					; ( symbols symtab 8 )
-	.byt 8
+    .word clit                  ; ( symbols symtab 8 )
+    .byt 8
 #include "page.i65"
-	.word plus					; ( symbols symdex )
+    .word plus                  ; ( symbols symdex )
 #include "page.i65"
-	.word _twodup			    ; ( symbols symdex symbols symdex )
+    .word _twodup               ; ( symbols symdex symbols symdex )
 #include "page.i65"
-	.word _pad					; ( symbols symdex symbols symdex pad )
+    .word _pad                  ; ( symbols symdex symbols symdex pad )
 #include "page.i65"
-    .word clit					; ( symbols symdex pad 16 )
+    .word clit                  ; ( symbols symdex pad 16 )
     .byt 16
 #include "pad.i65"
-    .word zero					; ( symbols symdex pad 16 0 )
+    .word zero                  ; ( symbols symdex pad 16 0 )
 #include "page.i65"
-    .word pdo					; ( symbols symdex pad )
+    .word pdo                   ; ( symbols symdex pad )
 #include "page.i65"
 rehash01
 #include "page.i65"
-    .word i						; ( symbols symdex pad hashnow )
+    .word i                     ; ( symbols symdex pad hashnow )
 #include "page.i65"
-	.word twoover				; ( symbols symdex pad hashnow symbols symdex )
+    .word twoover               ; ( symbols symdex pad hashnow symbols symdex )
 #include "page.i65"
-	.word store					; ( symbols symdex pad hashnow )
+    .word store                 ; ( symbols symdex pad hashnow )
 #include "page.i65"
-	.word twoswap				; ( pad hashnow symbols symdex )
+    .word twoswap               ; ( pad hashnow symbols symdex )
 #include "page.i65"
-	.word twoplus				; ( pad hashnow symbols symdex )
+    .word twoplus               ; ( pad hashnow symbols symdex )
 #include "page.i65"
-	.word twoswap				; ( symbols symdex pad hashnow )
+    .word twoswap               ; ( symbols symdex pad hashnow )
 #include "page.i65"
-    .word clit					; ( symbols symdex pad hashnow 32 )
+    .word clit                  ; ( symbols symdex pad hashnow 32 )
     .byt 32
 #include "pad.i65"
-    .word one					; ( symbols symdex pad hashnow 32 1 )
+    .word one                   ; ( symbols symdex pad hashnow 32 1 )
 #include "page.i65"
-    .word pdo					; ( symbols symdex pad hashnow )
+    .word pdo                   ; ( symbols symdex pad hashnow )
 #include "page.i65"
 rehash02
-    .word here					; ( symbols symdex pad hashnow here )
+    .word here                  ; ( symbols symdex pad hashnow here )
 #include "page.i65"
     .word tdict
 #include "page.i65"
@@ -1024,7 +1068,7 @@ rehash02
 ;
 ;       FORGET   ( -- )
 ;
-;	( cfa -- ; special COLD mode - does not scan input )
+;   ( cfa -- ; special COLD mode - does not scan input )
 ;
 ; * 83 interpreter
 ;
@@ -1038,52 +1082,52 @@ forgetlfa
 #endif
 _forget
 #include "enter.i65"
-	.word rfetch				; ( cfa caller )
+    .word rfetch                ; ( cfa caller )
 #include "page.i65"
-	.word plit
-	.word launch01				; ( cfa caller launch01 )
+    .word plit
+    .word launch01              ; ( cfa caller launch01 )
 #include "pad.i65"
-	.word eq					; ( cfa iscold? )
+    .word eq                    ; ( cfa iscold? )
 #include "page.i65"
-	.word qbranch				; ( cfa )
-	.byt <(forget01-*+1)
+    .word qbranch               ; ( cfa )
+    .byt <(forget01-*+1)
 #include "pad.i65"
-	.word plit
-	.word errptr			; We got here from COLD. Do the things 
-#include "pad.i65"			; COLD didn't know how to do.  Don't scan
-	.word errmess			; input stream for the next word, because
-#include "page.i65"			; there's a CFA on the stack already.
-	.word store
+    .word plit
+    .word errptr                ; We got here from COLD. Do the things 
+#include "pad.i65"              ; COLD didn't know how to do.  Don't scan
+    .word errmess               ; input stream for the next word, because
+#include "page.i65"             ; there's a CFA on the stack already.
+    .word store
 #include "page.i65"
-	.word branch
-	.byt <(forget02-*+1)
+    .word branch
+    .byt <(forget02-*+1)
 #include "pad.i65"
 forget01
-	.word _tick
+    .word _tick
 #include "page.i65"
 forget02
-	.word dup
+    .word dup
 #include "page.i65"
-	.word fence
+    .word fence
 #include "page.i65"
-	.word fetch
+    .word fetch
 #include "page.i65"
-	.word ult
+    .word ult
 #include "page.i65"
-	.word qbranch
-	.byt <(forget03-*+1)
+    .word qbranch
+    .byt <(forget03-*+1)
 #include "pad.i65"
-	.word clit
-	.byt 7
+    .word clit
+    .byt 7
 #include "pad.i65"
-	.word fail					; CAN'T FORGET BELOW FENCE
+    .word fail                  ; CAN'T FORGET BELOW FENCE
 #include "page.i65"
 forget03
-	.word dp
+    .word dp
 #include "page.i65"
-	.word store
+    .word store
 #include "page.i65"
-	.word _rehash
+    .word _rehash
 #include "page.i65"
     .word exit
 

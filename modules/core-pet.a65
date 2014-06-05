@@ -1,0 +1,254 @@
+; core-device.a65
+#echo .       core-device.a65           I/O and PET-specific features
+
+;--------------------------------------------------------------
+;
+;       EMIT
+;
+; * 83 device
+;
+#ifdef HEADERS
+emitlfa
+    .byt $de,$ad
+    .byt (emit-*-1)|bit7
+    .asc "EMI","T"|bit7
+#endif
+emit
+    jmp emitvector
+emitvector
+    ldy numout+3
+    clc
+    lda (up),y
+    adc #1
+    sta (up),y
+    bne emit01
+    iny
+    clc
+    lda (up),y
+    adc #1
+    sta (up),y
+emit01
+    lda tos
+    jsr CHROUT
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       KEY
+;
+; * 83 device
+;
+#ifdef HEADERS
+keylfa
+    .byt $de,$ad
+    .byt (key-*-1)|bit7
+    .asc "KE","Y"|bit7
+#endif
+key
+    stx storex
+key01
+    jsr GETIN
+    beq key01
+    ldx storex
+    ldy #0
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       ?TERMINAL   ( -- flag )
+;
+; true if stop key pressed
+;
+#ifdef HEADERS
+qterminallfa
+    .byt $de,$ad
+    .byt (qterminal-*-1)|bit7
+    .asc "?TERMINA","L"|bit7
+#endif
+qterminal
+    ldy #0
+    lda $9b
+    cmp #$ef            ; check STOP key
+    bne qterminal01
+    dey
+qterminal01
+    tya
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       CR
+;
+; * 83 device
+;
+#ifdef HEADERS
+crlfa
+    .byt $de,$ad
+    .byt (cr-*-1)|bit7
+    .asc "C","R"|bit7
+#endif
+cr
+    jmp crvector
+crvector
+    lda #$0d
+    jsr CHROUT
+    lda #0
+    ldy numout+3
+    sta (up),y
+    iny
+    sta (up),y
+    ldy numline+3
+    clc
+    lda (up),y
+    adc #1
+    sta (up),y
+    bcc cr01
+    iny
+    lda (up),y
+    adc #0
+    sta (up),y
+cr01
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       VIDRAM   ( -- addr )
+;
+; address of PET video memory $8000
+;
+#ifdef HEADERS
+vidramlfa
+    .byt $de,$ad
+    .byt (vidram-*-1)|bit7
+    .asc "VIDRA","M"|bit7
+#endif
+vidram
+    jsr doconst
+    .word VIDRAM
+
+;--------------------------------------------------------------
+;
+;       MON    ( char base -- digit true | false )
+;
+; sets the BRK vector to either TIM or Sweet16
+; (TIM exits to BASIC)
+;~wut? this only works the first time
+;
+#ifdef HEADERS
+monlfa
+    .byt $de,$ad
+    .byt (mon-*-1)|bit7
+    .asc "MO","N"|bit7
+#endif
+mon
+    jsr swapzp      ; restore BASIC zpage
+    brk
+    .byt rtn
+plover              ; if we get here, it's unimplemented
+xyzzy
+    jmp next        ; used as a breakpoint in secondaries
+
+;--------------------------------------------------------------
+;
+;       JIFFY@   ( --  djiffyclock )
+;
+; returns number of jiffies since powerup or midnight as a double
+;
+;jiffyfetch
+;    sei
+;    jsr slip
+;    lda TIME+2
+;    sta tos
+;    lda TIME+1
+;    sta tos+1
+;    ldy #0
+;    lda TIME
+;    cli
+;    jmp pushya ; [20]
+;
+#ifdef HEADERS
+jiffyfetchlfa
+    .byt $de,$ad
+    .byt (_jiffyfetch-*-1)|bit7
+    .asc "JIFFY","@"|bit7
+#endif
+_jiffyfetch
+#include "enter.i65"
+    .word notirq                ; don't let IRQ interrupt the copy
+#include "page.i65"
+    .word clit
+    .byt TIME
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word notirq                ; reenable
+#include "page.i65"
+    .word exit  ; [14]
+
+;--------------------------------------------------------------
+;
+;       CMDOFF
+;
+#ifdef HEADERS
+cmdofflfa
+    .byt $de,$ad
+    .byt (cmdoff-*-1)|bit7
+    .asc "CMDOF","F"|bit7
+#endif
+cmdoff
+    stx storex
+    jsr CLRCHN
+    ldx storex
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       EXPECT   ( addr +n -- )
+;
+; * 83 device
+;
+; Stores up to +n characters into memory begin-
+; ning at addr.
+; Receive characters and store each into memory.
+; The transfer begins at addr proceeding towards
+; higher addresses one byte per character until
+; either "return" is received or until +n charac-
+; ters have been transfered.  No more than +n
+; characters will be stored.  The "return" is not
+; stored into memory.  No characters are received
+; or transfered if +n is zero.  All characters
+; actually received and stored into memory will
+; be displayed, with the "return" displaying as a
+; space.
+#ifdef HEADERS
+expectlfa
+    .byt $de,$ad
+    .byt (expect-*-1)|bit7
+    .asc "EXPEC","T"|bit7
+#endif
+expect
+    jmp expectvector
+expectvector
+    ldy #1
+    jsr locals
+    stx storex
+    dey
+expect01
+    iny
+    cpy tos
+    bcs expect02
+    jsr CHRIN
+    cmp #$0d
+    beq expect02
+    sta (n),y
+    bne expect01
+expect02
+    tya
+    ldy span+3
+    sta (up),y
+    iny
+    lda #0
+    sta (up),y
+    ldx storex
+    jmp pops
+

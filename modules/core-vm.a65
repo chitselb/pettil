@@ -3,6 +3,243 @@
 
 ;--------------------------------------------------------------
 ;
+;       B/BUF   ( -- n )
+;
+#ifdef HEADERS
+bperbuflfa
+    .byt $de,$ad
+    .byt (bperbuf-*-1)|bit7
+    .asc "B/BU","F"|bit7
+#endif
+bperbuf
+    jsr doconst
+    .word 1024
+
+;--------------------------------------------------------------
+;
+;       B/SCR   ( -- n )
+;
+; Bytes per screen.  Not what it usually means in other Forths,
+; (not blocks per screen = 1)
+;
+#ifdef HEADERS
+bperscrlfa
+    .byt $de,$ad
+    .byt (bperscr-*-1)|bit7
+    .asc "B/SC","R"|bit7
+#endif
+bperscr
+    jsr doconst
+    .word 1000
+
+;--------------------------------------------------------------
+;
+;       BLKBUF
+;
+; return the address of the block buffer (usu. $7C00 on a 32K PET)
+;
+#ifdef HEADERS
+blkbuflfa
+    .byt $de,$ad
+    .byt (_blkbuf-*-1)|bit7
+    .asc "BLKBU","F"|bit7
+#endif
+_blkbuf
+#include "enter.i65"
+    .word memsiz
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;        UPDATE   ( -- )
+;
+; mark the current block as updated
+;
+#ifdef HEADERS
+updatelfa
+    .byt $de,$ad
+    .byt (_update-*-1)|bit7
+    .asc "UPDAT","E"|bit7
+#endif
+_update
+#include "enter.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       RLENCODE ( srcaddr targaddr srclen -- targend )
+;
+; encode length {srclen} bytes from source address {srcaddr} to
+; target address {targaddr}.  Return target end address {targend}
+;
+; test cases -- 
+; vvwwxxyyyzz
+; xxyyzz
+;
+#ifdef HEADERS
+rlencodelfa
+    .byt $de,$ad
+    .byt (rlencode-*-1)|bit7
+    .asc "RLENCOD","E"|bit7
+#endif
+rlencode
+    ldy #2
+    jsr locals      ; TOS = srclen; N0 = srcaddr; N1 = targaddr
+    brk
+    .byt ld | TOS
+    .byt st | R10   ; input counter - when this hits zero, we're done
+    .byt st | R11   ; out counter - when this goes negative, we're in negative compression
+
+    .byt ld | N1
+    .byt push       ; original targaddr
+    .byt ld | N0
+    .byt push       ; original srcaddr
+                    ; ( srclen targaddr srcaddr )
+
+    .byt set | R9   ; constant used to initialize (max repeat counter)
+    .word $100
+rlencode00
+    .byt ld | R9    ; also the unfindable prev character
+rlencode01
+    .byt st | N2    ; set prev char
+    .byt ld | R10   ; are we done?
+    .byt bz , <(rlencode06-*-2)
+    .byt ld | R11   ; are we in the red?
+    .byt bm , <(rlencode07-*-2)
+    .byt ldi | N0   ; read input stream
+    .byt dcr | R10
+    .byt sti | N1   ; write output stream
+    .byt dcr | R11
+    .byt cpr | N2   ; compare to prev
+    .byt bnz , <(rlencode01-*-2) ; different? go get more
+
+    .byt ld | R9
+    .byt st | N3    ; count backwards from 256
+    .byt dcr | N3   ; count the one already in output stream
+rlencode02
+    .byt dcr | N3
+    .byt bz , <(rlencode04-*-2)  ; overflow?
+    .byt ld | R10
+    .byt bz , <(rlencode04-*-2)  ; end of input?
+    .byt ldi | N0                ; get from input stream
+    .byt dcr | R10
+    .byt cpr | N2
+    .byt bz , <(rlencode02-*-2)
+;different char
+    .byt inr | R10              ; un-get from input stream
+    .byt dcr | N0
+;overflow/end of input
+rlencode04
+    .byt ld | R9
+    .byt sub | N3
+    .byt sti | N1               ; write count to output stream
+    .byt dcr | R11
+    .byt br , <(rlencode00-*-2)
+
+rlencode06                      ; win
+    .byt pull
+    .byt pull
+    .byt ld | N1
+    .byt st | TOS
+    .byt sub | ACC
+    .byt push
+    .byt nxt
+
+rlencode07                      ; lose - copy
+    .byt ld | TOS
+    .byt st | N0
+    .byt pull
+    .byt st | N1
+    .byt pull
+rlencode08
+    .byt ldi | N0
+    .byt sti | N1
+    .byt dcr | TOS
+    .byt bnz , <(rlencode08-*-2)
+    .byt ld | N1
+    .byt st | TOS
+    .byt set | ACC
+    .word $4000
+    .byt push
+    .byt nxt
+
+;--------------------------------------------------------------
+;
+;       RLDECODE ( srcaddr targaddr srclen -- )
+;
+; decode length {srclen} bytes beginning at source address
+; {srcaddr} to the target address (targaddr).
+;
+;       RLDECODE ( srcaddr targaddr srclen -- )
+#ifdef HEADERS
+rldecodelfa
+    .byt $de,$ad
+    .byt (rldecode-*-1)|bit7
+    .asc "RLDECOD","E"|bit7
+#endif
+rldecode
+    ldy #2
+    jsr locals
+    brk
+    .byt set | R9
+    .word $100
+rldecode01
+    .byt ld | R9
+    .byt st | N2        ; set prev to unmatchable value
+rldecode02
+    .byt ld | TOS
+    .byt bz , <(rldecode06-*-2)
+    .byt dcr | TOS      ; decrement source counter
+    .byt ldi | N0       ; read source stream
+    .byt sti | N1       ; write target stream
+    .byt cpr | N2
+    .byt st | N2
+    .byt ld | R13
+    .byt bnz , <(rldecode02-*-2)    ; different? go get more
+rldecode03
+    .byt dcr | TOS      ; decrement source counter
+    .byt ldi | N0       ; get the repeat count
+    .byt bnz, <(rldecode04-*-2)
+    .byt ld | R9
+rldecode04
+    .byt st | N3
+    .byt dcr | N3
+    .byt bz , <(rldecode01-*-2)
+rldecode05
+    .byt dcr | N3
+    .byt bz , <(rldecode01-*-2)
+    .byt ld | N2
+    .byt sti | N1       ; write target stream
+    .byt br , <(rldecode05-*-2)
+rldecode06
+    .byt pull           ; drop srclen
+    .byt nxt
+
+;--------------------------------------------------------------
+;
+;       BLOCK   ( n -- addr )
+;
+#ifdef HEADERS
+blocklfa
+    .byt $de,$ad
+    .byt (_block-*-1)|bit7
+    .asc "BLOC","K"|bit7
+#endif
+_block
+#include "enter.i65"
+    .word _block
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;       WRAP^   ( logline -- d )
 ;
 ; Reads (a portion of) the linewrap table above the current physical
