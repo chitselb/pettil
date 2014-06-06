@@ -85,11 +85,12 @@
     
     # build a label file so pettil-tdict.a65 can find things in core
 	# fix problems with reserved words e.g. bc add in hex address
-	use_decimal = ' type _mkpkt '  
+	use_decimal = ' type '  
+	always_use_decimal = false
     symfile = File.open("pettil-core.def",'w') do |f|
 #       symfile.write(#{a[0]}=#{a[1]}\n")
         symbols.each do |k, v|
-            if use_decimal.include?(' '+k+' ')
+            if use_decimal.include?(' '+k+' ') | always_use_decimal
                 f.write("#{k} = #{v.to_s}\n")
             else
                 f.write("#{k} = $#{v.to_s(16).rjust(4,'0')}\n")
