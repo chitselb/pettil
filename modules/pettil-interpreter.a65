@@ -328,7 +328,22 @@ _query
 ; hash1 is the thread index for the core vocabulary (0-15)
 ; hash2 is used by the Bloom filter
 ;
+; the pearson hash should return an evenly distributed
+; value between $00-$0f based on the wordset in the
+; core dictionary.  In other words, all 16 threads
+; are initially balanced with the same number of words,
+; to reduce searches to (on average) 1/16th of the
+; dictionary.
+;
+; the bloom filter hash tries to answer the question,
+; 'is this a number or does it contain numbers?'
+; returning zero (no digits present) or the sum (mod64)
+; of all digits in this word
+;
+; ~wut? why did I hash the smudge bit?
+;
 ;symbol table
+;
 ;+---------------+
 ;|    CFA[low]   |  +0      Code field address
 ;|    CFA[high]  |
@@ -342,8 +357,7 @@ _query
 ;|           ... |
 ;|   name[len]   |
 ;+~~~~~~~~~~~~~~~+
-;?    LFA[low]   ?  +len+3  Link field address
-;?    LFA[high]  ?         (present iff Vocabulary)
+;?  vocab ident  ?  +len+3  Vocabulary token (if V bit set)
 ;+~~~~~~~~~~~~~~~+
 ;
 #ifdef HEADERS
@@ -356,7 +370,7 @@ dhash
     stx storex
     ldy #0
     lda (tos),y
-    and #$3f                ; turn off 7 and 6, not 5 (smudge)
+    and #$1f                ; length only
     sta n                   ; seed hash1 with length
     sty n+1                 ; seed hash2 with 0
     tay                     ; count backwards to 1 from length
@@ -364,26 +378,13 @@ dhash
 dhash01
     dey                             ;[2]
     beq dhash02                     ;[2]
-    ; the pearson hash should return an evenly distributed
-    ; value between $00-$0f based on the wordset in the
-    ; core dictionary.  In other words, all 16 threads
-    ; are initially balanced with the same number of words,
-    ; to reduce searches to (on average) 1/16th of the
-    ; dictionary.
     lda (tos),y                     ;[5]
-    ;sec                             ;[2] ~wut? doesn't and 7 make this unnecessary?
-    ;sbc #$20                        ;[2] control chars
     and #(pearsonx-pearson-1)       ;[2]
     tax                             ;[2]
     lda n                           ;[3]
     eor pearson,x                   ;[4]
     sta n                           ;[3]
-    ; the bloom filter hash tries to answer the question,
-    ; 'is this a number or does it contain numbers?'
-    ; returning zero (no digits present) or the sum (mod64)
-    ; of all digits in this word
     lda (tos),y             ;[5]
-    and #$7f                ;[2]    ; ignore bit7
     clc                     ;[2]
     adc #$FF-('9')          ;[2]
     adc #'9'-'0'+1          ;[2]    ; carry is set only
@@ -391,8 +392,8 @@ dhash01
     bcc dhash01             ;[3]  [12]hash2 [27]hash1
     adc n+1                 ; 0> -1 0 1 2 3 0= 0< 0<> sp0 rp0
     sta n+1                 ; 1+ 1- 2+ 2- 2/ 2* forth-83 dr0 dr1
-    jmp dhash01             ; 2drop 2dup 2over 2rot 2swap 2! 2@
-    ; 2constant 2variable d0= d2/ d2*
+    bne dhash01             ; 2drop 2dup 2over 2rot 2swap 2! 2@
+    dec n+1                 ; always something nonzero if it has digits
 dhash02
     lda n
     lsr
@@ -401,38 +402,11 @@ dhash02
     lsr                     ; - - - - [ 7 6 5 4 ]
     eor n                   ; 7 6 5 4 [ 3 2 1 0 ]
     and #$0f                ; - - - - [4bit hash]
-; DEBUG
-;    jsr debug               ; print out some entertainment
-; /DEBUG
     sta tos
     sty tos+1       ; for both hashes, high byte always 0
     lda n+1         ; sum of all digits 0..9
     ldx storex
     jmp pushya
-
-;DEBUG
-; hex dump the byte in A
-;debug
-;    pha
-;    pha
-;    and #$0f
-;    jsr print
-;    pla
-;    lsr
-;    lsr
-;    lsr
-;    lsr
-;    jsr print
-;    pla
-;dbout
-;    rts
-;print
-;    sed
-;    cmp #10
-;    adc #'0'
-;    cld
-;    jmp CHROUT
-; ;/DEBUG
 
 ;--------------------------------------------------------------
 ;
@@ -737,7 +711,7 @@ _find
 find01                                  ; ( name )
     .word dup               ; ( name name )
 #include "page.i65"
-    .word dhash             ; ( name hash1 hash2 )
+;    .word dhash             ; ( name hash1 hash2 )
 #include "page.i65"
     .word bloomfetch        ; ( name hash1 flag )
 #include "page.i65"
@@ -895,8 +869,16 @@ _indictq
 ;     rot =
 ;     ( hash nfa samelength? )
 ;     if
+;         ( hash nfa )
 ;         dup indict?
-;
+;         ( hash nfa indict? )
+;         if
+;             ( hash nfa )
+;             dhash
+;             ( hash pearsonhash bloomhash )
+;			  rot over =
+;             ( pearsonhash bloomhash samehash? )
+)
 ;         2drop true ( more processing later )
 ;     else
 ;         2drop false

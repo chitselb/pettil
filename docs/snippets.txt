@@ -617,9 +617,9 @@ jsr dovocab
 
 rehash
 target=SYMTAB
-			+8 bloom filter
-			+32 threads
-			+2 newstuff
+            +8 bloom filter
+            +32 threads
+            +2 newstuff
 there is a pile of symbol table sitting at PAD
 for each thread 0..f
     for each possible length 1..31
@@ -762,23 +762,23 @@ symsiz01
     .word plus
 #include "page.i65"
     .word branch
-	.byt <(symsiz01-*-2)
+    .byt <(symsiz01-*-2)
 #include "pad.i65"
 symsiz02
-	.word swap
+    .word swap
 #include "page.i65"
-	.word minus
+    .word minus
 #include "page.i65"
-	.word exit		; [38]
+    .word exit      ; [38]
 
 code symsiz   ( symbols -- )
-	brk
-	.byt inr | TOS
-	.byt inr | TOS
-	.byt rtn
+    brk
+    .byt inr | TOS
+    .byt inr | TOS
+    .byt rtn
 symsiz01
-	lda (tos),y
-	
+    lda (tos),y
+    
 nfatocfa
     sec
     lda tos
@@ -795,3 +795,146 @@ nfatocfa01
     tay
     pla
     jmp put ;[24]
+
+nfatocfa
+    sec
+    lda tos
+    sbc #2
+    sta n
+    lda tos+1
+    sbc #0
+    sta n+1
+    ldy #0
+    lda (n),y
+    sta tos
+    iny
+    lda (n),y
+    sta tos+1
+    jmp next ;[28]
+
+
+
+dhashxyzzy
+    stx storex
+    ldy #0
+    lda (tos),y
+    and #$3f                ; turn off 7 and 6, not 5 (smudge)
+    sta n                   ; seed hash1 with length
+    sty n+1                 ; seed hash2 with 0
+    tay                     ; count backwards to 1 from length
+    iny                     ;       hash2   hash1
+dhash01
+    dey                             ;[2]
+    beq dhash02                     ;[2]
+    lda (tos),y                     ;[5]
+    and #(pearsonx-pearson-1)       ;[2]
+    tax                             ;[2]
+    lda n                           ;[3]
+    eor pearson,x                   ;[4]
+    sta n                           ;[3]
+    lda (tos),y             ;[5]
+    clc                     ;[2]
+    adc #$FF-('9')          ;[2]
+    adc #'9'-'0'+1          ;[2]    ; carry is set only
+    ; for digits '0'-'9'
+    bcc dhash01             ;[3]  [12]hash2 [27]hash1
+    adc n+1                 ; 0> -1 0 1 2 3 0= 0< 0<> sp0 rp0
+    sta n+1                 ; 1+ 1- 2+ 2- 2/ 2* forth-83 dr0 dr1
+    jmp dhash01             ; 2drop 2dup 2over 2rot 2swap 2! 2@
+    ; 2constant 2variable d0= d2/ d2*
+dhash02
+    lda n
+    lsr
+    lsr                     ; xor the pearson hash byte
+    lsr                     ; into a single nybble
+    lsr                     ; - - - - [ 7 6 5 4 ]
+    eor n                   ; 7 6 5 4 [ 3 2 1 0 ]
+    and #$0f                ; - - - - [4bit hash]
+    sta tos
+    sty tos+1       ; for both hashes, high byte always 0
+    lda n+1         ; sum of all digits 0..9
+    ldx storex
+    jmp pushya
+
+
+
+
+;": eligible?   ( hash searchlen nfa -- pearsonhash bloomhash flag )
+;     dup c@ $1f and
+;     ( hash searchlen nfa len )
+;     rot =
+;     ( hash nfa samelength? )
+;     if
+;         dup indict?
+;
+;         2drop true ( more processing later )
+;     else
+;         2drop false
+;     then ;
+#ifdef HEADERS
+eligibleqlfa
+    .byt $de,$ad
+    .byt (eligibleq-*-1)|bit7
+    .asc "ELIGIBLE","?"|bit7
+#endif
+eligibleq
+    ldy #2
+    jsr locals
+    ;ldy #0
+    lda (tos),y
+    and #$1f
+    eor n                       ; same length?
+    bne eligibleq05
+	brk
+	.byt set | R11
+	.word uarea+userdp-userarea
+	.byt set | R10
+	.word uarea+usertdict-userarea
+	.byt popd | TOS				; CFA
+	.byt st | N2
+	.byt ldd | R11				; DP
+	.byt cpr | N2
+	.byt bm , <(eligibleq02-*-2)	; not in core dictionary? bail
+	.byt cpr | R10				; TDICT
+	.byt bp , <(eligibleq02-*-2)	; not in temp dictionary either? bail
+	.byt rtn
+	jsr dhash6502
+
+eligibleq02
+	.byt rtn
+	
+    
+;": indict?   ( nfa -- flag )
+;       nfa>cfa tdict @ over u< swap here u< or ;
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word clit
+    .byt $1f
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word qbranch
+    .byt <(eligibleq04-*+1)
+#include "pad.i65"
+    .word twodrop
+#include "page.i65"
+    .word true
+#include "page.i65"
+    .word branch
+    .byt <(eligibleq05-*+1)
+#include "pad.i65"
+eligibleq04
+    .word twodrop
+#include "page.i65"
+    .word false
+#include "page.i65"
+eligibleq05
+    .word exit
+
