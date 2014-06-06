@@ -410,6 +410,71 @@ dhash02
 
 ;--------------------------------------------------------------
 ;
+;       PEARSONHASH   ( nfa -- pearsonhash )
+;
+; tdict
+;
+; input is NFA or address of a counted string
+; pearsonhash is the thread index (0..f)
+;
+; the pearson hash should return an evenly distributed
+; value between $00-$0f based on the wordset in the
+; core dictionary.  In other words, all 16 threads
+; are initially balanced with the same number of words,
+; to reduce searches to (on average) 1/16th of the
+; diction  ary.
+;
+;symbol table
+;
+;+---------------+
+;|    CFA[low]   |  +0      Code field address
+;|    CFA[high]  |
+;+-+-+-+-+-+-+-+-+
+;|     [   len   ]  +2      Length field
+;[I]             |          Immediate bit
+;| [V]           |          Vocabulary bit
+;|   [S]         |          Smudge bit
+;+-+-+-+-+-+-+-+-+
+;|   name[1]     |  +3      Name field
+;|           ... |
+;|   name[len]   |
+;+~~~~~~~~~~~~~~~+
+;?  vocab ident  ?  +len+3  Vocabulary token (if V bit set)
+;+~~~~~~~~~~~~~~~+
+;
+#ifdef HEADERS
+dhashlfa
+    .byt $de,$ad
+    .byt (pearsonhash-*-1)|bit7
+    .asc "PEARSONHAS","H"|bit7
+#endif
+pearsonhash
+    stx storex
+    ldy #0
+    lda (tos),y
+    and #$1f                ; length only
+    sta n                   ; seed hash1 with length
+    tay                     ; count backwards 
+pearsonhash01
+    lda (tos),y                     ;[5]
+    and #(pearsonx-pearson-1)       ;[2]
+    tax                             ;[2]
+    lda n                           ;[3]
+    eor pearson,x                   ;[4]
+    sta n                           ;[3]
+    dey
+    bne pearsonhash01
+    lsr
+    lsr                     ; xor the pearson hash byte
+    lsr                     ; into a single nybble
+    lsr                     ; - - - - [ 7 6 5 4 ]
+    eor n                   ; 7 6 5 4 [ 3 2 1 0 ]
+    and #$0f                ; - - - - [4bit hash]
+    ldx storex
+    jmp put
+
+;--------------------------------------------------------------
+;
 ;       DHASH@   ( hashkey -- LFA )
 ;
 ; ~wut? rewrite
@@ -849,7 +914,7 @@ _indictq
 
 ;--------------------------------------------------------------
 ;
-;       ELIGIBLE?   ( hash searchlen nfa -- pearsonhash bloomhash true | false )
+;       ELIGIBLE?   ( hash searchlen nfa -- flag )
 ;
 ; returns true iff
 ; searchleng matches the current length? (I)
@@ -863,7 +928,7 @@ _indictq
 ; if flag is false, pearsonhash and bloomhash aren't returned,
 ; and shouldn't be needed by the caller
 ;
-;": eligible?   ( hash searchlen nfa -- pearsonhash bloomhash flag )
+;": eligible?   ( hash searchlen nfa -- flag )
 ;     dup c@ $1f and
 ;     ( hash searchlen nfa len )
 ;     rot =
@@ -874,12 +939,11 @@ _indictq
 ;         ( hash nfa indict? )
 ;         if
 ;             ( hash nfa )
-;             dhash
-;             ( hash pearsonhash bloomhash )
-;			  rot over =
-;             ( pearsonhash bloomhash samehash? )
-)
-;         2drop true ( more processing later )
+;             pearsonhash =
+;             ( flag )
+;         else
+;             2drop false
+;         then
 ;     else
 ;         2drop false
 ;     then ;
