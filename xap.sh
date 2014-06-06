@@ -58,7 +58,8 @@ mv modules/*.obj modules/*.err *.lab modules/*.lab pettil-core.obj *.err pettil.
 #
 # run it
 if [ -e pettil.dbg ]; then
-	cat pettil.dbg >> pettil.mon
+	cat pettil.dbg pettil.mon | sort > t.t
+	mv t.t pettil.mon
 fi
 #
 if [ "$1" != "--norun" ]; then

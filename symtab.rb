@@ -85,7 +85,7 @@
     
     # build a label file so pettil-tdict.a65 can find things in core
 	# fix problems with reserved words e.g. bc add in hex address
-	use_decimal = ' locals dplus _sign rlencode06 '  
+	use_decimal = ' type _mkpkt '  
     symfile = File.open("pettil-core.def",'w') do |f|
 #       symfile.write(#{a[0]}=#{a[1]}\n")
         symbols.each do |k, v|
@@ -183,7 +183,7 @@ _rehash
                     puts "uh oh", symbol, dead
                 end
                 if !(namelenline =~ /^\s+\.byt\ \(#{symbol.chomp}-\*-1\)(\|bit5|\|bit6|\|bit7)+$/)
-                    puts "uh oh", symbol, namelen
+                    puts "uh oh", symbol, namelenline
                 end
                 if !(endifline.chomp =~ /^\#endif$/)
                     puts "uh oh",symbol, endifline
@@ -211,7 +211,7 @@ _rehash
         a = h[1][:data].bytes
         symfile.write a.pack("C*")
     end
-    symfile.write [0].pack("C*")        # null length ends pettil.sym
+    symfile.write [0,0,0].pack("C*")        # null length ends pettil.sym
 
     symfile = File.open("junk/pearson.txt",'w')
     Hash[b.sort_by { | k, v | v[:hash1]*32+v[:len] }].each do |h|

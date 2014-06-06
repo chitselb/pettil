@@ -5,7 +5,7 @@ bloom
     .dsb 8,0      ; 64 bits, used by hash2 (bloom filter)
 bloomx
 pearson
-    .byt 80, 63, 253, 57, 173, 24, 93, 2 
+    .byt 80, 63, 253, 57, 173, 24, 93, 2
 pearsonx
 
 ;==============================================================
@@ -17,7 +17,7 @@ errptr
 msg01
     .byt msg02-*-1
     .asc "STACK EMPTY"
-msg02   
+msg02
     .byt msg03-*-1
     .asc "STACK FULL"
 msg03
@@ -328,7 +328,7 @@ _query
 ; hash1 is the thread index for the core vocabulary (0-15)
 ; hash2 is used by the Bloom filter
 ;
-;symbol table 
+;symbol table
 ;+---------------+
 ;|    CFA[low]   |  +0      Code field address
 ;|    CFA[high]  |
@@ -448,33 +448,36 @@ dhash02
 ;    .byt (dhashfetch-*-1)|bit7
 ;    .asc "DHASH","@"|bit7
 ;#endif
-dhashfetch
-    brk
-    .byt set  | ACC
+;dhashfetch
+;    brk
+;    .byt set  | ACC
 ;    .word lfalist
-    .byt add  | TOS
-    .byt add  | TOS
-    .byt st   | TOS
-    .byt ldd  | TOS
-    .byt st   | TOS
-    .byt nxt
+;    .byt add  | TOS
+;    .byt add  | TOS
+;    .byt st   | TOS
+;    .byt ldd  | TOS
+;    .byt st   | TOS
+;    .byt nxt
 
 ;--------------------------------------------------------------
 ;
 ;       BLOOM!   ( hash -- )
 ;
-; tdict
-;
 ; set the bit in the dictionary's bloom filter
 ;
 ; hash is an 8-bit hash code indexing a 256-bit bitfield
+;
 ;#ifdef HEADERS
 ;bloomstorelfa
-;  .byt $de,$ad
+;    .byt $de,$ad
 ;    .byt (bloomstore-*-1)|bit7
 ;    .asc "BLOOM","!"|bit7
 ;#endif
 bloomstore
+    jmp pops
+
+    ; ~wut?
+
     lda tos                 ; set bloom filter bit for hash2
     and #7
     tay
@@ -484,8 +487,7 @@ bloomstore
     lsr
     lsr
     lsr
-;    and #(bloomx-bloom-1)   ; don't write outside filter area  ~wut?
-    and #7   ; don't write outside filter area
+    and #(bloomx-bloom-1)   ; don't write outside filter area
     tay
     lda n
     ora bloom,y
@@ -521,8 +523,7 @@ bloomfetch
     lsr
     lsr
     lsr
-;    and #(bloomx-bloom-1)   ; don't write outside filter area  ~wut?
-    and #7   ; don't write outside filter area
+    and #(bloomx-bloom-1)   ; don't read outside 64-bit filter area
     tay
     lda bloom,y
     ldy #0
@@ -552,7 +553,7 @@ bloomfetch01
 ;    .byt (dhashstore-*-1)|bit7
 ;    .asc "DHASH","!"|bit7
 ;#endif
-dhashstore
+;dhashstore
     ldy #1
     jsr locals               ; LFAnew -> N0
     brk
@@ -631,7 +632,7 @@ dhashstore06
 ;
 ;       (FIND)   ( name nfa fflag -- name false | cfa flag )
 ;
-; * outer interpreter 
+; * outer interpreter
 ;
 ; name is the address of a counted string we are searching for.
 ; nfa is the first nfa in the list
@@ -743,7 +744,7 @@ find01                                  ; ( name )
     .word qbranch           ; IF
     .byt <(find02-*+1)
 #include "pad.i65"
-    .word dhashfetch        ; ( name LFA )
+;    .word dhashfetch        ; ( name LFA )
 #include "page.i65"
     .word swap              ; ( LFA name )
 #include "page.i65"
@@ -801,6 +802,145 @@ _existsq
     .word _find             ; ( nfa -1|+1 | here false )
 #include "page.i65"
     .word exit
+
+;--------------------------------------------------------------
+;
+;        NFA>CFA   ( nfa -- cfa )
+;
+; return the cfa of a given name field
+;
+#ifdef HEADERS
+nfatocfalfa
+    .byt $de,$ad
+    .byt (nfatocfa-*-1)|bit7
+    .asc "NFA>CF","A"|bit7
+#endif
+nfatocfa
+    sec
+    lda tos
+    sbc #2
+    sta tos
+    bcs nfatocfa01
+    dec tos+1
+nfatocfa01
+    ldy #0
+    lda (tos),y
+    pha
+    iny
+    lda (tos),y
+    tay
+    pla
+    jmp put ;[24]
+
+
+;--------------------------------------------------------------
+;
+;       INDICT?   ( nfa -- flag )
+;
+; return true if the code field is in either dictionary
+;
+;": indict?   ( nfa -- flag )
+;       nfa>cfa tdict @ over u< swap here u< or ;
+#ifdef HEADERS
+indictqlfa
+    .byt $de,$ad
+    .byt (_indictq-*-1)|bit7
+    .asc "INDICT","?"|bit7
+#endif
+_indictq
+#include "enter.i65"
+;    .word xyzzy
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word tdict
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word ult
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word ult
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       ELIGIBLE?   ( hash searchlen nfa -- pearsonhash bloomhash true | false )
+;
+; returns true iff
+; searchleng matches the current length? (I)
+; and its CFA < DP or is its CFA > TDICT?
+; calculate its hash
+; and matches the current hash?
+;
+; since calculating the hash is an expensive operation, it's done
+; one time, here.
+;
+; if flag is false, pearsonhash and bloomhash aren't returned,
+; and shouldn't be needed by the caller
+;
+;": eligible?   ( hash searchlen nfa -- pearsonhash bloomhash flag )
+;     dup c@ $1f and
+;     ( hash searchlen nfa len )
+;     rot =
+;     ( hash nfa samelength? )
+;     if
+;         dup indict?
+;
+;         2drop true ( more processing later )
+;     else
+;         2drop false
+;     then ;
+;
+#ifdef HEADERS
+eligibleqlfa
+    .byt $de,$ad
+    .byt (_eligibleq-*-1)|bit7
+    .asc "ELIGIBLE","?"|bit7
+#endif
+_eligibleq
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word clit
+    .byt $1f
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word qbranch
+    .byt <(eligibleq04-*+1)
+#include "pad.i65"
+    .word twodrop
+#include "page.i65"
+    .word true
+#include "page.i65"
+    .word branch
+    .byt <(eligibleq05-*+1)
+#include "pad.i65"
+eligibleq04
+    .word twodrop
+#include "page.i65"
+    .word false
+#include "page.i65"
+eligibleq05
+    .word exit
+
 ;--------------------------------------------------------------
 ;
 ;       >SYMS   ( -- addr )
@@ -828,154 +968,267 @@ _tosyms
 
 ;--------------------------------------------------------------
 ;
-;        SYMSIZ   ( -- n )
+;       >SYMTAIL   ( nfa -- lastnfa )
 ;
-; returns the size of the symbol table
+; Skip through the symbol table until finding the 0-length byte.
+; Return the address of the symbol table tail
 ;
 #ifdef HEADERS
-symsizlfa
+tosymtaillfa
     .byt $de,$ad
-    .byt (_symsiz-*-1)|bit7
-    .asc "SYMSI","Z"|bit7
+    .byt (tosymtail-*-1)|bit7
+    .asc ">SYMTAI","L"|bit7
 #endif
-_symsiz
+tosymtail
+    ldy #0
+symsiz01
+    lda (tos),y
+    and #$1f
+    beq symsiz02
+    clc
+    adc #3
+    adc tos
+    sta tos
+    bcc symsiz01
+    inc tos+1
+    bcs symsiz01
+symsiz02
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       SYM+   ( target nfa -- )
+;
+; move a symbol up to pad
+;
+;": sym+
+;     ( target nfa )
+;     dup 2- -rot c@
+;     ( nfa-2 target flength )
+;     $1f and 3 + cmove ;
+
+#ifdef HEADERS
+sympluslfa
+    .byt $de,$ad
+    .byt (_symplus-*-1)|bit7
+xap    .asc "SYM","+"|bit7
+#endif
+_symplus
 #include "enter.i65"
-    .word _tosyms
-#include "page.i65"
     .word dup
 #include "page.i65"
-symsiz01
-    .word oneplus
+    .word twominus
 #include "page.i65"
+    .word _dashrot
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word clit
+    .byt $1f
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       NFA+   ( nfa -- nfa+ )
+;
+; description
+;
+#ifdef HEADERS
+nfapluslfa
+    .byt $de,$ad
+    .byt (nfaplus-*-1)|bit7
+    .asc "NFA","+"|bit7
+#endif
+nfaplus
+    ldy #0
+    lda (tos),y
+    and #$1f
+    clc
+    adc #3
+    adc tos
+    sta tos
+    bcc nfaplus01
+    inc tos+1
+nfaplus01
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       SCANPAD   ( target hash len -- target+ )
+;
+; Make a pass through the symbol table at PAD, copying eligible
+; symbols to target
+;
+;       pad 2+
+;       ( target hash len nfa )
+;       2swap swap >r -rot
+;       ( hash len nfa ) ( R; target )
+;       begin
+;           ( not done yet? )
+;           dup c@ ?dup   ( j i nfa [currlen currlen|0] ) ( R; target )
+;       while
+;               ( hash searchlen nfa currlen ) ( R; target )
+;               drop 3dup
+;               ( hash searchlen nfa hash searchlen nfa )
+;               ( hash searchlen nfa hash searchlen nfa ) ( R; target )
+;               eligible?
+;               ( hash searchlen nfa flag ) ( R; target )
+;               if
+;                   ( hash searchlen nfa ) ( R; target )
+;                   \ add it to the bloom filter
+;                   dup bloom!
+;                   ( hash searchlen nfa ) ( R; target )
+;                   r@ over
+;                   ( hash len nfa target nfa ) ( R; target )
+;                   \ copy it up to the new symbol table
+;                   sym+
+;                   ( hash len nfa ) ( R; target )
+;                   over r>  + 2+ >r
+;                   ( hash len nfa )   advance target pointer   ( target+ )
+;               then
+;               ( hash len nfa )   advance target pointer   ( target+ )
+;               nfa+
+;               ( hash len nfa+ )   advance source pointer   ( target+ )
+;       repeat
+;       2drop drop r> ;
+;
+#ifdef HEADERS
+scanpadlfa
+    .byt $de,$ad
+    .byt (_scanpad-*-1)|bit7
+    .asc "SCAN","D"|bit7
+#endif
+_scanpad
+#include "enter.i65"
+    .word clit
+    .byt '.'
+#include "pad.i65"
+    .word emit
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word twoswap
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _dashrot
+#include "page.i65"
+scanpad01                       ; ( hash searchlen nfa )
     .word dup
 #include "page.i65"
     .word cfetch
 #include "page.i65"
-    .word zeq
+    .word qdup
 #include "page.i65"
     .word qbranch
-    .byt <(symsiz01-*+1)
+    .byt <(scanpad03-*+1)
 #include "pad.i65"
-    .word swap
+    .word drop
 #include "page.i65"
-    .word minus
+    .word threedup              ; ( hash searchlen nfa hash searchlen nfa )
+#include "page.i65"
+    .word _eligibleq            ; ( hash searchlen nfa flag )
+#include "page.i65"
+    .word qbranch
+    .byt <(scanpad02-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word bloomstore
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _symplus
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+scanpad02
+    .word nfaplus
+#include "page.i65"
+    .word branch
+    .byt <(scanpad01-*+1)
+#include "pad.i65"
+scanpad03
+    .word threedrop
+#include "page.i65"
+    .word rfrom
 #include "page.i65"
     .word exit
-
-; dhash16 calculates the bloom hash and the pearson hash for the
-; string pointed to by N1.  R11 contains the pearson hash, while
-; R10 contains the bloom hash
-;
-; The carry flag will be set if the pearson hash matches N2, and
-; the bloom hash will be OR'ed into the bloom filter if that is 
-; the case.
-;
-;inputs
-;    N1 (R6) = addr of a string
-;    N2 (R7) = current pearson hash
-;
-;returns
-;    C = true iff the generated hash matched the hash index in N2
-;    R11 = pearson hash
-;    R10 = bloom hash
-;
-;        hash=pearson[line.length&psize]
-;        line.each_byte { |char|
-;            hash = char^pearson[hash&psize]
-dhash16    
-    stx storex
-    ;ldy #1
-    dey
-    sty R14H        ; clear carry
-    lda (n+2),y
-    and #$1f                    ; seed hash with length
-    sta r11
-    iny
-dhash16a
-    dey
-    beq dhash16b
-    lda (n+2),y
-    and #(pearsonx-pearson-1)
-    tax
-    lda r11
-    eor pearson,x       ;        hash=pearson[line.length&psize]
-    sta r11
-    jmp dhash16a
-dhash16b
-    lsr
-    lsr
-    lsr
-    lsr
-    eor r11
-    and #$0f
-    sta r11
-    eor n+4
-    bne dhash16c
-    inc R14H        ; set carry
-dhash16c
-    ldx storex
-    rts
-
-;--------------------------------------------------------------
-;
-;       (REHASH)   ( symbols symdex pad hashnow here -- )
-;
-; make a pass through pad, calculating hashes for each word.
-; copy it to symtab iff
-; * the cfa of the word at PAD is < HERE or > SYMTAB
-; * the length of the word = i
-; * the hash1 of the word = j
-; and while we're at it, set the bloom filter bit
-;
-;#ifdef HEADERS
-;prehashlfa
-;   .byt $de,$ad
-;   .byt (prehash-*-1)|bit7
-;   .asc "(REHASH",")"|bit7
-;#endif
-prehash
-    ldy #5          ; TOS       N0     N1  N2   N3    R9      R2
-    jsr locals      ; here symbols symdex pad hash tdict thislen 
-    brk
-nextsym
-    .byt ldd | N0               ; get CFA
-    .byt cpr | TOS              ; compare to HERE
-    .byt bnc , <(seemsok-*-2)   ; cfa < here?  we're good!
-    .byt cpr | R9               ; well how about compare to threadindex?
-    .byt bp , <(seemsok-*-2)    ; cfa is in high dictionary?  we're good!
-notverygood
-    .byt ext
-    .word wordlen16
-    .byt bz , <(weredone-*-2)
-nexthop
-    .byt set | ACC
-    .word 3
-    .byt add | R11
-    .byt add | N1
-    .byt st | N1
-    .byt br , <(nextsym-*-2)
-seemsok
-    .byt ext
-    .word wordlen16
-    .byt bz , <(weredone-*-2)
-    .byt ld | R11
-    .byt cpr | R2           ; check the length
-    .byt bnz , <(nexthop-*-2)
-    .byt ext
-    .word dhash16
-    .byt ld | R11
-    .byt cpr | N2
-    .byt bnz , <(nexthop-*-2)
-    
-weredone
-    .byt pull
-    .byt rtn
 
 ;--------------------------------------------------------------
 ;
 ;        REHASH   ( -- )
 ;
 ; rebuilds the symbol table in high memory.
+;
+;": rehash  ( -- )
+; \ erase thread table
+;     symtab @ 32 erase
+;     ( )
+; \ erase bloom filter
+;     [ bloom ] literal 8 erase
+;     ( )
+; \ copy symbols to pad
+;     >syms dup pad over 2+
+;     ( symtab pad nfa )
+;     >symtail
+;     ( symtab symtab pad lastnfa )
+;     third - 1+
+;     ( symbols symbols pad size )
+;     cmove
+; \ set the target pointer to >syms
+;     ( target )
+; \ for each thread 0..f
+;     16 0 do
+;         ( target )
+; \ set the thread pointer to target pointer )
+;         dup 2+ symtab @ i 2* + !
+;         ( target )
+; \ for each size 1..31
+;         32 1 do
+;             ( target )
+;             j i
+;             ( target j i )
+;             scanpad
+;             ( target+ )
+;         loop
+;   next
+;   ( target )
+;   set the symnew to target pointer
+;   store 0 CFA 0 length at new pointer
+; * - - does it match the current length?
+; * - - and its CFA < DP or is its CFA > TDICT?
+; * - - calculate its hash
+; * - - and does it match the current hash?
+; * - - yes! copy it to target
+; * - - advance target pointer
+
+;": rehash   ( -- )
 ;
 #ifdef HEADERS
 rehashlfa
@@ -993,75 +1246,98 @@ _rehash
     .byt 32                     ; ( symtab 32 )
 #include "pad.i65"
     .word _erase                ; ( )
+#include "page.i65"
+    .word plit
+    .word bloom
 #include "pad.i65"
+    .word clit
+    .byt 8
+#include "pad.i65"
+    .word _erase
+#include "page.i65"
     .word _tosyms               ; ( symbols )
 #include "page.i65"
-    .word duptor                ; ( symbols ) ( R; symbols )
+    .word dup                   ; ( symbols symbols )
 #include "page.i65"
-    .word _pad                  ; ( symbols pad )
+    .word _pad                  ; ( symbols symbols pad )
 #include "page.i65"
-    .word _symsiz               ; ( symbols pad size )
+    .word over                  ; ( symbols symbols pad symbols )
 #include "page.i65"
-    .word cmove                 ; ( ) ( R; symbols )
+    .word twoplus               ; ( symbols symbols pad nfa )
 #include "page.i65"
-    .word rfrom                 ; ( symbols ) 
+    .word tosymtail             ; ( symbols symbols pad lastnfa )
 #include "page.i65"
-    .word symtab                ; ( symbols addr ) 
+    .word third                 ; ( symbols symbols pad lastnfa symbols )
 #include "page.i65"
-    .word fetch                 ; ( symbols symtab )
+    .word minus                 ; ( symbols symbols pad lastnfa-symbols )
 #include "page.i65"
-    .word clit                  ; ( symbols symtab 8 )
-    .byt 8
+    .word oneplus               ; ( symbols symbols pad symsiz )
 #include "page.i65"
-    .word plus                  ; ( symbols symdex )
+    .word cmove                 ; ( symbols )
 #include "page.i65"
-    .word _twodup               ; ( symbols symdex symbols symdex )
-#include "page.i65"
-    .word _pad                  ; ( symbols symdex symbols symdex pad )
-#include "page.i65"
-    .word clit                  ; ( symbols symdex pad 16 )
+    .word clit
     .byt 16
 #include "pad.i65"
-    .word zero                  ; ( symbols symdex pad 16 0 )
+    .word zero
 #include "page.i65"
-    .word pdo                   ; ( symbols symdex pad )
+    .word pdo
 #include "page.i65"
-rehash01
+rehash01                        ; ( target )
 #include "page.i65"
-    .word i                     ; ( symbols symdex pad hashnow )
+    .word dup
 #include "page.i65"
-    .word twoover               ; ( symbols symdex pad hashnow symbols symdex )
+    .word twoplus
 #include "page.i65"
-    .word store                 ; ( symbols symdex pad hashnow )
-#include "page.i65"
-    .word twoswap               ; ( pad hashnow symbols symdex )
-#include "page.i65"
-    .word twoplus               ; ( pad hashnow symbols symdex )
-#include "page.i65"
-    .word twoswap               ; ( symbols symdex pad hashnow )
-#include "page.i65"
-    .word clit                  ; ( symbols symdex pad hashnow 32 )
-    .byt 32
-#include "pad.i65"
-    .word one                   ; ( symbols symdex pad hashnow 32 1 )
-#include "page.i65"
-    .word pdo                   ; ( symbols symdex pad hashnow )
-#include "page.i65"
-rehash02
-    .word here                  ; ( symbols symdex pad hashnow here )
-#include "page.i65"
-    .word tdict
+    .word symtab
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word prehash
+    .word i
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word store                 ; ( target )
+#include "page.i65"
+    .word clit
+    .byt 32
+#include "pad.i65"
+    .word one
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+rehash02
+    .word j
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word _scanpad
 #include "page.i65"
     .word ploop
     .byt <(rehash02-*+1)
 #include "pad.i65"
+
+    .word i
+#include "page.i65"
+    .word _dot
+#include "page.i65"
+    .word cr
+#include "page.i65"
+
     .word ploop
     .byt <(rehash01-*+1)
 #include "pad.i65"
+    .word xyzzy
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word symnew
+#include "page.i65"
+    .word store
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1093,11 +1369,18 @@ _forget
     .byt <(forget01-*+1)
 #include "pad.i65"
     .word plit
-    .word errptr                ; We got here from COLD. Do the things 
+    .word errptr                ; We got here from COLD. Do the things
 #include "pad.i65"              ; COLD didn't know how to do.  Don't scan
     .word errmess               ; input stream for the next word, because
 #include "page.i65"             ; there's a CFA on the stack already.
     .word store
+#include "page.i65"
+    .word plit
+    .word warm
+#include "pad.i65"
+    .word startup
+#include "page.i65"
+    .word store                 ; set startup to WARM
 #include "page.i65"
     .word branch
     .byt <(forget02-*+1)

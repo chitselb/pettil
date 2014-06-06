@@ -155,7 +155,7 @@ usercurrent     .word 0                                 ;
 userwarm
 ; everything before userwarm is initialized at WARM start
 
-userfence       .word launch                            ; COLD
+userfence       .word cold                              ; COLD
 userdp          .word cold                              ;
 usermemsiz      .word 0     ; set by COLD from BASIC (copy of $34)
 usersymtab      .word 0
@@ -166,7 +166,7 @@ usercold
 ; everything below this is set to 0 by COLD and untouched by WARM
 uservmbuf       = usercold                              ; SOFT
 uservmsiz       = usercold+2                            ; (COLD = 0)
-usersymnew		= usercold+4							; set by REHASH
+usersymnew      = usercold+4                            ; set by REHASH
 usersymtail     = usercold+6                            ; set by CREATE
 usertdict       = usercold+8                            ; 
 userbase        = usercold+10                           ; (WARM = unchanged)
@@ -273,17 +273,6 @@ warm04
 
 ;--------------------------------------------------------------
 ;
-;        LAUNCH   ( abortcfa 'launch forgetcfa -- )
-;
-launch
-#include "enter.i65"
-launch01
-    .word execute
-#include "page.i65"
-    .word execute
-
-;--------------------------------------------------------------
-;
 ;        COLD   ( -- )
 ;
 ; One-time only (then disappear) system bootstrap initialization.
@@ -316,73 +305,23 @@ launch01
 ; * symbols,    symbol table data
 ;
 ; COLD tasks
+; * change the startup vector from COLD to WARM
 ; * set MEMSIZ from BASIC $34-35
 ; * set SYMTAB as an offset from MEMSIZ
+; * set TDICT as the load address + 2 of part 2 (found at 'there')
 ; * display a banner
-; * set STARTUP uservariable to HOT
-;
+; * set STARTUP uservariable to LAUNCH
+; * move temporary dictionary to TDICT
+; * move symbol table to SYMTAB
+; * set FENCE
 ; * call WARM to put us in Forth mode
 ;
 ; There is no knowledge in the core dictionary (at the bottom of memory)
 ; of what is in the temporary dictionary or where it resides.  To kick
-; things off upstairs, WARM starts Forth, then executes the word HOT
-; via the STARTUP uservariable.  That's where we will pick things up.
-;
-; 'there' has a few pointers and the temporary dictionary (pettil-tdict)
-; ($C9) End address for tape LOAD marks the end of the symbol table
-;
-; HOT tasks
-; * copy tdict region to high memory
-; * copy symbol table to high memory at SYMTAB+8+32+2
-; * find FIND in the symbol table, use it to...
-; * find ABORT in the symbol table
-; * set STARTUP to ABORT
-; * find FORGET in the symbol table
-; * FORGET COLD
-;
-; what FORGET does
-; * when FORGET is invoked by COLD, it uses the CFA on the data stack
-;   instead of scanning ahead in the input stream
-;       R@ test?
-;       COLD calls FORGET somewhere in the middle?
-; * find the word and get its CFA
-; * trying to forget a CFA < FENCE ?   ABORT" CAN'T FORGET BELOW FENCE"
-; * set DP equal to the CFA of the word being forgotten
-; * when FORGET is invoked by COLD, it uses the address on the data
-;   stack instead of PAD, and it doesn't copy the symbol table from
-;   SYMTAB
-; * move the symbols to PAD
-; * and MOVE the symbols one by one back to SYMTAB
-;
-; when FORGET exits, the return stack sends us to @W1 which runs
-; the word in STARTUP (typically ABORT)
-;
-; before warm can do its thing, we need to populate STARTUP with the
-; CFA of ABORT.  The temporary dictionary was compiled separately and
-; we have no idea what that CFA is without searching the symbol table.
-; First, let's move the symbol table to where it belongs, which is
-; at SYMTAB + bloomfilter(8) + hashthreads(32) + new (SYMTAB+8
-;
-; COLD expects to find the tdict size, followed by the load
-; address, then the code bodies for the PETTIL development
-; environment.  This follows immediately after ICE
-; itself in RAM.  This block (there) is copied to upper
-; memory.  This binary object must know where it resides,
-; as no relocation is done.  In other words, a 16K PET
-; requires a different build of "there" than a 32K PET.
-;
-; Next COLD invokes REHASH to populate the symbol table at
-; user variable SYMTAB.  Symbols never require relocation,
-; but FIND expects to find them in a specific order, as
-; dictated by REHASH.
-;
-; COLD replaces the vector to itself at pettillaunch with
-; a JMP WARM instruction.
-;
-; COLD replaces the vector (pettillaunch) to ICE with a
-; JMP WARM instruction.
-;
-; COLD does FENCE @ DP !
+; things off upstairs, WARM starts Forth, then executes the word LAUNCH
+; in the upper dictionary, via the STARTUP uservariable.  The requirement
+; is that the first thing in tdict must be the executable CFA of LAUNCH
+; That's where we will pick things up.
 ;
 ; temporary dictionary and symbols are built separately
 ; and concatenated to the PETTIL.OBJ core binary
@@ -422,8 +361,6 @@ cold01
 
     jmp cold2warm
 
-; HOT must scan through the symbol table until it finds FORGET and
-; ABORT
 ;--------------------------------------------------------------
 ;
 ;        HOT   ( -- )
@@ -446,148 +383,74 @@ cold01
 ;    .asc "HO","T"|bit7
 ;#endif
 hot
-    brk
-    .byt set | R10
-    .word EAL
-    .byt set | R9
-    .word usersymtab
-    .byt set | ACC
-    .word there                 ; points to load address (tdict targ)
-    .byt push
-    .byt ldd | R9               ; "R9 is now okay for me to poop on" -- Triumph
-    .byt st | R9
-    .byt set | ACC
-    .word 32                    ; skip over thread pointers (32 bytes)
-    .byt add | R9
-    .byt st | R9                ; symbol target address e.g. $642A
-    .byt ldd | R10
-    .byt st | R10               ; load end address
-    .byt ldd | TOS              ; pettil-tdict.obj file load address
-    .byt st | N0                ; tdict target
-    .byt inr | N0               ; add 2 to take care of the offset for the file length
-    .byt inr | N0               ; that was added at the beginning of pettil-tdict.obj
-    .byt ldd | TOS              ; TOS now points to the tdict blob (from1)
-    .byt st | N1                ; tdict size
-    .byt add | TOS
-    .byt st | N2                ; symbol source address
-    .byt ld | N0
-    .byt push                   ; (to1)
-    .byt ld | N1
-    .byt push                   ; (howmany1)
-    .byt ld | N2
-    .byt push                   ; (from2)
-    .byt ld | R9
-    .byt push                   ; (to2)
-    .byt ld | R10
-    .byt sub | N2
-    .byt push                   ; (howmany2)
-    .byt rtn                    ; ( from1 tdict howmany1 from2 symtab+32 howmany2 )
-#include "toforth.i65"
-    .word over                  ; ( from1 tdict howmany1 from2 symtab+32 howmany2 symtab+32 )
-#include "page.i65"
-    .word clit
-    .byt 32                     ; ( from1 tdict howmany1 from2 symtab+32 howmany2 symtab+42 32 )
+#include "enter.i65"
+	.word plit
+	.word there					; ( there )
 #include "pad.i65"
-    .word _twodup               ; ( from1 tdict howmany1 from2 symtab+32 howmany2 symtab+42 32 symtab+42 32 )
+	.word dup					; ( there there ) 
 #include "page.i65"
-    .word minus                 ; ( from1 tdict howmany1 from2 symtab+32 howmany2 symtab+42 32 symtab )
+	.word fetch					; ( there tdict-2 )
 #include "page.i65"
-    .word swap                  ; ( from1 tdict howmany1 from2 symtab+32 howmany2 symtab+42 symtab 32 )
+	.word twoplus				; ( there tdict )
 #include "page.i65"
-    .word _erase                ; ( from1 tdict howmany1 from2 symtab+32 howmany2 symtab+32 )
+	.word dup					; ( tdict there )
 #include "page.i65"
-    .word tor                   ; ( from1 tdict howmany1 from2 symtab+32 howmany2 )  ( R; symtab+32 ) 
+	.word tdict					; ( tdict there )
 #include "page.i65"
-    .word cmove                 ; ( from1 tdict howmany1 ) ( R; symtab+32 ) 
+	.word store					; ( tdict there )
 #include "page.i65"
-    .word over                 ; ( from1 tdict howmany1 tdict ) ( R; symtab+32 ) 
+	.word swap					; ( tdict there )
 #include "page.i65"
-    .word tdict                 ; ( from1 tdict howmany1 tdict addr ) ( R; symtab+32 ) 
+	.word twoplus				; ( tdict there+2 )
 #include "page.i65"
-    .word store                 ; ( from1 tdict howmany1 ) ( R; symtab+32 ) 
+	.word dup					; ( tdict there+2 there+2 )
 #include "page.i65"
-    .word cmove                 ; ( ) ( R; symtab+32 ) 
+	.word fetch					; ( tdict there+2 tdictsiz )
 #include "page.i65"
-    .word plit
-    .word findabort             ; address of 5,"ABORT"
+	.word swap					; ( tdict tdictsiz there+2 )
+#include "page.i65"
+	.word twoplus				; ( tdict tdictsiz there+4 )
+#include "page.i65"
+	.word _twodup				; ( tdict tdictsiz there+4 tdictsiz there+4 )
+#include "page.i65"
+	.word plus					; ( tdict tdictsiz there+4 tdictsiz+there+4 )
+#include "page.i65"
+	.word plit
+	.word usersymtab			; ( tdict tdictsiz there+4 tdictsiz+there+4 usersymtab )
 #include "pad.i65"
-    .word rfrom                 ; ( findabort symbols )
+	.word fetch					; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab )
 #include "page.i65"
-    .word plit
-    .word findforget            ; address of 6,"FORGET"
+	.word clit
+	.byt 32						; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab 32 )
 #include "pad.i65"
-    .word over                  ; ( findabort symbols findforget symbols )
+	.word _twodup				; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab 32 symtab 32 )
 #include "page.i65"
-    .word to6502
-    brk
-    .byt bs , <(xfind-*-2)      ; ( findabort symbols ) ACC = forgetcfa )
-    .byt st | R10               ; cfa of FORGET
-    .byt bs , <(xfind-*-2)      ; ( ) cfa of ABORT  
-    .byt push                   ; ( abortcfa )  
-    .byt ld | R10
-    .byt push                   ; ( abortcfa forgetcfa )
-    .byt rtn
-#include "toforth.i65"          ( abort forget )
-    .word plit
-    .word launch
-#include "pad.i65"
-    .word three
+	.word _erase				; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab 32 )
 #include "page.i65"
-    .word plus
+	.word plus					; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab+32 )
 #include "page.i65"
-    .word duptor
+	.word clit
+	.byt EAL					; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab+32 $c9 )
 #include "page.i65"
-    .word store
+	.word fetch					; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab+32 loadend )
 #include "page.i65"
-    .word rfrom
+	.word third					; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab+32 loadend tdictsiz+there+4 )
 #include "page.i65"
-    .word twoplus
+	.word minus					; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab+32 symtabsiz )
 #include "page.i65"
-    .word store
+	.word cmove
 #include "page.i65"
-    .word plit
-    .word launch
-#include "pad.i65"
-    .word launch
-
-xfind
-    .byt ld | TOS
-    .byt st | N0                ; N0 = first nfa
-    .byt pull                   ; TOS = name
-    .byt ldi | TOS              ; get the length of "{searchword}"
-    .byt dcr | TOS
-    .byt st | N1                ; set length of what we're searching for
-xfind01
-    .byt ldd | N0               ; get the CFA of the next word
-    .byt ext
-    .word wordlen16             ; length in R11, smudged? in C
-    .byt ld | R11
-    .byt bc , <(xfind02-*-2)    ; always skip smudged words
-    .byt cpr | N1
-    .byt bnz , <(xfind02-*-2)   ; next if different lengths
-    ; TOS and N0 both point to the first byte of the strings
-    ; both strings are the same length
-    .byt ext
-    .word strcomp16
-    .byt bc , <(xfind03-*-2)   ; winner!
-    .byt ld | N1
-xfind02
-    .byt add | N0
-    .byt st | N0
-    .byt inr | N0
-    .byt br , <(xfind01-*-2)
-xfind03
-    ; N0 points to the nfa of "(FIND)"
-    .byt pull                   ; discard name argument
-    .byt popd | N0              ; got the CFA of (FIND)
-    .byt rs
+	.word _dashrot
+#include "page.i65"
+	.word cmove
+#include "page.i65"
+	.word tdict
+#include "page.i65"
+	.word fetch
+#include "page.i65"
+	.word execute				; launch
 
 ;--------------------------------------------------------------
-findabort
-    .byt 5, "ABORT"
-findforget
-    .byt 6, "FORGET"
-
     .byt (there-*-1)
 bannermsg
     .asc    CLR,"FORTH FOR THE COMMODORE PET 2001",CR
@@ -602,14 +465,15 @@ there
 ; appended to the PETTIL.OBJ core binary
 ;
 ;"pettil-tdict.obj looks like this:
-; two byte actual load address of pettil-tdict.obj e.g. $71fe
+; two byte load address of pettil-tdict.obj e.g. $71fe
 ; two byte length of pettil-tdict.obj
 ;
-; The actual load address is off by -2.  The two bytes for code
-; length are needed by the COLD start routine to figure out where
-; the symbol table is, but the length was "invisibly prepended" to 
-; the file by a Ruby script, not by Commodore's SAVE routine.  All
-; addresses in tdict in this example would be located as though
+; The actual load address is off by -2.  There are two bytes in 
+; front of the tdict.obj code storing the length of tdict.obj.
+; This length information is needed to figure out where the symbol
+; table starts, following tdict
+;
+; All addresses in tdict in this example would be located as though
 ; tdict had been assembled and loaded at *=$7200, in spite of the 
 ; misleading load address.
 ;
