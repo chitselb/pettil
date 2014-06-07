@@ -55,7 +55,7 @@ ls -la pettil.obj
 #
 # clean up junk
 echo . . . . Cleaning up \(look in junk/ folder\)
-mv modules/*.obj modules/*.err *.lab modules/*.lab pettil-core.obj *.err pettil.sym ./junk/
+mv modules/*.obj modules/*.err *.lab modules/*.lab pettil-core.obj pettil-core.def *.err pettil.sym ./junk/
 #
 # run it
 if [ -e pettil.dbg ]; then
