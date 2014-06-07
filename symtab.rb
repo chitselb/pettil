@@ -85,7 +85,7 @@
     
     # build a label file so pettil-tdict.a65 can find things in core
 	# fix problems with reserved words e.g. bc add in hex address
-	use_decimal = ' type '  
+	use_decimal = ' rlencode04 '  
 	always_use_decimal = false
     symfile = File.open("pettil-core.def",'w') do |f|
 #       symfile.write(#{a[0]}=#{a[1]}\n")

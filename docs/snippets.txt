@@ -813,51 +813,50 @@ nfatocfa
     jmp next ;[28]
 
 
-
-dhashxyzzy
+;--------------------------------------------------------------
+;
+;		BLOOMHASH   ( nfa -- bloomhash )
+;
+; Calculate the bloom filter hash.  For words containing any
+; digits at all, this will be a total of each digit+1, or a 
+; nonzero value 1..63.  For words which have no digits, return 
+; bloomhash will be zero.  This is expected to sparsely populate 
+; the 64 bloom filter bits, allowing FIND to bypass the symbol 
+; table search if the bit is turned off.
+;
+#ifdef HEADERS
+bloomhashlfa
+	.byt $de,$ad
+	.byt (bloomhash-*-1)|bit7
+	.asc "BLOOMHAS","H"|bit7
+#endif
+bloomhash
     stx storex
     ldy #0
     lda (tos),y
-    and #$3f                ; turn off 7 and 6, not 5 (smudge)
-    sta n                   ; seed hash1 with length
-    sty n+1                 ; seed hash2 with 0
-    tay                     ; count backwards to 1 from length
-    iny                     ;       hash2   hash1
-dhash01
-    dey                             ;[2]
-    beq dhash02                     ;[2]
-    lda (tos),y                     ;[5]
-    and #(pearsonx-pearson-1)       ;[2]
-    tax                             ;[2]
-    lda n                           ;[3]
-    eor pearson,x                   ;[4]
-    sta n                           ;[3]
-    lda (tos),y             ;[5]
-    clc                     ;[2]
-    adc #$FF-('9')          ;[2]
-    adc #'9'-'0'+1          ;[2]    ; carry is set only
-    ; for digits '0'-'9'
-    bcc dhash01             ;[3]  [12]hash2 [27]hash1
-    adc n+1                 ; 0> -1 0 1 2 3 0= 0< 0<> sp0 rp0
-    sta n+1                 ; 1+ 1- 2+ 2- 2/ 2* forth-83 dr0 dr1
-    jmp dhash01             ; 2drop 2dup 2over 2rot 2swap 2! 2@
-    ; 2constant 2variable d0= d2/ d2*
-dhash02
-    lda n
-    lsr
-    lsr                     ; xor the pearson hash byte
-    lsr                     ; into a single nybble
-    lsr                     ; - - - - [ 7 6 5 4 ]
-    eor n                   ; 7 6 5 4 [ 3 2 1 0 ]
-    and #$0f                ; - - - - [4bit hash]
-    sta tos
-    sty tos+1       ; for both hashes, high byte always 0
-    lda n+1         ; sum of all digits 0..9
+    and #$1f
+    sty n
+    tay
+bloomhash01
+    lda (tos),y             	;[5]
+    clc                     	;[2]
+    adc #$FF-('9')          	;[2]
+    adc #'9'-'0'+1          	;[2]
+    bcc bloomhash02         	;[3] carry is set only for digits 
+    adc n                   	;[3] anything with digits is nonzero
+    and #(8*(bloomx-bloom))-1	;[2] keep it within the filter bits
+    sta n                   	;[3]
+    bne bloomhash02
+	ldy #1  					; if total of digits hits some multiple
+	tya 						; of 64, returns a nonzero value
+bloomhash02
+	dey
+	bne bloomhash01
+bloomhash03
+	;lda n
+	;ldy #0
     ldx storex
-    jmp pushya
-
-
-
+    jmp put
 
 ;": eligible?   ( hash searchlen nfa -- pearsonhash bloomhash flag )
 ;     dup c@ $1f and
@@ -937,4 +936,14 @@ eligibleq04
 #include "page.i65"
 eligibleq05
     .word exit
+
+nfatocfa01
+    ldy #0
+    lda (tos),y
+    pha
+    iny
+    lda (tos),y
+    tay
+    pla
+    jmp put ;[13]
 

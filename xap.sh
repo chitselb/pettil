@@ -22,25 +22,26 @@ alias pettil='xpet -moncommand pettil.mon pettil.obj'
 
 
 # first build the core from $0400..COLD
-echo .
-echo . . . . Building PETTIL core = PETTIL.OBJ
+echo . Phase I
+echo . . . . Building PETTIL core = PETTIL-CORE.OBJ
 xa -x pettil-core.a65
 #
 # a ruby script scans the source and creates
 # * a symbol table for the temporary dictionary
 # * a symbol table for the monitor (pettil.mon)
 # * a complete symbol table for both dictionaries
-echo .
-echo . . . . Generating core symbol table
+echo . . . . Generating core labels = PETTIL-CORE.DEF
 ruby symtab.rb
 #
 # build the temporary dictionary
 echo .
+echo . Phase II
 echo . . . . Building PETTIL temporary dictionary = PETTIL-TDICT.OBJ
 xa -x modules/pettil-tdict.a65
 #
 # run this again after compiling the upper dictionary for all labels
 echo .
+echo . Phase III
 echo . . . . Generating combined symbol table = PETTIL.SYM
 ruby symtab.rb
 #
