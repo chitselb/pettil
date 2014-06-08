@@ -947,3 +947,142 @@ nfatocfa01
     pla
     jmp put ;[13]
 
+;--------------------------------------------------------------
+;
+;       SYMBYSIZE   ( searchlen nfa -- flag )
+;
+; returns true iff
+; searchleng matches the current length? (I)
+; and (CFA < DP or CFA > TDICT?)
+;
+;": symbysize   ( searchlen nfa -- flag )
+;     dup nfalen rot =
+;     ( nfa samelength? ) 
+      dup
+      if
+          ( nfa samelength? )
+          drop indict? 
+      then ;  ( flag )
+;
+;--------------------------------------------------------------
+;
+;       SYMBYHASH   ( hash nfa -- flag )
+;
+; returns true iff
+; calculate its pearson hash
+; and that matches the current hash?
+;
+; this word tries to be cheap with processing
+;
+;": symbyhash   ( hash nfa -- flag )
+;     pearsonhash = ;
+;
+;--------------------------------------------------------------
+;
+;       ELIGIBLE?   ( hash searchlen nfa -- flag )
+;
+; returns true iff
+; searchleng matches the current length? (I)
+; and (CFA < DP or CFA > TDICT?)
+; calculate its pearson hash
+; and that matches the current hash?
+;
+; this word tries to be cheap with processing
+;
+;": eligible?   ( hash searchlen nfa -- flag )
+;     dup nfalen
+;     ( hash searchlen nfa len )
+;     rot =
+;     ( hash nfa samelength? )
+;     if
+;         ( hash nfa )
+;         dup indict?
+;         ( hash nfa indict? )
+;         if
+;             ( hash nfa )
+;             pearsonhash =
+;             ( flag )
+;         else                  ( code smell alert -- )
+;             2drop false       ( both elses are sort of cheesily combined )
+;         then
+;     else
+;         2drop false
+;     then ;
+;
+;--------------------------------------------------------------
+;
+;       SYMSORT   ( 'compare searchfor src dest -- src+ dest+ )
+;
+; Make a pass through the symbol table at PAD, copying eligible
+; symbols to target
+;": symsort   ( 'compare searchfor src dest )
+      >r 2+
+      ( 'compare searchfor nfa ) ( R; target )
+;     begin
+;         \ not done yet?
+;         dup nfalen
+;         ( 'compare searchfor nfa currlen ) ( R; target )
+;     while
+;         ( 'compare searchfor nfa ) ( R; target )
+;         3dup rot execute
+;         ( 'compare searchfor nfa flag ) ( R; target )
+;         if
+;             \ copy it up to the new symbol table
+;             ( 'compare searchfor nfa ) ( R; target )
+;             r@ over
+;             ( 'compare searchfor nfa target nfa ) ( R; target )
+;             sym+
+;             ( 'compare searchfor nfa ) ( R; target )
+;             \ advance target pointer
+;             r> 2+ nfa+ 2- >r
+;             ( 'compare searchfor nfa ) ( R; target+ )
+;         then
+;         \ advance source pointer
+;         nfa+
+;         ( 'compare searchfor nfa+ ) ( R; target+ )
+;     repeat
+;     ( 'compare searchlen nfa+ ) ( R; target+ )
+;     r> 2swap 2drop ;   ( target+ )
+;
+: passes   ( -- )
+    do rot drop i -rot symsort loop 2drop ;
+: rehash  ( -- )
+    >syms pad ['] symbysize 0 2over
+    32 1 passes
+    ( )
+    2swap swap
+    16 0 passes
+   
+; \ erase thread table
+;     symtab @ 32 erase
+;     ( )
+; \ erase bloom filter
+;     [ bloom ] literal 8 erase
+;     ( )
+; \ copy symbols to pad
+;     >syms dup pad over 2+
+;     ( symtab pad nfa )
+;     >symtail
+;     ( symtab symtab pad lastnfa )
+;     third - 1+
+;     ( symbols symbols pad size )
+;     cmove
+;     \ set the target pointer to >syms
+;     ( target )
+;      \ for each thread 0..f
+;     16 0 do
+;         ( target )
+;         \ set this thread's start = target )
+;         dup 2+ symtab @ i 2* + !
+;         ( target )
+;         \ for each size 1..31
+;         32 1 do
+;             ( target )
+;             j i rot
+;             ( thread searchlen target )
+;             scanpad
+;             ( target+ )
+;         loop
+;   next
+;   ( target )
+
