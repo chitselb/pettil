@@ -3,6 +3,29 @@
 
 ;--------------------------------------------------------------
 ;
+;		SYMBUF   ( -- symbuf )
+;
+; Analagous to HERE, but the place where the next symbol goes, 
+; and temporary storage during INTERPET
+;
+#ifdef HEADERS
+symbuflfa
+	.byt $de,$ad
+	.byt (_symbuf-*-1)|bit7
+	.asc "SYMBU","F"|bit7
+#endif
+_symbuf
+#include "enter.i65"
+	.word symtail
+#include "page.i65"
+	.word fetch
+#include "page.i65"
+	.word twoplus
+#include "page.i65"
+	.word exit
+
+;--------------------------------------------------------------
+;
 ;       DIGIT    ( char base -- digit true | false )
 ;
 ; Converts a single character to a digit using the current number
@@ -239,7 +262,7 @@ tickstream02
 ;
 ; The counted string returned by WORD may reside in the "free"
 ; dictionary area at HERE or above.  Note that the text
-;"interpreter may also use this area.
+; interpreter may also use this area.
 ;"See: http://forth.sourceforge.net/std/fst83/fst83-5.htm#input.stream
 ;
 ; fig high level
@@ -249,23 +272,36 @@ tickstream02
 ;       over - >r r@ here c! + here 1+ r> cmove ;
 ;
 ;" : word   ( c -- nfa )
-;       >r                              ; ( -- ) r( c )
-;       'stream
-;       over swap
-;       r@ skip
-;       over swap
-;       r> scan
-;       drop 2dup swap -
-;       >r
-;       rot - 1+
-;       >in +!
-;       r> here
-;       2dup c!
-;       1+ swap cmove
-;       here bl over
-;       count + c! ;
-;       here dup count +
-;       bl swap c! ;
+;      >r                              ; ( -- ) ( R; c )
+;  ( ) ( R; c )
+;      'stream
+;  ( addr size ) ( R; c )
+;      under
+;  ( addr addr size ) ( R; c )
+;      r@ skip
+;  ( addr addr2 count2 ) ( R; c )
+;      under
+;  ( addr addr2 addr2 count2 ) ( R; c )
+;      r> scan
+;  ( addr addr2 addr3 count )
+;      drop 2dup swap -
+;  ( addr addr2 addr3 size )
+;      >r
+;  ( addr addr2 addr3 ) ( R; size )
+;      rot - 1+
+;  ( addr2 addr3 size2 ) ( R; size )
+;      >in +!
+;  ( addr2 addr3 ) ( R; size )
+;      r> here
+;  ( addr2 addr3 size here )
+;      2dup c!
+;  ( addr2 addr3 size here )
+;      1+ swap cmove
+;  ( addr2 )
+;      here bl over
+;  ( addr2 here bl here )
+;      count + c! ;
+;  ( addr2 here )
 #ifdef HEADERS
 wordlfa
     .byt $de,$ad
@@ -273,77 +309,68 @@ wordlfa
     .asc "WOR","D"|bit7
 #endif
 _word
-                                ; ( char )
 #include "enter.i65"
-    .word tor                   ; ( )
+    .word tor
 #include "page.i65"
-    .word _tickstream           ; ( addr size )
+    .word _tickstream
 #include "page.i65"
-    .word over                  ; ( addr size addr )
+    .word under
 #include "page.i65"
-    .word swap                  ; ( addr addr size )
+    .word rfetch
 #include "page.i65"
-    .word rfetch                ; ( addr addr size char )
+    .word skip
 #include "page.i65"
-    .word skip                  ; ( addr addr2 size )
+    .word under
 #include "page.i65"
-    .word over                  ; ( addr addr2 size addr2 )
+    .word rfrom
 #include "page.i65"
-    .word swap                  ; ( addr addr2 addr2 size )
+    .word scan
 #include "page.i65"
-    .word rfrom                 ; ( addr addr2 addr2 size char )
+    .word drop
 #include "page.i65"
-    .word scan                  ; ( addr addr2 addr3 size )
+    .word twodup
 #include "page.i65"
-    .word drop                  ; ( addr addr2 addr3 )
+    .word swap
 #include "page.i65"
-    .word _twodup               ; ( addr addr2 addr3 addr2 addr3 )
+    .word minus
 #include "page.i65"
-    .word swap                  ; ( addr addr2 addr3 addr3 addr2 )
+    .word tor
 #include "page.i65"
-    .word minus                 ; ( addr addr2 addr3 wordlen )
+    .word rot
 #include "page.i65"
-    .word tor                   ; ( addr addr2 addr3 )
+    .word minus
 #include "page.i65"
-    .word rot                   ; ( addr2 addr3 addr )
+    .word oneplus
 #include "page.i65"
-    .word minus                 ; ( addr2 offset )
+    .word toin
 #include "page.i65"
-    .word oneplus               ; ( addr2 offset )
+    .word plusstore
 #include "page.i65"
-    .word toin                  ; ( addr2 offset toin )
+    .word rfrom
 #include "page.i65"
-    .word plusstore             ; ( addr2 )
+    .word here
 #include "page.i65"
-    .word rfrom                 ; ( addr2 size )
+    .word twodup
 #include "page.i65"
-    .word here                  ; ( addr2 size here )
+    .word cstore
 #include "page.i65"
-    .word twoplus               ; ( addr2 size here+2 )
+    .word oneplus
 #include "page.i65"
-    .word _twodup               ; ( addr2 size here+2 size here+2 )
+    .word swap
 #include "page.i65"
-    .word cstore                ; ( addr2 size here+2 )
+    .word cmove
 #include "page.i65"
-    .word oneplus               ; ( addr2 size here+3 )
+    .word here
 #include "page.i65"
-    .word swap                  ; ( addr2 here+3 size )
+    .word bl
 #include "page.i65"
-    .word cmove                 ; ( )
+    .word over
 #include "page.i65"
-    .word here                  ; ( here )
+    .word count
 #include "page.i65"
-    .word twoplus               ; ( here+2 )
+    .word plus
 #include "page.i65"
-    .word bl                    ; ( here+2 bl )
-#include "page.i65"
-    .word over                  ; ( here+2 bl here+2 )
-#include "page.i65"
-    .word count                 ; ( here+2 bl here+3 size )
-#include "page.i65"
-    .word plus                  ; ( here+2 bl here+size+3 )
-#include "page.i65"
-    .word cstore                ; ( here+2 )
+    .word cstore
 #include "page.i65"
     .word exit
 
@@ -446,35 +473,48 @@ convert03
 ; conversion is not possible, an error condition exists.  The
 ; string may contain a preceding minus sign.
 ;
-;( There is a string that is probably a number stored from addrlow..addrhigh -- caveat -- this probably has some bugs )
-;": NUMBER  ( addr -- d ; convert a counted string to a signed double, keeping track of the decimal )
-;   0 0 ROT COUNT   ( -- 0 0 addr+1 len )
-;   OVER C@ [ ASCII - ] LITERAL  =   ( -- 0 0 addr+1 len negative? )
-;"  DUP >R   ( -- 0 0 addr+1 len negative? ) ( R: -- negative? )
-;   +   ( -- 0 0 addr+1 lenadj ; adjust length for sign char )
-;   OVER + 1+   ( -- 0 0 addr+1 addrhigh+1 )
-;   SWAP  R@ -   ( -- 0 0 addrhigh+1 addrlow )
-;   DPL ON
-;   ?DO   ( d )
-;"     BASE @ >R   ( -- d ) ( R: -- base negative? )
-;      I C@  R@  DIGIT   ( -- d currdigit~?~ flag )
-;      IF
-;         SWAP R@ UM*
-;         DROP ROT
-;         R@ UM* D+
-;         DPL @ 1+  IF  DPL 1+!  THEN
-;      ELSE
-;         I C@ [ ASCII . ] LITERAL  =
-;         DPL @ 0<  AND
-;         IF
-;            DPL OFF
-;         ELSE
-;            3 FAIL ( ABORT" NOT FOUND" - do not pass go do not collect $200 )
-;         THEN
-;      THEN
-;"     R> DROP   ( R: -- negative? ; discard base )
-;   LOOP
-;   R>  IF  DNEGATE  THEN ;
+; \ There is a string that is probably a number stored from addrlow..addrhigh 
+; \ convert a counted string to a signed double, keeping track of the decimal 
+;": number  ( addr -- d )
+;  ( addr )
+;     0 0 rot count
+;  ( 0 0 addr+1 len )
+;     over c@ [ ascii - ] literal  =   
+;  ( 0 0 addr+1 len negative? )
+;     dup >r 
+;  ( 0 0 addr+1 len negative? ) ( R; -- negative? )
+;     + 
+;  ( 0 0 addr+1 lenadj ; adjust length for sign char )
+;     over + 1+ 
+;  ( 0 0 addr+1 addrhigh+1 )
+;     swap  r@ - 
+;  ( 0 0 addrhigh+1 addrlow )
+;     dpl on
+;     ?do 
+;  ( d )
+;         base @ >r 
+;  ( d ) ( R; base negative? )
+;         i c@  r@  digit 
+;  ( -- d currdigit~?~ flag )
+;         if
+;             swap r@ um*
+;             drop rot
+;             r@ um* d+
+;             dpl @ 1+  
+;             if  dpl 1+!  then
+;         else
+;             i c@ [ ascii . ] literal  =
+;             dpl @ 0<  and
+;             if
+;                 dpl off
+;             else
+;                 3 fail ( abort" not found" )
+;             then
+;         then
+;         r> drop 
+;  ( R; negative? ; discard base )
+;     loop
+;     r>  if  dnegate  then ;
 ;
 ; Blazin' does it like this --
 ;": number   ( addr -- double )
@@ -791,7 +831,7 @@ _sharps
 #include "enter.i65"
 sharps01        .word _sharp            ; ( d )
 #include "page.i65"
-    .word _twodup           ; ( d d )
+    .word twodup           ; ( d d )
 #include "page.i65"
     .word dzeq              ; ( d flag )
 #include "page.i65"

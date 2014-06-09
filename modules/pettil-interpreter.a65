@@ -39,6 +39,7 @@ msg08
     .byt msg09-*-1
     .asc "BLOCK OUT OF RANGE"
 msg09
+	.byt 0		; ~wut? can be removed
 
 ;--------------------------------------------------------------
 ;
@@ -501,12 +502,13 @@ pfind03
     bne pfind02                 ; bra
 pfind04
     jsr strcomp
-    bcc pfind03
+    bcc pfind03					; non-match? next!
 
     ; winner!
-    inc n+10                    ; assume immediate +1
+    inc n+10                    ; assume immediate (returns +1)
+	;ldy #0						; thank you, strcomp
     lda (tos),y                 ; length and flags
-    bmi pfind06
+    bmi pfind06					; immediate?
     dey
     sty r9
     sty r9+1                    ; set R9 = -1
@@ -518,7 +520,6 @@ pfind07
 	; loser... 
 	brk
 	.byt ld | N0
-	;.byt br , <(pfind08-*-2)
 pfind08
     .byt st | TOS               ; CFA or original NAME
     .byt ld | R9				; status flag
@@ -552,12 +553,13 @@ pfind08
 ;     begin
 ;         ( 0 0  corethread 0  newthread 1  name found? )
 ;         2over or over 0= and
-;		  \ flag is set if the word isn't found yet and there are more places to look
+;		  \ flag is set if word not found yet and more places to look
 ;         ( 0 0  corethread 0  newthread 1  name found? !found?&more?  )
 ;     while
 ;         ( 0 0  corethread 0  newthread 1  name found? )
 ;         drop -rot (find)
 ;     repeat 
+;         ( 0 0 ... name found? )
 ; \ save the results
 ;	  >r >r
 ;	  begin
@@ -597,20 +599,6 @@ _find
     .word twoplus
 #include "page.i65"
     .word false
-;     r@ pearsonhash 2* symtab @ + @ 2+ 0
-;     ( 0 0  corethread 0 )
-;     symnew @ 2+ 1
-;     ( 0 0  corethread 0  newthread 1 )
-;     r@ false
-;     ( 0 0  corethread 0  newthread 1  name found? )
-;     begin
-;         ( 0 0  corethread 0  newthread 1  name found? )
-;         2over or over 0= and
-;         ( 0 0  corethread 0  newthread 1  name found? !found?&more?  )
-;     while
-;         ( 0 0  corethread 0  newthread 1  name found? )
-;         drop -rot (find)
-;     repeat 
 #include "page.i65"
     .word symnew
 #include "page.i65"
@@ -712,35 +700,6 @@ nfalen
 
 ;--------------------------------------------------------------
 ;
-;        NFA>CFA   ( nfa -- cfa )
-;
-; return the cfa of a given name field
-;
-;#ifdef HEADERS
-;nfatocfalfa
-;    .byt $de,$ad
-;    .byt (nfatocfa-*-1)|bit7
-;    .asc "NFA>CF","A"|bit7
-;#endif
-nfatocfa
-    sec
-    lda tos
-    sbc #2
-    sta tos
-    bcs nfatocfa01
-    dec tos+1
-nfatocfa01
-    ldy #0
-    lda (tos),y
-    pha
-    iny
-    lda (tos),y
-    tay
-    pla
-    jmp put ;[24]
-
-;--------------------------------------------------------------
-;
 ;       INDICT?   ( nfa -- flag )
 ;
 ; return true if the code field is in either dictionary
@@ -779,79 +738,6 @@ _indictq
 
 ;--------------------------------------------------------------
 ;
-;       ELIGIBLE?   ( hash searchlen nfa -- flag )
-;
-; returns true iff
-; searchleng matches the current length? (I)
-; and (CFA < DP or CFA > TDICT?)
-; calculate its pearson hash
-; and that matches the current hash?
-;
-; this word tries to be cheap with processing
-;
-;": eligible?   ( hash searchlen nfa -- flag )
-;     dup nfalen
-;     ( hash searchlen nfa len )
-;     rot =
-;     ( hash nfa samelength? )
-;     if
-;         ( hash nfa )
-;         dup indict?
-;         ( hash nfa indict? )
-;         if
-;             ( hash nfa )
-;             pearsonhash =
-;             ( flag )
-;         else                  ( code smell alert -- )
-;             2drop false       ( both elses are sort of cheesily combined )
-;         then
-;     else
-;         2drop false
-;     then ;
-;
-;#ifdef HEADERS
-;eligibleqlfa
-;    .byt $de,$ad
-;    .byt (_eligibleq-*-1)|bit7
-;    .asc "ELIGIBLE","?"|bit7
-;#endif
-_eligibleq
-#include "enter.i65"
-    .word dup
-#include "page.i65"
-    .word nfalen
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word eq
-#include "page.i65"
-    .word qbranch
-    .byt <(eligibleq04-*+1)
-#include "pad.i65"
-    .word dup
-#include "page.i65"
-    .word _indictq
-#include "page.i65"
-    .word qbranch
-    .byt <(eligibleq04-*+1)
-#include "pad.i65"
-    .word pearsonhash
-#include "page.i65"
-    .word eq
-#include "page.i65"
-    .word branch
-    .byt <(eligibleq05-*+1)
-#include "pad.i65"
-eligibleq04
-    .word twodrop
-#include "page.i65"
-    .word false
-#include "page.i65"
-eligibleq05
-    .word exit
-
-;--------------------------------------------------------------
-;
 ;       >SYMS   ( -- addr )
 ;
 ; returns the address of the symbol portion of the symbol table
@@ -874,32 +760,6 @@ _tosyms
     .word plus
 #include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-;
-;       >SYMTAIL   ( nfa -- lastnfa )
-;
-; Skip through the symbol table until finding the 0-length byte.
-; Return the address of the symbol table tail
-;
-;#ifdef HEADERS
-;tosymtaillfa
-;    .byt $de,$ad
-;    .byt (tosymtail-*-1)|bit7
-;    .asc ">SYMTAI","L"|bit7
-;#endif
-tosymtail
-    jsr nfalen01                ; A=length; Y=0; Z=(A==0)
-    beq symsiz02
-    clc
-    adc #3
-    adc tos
-    sta tos
-    bcc tosymtail
-    inc tos+1
-    bcs tosymtail
-symsiz02
-    jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -953,9 +813,7 @@ _symplus
 #include "page.i65"
     .word type
 #include "page.i65"
-    .word one
-#include "page.i65"
-    .word _spaces
+    .word _space
 #include "page.i65"
 #endif
     .word rfrom
@@ -1164,6 +1022,8 @@ symsort03
 ;
 ; transform an integer into a bitmask and offset, suitable for
 ; addressing a bloom filter
+; mask = 2^(n%8)
+; offset = n/8
 ;
 ;": >bloom   ( n -- mask offset )
 ;         dup 7 and [ power2 ] literal + c@
@@ -1337,6 +1197,8 @@ prehash01
 #include "page.i65"
     .word _dot
 #include "page.i65"
+    .word cr
+#include "page.i65"
 #endif
     .word tor
 #include "page.i65"
@@ -1479,7 +1341,13 @@ _rehash
 #include "page.i65"
     .word _prehash
 #include "page.i65"
+	.word dup
+#include "page.i65"
     .word symnew
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word symtail
 #include "page.i65"
     .word store
 #include "page.i65"
