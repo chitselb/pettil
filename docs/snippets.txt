@@ -815,7 +815,7 @@ nfatocfa
 
 ;--------------------------------------------------------------
 ;
-;		BLOOMHASH   ( nfa -- bloomhash )
+;       BLOOMHASH   ( nfa -- bloomhash )
 ;
 ; Calculate the bloom filter hash.  For words containing any
 ; digits at all, this will be a total of each digit+1, or a 
@@ -826,9 +826,9 @@ nfatocfa
 ;
 #ifdef HEADERS
 bloomhashlfa
-	.byt $de,$ad
-	.byt (bloomhash-*-1)|bit7
-	.asc "BLOOMHAS","H"|bit7
+    .byt $de,$ad
+    .byt (bloomhash-*-1)|bit7
+    .asc "BLOOMHAS","H"|bit7
 #endif
 bloomhash
     stx storex
@@ -838,23 +838,23 @@ bloomhash
     sty n
     tay
 bloomhash01
-    lda (tos),y             	;[5]
-    clc                     	;[2]
-    adc #$FF-('9')          	;[2]
-    adc #'9'-'0'+1          	;[2]
-    bcc bloomhash02         	;[3] carry is set only for digits 
-    adc n                   	;[3] anything with digits is nonzero
-    and #(8*(bloomx-bloom))-1	;[2] keep it within the filter bits
-    sta n                   	;[3]
+    lda (tos),y                 ;[5]
+    clc                         ;[2]
+    adc #$FF-('9')              ;[2]
+    adc #'9'-'0'+1              ;[2]
+    bcc bloomhash02             ;[3] carry is set only for digits 
+    adc n                       ;[3] anything with digits is nonzero
+    and #(8*(bloomx-bloom))-1   ;[2] keep it within the filter bits
+    sta n                       ;[3]
     bne bloomhash02
-	ldy #1  					; if total of digits hits some multiple
-	tya 						; of 64, returns a nonzero value
+    ldy #1                      ; if total of digits hits some multiple
+    tya                         ; of 64, returns a nonzero value
 bloomhash02
-	dey
-	bne bloomhash01
+    dey
+    bne bloomhash01
 bloomhash03
-	;lda n
-	;ldy #0
+    ;lda n
+    ;ldy #0
     ldx storex
     jmp put
 
@@ -884,24 +884,24 @@ eligibleq
     and #$1f
     eor n                       ; same length?
     bne eligibleq05
-	brk
-	.byt set | R11
-	.word uarea+userdp-userarea
-	.byt set | R10
-	.word uarea+usertdict-userarea
-	.byt popd | TOS				; CFA
-	.byt st | N2
-	.byt ldd | R11				; DP
-	.byt cpr | N2
-	.byt bm , <(eligibleq02-*-2)	; not in core dictionary? bail
-	.byt cpr | R10				; TDICT
-	.byt bp , <(eligibleq02-*-2)	; not in temp dictionary either? bail
-	.byt rtn
-	jsr dhash6502
+    brk
+    .byt set | R11
+    .word uarea+userdp-userarea
+    .byt set | R10
+    .word uarea+usertdict-userarea
+    .byt popd | TOS             ; CFA
+    .byt st | N2
+    .byt ldd | R11              ; DP
+    .byt cpr | N2
+    .byt bm , <(eligibleq02-*-2)    ; not in core dictionary? bail
+    .byt cpr | R10              ; TDICT
+    .byt bp , <(eligibleq02-*-2)    ; not in temp dictionary either? bail
+    .byt rtn
+    jsr dhash6502
 
 eligibleq02
-	.byt rtn
-	
+    .byt rtn
+    
     
 ;": indict?   ( nfa -- flag )
 ;       nfa>cfa tdict @ over u< swap here u< or ;
@@ -958,11 +958,11 @@ nfatocfa01
 ;": symbysize   ( searchlen nfa -- flag )
 ;     dup nfalen rot =
 ;     ( nfa samelength? ) 
-      dup
-      if
-          ( nfa samelength? )
-          drop indict? 
-      then ;  ( flag )
+;      dup
+;      if
+;          ( nfa samelength? )
+;          drop indict? 
+;      then ;  ( flag )
 ;
 ;--------------------------------------------------------------
 ;
@@ -1016,8 +1016,8 @@ nfatocfa01
 ; Make a pass through the symbol table at PAD, copying eligible
 ; symbols to target
 ;": symsort   ( 'compare searchfor src dest )
-      >r 2+
-      ( 'compare searchfor nfa ) ( R; target )
+;     >r 2+
+;     ( 'compare searchfor nfa ) ( R; target )
 ;     begin
 ;         \ not done yet?
 ;         dup nfalen
@@ -1044,45 +1044,177 @@ nfatocfa01
 ;     ( 'compare searchlen nfa+ ) ( R; target+ )
 ;     r> 2swap 2drop ;   ( target+ )
 ;
-: passes   ( -- )
+: (rehash)   ( src targ 'compare -- )
     do rot drop i -rot symsort loop 2drop ;
 : rehash  ( -- )
-    >syms pad ['] symbysize 0 2over
-    32 1 passes
-    ( )
-    2swap swap
-    16 0 passes
-   
-; \ erase thread table
-;     symtab @ 32 erase
-;     ( )
-; \ erase bloom filter
-;     [ bloom ] literal 8 erase
-;     ( )
-; \ copy symbols to pad
-;     >syms dup pad over 2+
-;     ( symtab pad nfa )
-;     >symtail
-;     ( symtab symtab pad lastnfa )
-;     third - 1+
-;     ( symbols symbols pad size )
-;     cmove
-;     \ set the target pointer to >syms
-;     ( target )
-;      \ for each thread 0..f
-;     16 0 do
-;         ( target )
-;         \ set this thread's start = target )
-;         dup 2+ symtab @ i 2* + !
-;         ( target )
-;         \ for each size 1..31
-;         32 1 do
-;             ( target )
-;             j i rot
-;             ( thread searchlen target )
-;             scanpad
-;             ( target+ )
-;         loop
-;   next
-;   ( target )
+    pad >syms 2dup swap
+    32 1 ['] symbysize (rehash)
+    symtab @ 32 erase
+    [ bloom ] literal 8 erase
+    16 0 ['] symbyhash (rehash)
+
+.C:0d23   .twominus:
+.C:0d23  38          SEC
+.C:0d24  A5 08       LDA $08
+.C:0d26  E9 02       SBC #$02
+.C:0d28  85 08       STA $08
+.C:0d2a  B0 02       BCS .twominus01
+.C:0d2c  C6 09       DEC $09
+.C:0d2e   .twominus01:
+.C:0d2e  4C 86 00    JMP .next
+.C:0d31   .twoslash:
+
+ldy tos
+cpy #2
+dey
+dey
+tya
+ldy tos+1
+bcs +
+dey
+jmp put
+
+lda tos
+sec
+sbc #2
+ldy tos+1
+bcs +
+dey
+jmp put
+
+;--------------------------------------------------------------
+;
+;       2+
+;
+twoplus
+    ldy tos+1
+    lda #2
+twoplusminus
+    clc
+    adc tos
+    bcc twoplus01
+    iny
+twoplus01
+    jmp put                     ; TOS = YA
+
+;--------------------------------------------------------------
+;
+;       2-
+;
+twominus
+    ldy tos+1
+    dey
+    lda #$fe
+    bne twoplusminus            ; bra
+
+;--------------------------------------------------------------
+;
+;       2+
+;
+twoplus
+    lda #2
+twoplusminus
+    ldy tos+1
+    clc
+    adc tos
+    bcc twoplus01
+    iny
+twoplus01
+    jmp put                     ; TOS = YA
+
+;--------------------------------------------------------------
+;
+;       2-
+;
+twominus
+    dec tos+1
+    lda #$fe
+    bne twoplusminus            ; bra
+
+twominus
+    dec tos+1
+    lda #$fe
+    .byt $2c ; 'bit absolute'
+twoplus
+    lda #2
+    clc
+    adc tos
+    sta tos
+    bcc twoplus01
+    inc tos+1
+twoplus01
+    jmp next
+
+;--------------------------------------------------------------
+;
+;       DOCONST
+;
+doconst
+	ldy #2
+	.byt $2c
+;--------------------------------------------------------------
+;
+;       DOCCONST
+;
+docconst
+	ldy #1
+	jsr slip
+    pla
+    sta n
+    pla
+    sta n+1
+doconst01
+    lda (n),y       ; high byte if CONST, low byte if CCONST
+    sta tos-1,y
+	ora #$7f
+	bmi neg
+	lda #0
+neg
+	dey
+	beq done
+    lda (n),y       ; high byte if CONST, low byte if CCONST
+done
+	sta tos+1
+	jmp next
+
+	dey
+	bne	doconst02
+	ora #0			; one-byte constant, sign-extend A into Y
+	bpl doconst03
+	dey
+doconst02
+	lda (n),y
+	
+doconst03
+	jmp pushya
+
+        ; calculates upper byte of sign-extension of A
+        ora #$7F
+        bmi neg
+        lda #0
+neg:
+
+    sta n+2
+    dey
+    lda (n),y       ; low byte
+    ldy n+2
+    jmp pushya
+
+
+;--------------------------------------------------------------
+;
+;       DOCONST
+;
+doconst
+    pla
+    sta n
+    pla
+    sta n+1
+    ldy #2
+    lda (n),y
+    sta n+2         ; high byte
+    dey
+    lda (n),y       ; low byte
+    ldy n+2
+    jmp pushya
 

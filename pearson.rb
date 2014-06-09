@@ -1,3 +1,4 @@
+#!/home/chitselb/bin/ruby
 # pearson.rb
 #
 # given a file containing Forth words, generate random pearson hash

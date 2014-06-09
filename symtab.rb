@@ -1,10 +1,10 @@
-
+#!/home/chitselb/bin/ruby
     # given a string (name) and address (symbol), construct and
     # return a hash with a symbol table entry in it
     def make_symbol(name="", cfa=0, isimmediate)
         # values calculated by pearson.rb
         # 14..22        102 162 3 150 98 88 207 149
-        pearson = [102, 162, 3, 150, 98, 88, 207, 149]
+        pearson = [27, 120, 229, 241, 111, 44, 47, 141]
         psize=pearson.length-1
 
         c1 = [cfa.to_i].pack("S<")
@@ -22,10 +22,18 @@
 
         # the vocabulary identifier byte (if present) is part of the hash
         # the length bits (and psize) are the seed of the hash
-        hash=name.length
+
+        hash=name.length&31
         name.each_byte { |char|
-            hash = char^pearson[hash&psize]
-        }
+            hash ^= pearson[char&psize]
+		}
+
+
+
+ #       hash=name.length
+ #       name.each_byte { |char|
+ #           hash = char^pearson[hash&psize]
+ #       }
         eornybble = (hash & 15)^((hash ^ 240)/16)
         t = {
         name: name ,
@@ -85,7 +93,7 @@
     
     # build a label file so pettil-tdict.a65 can find things in core
 	# fix problems with reserved words e.g. bc add in hex address
-	use_decimal = ' rlencode04 '  
+	use_decimal = ' spaces02 cr01 twofetch _mkpkt '  
 	always_use_decimal = false
     symfile = File.open("pettil-core.def",'w') do |f|
 #       symfile.write(#{a[0]}=#{a[1]}\n")
@@ -106,14 +114,6 @@
         symbols.each do |k, v|
             f.write("al C:#{v.to_s(16).rjust(4,'0')} .#{k}\n")
         end
-        a= <<-eos
-break .nexto
-disable 1
-break .exit
-disable 2
-break .xyzzy
-eos
-        f.write(a)
     end
 
     # build a text file for the pearson cruncher
