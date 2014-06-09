@@ -1738,3 +1738,101 @@ find02
     .word exit
 
 
+;--------------------------------------------------------------
+;
+;       SKIP   ( addr1 size1 char -- addr2 count2 )
+;
+; * headerless
+;
+; addr1 is the starting address in the input stream where up
+; to size1 bytes are skipped *WHILE* they match char.  Returns
+; addr2 as the address of the first non-matching character and
+; count2 as the remaining number of bytes in the buffer.
+skip
+    brk
+    .byt bs, <(skipscan01-*-2)      ; setup
+skip01
+    .byt bs, <(skipscan02-*-2)      ; next char
+    .byt bz, <(skip01-*-2)
+    .byt br, <(skipscan04-*-2)      ; exit
+
+;--------------------------------------------------------------
+;
+;       SCAN   ( addr count char -- addr count )
+;
+; * headerless
+;
+; addr1 is the starting address in the input stream where up
+; to count1 bytes are skipped *UNTIL* they match char.  Returns
+; addr2 as the address of the first non-matching character and
+; count2 as the remaining number of bytes in the buffer.
+scan
+    brk
+    .byt bs, <(skipscan01-*-2)      ; setup
+scan01
+    .byt bs, <(skipscan02-*-2)      ; next char
+    .byt bnz, <(scan01-*-2)
+    .byt br, <(skipscan04-*-2)
+
+skipscan01
+    .byt ld | TOS   ; char
+    .byt st | N1
+    .byt pull
+    .byt st | N0
+    .byt pull       ; addr
+    .byt rs
+skipscan02
+    .byt ldi | TOS
+    .byt dcr | N0
+    .byt bm1 , <(skipscan03-*-2)    ; leave if count < 0
+    .byt sub | N1
+    .byt rs
+skipscan03
+    .byt popd | R12 ; drop the BS return
+skipscan04
+    .byt dcr | TOS
+    .byt inr | N0
+    .byt rtn
+    lda n
+    ldy n+1
+    jmp pushya
+
+;       SKIP   ( addr1 size1 char -- addr2 count2 )
+; addr1 is the starting address in the input stream where up
+; to size1 bytes are skipped *WHILE* they match char.  Returns
+; addr2 as the address of the first non-matching character and
+; count2 as the remaining number of bytes in the buffer.
+skip
+	stx storex
+    ldy #2
+    jsr locals					; TOS=char; N0=addr1; N1=size1
+								; sw16, N1=char; N0=size1; TOS=addr1
+skip01
+	ldy #0
+	lda (n),y
+	pha
+	lda n+2
+	bne skip02
+	dec n+3						; DCR size1
+	bmi leave
+skip02
+	dec n+2
+	pla
+	eor tos
+	beq skip01
+	
+	dec $0,x
+    .byt bs, <(skipscan01-*-2)      ; setup
+skip01
+    .byt bs, <(skipscan02-*-2)      ; next char
+    .byt bz, <(skip01-*-2)
+    .byt br, <(skipscan04-*-2)      ; exit
+
+PLACE( str len addr -- )  => "FORTH"
+
+    Place the string _str len_ at _addr_, formatting it as a counted string.
+
+      : PLACE  2DUP 2>R  1+ SWAP  MOVE  2R> C! ;
+      : PLACE  2DUP C!   1+ SWAP CMOVE ;
+      
+$!
