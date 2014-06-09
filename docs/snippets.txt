@@ -1150,55 +1150,192 @@ twoplus01
 ;       DOCONST
 ;
 doconst
-	ldy #2
-	.byt $2c
+    ldy #2
+    .byt $2c
 ;--------------------------------------------------------------
 ;
 ;       DOCCONST
 ;
 docconst
-	ldy #1
-	jsr slip
+    ldy #1
     pla
     sta n
     pla
     sta n+1
 doconst01
     lda (n),y       ; high byte if CONST, low byte if CCONST
-    sta tos-1,y
-	ora #$7f
-	bmi neg
-	lda #0
+    pha
+    ora #$7f
+    bmi neg
+    lda #0
 neg
-	dey
-	beq done
+    dey
+    beq done
+    
     lda (n),y       ; high byte if CONST, low byte if CCONST
 done
-	sta tos+1
-	jmp next
+    sta tos+1
+    jmp next     ;[30]
 
-	dey
-	bne	doconst02
-	ora #0			; one-byte constant, sign-extend A into Y
-	bpl doconst03
-	dey
-doconst02
-	lda (n),y
-	
-doconst03
-	jmp pushya
 
-        ; calculates upper byte of sign-extension of A
-        ora #$7F
-        bmi neg
-        lda #0
-neg:
+;--------------------------------------------------------------
+;
+;       DOCONST
+;
+doconst
+    ldy #2
+    .byt $2c
+;--------------------------------------------------------------
+;
+;       DOCCONST
+;
+docconst
+    ldy #1
+    pla
+    sta n
+    pla
+    sta n+1
+doconst01
+    lda (n),y       ; high byte if CONST, low byte if CCONST
+    pha
+    ora #$7f
+    bmi neg
+    lda #0
+neg
+    dey
+    beq done
+    
+    lda (n),y       ; high byte if CONST, low byte if CCONST
+done
+    sta tos+1
+    jmp next     ;[30]
 
+
+;--------------------------------------------------------------
+;
+;       DOCONST
+;
+doconst
+    ldy #2
+    .byt $2c
+;--------------------------------------------------------------
+;
+;       DOCCONST
+;
+docconst
+    ldy #1
+    pla
+    sta n
+    pla
+    sta n+1         ; [11]
+doconst01
+    lda (n),y       ; high byte if CONST, low byte if CCONST
     sta n+2
     dey
-    lda (n),y       ; low byte
+    bne twobytes
+    asl n+2
+    bcc +
+    dey
++   jmp pushya
+twobytes
+    lda (n),y
     ldy n+2
+out
+    jmp pushya  ;[33]
+
+
+doconst01
+    jsr slip
+-   lda (n),y       ; high byte if CONST, low byte if CCONST
+    sta tos-1,y
+    dey
+    bne -           ;[11]
+
+Y was 2, we're out
+
+
+;--------------------------------------------------------------
+;
+;       DOCCONST
+;
+docconst
+    clc
+    .byt $24
+;--------------------------------------------------------------
+;
+;       DOCONST
+;
+doconst
+    sec
+    pla
+    sta n
+    pla
+    sta n+1
+    ldy #1
+    lda (n),y
+    pha
+    bcs doconst02
+    bpl doconst01
+    dey
+doconst01
+    dey
+    bcc doconst03
+doconst02
+    iny
+    lda (n),y
+    tay
+doconst03
+    pla
+    jmp pushya      ; [30]
+
+
+    bcs a
+    dey
+c   clc
+    iny
+a   lda (n),y
+    pha
+    dey
+    bcs c
+
+    pla
+    bcs b
+
+b   tay
+    pla
     jmp pushya
+
+    sty n+2
+    iny
+    iny
+    sta n+2
++
+    dey
+    lda (n),y
+    pha
+    
+    ldy #1
+    lda (n),y
+    bcc lowonly
+
+    pha                 ; LSB of constant
+    bcs get2nd
+    ora #$7f
+    bmi out2
+    dey
+    beq out3
+
+
+    
+get2nd
+    iny
+    lda (n),y           ; MSB of constant
+out2
+    tay
+out3
+    pla
+    jmp pushya      ; [30]
+
 
 
 ;--------------------------------------------------------------
@@ -1216,5 +1353,388 @@ doconst
     dey
     lda (n),y       ; low byte
     ldy n+2
+    jmp pushya  ;[20]
+
+
+
+-   lda (n),y
+    sta n+1,y
+    dey
+    bne -           ; [22]
+    
+    pla
+    sta n
+    pla
+    sta n+1         ; [9]
+    jsr slip
+    ldy #2
+    bcs +
+    dey
++
+    dey
+    bne +
+    bcs out
+    sty tos+1
+    asl
+    bcc out
+    dec tos+1
+out
+    jmp next
+
+
+    bcc +
+    asl
+
+    dey
+    bne +
+
+    pla
+    sta n
+
+
+
+
+
+
+    lda (n),y       ; high byte if CONST, low byte if CCONST
+    sta tos+2
+    dey
+    beq out
+    bne twobytes
+    asl n+2
+    bcc +
+    dey
++   jmp pushya
+twobytes
+    lda (n),y
+    ldy n+2
+out
+    jmp pushya  ;[33]
+
+
+
+    
+twobytes
+    lda (n),y       ; high byte if CONST, low byte if CCONST
+onebyte
+    sta tos+1
+    jmp next     ;[30]
+
+
+        ; calculates upper byte of sign-extension of A
+        ora #$7F
+        bmi neg
+        lda #0
+neg:
+
+    sta n+2
+    dey
+    lda (n),y       ; low byte
+    ldy n+2
     jmp pushya
+
+
+;--------------------------------------------------------------
+;
+;       (FIND)   ( name nfa fflag -- name false | cfa flag )
+;
+; * outer interpreter
+;
+; name is the address of a counted string we are searching for.
+; nfa is the first nfa in the list
+; fflag is the type of search we are doing
+;   0 = corelist - names are in ascending order by size
+;   1 = newlist - names are random sizes, with a 0-length name to terminate
+;
+; returns
+;       ( cfa -1 ) if found normal word
+;       ( cfa 1 ) if found immediate word
+;       ( name 0 ) if not in dictionary
+;
+;#ifdef HEADERS
+;pfindlfa
+;    .byt $de,$ad
+;    .byt (pfind-*-1)|bit7
+;    .asc "(FIND",")"|bit7
+;#endif
+pfind
+    brk
+    .byt sub | R0
+    .byt st | N3
+    .byt ld | TOS
+    .byt st | N2
+    .byt pull
+    .byt st | N0
+    .byt ext
+    .word wordlen16
+    .byt ld | R11           ; set search length
+    .byt st | N1
+    .byt ld | N2
+pfind02
+    .byt st | N0
+    .byt ext
+    .word wordlen16
+    .byt ld | N1            ; search length
+    .byt cpr | R11          ; dict length
+    .byt bnc , <(pfind06-*-2)       ; we went past it.  outtie
+    .byt bnz , <(pfind03-*-2)       ; different lengths, skip
+    .byt ext
+    .word strcomp16
+    .byt bc , <(pfind04-*-2)
+pfind03
+    .byt ldd | N0                   ; hop
+    .byt br , <(pfind02-*-2)
+pfind04 ;winner!
+    .byt ldd | N0           ; add 2 to the LFA
+    .byt ld | N0            ; now it's an NFA
+    .byt add | N1           ; add the length
+    .byt st | TOS           ; now it's almost a CFA
+    .byt inr | TOS          ; add 1, now it's a CFA
+    .byt ldi | N0           ; fetch dictionary length byte
+    .byt sub | N1           ; subtract clean length leaving only bits
+    .byt set | N0
+    .word $80
+    .byt dcr | N3           ; assume it's a normal word
+    .byt cpr | N0
+    .byt bz , <(pfind06-*-2)
+    .byt inr | N3
+    .byt inr | N3
+pfind06
+    .byt ld | N3
+    .byt push
+    .byt st | TOS
+    .byt nxt
+
+;--------------------
+;--------------------------------------------------------------
+;
+;       (FIND)   ( name nfa fflag -- name false | cfa flag )
+;
+; * outer interpreter
+;
+; name is the address of a counted string we are searching for.
+; nfa is the first nfa in the list
+; fflag is the type of search we are doing
+;   0 = corelist - names are in ascending order by size
+;   1 = newlist - names are random sizes, with a 0-length name to terminate
+;
+; returns
+;       ( cfa -1 ) if found normal word
+;       ( cfa 1 ) if found immediate word
+;       ( name 0 ) if not in dictionary
+;
+;#ifdef HEADERS
+;pfindlfa
+;    .byt $de,$ad
+;    .byt (pfind-*-1)|bit7
+;    .asc "(FIND",")"|bit7
+;#endif
+pfind
+    brk
+    .byt ld | TOS
+    .byt st | N2            ; findflag 0=sorted; 1=unsorted
+    .byt pull
+    .byt st | N0            ; nfa of search list
+    .byt pull
+    .byt ldi | TOS          ; name to search for
+    .byt dcr | TOS
+    .byt st | N1            ; length
+pfind01
+    
+
+
+    .byt sub | R0
+    .byt st | N3
+    .byt ld | TOS
+    .byt st | N2
+    .byt pull
+    .byt st | N0
+    .byt ext
+    .word wordlen16
+    .byt ld | R11           ; set search length
+    .byt st | N1
+    .byt ld | N2
+pfind02
+    .byt st | N0
+    .byt ext
+    .word wordlen16
+    .byt ld | N1            ; search length
+    .byt cpr | R11          ; dict length
+    .byt bnc , <(pfind06-*-2)       ; we went past it.  outtie
+    .byt bnz , <(pfind03-*-2)       ; different lengths, skip
+    .byt ext
+    .word strcomp16
+    .byt bc , <(pfind04-*-2)
+pfind03
+    .byt ldd | N0                   ; hop
+    .byt br , <(pfind02-*-2)
+pfind04 ;winner!
+    .byt ldd | N0           ; add 2 to the LFA
+    .byt ld | N0            ; now it's an NFA
+    .byt add | N1           ; add the length
+    .byt st | TOS           ; now it's almost a CFA
+    .byt inr | TOS          ; add 1, now it's a CFA
+    .byt ldi | N0           ; fetch dictionary length byte
+    .byt sub | N1           ; subtract clean length leaving only bits
+    .byt set | N0
+    .word $80
+    .byt dcr | N3           ; assume it's a normal word
+    .byt cpr | N0
+    .byt bz , <(pfind06-*-2)
+    .byt inr | N3
+    .byt inr | N3
+pfind06
+    .byt ld | N3
+    .byt push
+    .byt st | TOS
+    .byt nxt
+
+;       (FIND)   ( name nfa fflag -- name false | cfa flag )
+pfind
+    brk
+    .byt ld | TOS
+    .byt st | N2                ; N2 = findflag
+    .byt pull
+    .byt st | N1                ; N1 = symbols
+    .byt pull
+    .byt st | N0                ; N0 = name
+    .byt ext
+    .word wordlen16             ; get length of NFA (TOS)
+    .byt ld | R11
+    .byt st | N3                ; length we are searching for
+    .byt ld | N1
+    .byt st | TOS
+    .byt rtn
+
+    jsr nfalen01
+    sta n+5
+    brk
+    .byt ld | N1
+    .byt st | TOS
+    .byt rtn
+    
+    brk
+    .byt ld | TOS
+    .byt st | N2            ; findflag 0=sorted; 1=unsorted
+    .byt pull
+    .byt st | N0            ; nfa of search list
+    .byt pull
+    .byt ldi | TOS          ; name to search for
+    .byt dcr | TOS
+    .byt st | N1            ; length
+pfind01
+
+------------------------------------------
+;
+;       FIND   ( addr1 -- addr2 flag )
+;
+; * 83 interpreter tdict
+;
+; addr1 is the address of a counted string, which is the word to look
+; up in the dictionary.
+;
+; if not found, addr2 is the original addr1, and flag = 0
+; if found, addr2 is the code field address of the word,
+; and flag = -1 for normal words, +1 for immediate words
+;
+; for vocabularies
+; if context is nonzero, append the vocabulary id to the end of the
+; word and extend its length by 1
+; first search symnew, then core
+; if not found, chain up to its parent vocabulary and repeat
+; if parent vocabulary = core, strip off the vocabulary id
+; and repeat
+: find   ( addr1 -- addr2 flag )
+    >r 
+    ( )
+    0 0 
+    ( 0 0 )
+    r@ pearsonhash 2* symtab @ + @ 2+ 0
+    ( 0 0  corethread 0 )
+    symnew @ 2+ 1
+    ( 0 0  corethread 0  newthread 1 )
+    false
+    ( 0 0  corethread 0  newthread 1  found? )
+    begin
+        ( 0 0  corethread 0  newthread 1  found? )
+        r@ over 0= 2over or and
+        ( 0 0  corethread 0  newthread 1  found? name !found?&more?  )
+    while
+        ( 0 0  corethread 0  newthread 1  found? name )
+        nip -rot (find)
+        ( 0 0  corethread 0  name newthread 1  )
+    repeat ;
+
+#ifdef HEADERS
+findlfa
+    .byt $de,$ad
+    .byt (_find-*-1)|bit7
+    .asc "FIN","D"|bit7
+#endif
+_find
+#include "enter.i65"        ; ( name )
+    .word tor
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word pearsonhash
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word false
+#include "page.i65"
+    .word symnew
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word one
+#include "page.i65"
+    .word false
+#include "page.i65"
+find01
+    .word rfetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word twoover
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word qbranch
+    .byt <(find02-*+1)
+#include "pad.i65"
+    .word nip
+#include "page.i65"
+    .word _dashrot
+#include "page.i65"
+    .word pfind
+#include "page.i65"
+    .word branch
+    .byt <(find01-*+1)
+#include "page.i65"
+find02
+    .word xyzzy
+#include "page.i65"
+    .word exit
+
 
