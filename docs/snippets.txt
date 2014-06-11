@@ -2054,3 +2054,207 @@ cmovegt04
 cmovegt05
     ldx storex
     jmp pops
+
+
+
+;--------------------------------------------------------------
+;
+;       NUMBER    ( addr -- d )
+;
+; Convert the counted string at addr, to a signed
+; 32-bit integer, using the value of BASE .  If numeric
+; conversion is not possible, an error condition exists.  The
+; string may contain a preceding minus sign.
+;
+; \ There is a string that is probably a number stored from addrlow..addrhigh 
+; \ convert a counted string to a signed double, keeping track of the decimal 
+;": number  ( addr -- d )
+;  ( addr )
+;     0 0 rot count
+;  ( 0 0 addr+1 len )
+;     over c@ [ ascii - ] literal  =   
+;  ( 0 0 addr+1 len negative? )
+;     dup >r 
+;  ( 0 0 addr+1 len negative? ) ( R; -- negative? )
+;     + 
+;  ( 0 0 addr+1 lenadj ; adjust length for sign char )
+;     over + 1+ 
+;  ( 0 0 addr+1 addrhigh+1 )
+;     swap  r@ - 
+;  ( 0 0 addrhigh+1 addrlow )
+;     dpl on
+;     ?do 
+;  ( d )
+;         base @ >r 
+;  ( d ) ( R; base negative? )
+;         i c@  r@  digit 
+;  ( -- d currdigit~?~ flag )
+;         if
+;             swap r@ um*
+;             drop rot
+;             r@ um* d+
+;             dpl @ 1+  
+;             if  dpl 1+!  then
+;         else
+;             i c@ [ ascii . ] literal  =
+;             dpl @ 0<  and
+;             if
+;                 dpl off
+;             else
+;                 3 fail ( abort" not found" )
+;             then
+;         then
+;         r> drop 
+;  ( R; negative? ; discard base )
+;     loop
+;     r>  if  dnegate  then ;
+;
+; Blazin' does it like this --
+;": number   ( addr -- double )
+;  ( addr )
+;       true over count over + swap
+;  ( addr true len+addr+1 addr+1 )
+;       ?do
+;               i c@  base @  digit
+;               if
+;                       2drop false leave
+;               then
+;       loop
+;       ?find
+;       0 0 rot dup 1+
+;       c@ [ ascii - ] =
+;       dup >r -
+;       dpl on
+;       begin
+;               convert dup c@ punct?
+;       while
+;               dpl off
+;       repeat
+;       c@ bl <>
+;       ?find  r>
+;       if
+;               dnegate
+;       then ;
+;
+#ifdef HEADERS
+numberlfa
+    .byt $de,$ad
+    .byt (_number-*-1)|bit7
+    .asc "NUMBE","R"|bit7
+#endif
+_number
+: number   ( addr -- d )
+    0 0 rot count
+  ( 0 0 addr+1 len )
+    over c@ [ ascii - ] literal =
+  ( 0 0 addr+1 len isminus? )
+    dup >r 
+  ( 0 0 addr+1 len isminus? ) ( R; isminus? )
+	if
+  ( 0 0 addr+1 len ) ( R; isminus? )
+		1- swap 1+ swap		\ 1- 1 +under
+  ( 0 0  addr+2 len-1  ) ( R; isminus?  len' )
+    then
+  ( 0 0  addr len ) ( R; isminus? )
+	over + 1+ swap dpl on
+  ( 0 0  addr+len+1 addr ) ( R; isminus? )
+	?do 
+  ( 0 0 ) ( R; isminus? )
+        base @ >r i c@ r@ 
+  ( 0 0 char base ) ( R; isminus? base )
+        digit
+    .byt <(number01-*-1)
+#include "pad.i65"
+    .word base
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word digit
+#include "page.i65"
+    .word qbranch
+    .byt <(number02-*-1) 
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word umstar
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word umstar
+#include "page.i65"
+    .word dplus
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word qbranch
+    .byt <(number02-*-1)
+#include "pad.i65"
+    .word dpl
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+number02
+    .word i
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word clit
+    .byt '.'
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word qbranch
+    .byt <(number01-*-1)
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word off
+#include "page.i65"
+
+    .word three
+#include "page.i65"
+    .word fail
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word ploop
+    .byt <(number01-*-1)
+#include "pad.i65"
+    .word rfrom
+#include "page.i65"
+    .word qbranch
+    .byt <(number01-*-1)
+#include "pad.i65"
+    .word dnegate
+#include "page.i65"
+
+    .word exit
+
