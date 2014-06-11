@@ -1803,25 +1803,25 @@ skipscan04
 ; addr2 as the address of the first non-matching character and
 ; count2 as the remaining number of bytes in the buffer.
 skip
-	stx storex
+    stx storex
     ldy #2
-    jsr locals					; TOS=char; N0=addr1; N1=size1
-								; sw16, N1=char; N0=size1; TOS=addr1
+    jsr locals                  ; TOS=char; N0=addr1; N1=size1
+                                ; sw16, N1=char; N0=size1; TOS=addr1
 skip01
-	ldy #0
-	lda (n),y
-	pha
-	lda n+2
-	bne skip02
-	dec n+3						; DCR size1
-	bmi leave
+    ldy #0
+    lda (n),y
+    pha
+    lda n+2
+    bne skip02
+    dec n+3                     ; DCR size1
+    bmi leave
 skip02
-	dec n+2
-	pla
-	eor tos
-	beq skip01
-	
-	dec $0,x
+    dec n+2
+    pla
+    eor tos
+    beq skip01
+    
+    dec $0,x
     .byt bs, <(skipscan01-*-2)      ; setup
 skip01
     .byt bs, <(skipscan02-*-2)      ; next char
@@ -1837,54 +1837,220 @@ PLACE( str len addr -- )  => "FORTH"
       
 $!
 
+;inputs
+;   X = Sweet16 register address e.g. TOS = 8
+;returns
+;   decrements that 16-bit register once or twice (X)=(X)-2
+decx2
+    jsr DCR
+decx
+    jmp DCR
 
+;inputs
+;   X = Sweet16 register address e.g. TOS = 8
+;returns
+;   increments that 16-bit register once or twice (X)=(X)-2
+incx2
+    jsr INR
+incx
+    jmp INR
+    
+   ( c addr size -- addr size )
 scan
     lda #$ff
     .byt $2c
 skip
     lda #$0
-    sta mask
-    ldy #2
-    jsr locals
-    lda n+2
-    eor #$ff
-    sta n+2
-    lda n+3
-    eor #$ff
-    sta n+3
-loop
-    inc n+2
-    bne p1
-    inc n+3
-p1
-    beq done
+    sta n+2                     ; mask
+    ldy #1
+    jsr locals                  ; N0 = addr; stackl,x = char
+    jsr invert                  ; instead of counting down, count up
+skipscan01
+    jsr inctos                  ; must pre-increment after eor FFFF
+    beq skipscan03
     lda (n),y
-    eor tos
+    eor stackl,x
     php
     pla
-    eor mask
+    eor n+2
     lsr
     lsr
     inc n
-    bne p2
+    bne skipscan02
     inc n+1
-p2
+skipscan02
     bcc loop
-    
-done
-    lda n+2
-    bne p3
-    dec n+3
-p3
-    dec n+2
-    lda n+2
-    eor #$ff
-    sta tos
-    lda n+3
-    eor #$ff
-    sta tos+1
-    jsr slip
-    lda n
+skipscan03
+    jsr donegate
+    lda n                       ; addr
     ldy n+1
-    jmp pushya
+    jsr slip2
+    jmp next
     
+    
+    
+QUERY EXPECT BLK B/BUF HERE
+LATEST 'STREAM TIB #TIB >IN SPAN WORD SKIP SCAN 
+
+ : 'stream   ( -- addr size )
+      blk @ ?dup
+      if      block b/buf
+      else    tib #tib @
+      then
+  ( addr size )
+      >in @ over 
+  ( addr size >in size )
+      min >r 
+  ( addr size ) ( R; size' )
+      swap r@ + 
+  ( size addr+size' ) ( R; size' )
+      swap r> - ;
+  ( addr+size' size-size' )
+
+
+          SPAN         -- addr                       U,83                 
+               The address of a variable containing the count of characters
+               actually received and stored by the last execution of
+               EXPECT .  See:  EXPECT
+
+  |Now is the time for all |good men to come to the aid of their country|
+  ^                        ^                                            ^
+TIB                        |                                            |
+                           |                                          SPAN
+                          >IN
+
+          Interpreter layer 
+
+                #  #>  #S  #TIB  '  (  -TRAILING  .  .(  <#  >BODY  >IN 
+ABORT  BASE  BLK  CONVERT  DECIMAL  DEFINITIONS  FIND 
+FORGET  FORTH  FORTH-83  HERE  HOLD  LOAD  PAD  QUIT  SIGN 
+SPAN  TIB  U.  WORD  
+          SPAN         -- addr                       U,83                 
+               The address of a variable containing the count of characters
+               actually received and stored by the last execution of
+               EXPECT .  See:  EXPECT
+
+;       #TIB
+;
+; * 83 interpreter 
+;
+;  The address of a variable containing the number of bytes in
+;  the text input buffer.  #TIB is accessed by WORD when BLK is
+;" zero.  {{0..capacity of TIB}}  
+
+;" : word   ( c -- nfa )
+;      >r                              ; ( -- ) ( R; c )
+;  ( ) ( R; c )
+;      'stream
+;  ( addr size ) ( R; c )
+;      under
+;  ( addr addr size ) ( R; c )
+;      r@ skip
+;  ( addr addr2 count2 ) ( R; c )
+;      under
+;  ( addr addr2 addr2 count2 ) ( R; c )
+;      r> scan
+;  ( addr addr2 addr3 count )
+;      drop 2dup swap -
+;  ( addr addr2 addr3 size )
+;      >r
+;  ( addr addr2 addr3 ) ( R; size )
+;      rot - 1+
+;  ( addr2 addr3 size2 ) ( R; size )
+;      >in +!
+;  ( addr2 addr3 ) ( R; size )
+;      r> here
+;  ( addr2 addr3 size here )
+;      2dup c!
+;  ( addr2 addr3 size here )
+;      1+ swap cmove
+;  ( addr2 )
+;      here bl over
+;  ( addr2 here bl here )
+;      count + c! ;
+;  ( addr2 here )
+: word   ( c -- nfa )
+    dup>r
+  ( c )
+    'stream
+  ( c addr size )
+       
+  ( c addr size )
+    skip
+  ( c addr size )
+    scan
+  ( addr2 size )
+  
+  bl word  ( -- nfa )
+  
+;--------------------------------------------------------------
+;
+;       CMOVE>   ( from to howmany -- )
+;
+; * 83 nucleus
+;
+; Move the u bytes beginning at address addr1 to
+; addr2.  The move begins by moving the byte at
+; (addr1 plus u minus 1) to (addr2 plus u minus 1)
+; and proceeds to successively lower addresses
+; for u bytes.  If u is zero nothing is moved.
+; Useful for sliding a string towards higher addresses.
+;
+;": cmove>   ( from to howmany -- )
+;     dup>r 1- tuck
+;  ( from howmany-1 to howmany-1 )
+;     + -rot + r@
+;  ( to+howmany-1 from+howmany-1 )
+;     >6502
+#ifdef HEADERS
+cmovegtlfa
+    .byt $de,$ad
+    .byt (_cmovegt-*-1)|bit7
+    .asc "CMOVE",">"|bit7
+#endif
+_cmovegt
+#include "enter.i65"
+	.word duptor
+    brk
+    .byt ld | TOS
+    .byt st | N2                ; howmany
+    .byt dcr | N2
+    .byt pull
+    .byt add | N2
+    .byt st | N1                ; to
+    .byt pull
+    .byt add | N2
+    .byt st | N0                ; from
+    .byt ld | N2
+    .byt bp, <(cmovegt06-*-2)
+    .byt pull
+    .byt nxt
+cmovegt06
+    .byt inr | N2
+    .byt rtn
+    clc
+    ldy #0                     ; done by Sweet16
+    stx storex
+    ldx #0
+cmovegt01
+    dec n+5
+    bpl cmovegt03
+cmovegt02       ; last page
+    ldx n+4                         
+    beq cmovegt05
+    sec
+cmovegt03
+    lda (n),y
+    sta (n+2),y
+    tya
+    bne cmovegt04
+    dec n+1
+    dec n+3
+cmovegt04
+    dey
+    dex
+    bne cmovegt03
+    bcc cmovegt01
+cmovegt05
+    ldx storex
+    jmp pops
