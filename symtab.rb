@@ -90,10 +90,11 @@
     # for translating the symbol into its hex address
     symbols = Hash.new
     add_symbols(symbols,"pettil-core.lab")
+
     
     # build a label file so pettil-tdict.a65 can find things in core
 	# fix problems with reserved words e.g. bc add in hex address
-	use_decimal = ' uarea usercold uservmbuf zgt01 _pudot dlt02 '  
+	use_decimal = ' uarea usercold uservmbuf zgt01 _pudot dlt02 pushya spaces01 _word '  
 	always_use_decimal = false
     symfile = File.open("pettil-core.def",'w') do |f|
 #       symfile.write(#{a[0]}=#{a[1]}\n")

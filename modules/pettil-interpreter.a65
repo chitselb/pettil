@@ -12,7 +12,7 @@ pearsonx
 ;==== Error messages                                       ====
 ;==============================================================
 errptr
-    .word msg01,msg02,msg03,msg04,msg05,msg06,msg07,msg08
+    .word msg01,msg02,msg03,msg04,msg05,msg06,msg07,msg08,msg09
 
 msg01
     .byt msg02-*-1
@@ -39,7 +39,9 @@ msg08
     .byt msg09-*-1
     .asc "BLOCK OUT OF RANGE"
 msg09
-	.byt 0		; ~wut? can be removed
+	.byt msg10-*-1
+	.asc "UNIMPLEMENTED"
+msg10
 
 ;--------------------------------------------------------------
 ;
@@ -419,15 +421,49 @@ bloomhash03
 
 ;--------------------------------------------------------------
 ;
-;       (FIND)   ( name nfa fflag -- name false | cfa flag )
+;       (FIND)   ( name nfa vocid -- name false | cfa flag )
 ;
 ; * outer interpreter
 ;
 ; name is the address of a counted string we are searching for.
-; nfa is the first nfa in the list
-; fflag is the type of search we are doing
-;   0 = corelist - names are in ascending order by size
-;   1 = newlist - names are random sizes, with a 0-length name to terminate
+; nfa is the first nfa in the hash list
+;
+; vocid identifies which vocabulary to search.  Vocabularies may be
+; nested.  FIND walks up the CONTEXT tree and leaves a set of hashed
+; NFAs (with the vocid appended to the name before hashing) on the stack.  
+; The final vocabulary searched will be core, and (FIND) will exit afterward.
+;   0 = corelist
+;   1 = editor
+;   2 = assembler
+;   3+ = additional user vocabularies
+;
+; (FIND) first searches the unsorted names beginning at SYMTAIL, and keeps
+; going without regard to name length.  If it fails to find the word there,
+; it tries the hash list, which is expected to be sorted in ascending size
+; order.  Vocabularies are searched first, beginning with CONTEXT and chaining
+; up until core (0) is reached.  The vocid is appended to the word when 
+; searching that vocabulary.  Only one symbol within a vocabulary may be
+; active (unsmudged) at a time.  Smudged words are ignored.  The same symbol
+; may exist within more than one vocabulary.
+;
+;" For example, at cold start the user types in,
+;" VOCABULARY LATIN 		 \ creates a new user vocabulary with vocid = 3
+;" LATIN DEFINITIONS         \ sets CURRENT to LATIN, definitions added there
+;" : EPLURIBUSUNUM ;         \ adds a new word to the LATIN vocabulary
+;" VOCABULARY PIGLATIN		 \ creates a new user vocabulary with vocid = 4
+;"                           \ PIGLATIN is a member of the LATIN vocabulary
+;" PIGLATIN DEFINITIONS      \ sets CURRENT to PIGLATIN, new definitions there
+;" : IXNAY ;                 \ adds a new word to the PIGLATIN vocabulary
+;" FORTH                     \ set CONTEXT to core 
+;" IXNAY  not found          \ IXNAY is a member of PIGLATIN, out of context 
+;" PIGLATIN  not found       \ PIGLATIN is a member of LATIN vocabulary 
+;" LATIN PIGLATIN            \ set context to LATIN; set context to PIGLATIN 
+;" IXNAY  ok                 \ search for "IXNAY" + $04, found in PIGLATIN(4)
+;" EPLURIBUSUNUM  ok         \ search for "EPLURIBUSUNUM" + $04, not found.  
+;"                           \ search for "EPLURIBUSUNUM" + $03, in LATIN(3)
+;" DEPTH .  0 ok             \ search for "DEPTH" + $04, not found in PIGLATIN(4)
+;"                           \ search for "DEPTH" + $03, not found in LATIN(3)
+;                            \ search for "DEPTH", found in core(0)
 ;
 ; returns
 ;       ( cfa -1 ) if found normal word
