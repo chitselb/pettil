@@ -424,30 +424,52 @@ vocabsd
 	jsr docreate
 	.dsb 10,0
 
+
 ;--------------------------------------------------------------
 ;
-;       (VOCABLIST)   ( --  0 [ vocid ... contextid ] )
+;       VOCABS>   ( -- vocid )
 ;
-; Adds a vocabulary identifier to the stack for each vocabulary, starting
-; with CONTEXT vocabulary at TOS and chaining up to core (0).  Just zero is
-; returned if the context is FORTH.
+; Presents the next one-byte vocabulary id from VOCABS$  
+;
+#ifdef HEADERS
+vocabfromlfa
+	.byt $de,$ad
+	.byt (vocabfrom-*-1)|bit7
+	.asc "(VOCAB",">"|bit7
+#endif
+vocabfrom
+    lda vocabsd+3
+    pha
+    ldy #9
+vocabsfrom01
+    lda vocabsd+3,x
+    sta vocabsd+2,x
+    dey
+    bne vocabsfrom01
+    pla
+    jmp put
+    
+;--------------------------------------------------------------
+;
+;       (VOCABLIST)   ( -- )
+;
+; Sets the VOCABS$ string to the list of vocabularies, chaining up
+; from CONTEXT to core
 ;
 ;": (vocablist)   ( -- 0 id id ... )
-;	  vocabs$
-;  ( vocabs$ )
-;     context
+;	    vocabs$  context
 ;  ( vocabs$ context )
 ;     begin 
 ;  ( vocabs$ context )
-;         @ dup 2+ c@
+;        @ dup 2+ c@
 ;  ( vocabs$ vocab id )
-;         rot 2dup 
+;        rot 2dup 
 ;  ( vocab id vocabs$ id vocabs$ )
-;		  c! 1+ -rot
+;         c! 1+ -rot
 ;  ( vocabs$+ vocab id )
-;		  0=
+;		     0=
 ;     until 
-;	  2drop ;
+;	    2drop ;
 ;
 #ifdef HEADERS
 vocablistlfa
@@ -488,6 +510,55 @@ pvocablist01
 	.word twodrop
 #include "page.i65"
 	.word exit
+
+;--------------------------------------------------------------
+;
+;		VOC+   ( vocid nfa -- )
+;
+; Append the vocabulary to the string at NFA, and set the vocabulary
+; member bit
+;
+#ifdef HEADERS
+vocpluslfa
+	.byt $de,$ad
+	.byt (vocplus-*-1)|bit7
+	.asc "(VOC","+"|bit7
+#endif
+vocplus
+	jsr nfalen
+	tay
+	iny
+	lda stackl,x
+	sta (tos),y
+	jsr nfalen
+	clc
+	adc #1
+	and #$3f				; keep the smudge bit 
+	ora #$40				; turn on vocab bit
+	bne vocminus01
+
+;--------------------------------------------------------------
+;
+;		VOC-   ( nfa -- )
+;
+; Strip the vocabulary byte from the string and clear the vocabulary
+; member bit
+;
+#ifdef HEADERS
+vocpluslfa
+	.byt $de,$ad
+	.byt (vocminus-*-1)|bit7
+	.asc "(VOC","-"|bit7
+#endif
+vocminus
+	jsr nfalen
+	lda (tos),y
+	sec
+	sbc #1
+	and #$bf
+vocminus01
+	sta (tos),y
+	jmp poptwo
 
 ;--------------------------------------------------------------
 ;
