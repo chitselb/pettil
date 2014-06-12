@@ -58,7 +58,7 @@ forthlfa
 forth
     jsr vocabdoes
     .word 0                 ; no parent
-    .byt 0					; root vocabulary
+    .byt 0                  ; root vocabulary
 
 ;--------------------------------------------------------------
 ;
@@ -292,11 +292,182 @@ bloomhash03
 
 ;--------------------------------------------------------------
 ;
-;       (FIND)   ( name nfa vocid -- name false | cfa flag )
+;       NFALEN   ( nfa -- length )
+;
+; return the length of this name
+;
+;#ifdef HEADERS
+;nfalenlfa
+;    .byt $de,$ad
+;    .byt (nfalen-*-1)|bit7
+;    .asc "NFALE","N"|bit7
+;#endif
+nfalen
+    jsr nfalen01
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       VOCABS$   ( -- )
+;
+; Variable to store up to 9 vocabularies to search, plus the core
+; It was this or a second stack or a stack frame or convoluted code
+;
+#ifdef HEADERS
+vocabsdlfa
+    .byt $de,$ad
+    .byt (vocabsd-*-1)|bit7
+    .asc "VOCABS","$"|bit7
+#endif
+vocabsd
+    jsr docreate
+    .dsb 10,0
+
+;--------------------------------------------------------------
+;
+;       VOCABS>   ( -- vocid )
+;
+; Presents the next one-byte vocabulary id from VOCABS$, slides
+; the rest of the vocab string buffer to the left by one
+;
+#ifdef HEADERS
+vocabsfromlfa
+    .byt $de,$ad
+    .byt (vocabsfrom-*-1)|bit7
+    .asc "(VOCABS",">"|bit7
+#endif
+vocabsfrom
+    lda vocabsd+3
+    pha
+    ldy #(256-9)				; an INY loop was tighter.  I checked the pointers
+vocabsfrom01
+    lda vocabsd-(256-13),y      ; slide everything down one.  +3 for jsr docreate
+    sta vocabsd-(256-12),y
+    iny
+    bne vocabsfrom01
+    pla
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       (VOCABLIST)   ( -- )
+;
+; Sets the VOCABS$ string to the list of vocabularies, chaining up
+; from CONTEXT to core
+;
+;": (vocablist)   ( -- 0 id id ... )
+;       vocabs$  context
+;  ( vocabs$ context )
+;     begin 
+;  ( vocabs$ context )
+;        @ dup 2+ c@
+;  ( vocabs$ vocab id )
+;        rot 2dup 
+;  ( vocab id vocabs$ id vocabs$ )
+;         c! 1+ -rot
+;  ( vocabs$+ vocab id )
+;            0=
+;     until 
+;       2drop ;
+;
+#ifdef HEADERS
+vocablistlfa
+    .byt $de,$ad
+    .byt (_pvocablist-*-1)|bit7
+    .asc "(VOCABLIST",")"|bit7
+#endif
+_pvocablist
+#include "enter.i65"
+    .word vocabsd
+#include "page.i65"
+    .word context
+#include "page.i65"
+pvocablist01
+    .word fetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word dashrot
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word qbranch
+    .byt <(pvocablist01-*+1)
+#include "pad.i65"
+    .word twodrop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       VOC+   ( vocid name -- )
+;
+; Append the vocabulary to the string at NFA, and set the vocabulary
+; member bit
+;
+#ifdef HEADERS
+vocpluslfa
+    .byt $de,$ad
+    .byt (vocplus-*-1)|bit7
+    .asc "(VOC","+"|bit7
+#endif
+vocplus
+    jsr nfalen01
+    tay
+    iny
+    lda stackl,x
+	inx							; poor man's pop -- voc+ discards two arguments
+    sta (tos),y					; concatenate vocab ident
+    tya
+	and #$1f
+    ora #$40                    ; turn on vocab bit
+    bne vocminus01
+
+;--------------------------------------------------------------
+;
+;       VOC-   ( name -- )
+;
+; Strip the vocabulary byte from the string and clear the vocabulary
+; member bit
+;
+#ifdef HEADERS
+vocpluslfa
+    .byt $de,$ad
+    .byt (vocminus-*-1)|bit7
+    .asc "(VOC","-"|bit7
+#endif
+vocminus
+    jsr nfalen01
+	tay
+    dey
+    tya
+    and #$1f                    ; turn off vocab bit
+vocminus01
+	ldy #0
+    sta (tos),y
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       ((FIND))   ( name fflag nfa -- nfa 0 | cfa flag )
+;       (FIND)   ( name -- name false | cfa flag )
 ;
 ; * outer interpreter
-;
+; 
 ; name is the address of a counted string we are searching for.
+; fflag is the find mode.  False means NFAs are sorted, True means check them all
 ; nfa is the first nfa in the hash list
 ;
 ; vocid identifies which vocabulary to search.  Vocabularies may be
@@ -341,67 +512,55 @@ bloomhash03
 ;       ( cfa 1 ) if found immediate word
 ;       ( name 0 ) if not in dictionary
 ;
-;#ifdef HEADERS
-;pfindlfa
-;    .byt $de,$ad
-;    .byt (pfind-*-1)|bit7
-;    .asc "(FIND",")"|bit7
-;#endif
-pfind
-#ifdef SWEET16
-    brk
-    .byt sub | R0
-    .byt st | R9                ; result flag
-    .byt st | N2                ; assume core mode
-    .byt ld | TOS
-    .byt bz , <(pfind01-*-2)
-    .byt dcr | N2               ; N2 = findflag, testable by BIT instr
-pfind01
-    .byt pull
-    .byt st | N1                ; N1 = start of symbol table list
-    .byt pull
-    .byt st | N0                ; N0 = name
-    .byt ext
-    .word wordlen16             ; get length of name (TOS)
-    .byt ld | R11
-    .byt st | N3                ; length we are searching for
-    .byt ld | N1
-    .byt st | TOS               ; set TOS = first on search list
-    .byt rtn
-pfind02
+#ifdef HEADERS
+ppfindlfa
+    .byt $de,$ad
+    .byt (ppfind-*-1)|bit7
+    .asc "((FIND)",")"|bit7
+#endif
+ppfind
+    ldy #2
+    jsr locals					; TOS = nfa; N0 = name; N1 = find flag (0=core; true=new)
+    sty n+8                     ; N4 = result flag
+    sty n+9
+    lda (n),y
+    and #$1f
+    ;sty n+7
+    sta n+6						; N3 = length we seek
+ppfind02
     jsr nfalen01
-    beq pfind07                 ; end of list? return ( NAME 0 )
-    bcs pfind03                 ; smudged? not findable. next!
+    beq ppfind07                ; end of list? return ( NAME 0 )
+    bcs ppfind03                ; smudged? not findable. next!
     cmp n+6                     ; compare lengths
-    beq pfind04                 ; same length, compare strings too
-    bcc pfind03                 ; shorter length?  next!
+    beq ppfind04                ; same length, compare strings too
+    bcc ppfind03                ; shorter length?  next!
     bit n+4                     ; check unsorted mode vs. core mode 
-    bmi pfind03                 ; look at all names on this list
-    bpl pfind07                 ; core mode, and we've gone past it
-pfind03
+    bmi ppfind03                ; look at all names on this list
+    bpl ppfind07                ; core mode, and we've gone past it
+ppfind03
     jsr nfaplus01
-    bne pfind02                 ; bra
-pfind04
+    bne ppfind02                ; bra
+ppfind04
     jsr strcomp
-    bcc pfind03                 ; non-match? next!
+    bcc ppfind03                ; non-match? next!
 
     ; winner!
-    inc n+10                    ; assume immediate (returns +1)
+    inc r9                      ; assume immediate (returns +1)
     ;ldy #0                     ; thank you, strcomp
     lda (tos),y                 ; length and flags
-    bmi pfind06                 ; immediate?
+    bmi ppfind06                ; immediate?
     dey
     sty r9
     sty r9+1                    ; set R9 = -1
-pfind06
+ppfind06
     brk
     .byt popd | TOS             ; get the CFA
-    .byt br , <(pfind08-*-2)
-pfind07
+    .byt br , <(ppfind08-*-2)
+ppfind07
     ; loser... 
     brk
     .byt ld | N0
-pfind08
+ppfind08
     .byt st | TOS               ; CFA or original NAME
     .byt ld | R9                ; status flag
     .byt push
@@ -410,176 +569,91 @@ pfind08
 
 ;--------------------------------------------------------------
 ;
-;		VOCABS$   ( -- )
+;       (FIND)   ( name -- xfa flag )
 ;
-; Variable to store up to 9 vocabularies to search, plus the core
-;
-#ifdef HEADERS
-vocabsdlfa
-	.byt $de,$ad
-	.byt (vocabsd-*-1)|bit7
-	.asc "VOCABS","$"|bit7
-#endif
-vocabsd
-	jsr docreate
-	.dsb 10,0
-
-
-;--------------------------------------------------------------
-;
-;       VOCABS>   ( -- vocid )
-;
-; Presents the next one-byte vocabulary id from VOCABS$  
+;": (find)   ( name -- cfa flag | nfa 0 )
+;     true symnew @ 2+ ((find))
+;     ?dup 0=
+;     if
+;         false over pearsonhash 2* symtab @ + @ 2+ ((find))
+;     then ;
 ;
 #ifdef HEADERS
-vocabfromlfa
-	.byt $de,$ad
-	.byt (vocabfrom-*-1)|bit7
-	.asc "(VOCAB",">"|bit7
-#endif
-vocabfrom
-    lda vocabsd+3
-    pha
-    ldy #9
-vocabsfrom01
-    lda vocabsd+3,x
-    sta vocabsd+2,x
-    dey
-    bne vocabsfrom01
-    pla
-    jmp put
-    
-;--------------------------------------------------------------
-;
-;       (VOCABLIST)   ( -- )
-;
-; Sets the VOCABS$ string to the list of vocabularies, chaining up
-; from CONTEXT to core
-;
-;": (vocablist)   ( -- 0 id id ... )
-;	    vocabs$  context
-;  ( vocabs$ context )
-;     begin 
-;  ( vocabs$ context )
-;        @ dup 2+ c@
-;  ( vocabs$ vocab id )
-;        rot 2dup 
-;  ( vocab id vocabs$ id vocabs$ )
-;         c! 1+ -rot
-;  ( vocabs$+ vocab id )
-;		     0=
-;     until 
-;	    2drop ;
-;
-#ifdef HEADERS
-vocablistlfa
+pfindlfa
     .byt $de,$ad
-    .byt (_pvocablist-*-1)|bit7
-    .asc "(VOCABLIST",")"|bit7
+    .byt (_pfind-*-1)|bit7
+    .asc "(FIND",")"|bit7
 #endif
-_pvocablist
+_pfind
 #include "enter.i65"
-    .word vocabsd
+    .word true					; search unsorted list
 #include "page.i65"
-    .word context
+    .word symnew
 #include "page.i65"
-pvocablist01
     .word fetch
 #include "page.i65"
-    .word dup
+    .word twoplus
 #include "page.i65"
-	.word twoplus
+    .word ppfind
 #include "page.i65"
-	.word cfetch
+    .word qdup
 #include "page.i65"
-	.word rot
+    .word zeq
 #include "page.i65"
-	.word twodup
-#include "page.i65"
-	.word cstore
-#include "page.i65"
-	.word oneplus
-#include "page.i65"
-	.word dashrot
-#include "page.i65"
-	.word zeq
-#include "page.i65"
-	.word qbranch
-	.byt <(pvocablist01-*+1)
+    .word qbranch
+    .byt <(pfind01-*+1)
 #include "pad.i65"
-	.word twodrop
+    .word false					; lists are sorted by size
 #include "page.i65"
-	.word exit
+    .word over
+#include "page.i65"
+    .word pearsonhash
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word ppfind
+#include "page.i65"
+pfind01
+    .word exit
 
 ;--------------------------------------------------------------
 ;
-;		VOC+   ( vocid nfa -- )
+;       (VOCFIND)   ( vocid name -- nfa 0 | cfa flag )
 ;
-; Append the vocabulary to the string at NFA, and set the vocabulary
-; member bit
-;
-#ifdef HEADERS
-vocpluslfa
-	.byt $de,$ad
-	.byt (vocplus-*-1)|bit7
-	.asc "(VOC","+"|bit7
-#endif
-vocplus
-	jsr nfalen
-	tay
-	iny
-	lda stackl,x
-	sta (tos),y
-	jsr nfalen
-	clc
-	adc #1
-	and #$3f				; keep the smudge bit 
-	ora #$40				; turn on vocab bit
-	bne vocminus01
-
-;--------------------------------------------------------------
-;
-;		VOC-   ( nfa -- )
-;
-; Strip the vocabulary byte from the string and clear the vocabulary
-; member bit
-;
-#ifdef HEADERS
-vocpluslfa
-	.byt $de,$ad
-	.byt (vocminus-*-1)|bit7
-	.asc "(VOC","-"|bit7
-#endif
-vocminus
-	jsr nfalen
-	lda (tos),y
-	sec
-	sbc #1
-	and #$bf
-vocminus01
-	sta (tos),y
-	jmp poptwo
-
-;--------------------------------------------------------------
-;
-;		(VOCFIND)   ( vocid nfa -- )
-;
-;  ( vocid ) ( R; name )
-;             r@ nfalen 1+  
-;  ( vocid len+1 ) ( R; name )
-;             dup $40 or r@ c!
-;  ( vocid len+1 )
-;             r@ + over c!
+;": (vocfind   ( vocid name -- )
+;     dup>r voc+ r@ (find) r> voc- ;
 ;
 #ifdef HEADERS
 pvocfindlfa
-	.byt $de,$ad
-	.byt (_pvocfind-*-1)|bit7
-	.asc "(VOCFIND",")"|bit7
+    .byt $de,$ad
+    .byt (_pvocfind-*-1)|bit7
+    .asc "(VOCFIND",")"|bit7
 #endif
 _pvocfind
 #include "enter.i65"
-	.word exit
+    .word duptor
+#include "page.i65"
+    .word vocplus
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word _pfind
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word vocminus
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -598,19 +672,26 @@ _pvocfind
 ;     >r 
 ;  ( ) ( R; name )
 ;     (vocablist) 
-;  ( 0 [ vocid ... ] ) ( R; name )
+;  ( ) ( R; name )
+;     0 0 
 ;     begin
-;         r@ over 
+;         2drop vocabs> r@ over
 ;  ( vocid name vocid ) ( R; name ) 
 ;         if
-;             over (vocfind)
+;  ( vocid name ) ( R; name ) 
+;             under (vocfind)
+;  ( vocid ( cfa flag | nfa 0 ) ) ( R; name ) 
 ;         else
+;  ( 0 name ) ( R; name ) 
 ;             (find)
+;  ( 0 ( cfa flag | nfa 0 ) ) ( R; name ) 
 ;         then 
+;  ( vocid xfa flag ) ( R; name ) 
+;         rot 0= over or
+;     until
+;  ( xfa flag ) ( R; name )
+;     r> drop ;
 ;
-;
-;
-;    until
 #ifdef HEADERS
 findlfa
     .byt $de,$ad
@@ -623,35 +704,49 @@ _find
 #include "page.i65"
     .word _pvocablist
 #include "page.i65"
+    .word zero
+#include "page.i65"
+    .word zero
+#include "page.i65"
 find01
+    .word twodrop
+#include "page.i65"
+    .word vocabsfrom
+#include "page.i65"
     .word rfetch
 #include "page.i65"
     .word over
 #include "page.i65"
-	.word qbranch
+    .word qbranch
     .byt <(find02-*+1)
 #include "pad.i65"
-    .word dup
+    .word under
 #include "page.i65"
     .word _pvocfind
 #include "page.i65"
-	.word qbranch
+    .word branch
     .byt <(find03-*+1)
 #include "pad.i65"
 find02
-    .word pfind
+    .word _pfind
 #include "page.i65"
 find03
     .word rot
 #include "page.i65"
     .word zeq
 #include "page.i65"
-	.word qbranch
+    .word over
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word qbranch
     .byt <(find01-*+1)
 #include "pad.i65"
-	.word rfrom
+    .word rfrom
 #include "page.i65"
-	.word exit
+    .word drop
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -676,46 +771,6 @@ _existsq
     .word _find             ; ( nfa -1|+1 | here false )
 #include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-;
-;       FIND2   ( -- )
-;
-; eventually to replace FIND
-;
-#ifdef HEADERS
-find2lfa
-    .byt $de,$ad
-    .byt (_find2-*-1)|bit7
-    .asc "FIN","2"|bit7
-#endif
-_find2
-#include "enter.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       ?'   ( -- addr flag )
-;
-; harness for testing out the new FIND with vocabulary support
-;
-;~wut? remove this when FIND2 works
-#ifdef HEADERS
-queryticklfa
-    .byt $de,$ad
-    .byt (_querytick-*-1)|bit7
-    .asc "?","'"|bit7
-#endif
-_querytick
-#include "enter.i65"
-    .word bl                ; ( c )
-#include "page.i65"
-    .word _word             ; ( nfa )
-#include "page.i65"
-    .word _find2            ; ( nfa -1|+1 | here false )
-#include "page.i65"
-    .word exit
-
 
 ;--------------------------------------------------------------
 ;
@@ -904,22 +959,6 @@ _abort
     .word _quit
 #include "page.i65"
     .word exit      ; make the decompiler happy
-
-;--------------------------------------------------------------
-;
-;       NFALEN   ( nfa -- length )
-;
-; return the length of this name
-;
-;#ifdef HEADERS
-;nfalenlfa
-;    .byt $de,$ad
-;    .byt (nfalen-*-1)|bit7
-;    .asc "NFALE","N"|bit7
-;#endif
-nfalen
-    jsr nfalen01
-    jmp put
 
 ;--------------------------------------------------------------
 ;
@@ -1241,6 +1280,22 @@ symsort03
 
 ;--------------------------------------------------------------
 ;
+;       PASSBITS   ( -- )
+;
+; Bloom filter for skipping REHASH passes if no words of that length
+;
+#ifdef HEADERS
+passbitslfa
+    .byt $de,$ad
+    .byt (passbits-*-1)|bit7
+    .asc "PASSBIT","S"|bit7
+#endif
+passbits
+    jsr docreate
+    .word 0,0
+
+;--------------------------------------------------------------
+;
 ;       >BLOOM   ( n -- mask offset )
 ;
 ; transform an integer into a bitmask and offset, suitable for
@@ -1300,7 +1355,7 @@ _tobloom
 ;         dup nfalen ?dup
 ;     while
 ;         dup 7 and [ power2 ] literal + c@
-;         swap 2/ 2/ 2/ [ passbits ] literal +
+;         swap 2/ 2/ 2/ passbits +
 ;     ( mask addr )
 ;         cbit!
 ;         nfa+
@@ -1314,9 +1369,8 @@ _tobloom
 ;#endif
 _passfilter
 #include "enter.i65"
-    .word plit
     .word passbits
-#include "pad.i65"
+#include "page.i65"
     .word four
 #include "page.i65"
     .word _erase
@@ -1335,9 +1389,8 @@ passfilter01
 #include "pad.i65"
     .word _tobloom
 #include "page.i65"
-    .word plit
     .word passbits
-#include "pad.i65"
+#include "page.i65"
     .word plus
 #include "page.i65"
     .word cbitstore
@@ -1352,9 +1405,6 @@ passfilter02
 #include "page.i65"
     .word exit
 
-passbits
-    .word 0,0
-
 ;--------------------------------------------------------------
 ;
 ;       (REHASH)   ( 'compare flag src targ end start -- targ+ )
@@ -1362,7 +1412,7 @@ passbits
 ;": (rehash)   ( 'compare flag src targ end start -- targ+ )
 ;     do 
 ;         ( 'compare flag src targ )
-;         i >bloom [ passbits ] literal + cbit@
+;         i >bloom passbits + cbit@
 ;         ( 'compare flag src targ flag )
 ;         if
 ;             ( 'compare flag src targ )
@@ -1372,7 +1422,7 @@ passbits
 ;             ( 'compare flag src src targ 'compare flag )
 ;             if
 ;             ( 'compare flag src src targ 'compare )
-;                   over i 2* symtab + !
+;                 over i 2* symtab + !
 ;             ( 'compare flag src src targ 'compare )
 ;             then
 ;             ( 'compare flag src src targ 'compare )
@@ -1403,7 +1453,6 @@ prehash01
 #include "page.i65"
     .word _tobloom
 #include "page.i65"
-    .word plit
     .word passbits
 #include "pad.i65"
     .word plus
@@ -1479,20 +1528,20 @@ prehash03
 ;
 ;": rehash  ( -- )
 ;     pad >syms
-;     ( pad symbols )
+;  ( pad symbols )
 ;     ['] symbysize false
-;     ( pad symbols 'compare flag )
+;  ( pad symbols 'compare flag )
 ;     2over swap
-;     ( pad symbols 'compare flag symbols pad )
+;  ( pad symbols 'compare flag symbols pad )
 ;     32 1  (rehash)
-;     ( pad symbols targ+ )
+;  ( pad symbols targ+ )
 ;     symtab @ 32 erase
-;     ( pad symbols  )
+;  ( pad symbols  )
 ;     [ bloom ] literal 8 erase
-;     ( pad symbols  )
-;     [ passbits ] literal on
+;  ( pad symbols  )
+;     passbits  on
 ;     ['] symbyhash true 2swap 16 0  (rehash)
-;     ( )
+;  ( )
 ;
 #ifdef HEADERS
 rehashlfa
@@ -1545,7 +1594,6 @@ _rehash
 #include "pad.i65"
     .word _erase
 #include "page.i65"
-    .word plit
     .word passbits
 #include "pad.i65"
     .word on
