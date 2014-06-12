@@ -39,18 +39,16 @@ msg08
     .byt msg09-*-1
     .asc "BLOCK OUT OF RANGE"
 msg09
-	.byt msg10-*-1
-	.asc "UNIMPLEMENTED"
+    .byt msg10-*-1
+    .asc "UNIMPLEMENTED"
 msg10
 
 ;--------------------------------------------------------------
 ;
 ;       FORTH
 ;
-; * 83 interpreter tdict
-;
-; when all is over, said and done with, the PFA of FORTH (aka FORTH+3)
-; should be stored in user variable CONTEXT
+; the core vocabulary
+; 
 #ifdef HEADERS
 forthlfa
     .byt $de,$ad
@@ -59,11 +57,25 @@ forthlfa
 #endif
 forth
     jsr vocabdoes
-    .word 0                 ; flag as root vocabulary
-    .byt 1|bit7
-    .byt ' '|bit7           ; $a081
-lastvoc
-    .word 0                 ; link to next vocabulary, 0 for last
+    .word 0                 ; no parent
+    .byt 0					; root vocabulary
+
+;--------------------------------------------------------------
+;
+;       EDITOR   ( -- )
+;
+; description
+;
+#ifdef HEADERS
+editorlfa
+    .byt $de,$ad
+    .byt (editor-*-1)|bit7
+    .asc "EDITO","R"|bit7
+#endif
+editor
+    jsr vocabdoes
+    .word forth+3           ; parent vocabulary
+    .byt 1                  ; vocabulary identifier
 
 ;--------------------------------------------------------------
 ;
@@ -150,147 +162,6 @@ _query
     .word off
 #include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-;
-;       INTERPRET
-;
-; tdict
-;
-;
-;": interpret   ( )
-;       begin   ?stack
-;               exists?
-;               if      link>
-;                       execute
-;               else    number dpl @ 1+ 0=
-;                       if      drop
-;                       then
-;               then
-;               false
-;               quit?
-;       again ;
-;
-#ifdef HEADERS
-interpretlfa
-    .byt $de,$ad
-    .byt (_interpret-*-1)|bit7
-    .asc "INTERPRE","T"|bit7
-#endif
-_interpret
-#include "enter.i65"
-interpret01
-    .word qstack            ; ( )
-#include "page.i65"
-    .word _existsq          ; ( addr flag )
-#include "page.i65"
-    .word qbranch
-    .byt <(interpret02-*+1)
-#include "pad.i65"
-    .word execute
-#include "page.i65"
-    .word branch
-    .byt <(interpret03-*+1)
-#include "pad.i65"
-interpret02
-    .word _number
-#include "page.i65"
-    .word dpl
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word zlt
-#include "page.i65"
-    .word qbranch
-    .byt <(interpret03-*+1)
-#include "pad.i65"
-    .word drop
-#include "page.i65"
-interpret03
-    .word false
-#include "page.i65"
-    .word _quitq
-#include "page.i65"
-    .word qbranch
-    .byt <(interpret01-*+1)
-#include "pad.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       QUIT
-;
-; tdict
-;
-;"This is the infinite outer interpreter loop:
-;       - resets the return stack (RP!)
-;       - outputs a carriage return (CR)
-;       - waits for a line of input (QUERY)
-;       - interprets that line
-; * 83 interpreter outer
-;
-#ifdef HEADERS
-quitlfa
-    .byt $de,$ad
-    .byt (_quit-*-1)|bit7
-    .asc "QUI","T"|bit7
-#endif
-_quit
-#include "enter.i65"
-    .word blk
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word _lbracket         ; STATE OFF
-#include "page.i65"
-quit01                                  ; BEGIN
-    .word rpstore
-#include "page.i65"
-    .word cr
-#include "page.i65"
-    .word _query
-#include "page.i65"
-    .word _interpret
-#include "page.i65"
-    .word state
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word qbranch           ; IF
-    .byt <(quit03-*+1)
-#include "pad.i65"
-    .word _pdq
-    .byt (quit02-*-1)
-    .asc    " OK"
-quit02
-#include "pad.i65"
-quit03                                  ; THEN AGAIN
-    .word branch
-    .byt <(quit01-*+1)
-#include "pad.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       ABORT
-;
-; * 83 interpreter tdict
-;
-#ifdef HEADERS
-abortlfa
-    .byt $de,$ad
-    .byt (_abort-*-1)|bit7
-    .asc "ABOR","T"|bit7
-#endif
-_abort
-#include "enter.i65"
-    .word spstore
-#include "page.i65"
-    .word _quit
-#include "page.i65"
-    .word exit      ; make the decompiler happy
 
 ;--------------------------------------------------------------
 ;
@@ -447,10 +318,10 @@ bloomhash03
 ; may exist within more than one vocabulary.
 ;
 ;" For example, at cold start the user types in,
-;" VOCABULARY LATIN 		 \ creates a new user vocabulary with vocid = 3
+;" VOCABULARY LATIN          \ creates a new user vocabulary with vocid = 3
 ;" LATIN DEFINITIONS         \ sets CURRENT to LATIN, definitions added there
 ;" : EPLURIBUSUNUM ;         \ adds a new word to the LATIN vocabulary
-;" VOCABULARY PIGLATIN		 \ creates a new user vocabulary with vocid = 4
+;" VOCABULARY PIGLATIN       \ creates a new user vocabulary with vocid = 4
 ;"                           \ PIGLATIN is a member of the LATIN vocabulary
 ;" PIGLATIN DEFINITIONS      \ sets CURRENT to PIGLATIN, new definitions there
 ;" : IXNAY ;                 \ adds a new word to the PIGLATIN vocabulary
@@ -481,7 +352,7 @@ pfind
     brk
     .byt sub | R0
     .byt st | R9                ; result flag
-    .byt st | N2				; assume core mode
+    .byt st | N2                ; assume core mode
     .byt ld | TOS
     .byt bz , <(pfind01-*-2)
     .byt dcr | N2               ; N2 = findflag, testable by BIT instr
@@ -502,8 +373,8 @@ pfind02
     beq pfind07                 ; end of list? return ( NAME 0 )
     bcs pfind03                 ; smudged? not findable. next!
     cmp n+6                     ; compare lengths
-    beq pfind04					; same length, compare strings too
-    bcc pfind03					; shorter length?  next!
+    beq pfind04                 ; same length, compare strings too
+    bcc pfind03                 ; shorter length?  next!
     bit n+4                     ; check unsorted mode vs. core mode 
     bmi pfind03                 ; look at all names on this list
     bpl pfind07                 ; core mode, and we've gone past it
@@ -512,30 +383,132 @@ pfind03
     bne pfind02                 ; bra
 pfind04
     jsr strcomp
-    bcc pfind03					; non-match? next!
+    bcc pfind03                 ; non-match? next!
 
     ; winner!
     inc n+10                    ; assume immediate (returns +1)
-	;ldy #0						; thank you, strcomp
+    ;ldy #0                     ; thank you, strcomp
     lda (tos),y                 ; length and flags
-    bmi pfind06					; immediate?
+    bmi pfind06                 ; immediate?
     dey
     sty r9
     sty r9+1                    ; set R9 = -1
 pfind06
     brk
-    .byt popd | TOS				; get the CFA
+    .byt popd | TOS             ; get the CFA
     .byt br , <(pfind08-*-2)
 pfind07
-	; loser... 
-	brk
-	.byt ld | N0
+    ; loser... 
+    brk
+    .byt ld | N0
 pfind08
     .byt st | TOS               ; CFA or original NAME
-    .byt ld | R9				; status flag
+    .byt ld | R9                ; status flag
     .byt push
     .byt nxt
 #endif
+
+;--------------------------------------------------------------
+;
+;		VOCABS$   ( -- )
+;
+; Variable to store up to 9 vocabularies to search, plus the core
+;
+#ifdef HEADERS
+vocabsdlfa
+	.byt $de,$ad
+	.byt (vocabsd-*-1)|bit7
+	.asc "VOCABS","$"|bit7
+#endif
+vocabsd
+	jsr docreate
+	.dsb 10,0
+
+;--------------------------------------------------------------
+;
+;       (VOCABLIST)   ( --  0 [ vocid ... contextid ] )
+;
+; Adds a vocabulary identifier to the stack for each vocabulary, starting
+; with CONTEXT vocabulary at TOS and chaining up to core (0).  Just zero is
+; returned if the context is FORTH.
+;
+;": (vocablist)   ( -- 0 id id ... )
+;	  vocabs$
+;  ( vocabs$ )
+;     context
+;  ( vocabs$ context )
+;     begin 
+;  ( vocabs$ context )
+;         @ dup 2+ c@
+;  ( vocabs$ vocab id )
+;         rot 2dup 
+;  ( vocab id vocabs$ id vocabs$ )
+;		  c! 1+ -rot
+;  ( vocabs$+ vocab id )
+;		  0=
+;     until 
+;	  2drop ;
+;
+#ifdef HEADERS
+vocablistlfa
+    .byt $de,$ad
+    .byt (_pvocablist-*-1)|bit7
+    .asc "(VOCABLIST",")"|bit7
+#endif
+_pvocablist
+#include "enter.i65"
+    .word vocabsd
+#include "page.i65"
+    .word context
+#include "page.i65"
+pvocablist01
+    .word fetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+	.word twoplus
+#include "page.i65"
+	.word cfetch
+#include "page.i65"
+	.word rot
+#include "page.i65"
+	.word twodup
+#include "page.i65"
+	.word cstore
+#include "page.i65"
+	.word oneplus
+#include "page.i65"
+	.word dashrot
+#include "page.i65"
+	.word zeq
+#include "page.i65"
+	.word qbranch
+	.byt <(pvocablist01-*+1)
+#include "pad.i65"
+	.word twodrop
+#include "page.i65"
+	.word exit
+
+;--------------------------------------------------------------
+;
+;		(VOCFIND)   ( vocid nfa -- )
+;
+;  ( vocid ) ( R; name )
+;             r@ nfalen 1+  
+;  ( vocid len+1 ) ( R; name )
+;             dup $40 or r@ c!
+;  ( vocid len+1 )
+;             r@ + over c!
+;
+#ifdef HEADERS
+pvocfindlfa
+	.byt $de,$ad
+	.byt (_pvocfind-*-1)|bit7
+	.asc "(VOCFIND",")"|bit7
+#endif
+_pvocfind
+#include "enter.i65"
+	.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -552,33 +525,21 @@ pfind08
 ;
 ;": find   ( addr1 -- addr2 flag )
 ;     >r 
-;     ( )
-;     0 0 
-;     ( 0 0 )
-;     r@ pearsonhash 2* symtab @ + @ 2+ 0
-;     ( 0 0  corethread 0 )
-;     symnew @ 2+ 1
-;     ( 0 0  corethread 0  newthread 1 )
-;     r@ false
-;     ( 0 0  corethread 0  newthread 1  name found? )
+;  ( ) ( R; name )
+;     (vocablist) 
+;  ( 0 [ vocid ... ] ) ( R; name )
 ;     begin
-;         ( 0 0  corethread 0  newthread 1  name found? )
-;         2over or over 0= and
-;		  \ flag is set if word not found yet and more places to look
-;         ( 0 0  corethread 0  newthread 1  name found? !found?&more?  )
-;     while
-;         ( 0 0  corethread 0  newthread 1  name found? )
-;         drop -rot (find)
-;     repeat 
-;         ( 0 0 ... name found? )
-; \ save the results
-;	  >r >r
-;	  begin
-;		  or 0=
-;	  until
-;	  r> r> ;
-; \ then get rid of the stack down to the two zeroes
-; \ return the results
+;         r@ over 
+;  ( vocid name vocid ) ( R; name ) 
+;         if
+;             over (vocfind)
+;         else
+;             (find)
+;         then 
+;
+;
+;
+;    until
 #ifdef HEADERS
 findlfa
     .byt $de,$ad
@@ -586,88 +547,40 @@ findlfa
     .asc "FIN","D"|bit7
 #endif
 _find
-#include "enter.i65"        ; ( name )
+#include "enter.i65"
     .word tor
 #include "page.i65"
-    .word zero
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word pearsonhash
-#include "page.i65"
-    .word twostar
-#include "page.i65"
-    .word symtab
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word false
-#include "page.i65"
-    .word symnew
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word one
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word false
+    .word _pvocablist
 #include "page.i65"
 find01
-    .word twoover
-#include "page.i65"
-    .word orx
+    .word rfetch
 #include "page.i65"
     .word over
 #include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word qbranch
+	.word qbranch
     .byt <(find02-*+1)
 #include "pad.i65"
-    .word drop
+    .word dup
 #include "page.i65"
-    .word _dashrot
+    .word _pvocfind
 #include "page.i65"
-    .word pfind
-#include "page.i65"
-    .word branch
-    .byt <(find01-*+1)
+	.word qbranch
+    .byt <(find03-*+1)
 #include "pad.i65"
 find02
-    .word xyzzy
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word tor
+    .word pfind
 #include "page.i65"
 find03
-    .word orx
+    .word rot
 #include "page.i65"
     .word zeq
 #include "page.i65"
-    .word qbranch
-    .byt <(find03-*+1)
+	.word qbranch
+    .byt <(find01-*+1)
 #include "pad.i65"
-    .word rfrom
+	.word rfrom
 #include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word exit
+	.word exit
 
 ;--------------------------------------------------------------
 ;
@@ -695,6 +608,46 @@ _existsq
 
 ;--------------------------------------------------------------
 ;
+;       FIND2   ( -- )
+;
+; eventually to replace FIND
+;
+#ifdef HEADERS
+find2lfa
+    .byt $de,$ad
+    .byt (_find2-*-1)|bit7
+    .asc "FIN","2"|bit7
+#endif
+_find2
+#include "enter.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       ?'   ( -- addr flag )
+;
+; harness for testing out the new FIND with vocabulary support
+;
+;~wut? remove this when FIND2 works
+#ifdef HEADERS
+queryticklfa
+    .byt $de,$ad
+    .byt (_querytick-*-1)|bit7
+    .asc "?","'"|bit7
+#endif
+_querytick
+#include "enter.i65"
+    .word bl                ; ( c )
+#include "page.i65"
+    .word _word             ; ( nfa )
+#include "page.i65"
+    .word _find2            ; ( nfa -1|+1 | here false )
+#include "page.i65"
+    .word exit
+
+
+;--------------------------------------------------------------
+;
 ;       ?FIND   ( flag -- )
 ;
 ;#ifdef HEADERS
@@ -708,7 +661,7 @@ _qfind
     .word qbranch
     .byt <(qfind01-*+1)
 #include "pad.i65"
-    .word three					; not found
+    .word three                 ; not found
 #include "page.i65"
     .word fail
 #include "page.i65"
@@ -739,6 +692,147 @@ _tick
     .word _qfind
 #include "page.i65"
     .word exit
+
+;--------------------------------------------------------------
+;
+;       INTERPRET
+;
+; tdict
+;
+;
+;": interpret   ( )
+;       begin   ?stack
+;               exists?
+;               if      link>
+;                       execute
+;               else    number dpl @ 1+ 0=
+;                       if      drop
+;                       then
+;               then
+;               false
+;               quit?
+;       again ;
+;
+#ifdef HEADERS
+interpretlfa
+    .byt $de,$ad
+    .byt (_interpret-*-1)|bit7
+    .asc "INTERPRE","T"|bit7
+#endif
+_interpret
+#include "enter.i65"
+interpret01
+    .word qstack            ; ( )
+#include "page.i65"
+    .word _existsq          ; ( addr flag )
+#include "page.i65"
+    .word qbranch
+    .byt <(interpret02-*+1)
+#include "pad.i65"
+    .word execute
+#include "page.i65"
+    .word branch
+    .byt <(interpret03-*+1)
+#include "pad.i65"
+interpret02
+    .word _number
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word qbranch
+    .byt <(interpret03-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+interpret03
+    .word false
+#include "page.i65"
+    .word _quitq
+#include "page.i65"
+    .word qbranch
+    .byt <(interpret01-*+1)
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       QUIT
+;
+; tdict
+;
+;"This is the infinite outer interpreter loop:
+;       - resets the return stack (RP!)
+;       - outputs a carriage return (CR)
+;       - waits for a line of input (QUERY)
+;       - interprets that line
+; * 83 interpreter outer
+;
+#ifdef HEADERS
+quitlfa
+    .byt $de,$ad
+    .byt (_quit-*-1)|bit7
+    .asc "QUI","T"|bit7
+#endif
+_quit
+#include "enter.i65"
+    .word blk
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word _lbracket         ; STATE OFF
+#include "page.i65"
+quit01                                  ; BEGIN
+    .word rpstore
+#include "page.i65"
+    .word cr
+#include "page.i65"
+    .word _query
+#include "page.i65"
+    .word _interpret
+#include "page.i65"
+    .word state
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word qbranch           ; IF
+    .byt <(quit03-*+1)
+#include "pad.i65"
+    .word _pdq
+    .byt (quit02-*-1)
+    .asc    " OK"
+quit02
+#include "pad.i65"
+quit03                                  ; THEN AGAIN
+    .word branch
+    .byt <(quit01-*+1)
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       ABORT
+;
+; * 83 interpreter tdict
+;
+#ifdef HEADERS
+abortlfa
+    .byt $de,$ad
+    .byt (_abort-*-1)|bit7
+    .asc "ABOR","T"|bit7
+#endif
+_abort
+#include "enter.i65"
+    .word spstore
+#include "page.i65"
+    .word _quit
+#include "page.i65"
+    .word exit      ; make the decompiler happy
 
 ;--------------------------------------------------------------
 ;
@@ -854,7 +948,7 @@ _symplus
 #include "page.i65"
     .word twominus
 #include "page.i65"
-    .word _dashrot
+    .word dashrot
 #include "page.i65"
     .word cmove
 #include "page.i65"
@@ -1399,7 +1493,7 @@ _rehash
 #include "page.i65"
     .word _prehash
 #include "page.i65"
-	.word dup
+    .word dup
 #include "page.i65"
     .word symnew
 #include "page.i65"

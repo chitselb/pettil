@@ -2000,8 +2000,10 @@ SPAN  TIB  U.  WORD
 ;     dup>r 1- tuck
 ;  ( from howmany-1 to howmany-1 )
 ;     + -rot + r@
-;  ( to+howmany-1 from+howmany-1 )
+;  ( to+howmany-1 from+howmany-1 howmany )
 ;     >6502
+;     ldy #2
+;     jsr locals                ; N0 = to; N1 = from
 #ifdef HEADERS
 cmovegtlfa
     .byt $de,$ad
@@ -2010,7 +2012,7 @@ cmovegtlfa
 #endif
 _cmovegt
 #include "enter.i65"
-	.word duptor
+    .word duptor
     brk
     .byt ld | TOS
     .byt st | N2                ; howmany
@@ -2055,5 +2057,188 @@ cmovegt05
     ldx storex
     jmp pops
 
+: (vocablist)   ( -- 0 id id ... )
+    0 >r  context
+    begin 
+        @ dup 2+ c@  dup>r  0=
+    until
+    drop r>
+    begin
+        r> ?dup  0=
+    until ;
+
+: (find)   ( vocid name  -- name 0 | cfa -1|1 )
+
+;--------------------------------------------------------------
+;
+;       FIND   ( addr1 -- addr2 flag )
+;
+; * 83 interpreter tdict
+;
+; addr1 is the address of a counted string, which is the word to look
+; up in the dictionary.
+;
+; if not found, addr2 is the original addr1, and flag = 0
+; if found, addr2 is the code field address of the word,
+; and flag = -1 for normal words, +1 for immediate words
+;
+;": find   ( addr1 -- addr2 flag )
+;     >r 
+;     ( )
+;     (vocablist) 
+;     ( 0 [ vocid ... ] )
 
 
+;     r@ pearsonhash 2* symtab @ + @ 2+ 0
+;     ( 0 0  corethread 0 )
+;     symnew @ 2+ 1
+;     ( 0 0  corethread 0  newthread 1 )
+;     r@ false
+;     ( 0 0  corethread 0  newthread 1  name found? )
+;     begin
+;         ( 0 0  corethread 0  newthread 1  name found? )
+;         2over or over 0= and
+;         \ flag is set if word not found yet and more places to look
+;         ( 0 0  corethread 0  newthread 1  name found? !found?&more?  )
+;     while
+;         ( 0 0  corethread 0  newthread 1  name found? )
+;         drop -rot (find)
+;     repeat 
+;         ( 0 0 ... name found? )
+; \ save the results
+;     >r >r
+;     begin
+;         or 0=
+;     until
+;     r> r> ;
+; \ then get rid of the stack down to the two zeroes
+; \ return the results
+#ifdef HEADERS
+findlfa
+    .byt $de,$ad
+    .byt (_find-*-1)|bit7
+    .asc "FIN","D"|bit7
+#endif
+_find
+#include "enter.i65"        ; ( name )
+    .word tor
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word pearsonhash
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word false
+#include "page.i65"
+    .word symnew
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word one
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word false
+#include "page.i65"
+find01
+    .word twoover
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word qbranch
+    .byt <(find02-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+    .word _dashrot
+#include "page.i65"
+    .word pfind
+#include "page.i65"
+    .word branch
+    .byt <(find01-*+1)
+#include "pad.i65"
+find02
+    .word tor
+#include "page.i65"
+    .word tor
+#include "page.i65"
+find03
+    .word orx
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word qbranch
+    .byt <(find03-*+1)
+#include "pad.i65"
+    .word rfrom
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word exit
+
+   
+: find   ( addr1 -- addr2 flag )
+    >r 
+  ( ) ( R; name )
+    (vocablist) 
+  ( 0 [ vocid ... ] ) ( R; name )
+	true r@ false
+    begin
+        over or 
+  ( vocid vocid ) ( R; name ) 
+        while
+			dup (vocfind)
+        then 
+  ( vocid )
+		 r@ (find)
+    until
+
+find
+	txa
+
+
+;": find   ( addr1 -- addr2 flag )
+;     >r 
+;  ( ) ( R; name )
+;     (vocablist) 
+;  ( 0 [ vocid ... ] ) ( R; name )
+;     begin
+;         r@ over 
+;  ( vocid name vocid ) ( R; name ) 
+;         if
+;             over (vocfind)
+;         else
+;             (find)
+;         then 
+	done? if
+	begin
+	rot  0=
+	until
+	
+
+
+
+;    until
