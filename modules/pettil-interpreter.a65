@@ -1,13 +1,6 @@
 ; pettil-interpreter.a65
 #echo .       pettil-interpreter.a65    Outer Interpreter
 
-bloom
-    .dsb 8,0      ; 64 bits, used by hash2 (bloom filter)
-bloomx
-pearson
-    .byt 27, 120, 229, 241, 111, 44, 47, 141
-pearsonx
-
 ;==============================================================
 ;==== Error messages                                       ====
 ;==============================================================
@@ -59,6 +52,26 @@ forth
     jsr vocabdoes
     .word 0                 ; no parent
     .byt 0                  ; root vocabulary
+
+;--------------------------------------------------------------
+;
+;       BLOOM   ( -- )
+;
+; description
+;
+#ifdef HEADERS
+bloomlfa
+    .byt $de,$ad
+    .byt (bloom-*-1)|bit7
+    .asc "BLOO","M"|bit7
+#endif
+bloom
+    jsr docreate
+    .dsb 8,0      ; 64 bits, used by hash2 (bloom filter)
+bloomx
+pearson
+    .byt 27, 120, 229, 241, 111, 44, 47, 141
+pearsonx
 
 ;--------------------------------------------------------------
 ;
@@ -262,7 +275,7 @@ bloomhash01
     adc #'9'-'0'+1              ;[2]
     bcc bloomhash02             ;[3] carry is set only for digits
     adc n                       ;[3] anything with digits is nonzero
-    and #(8*(bloomx-bloom))-1   ;[2] keep it within the filter bits
+    and #(8*(bloomx-(bloom+3)))-1   ;[2] keep it within the filter bits
     sta n                       ;[3]
     bne bloomhash02             ; never return 0 if any digits present
     ldy #1                      ; if total of digits hits some multiple
@@ -282,8 +295,8 @@ bloomhash02
     lsr
     lsr
     clc
-    adc #<bloom
-    ldy #>bloom
+    adc #<bloom+3
+    ldy #>bloom+3
     bcc bloomhash03
     iny
 bloomhash03
@@ -350,25 +363,25 @@ vocabsfrom01
 
 ;--------------------------------------------------------------
 ;
-;		VOCID   ( vocabulary -- vocid )
+;       VOCID   ( vocabulary -- vocid )
 ;
 ; description
 ;
 #ifdef HEADERS
 vocidlfa
-	.byt $de,$ad
-	.byt (_vocid-*-1)|bit7
-	.asc "VOCI","D"|bit7
+    .byt $de,$ad
+    .byt (_vocid-*-1)|bit7
+    .asc "VOCI","D"|bit7
 #endif
 _vocid
 #include "enter.i65"
-	.word fetch
+    .word fetch
 #include "page.i65"
-	.word twoplus
+    .word twoplus
 #include "page.i65"
-	.word cfetch
+    .word cfetch
 #include "page.i65"
-	.word exit
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -573,15 +586,15 @@ ppfind04
 ppfind06
     brk
     .byt ld | TOS
-    .byt push					; push the NFA
+    .byt push                   ; push the NFA
     .byt popd | TOS             ; get the CFA
     .byt br , <(ppfind08-*-2)
 ppfind07
     ; loser...
     brk
-    .byt ld | N0				; get the original name
+    .byt ld | N0                ; get the original name
     .byt st | TOS
-    .byt push					; push the name address twice
+    .byt push                   ; push the name address twice
 ppfind08
     .byt st | TOS               ; CFA or original NAME
     .byt ld | R9                ; status flag
@@ -695,28 +708,37 @@ _pvocfind
 ; and flag = -1 for normal words, +1 for immediate words
 ;
 ;": find   ( addr1 -- addr2 flag )
-;     >r
-;  ( ) ( R; name )
-;     (vocablist)
-;  ( ) ( R; name )
-;     0 0
-;     begin
-;         2drop vocabs> r@ over
+;     dup>r
+;  ( addr1 ) ( R; name )
+;     0 
+;  ( addr1 0 ) ( R; name )
+;     over bloomhash cbit@      \ check bloom filter
+;  ( addr1 0 flag ) ( R; name )
+;     if
+;  ( addr1 0 ) ( R; name )
+;         0
+;  ( addr1 0 0 ) ( R; name )
+;         (vocablist)
+;  ( addr1 0 0 ) ( R; name )
+;         begin
+;             2drop vocabs> r@ over
 ;  ( vocid name vocid ) ( R; name )
-;         if
+;             if
 ;  ( vocid name ) ( R; name )
-;             under (vocfind)
+;                 under (vocfind)
 ;  ( vocid ( nfa cfa flag | name name 0 ) ) ( R; name )
-;         else
+;             else
 ;  ( 0 name ) ( R; name )
-;             (find)
+;                 (find)
 ;  ( 0 ( nfa cfa flag | name name 0 ) ) ( R; name )
-;         then
+;             then
 ;  ( vocid nfa xfa flag ) ( R; name )
-;         rot drop
+;             rot drop
 ;  ( vocid xfa flag ) ( R; name )
-;         rot 0= over or
-;     until
+;             rot 0= over or
+;         until
+;  ( xfa flag ) ( R; name )
+;     then
 ;  ( xfa flag ) ( R; name )
 ;     r> drop ;
 ;
@@ -728,13 +750,22 @@ findlfa
 #endif
 _find
 #include "enter.i65"
-    .word tor
+    .word duptor
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word bloomhash
+#include "page.i65"
+    .word cbitfetch
+#include "page.i65"
+    .word qbranch
+    .byt <(find04-*+1)
+#include "page.i65"
+    .word zero
 #include "page.i65"
     .word _pvocablist
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word zero
 #include "page.i65"
 find01
     .word twodrop
@@ -774,6 +805,7 @@ find03
     .word qbranch
     .byt <(find01-*+1)
 #include "pad.i65"
+find04
     .word rfrom
 #include "page.i65"
     .word drop
@@ -1569,7 +1601,7 @@ prehash03
 ;  ( pad symbols targ+ )
 ;     symtab @ 32 erase
 ;  ( pad symbols  )
-;     [ bloom ] literal 8 erase
+;     bloom 8 erase
 ;  ( pad symbols  )
 ;     passbits  on
 ;     ['] symbyhash true 2swap 16 0  (rehash)
@@ -1618,9 +1650,8 @@ _rehash
 #include "pad.i65"
     .word _erase
 #include "page.i65"
-    .word plit
     .word bloom
-#include "pad.i65"
+#include "page.i65"
     .word clit
     .byt 8
 #include "pad.i65"
