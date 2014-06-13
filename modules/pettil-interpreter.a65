@@ -16,10 +16,10 @@ errptr
 
 msg01
     .byt msg02-*-1
-    .asc "STACK EMPTY"
+    .asc "STACK UNDERFLOW"
 msg02
     .byt msg03-*-1
-    .asc "STACK FULL"
+    .asc "STACK OVERFLOW"
 msg03
     .byt msg04-*-1
     .asc "NOT FOUND"
@@ -350,25 +350,47 @@ vocabsfrom01
 
 ;--------------------------------------------------------------
 ;
+;		VOCID   ( vocabulary -- vocid )
+;
+; description
+;
+#ifdef HEADERS
+vocidlfa
+	.byt $de,$ad
+	.byt (_vocid-*-1)|bit7
+	.asc "VOCI","D"|bit7
+#endif
+_vocid
+#include "enter.i65"
+	.word fetch
+#include "page.i65"
+	.word twoplus
+#include "page.i65"
+	.word cfetch
+#include "page.i65"
+	.word exit
+
+;--------------------------------------------------------------
+;
 ;       (VOCABLIST)   ( -- )
 ;
 ; Sets the VOCABS$ string to the list of vocabularies, chaining up
 ; from CONTEXT to core
 ;
-;": (vocablist)   ( -- 0 id id ... )
+;": (vocablist)   ( -- )
 ;       vocabs$  context
 ;  ( vocabs$ context )
 ;     begin
 ;  ( vocabs$ context )
-;        @ dup 2+ c@
+;         dup @ swap vocid
 ;  ( vocabs$ vocab id )
-;        rot 2dup
+;         rot 2dup
 ;  ( vocab id vocabs$ id vocabs$ )
 ;         c! 1+ -rot
 ;  ( vocabs$+ vocab id )
-;            0=
+;         0=
 ;     until
-;       2drop ;
+;     2drop ;
 ;
 #ifdef HEADERS
 vocablistlfa
@@ -383,13 +405,13 @@ _pvocablist
     .word context
 #include "page.i65"
 pvocablist01
-    .word fetch
-#include "page.i65"
     .word dup
 #include "page.i65"
-    .word twoplus
+    .word fetch
 #include "page.i65"
-    .word cfetch
+    .word swap
+#include "page.i65"
+    .word _vocid
 #include "page.i65"
     .word rot
 #include "page.i65"
@@ -458,8 +480,7 @@ vocminus01
 
 ;--------------------------------------------------------------
 ;
-;       ((FIND))   ( name fflag nfa -- nfa 0 | cfa flag )
-;       (FIND)   ( name -- name false | cfa flag )
+;       ((FIND))   ( name fflag startnfa -- nfa xfa flag )
 ;
 ; * outer interpreter
 ;
@@ -551,12 +572,16 @@ ppfind04
     sty r9+1                    ; set R9 = -1
 ppfind06
     brk
+    .byt ld | TOS
+    .byt push					; push the NFA
     .byt popd | TOS             ; get the CFA
     .byt br , <(ppfind08-*-2)
 ppfind07
     ; loser...
     brk
-    .byt ld | N0
+    .byt ld | N0				; get the original name
+    .byt st | TOS
+    .byt push					; push the name address twice
 ppfind08
     .byt st | TOS               ; CFA or original NAME
     .byt ld | R9                ; status flag
@@ -566,14 +591,16 @@ ppfind08
 
 ;--------------------------------------------------------------
 ;
-;       (FIND)   ( name -- xfa flag )
+;       (FIND)   ( name -- nfa xfa flag )
 ;
-;": (find)   ( name -- cfa flag | nfa 0 )
+;": (find)   ( name -- nfa cfa flag | name name 0 )
 ;     true symnew @ 2+ ((find))
 ;     ?dup 0=
 ;     if
-;         false over pearsonhash 2* symtab @ + @ 2+ ((find))
+;  ( name name )
+;         drop false over pearsonhash 2* symtab @ + @ 2+ ((find))
 ;     then ;
+;  ( nfa xfa flag | name name 0 )
 ;
 #ifdef HEADERS
 pfindlfa
@@ -600,6 +627,8 @@ _pfind
     .word qbranch
     .byt <(pfind01-*+1)
 #include "pad.i65"
+    .word drop
+#include "page.i65"
     .word false                 ; lists are sorted by size
 #include "page.i65"
     .word over
@@ -625,7 +654,7 @@ pfind01
 
 ;--------------------------------------------------------------
 ;
-;       (VOCFIND)   ( vocid name -- nfa 0 | cfa flag )
+;       (VOCFIND)   ( vocid name -- nfa xfa flag )
 ;
 ;": (vocfind   ( vocid name -- )
 ;     dup>r voc+ r@ (find) r> voc- ;
@@ -677,12 +706,14 @@ _pvocfind
 ;         if
 ;  ( vocid name ) ( R; name )
 ;             under (vocfind)
-;  ( vocid ( cfa flag | nfa 0 ) ) ( R; name )
+;  ( vocid ( nfa cfa flag | name name 0 ) ) ( R; name )
 ;         else
 ;  ( 0 name ) ( R; name )
 ;             (find)
-;  ( 0 ( cfa flag | nfa 0 ) ) ( R; name )
+;  ( 0 ( nfa cfa flag | name name 0 ) ) ( R; name )
 ;         then
+;  ( vocid nfa xfa flag ) ( R; name )
+;         rot drop
 ;  ( vocid xfa flag ) ( R; name )
 ;         rot 0= over or
 ;     until
@@ -730,6 +761,10 @@ find02
 find03
     .word rot
 #include "page.i65"
+    .word drop
+#include "page.i65"
+    .word rot
+#include "page.i65"
     .word zeq
 #include "page.i65"
     .word over
@@ -763,9 +798,9 @@ _existsq
 #include "enter.i65"
     .word bl                ; ( c )
 #include "page.i65"
-    .word _word             ; ( nfa )
+    .word _word             ; ( name )
 #include "page.i65"
-    .word _find             ; ( nfa -1|+1 | here false )
+    .word _find             ; ( ( nfa -1|+1 ) | ( name false ) )
 #include "page.i65"
     .word exit
 
@@ -987,7 +1022,7 @@ _indictq
 #include "page.i65"
     .word swap
 #include "page.i65"
-    .word _here
+    .word here
 #include "page.i65"
     .word ult
 #include "page.i65"
@@ -1630,6 +1665,22 @@ _rehash
 ; * 83 interpreter
 ;
 ; checks FENCE, moves DP, sorts symbol table
+;~wut? needs a special mode of (FIND) to locate words that have been redefined
+; so they can be unsmudged
+; * smudged
+; * highest CFA < the new DP
+; * distinct symbols for separate vocabularies
+;
+;": forget   ( -- )
+;     r@ [ launch01 ] literal <>
+;     if
+;         '
+;     then
+;     dup fence @ u<
+;     if
+;         7 fail
+;     then
+;     dp !  rehash ;
 ;
 #ifdef HEADERS
 forgetlfa

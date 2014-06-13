@@ -2343,3 +2343,190 @@ pfind08
     if
         0 over pearsonhash 2* symtab @ + @ ((find))
     then ;
+
+
+: voc@   ( -- vocid )
+    context @ 2+ c@ ;
+
+: (vocablist)   ( -- 0 id id ... )
+      vocabs$  context
+  ( vocabs$ context )
+      begin
+  ( vocabs$ context )
+          @ dup 2+ c@
+  ( vocabs$ vocab id )
+          rot 2dup
+  ( vocab id vocabs$ id vocabs$ )
+          c! 1+ -rot
+  ( vocabs$+ vocab id )
+          0=
+      until
+      2drop ;
+
+
+
+: smudge   ( -- )
+    latest @ $20 cbit^ ;        \ toggle $20 bit on last word defined
+
+
+
+: create   ( -- )
+    exists?
+    if
+  ( cfa )
+        [ RVSON ] cliteral emit
+        here count type
+        [ RVSOFF ] cliteral emit
+        ."  EXISTS"
+\ navigate to the NFA
+\ smudge the previously existing word
+\ leave the address of the name
+  ( here )
+    then
+  ( here )
+\ here is the name
+    current @ 2+ c@ ?dup
+    if
+\ concatenate the vocabulary id
+        under voc+
+    then
+  ( here )
+    symtail @                   \ add the symbol to the symbol table
+  ( symtail )
+    r@ 2dup 2 +under
+  ( symtail here symtail+2 here )
+    over latest !               \ set LATEST variable to new word's NFA
+  ( symtail here symtail+2 here )
+    nfalen 1+ 3dup cmove smudge \ move symbol to symtail+2, smudge it
+  ( symtail here symtail+2 len+1 )
+    +
+  ( symtail here symtail+2+len+1 )
+    dup 3 erase                 \ mark the new symtail 00 00 00
+  ( symtail here symtail+2+len+1 )
+    symtail !                   \ update symtail
+  ( symtail here )
+    swap !                      \ set the CFA of the new symbol to HERE
+  ( )
+    [ docreate ] literal ,cfa ; \ enclose "JSR DOCREATE" in the dictionary
+
+
+;": create   ( -- )
+;     bl word
+;                               ( addr )
+;     dup dup find
+;                               ( here addr cfa flag )
+;     swap drop
+;                               ( here addr flag )
+;     if
+;                               ( here addr )
+;         RVSON emit
+;                               ( here addr )
+;         over count type
+;                               ( here addr )
+;         RVSOFF emit
+;                               ( here addr )
+;         ."  exists"
+;                               ( here addr )
+;     then
+;                               ( nfa addr )
+;     drop >r $80 r@ c@ 2dup or
+;                               ( $80 len $80|len ) ( R; nfa )
+;     r@ c!
+;                               ( $80 len ) ( R; nfa ) ( R; nfa )
+;     r@ + dup c@
+;                               ( $80 cfa-1 lastchar ) ( R; nfa )
+;     rot or over c!
+;                               ( cfa-1 ) ( R; nfa )
+;     1+ dp !
+;                               ( ) ( R; nfa )
+;     ['] docreate ,cfa         ( enclose 'jsr docreate' )
+;                               ( ) ( R; nfa )
+;     r@ dhash
+;                               ( hash1 hash2 ) ( R; nfa )
+;     bloom!
+;                               ( hash1 ) ( R; nfa )
+;     r> 2- swap dhash! ;
+;                               ( )
+
+: isdup?   ( name -- flag )
+
+: id.   ( nfa -- )
+    dup nfalen  over c@
+  ( nfa len len|flags )
+    $40 and             \ check vocab bit
+  ( nfa len isvoc? )
+    if
+        1-
+    then
+    1 +under type ;
+
+\ if current vocabulary isn't root, append the vocid
+: ?vocab   ( name -- name )
+    current @ 2+ c@ ?dup
+    if
+        over voc+
+    then ;
+
+: create   ( -- )
+\ parse input stream to here, and search context and its parents for name
+    exists?
+  ( xfa flag )
+    here ?vocab swap
+  ( xfa here flag )
+    if
+  ( xfa here )
+\ is potential duplicate word in the current (not a parent) vocabulary?
+\ otherwise it's not a redefinition, treat it as a new word
+        nip (find)
+  ( nfa xfa flag )
+        if
+  ( nfa cfa )
+            [ RVSON ] cliteral emit
+            over id.
+            [ RVSOFF ] cliteral emit
+            ."  EXISTS"
+            drop smudge         \ smudge the previously existing word
+            here
+  ( here )
+        then
+  ( here )
+    then
+  ( here )
+    symtail @                   \ add the symbol to the symbol table
+  ( here symtail )
+    over 2dup 2 +under
+  ( here symtail here symtail+2 here )
+    over latest !             \ set LATEST variable to new word's NFA
+  ( here symtail here symtail+2 here )
+    nfalen 1+ 3dup cmove smudge \ move symbol to symtail+2, smudge it
+  ( here symtail here symtail+2 len+1 )
+    +
+  ( here symtail here symtail+2+len+1 )
+    dup 3 erase                 \ mark the new symtail 00 00 00
+  ( here symtail here symtail+2+len+1 )
+    symtail !                   \ update symtail
+  ( here symtail here )
+    swap !                      \ set the CFA of the new symbol to HERE
+  ( )
+    [ docreate ] literal ,cfa ; \ enclose "JSR DOCREATE" in the dictionary
+;--------------------------------------------------------------
+;
+;       (VOCABLIST)   ( -- )
+;
+; Sets the VOCABS$ string to the list of vocabularies, chaining up
+; from CONTEXT to core
+;
+;": (vocablist)   ( -- )
+;       vocabs$  context
+;  ( vocabs$ context )
+;     begin
+;  ( vocabs$ context )
+;         dup @ swap vocid
+;  ( vocabs$ vocab id )
+;         rot 2dup
+;  ( vocab id vocabs$ id vocabs$ )
+;         c! 1+ -rot
+;  ( vocabs$+ vocab id )
+;         0=
+;     until
+;     2drop ;

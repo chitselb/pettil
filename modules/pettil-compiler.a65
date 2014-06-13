@@ -57,7 +57,7 @@ commalfa
 #endif
 _comma
 #include "enter.i65"
-    .word _here
+    .word here
 #include "page.i65"
     .word store
 #include "page.i65"
@@ -81,7 +81,7 @@ ccommalfa
 #endif
 _ccomma
 #include "enter.i65"
-    .word _here
+    .word here
 #include "page.i65"20
     .word cstore
 #include "page.i65"
@@ -109,7 +109,7 @@ _commadollar
 #include "page.i65"
     .word over
 #include "page.i65"
-    .word _here
+    .word here
 #include "page.i65"
     .word twodup
 #include "page.i65"
@@ -131,7 +131,7 @@ _commadollar
 ;
 ;       ,CFA   ( addr -- )
 ;
-; create the code field of a new definition, taking page alignment
+; set the code field of a new definition, taking page alignment
 ; into account.
 ;
 ; compiler tdict
@@ -237,12 +237,115 @@ commaxt01
 
 ;--------------------------------------------------------------
 ;
-;       CREATE
+;       SMUDGE   ( nfa -- )
 ;
-; * 83 compiler tdict ~wut? rewrite
+; Toggle the smudge bit
+;
+#ifdef HEADERS
+smudgelfa
+    .byt $de,$ad
+    .byt (smudge-*-1)|bit7
+    .asc "SMUDG","E"|bit7
+#endif
+smudge
+    ldy #0
+    lda (tos),y
+    eor #$20
+    sta (tos),y
+    jmp pops
+
+;--------------------------------------------------------------
+;
+;       ID.   ( nfa -- )
+;
+;": id.   ( nfa -- )
+;     dup nfalen  over c@
+;  ( nfa len len|flags )
+;     $40 and                   \ check vocab bit
+;  ( nfa len isvoc? )
+;     if
+;         1-                    \ don't output vocab byte
+;     then
+;     1 +under type ;
+;
+#ifdef HEADERS
+iddotlfa
+    .byt $de,$ad
+    .byt (_iddot-*-1)|bit7
+    .asc "ID","."|bit7
+#endif
+_iddot
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word nfalen
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word clit
+    .byt $40
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word qbranch
+    .byt <(iddot01-*+1)
+#include "pad.i65"
+    .word oneminus
+#include "page.i65"
+iddot01
+    .word one
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
+    .word type
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       ?VOCAB   ( name -- name )
+;
+;\ if current vocabulary isn't root, append the vocid to name and set V bit
+;": ?vocab   ( name -- name )
+;     current vocid ?dup
+;     if
+;         over voc+
+;     then ;
+;
+#ifdef HEADERS
+qvocablfa
+    .byt $de,$ad
+    .byt (_qvocab-*-1)|bit7
+    .asc "?VOCA","B"|bit7
+#endif
+_qvocab
+#include "enter.i65"
+    .word current
+#include "page.i65"
+    .word _vocid
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(qvocab01-*+1)
+#include "pad.i65"
+    .word over
+#include "page.i65"
+    .word vocplus
+#include "page.i65"
+qvocab01
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       CREATE   ( -- ; parses the next token in the input stream )
+;
+; * 83 compiler tdict
 ;
 ; A defining word executed in the form
-;     CREATE <name>                 
+;     CREATE <name>
 ;     Creates a dictionary entry for <name>.  After <name> is
 ;     created, the next available dictionary location is the first
 ;     byte of <name>'s parameter field.  When <name> is
@@ -251,42 +354,42 @@ commaxt01
 ;     not allocate space in <name>'s parameter field.
 ;
 ;": create   ( -- )
-;     bl word
-;                               ( addr )
-;     dup dup find
-;                               ( here addr cfa flag )
-;     swap drop
-;                               ( here addr flag )
+;\ parse input stream to here, and search context and its parents for name
+;     exists? nip
+;  ( flag )
+;     here ?vocab swap          \ append vocabid if current != core
+;  ( here flag )
 ;     if
-;                               ( here addr )
-;         RVSON emit
-;                               ( here addr )
-;         over count type
-;                               ( here addr )
-;         RVSOFF emit
-;                               ( here addr )
-;         ."  exists"
-;                               ( here addr )
-;     then
-;                               ( nfa addr )
-;     drop >r $80 r@ c@ 2dup or
-;                               ( $80 len $80|len ) ( R; nfa ) 
-;     r@ c!
-;                               ( $80 len ) ( R; nfa ) ( R; nfa )
-;     r@ + dup c@
-;                               ( $80 cfa-1 lastchar ) ( R; nfa )
-;     rot or over c!
-;                               ( cfa-1 ) ( R; nfa )
-;     1+ dp !
-;                               ( ) ( R; nfa )
-;     ['] docreate ,cfa         ( enclose 'jsr docreate' )
-;                               ( ) ( R; nfa )
-;     r@ dhash
-;                               ( hash1 hash2 ) ( R; nfa )                               
-;     bloom!
-;                               ( hash1 ) ( R; nfa )
-;     r> 2- swap dhash! ;
-;                               ( )
+;  ( here )
+;\ is potential duplicate word in the current (not a parent) vocabulary?
+;\ otherwise it's not a redefinition, treat it as a new word
+;         (find) nip
+;  ( nfa flag )
+;         if
+;  ( nfa )
+;             [ RVSON ] cliteral emit
+;             dup id. smudge    \ smudge the previously existing word
+;             [ RVSOFF ] cliteral emit
+;             ."  EXISTS"
+;             here              \ leave the address of the name
+;        then
+;  ( here )
+;    then
+;   ( here )
+;     symtail @                 \ add the symbol to the symbol table
+;   ( here symtail )
+;     2dup !                    \ new CFA
+;   ( here symtail )
+;     2+ dup latest !           \ set LATEST
+;   ( here symtail+2 )
+;     over nfalen 1+ 2dup +     \ 
+;   ( here symtail+2 len+1 symtail+len+3 )
+;     dup symtail ! 3 erase     \ mark new symtail
+;   ( here symtail+2 len+1 )
+;     cmove
+;   ( )
+;     [ docreate ] literal ,cfa ; \ enclose "JSR DOCREATE" in the dictionary
+;
 #ifdef HEADERS
 createlfa
     .byt $de,$ad
@@ -295,110 +398,94 @@ createlfa
 #endif
 _create
 #include "enter.i65"
-    .word xyzzy
+    .word _existsq
 #include "page.i65"
-    .word bl                    ; ( bl )
+    .word nip
 #include "page.i65"
-    .word _word                 ; ( nfa )
+    .word here
 #include "page.i65"
-    .word dup                   ; ( nfa nfa )
+    .word _qvocab
 #include "page.i65"
-    .word dup                   ; ( nfa nfa nfa )
+    .word swap
 #include "page.i65"
-    .word _find                 ; ( nfa nfa addr2 flag )
-#include "page.i65"
-    .word swap                  ; ( nfa nfa flag addr2 )
-#include "page.i65"
-    .word drop                  ; ( nfa nfa flag )
-#include "page.i65"
-    .word qbranch               ; IF
-    .byt <(create03-*+1)
+    .word qbranch
+    .byt <(create02-*+1)
 #include "pad.i65"
-    .word clit                  ; ( nfa cfa $12 )
+    .word _pfind
+#include "page.i65"
+    .word nip
+#include "page.i65"
+    .word qbranch
+    .byt <(create02-*+1)
+#include "pad.i65"
+    .word clit
     .byt RVSON
 #include "pad.i65"
-    .word emit                  ; ( nfa cfa )
+    .word emit
 #include "page.i65"
-    .word over                  ; ( nfa cfa nfa )
+    .word dup
 #include "page.i65"
-    .word count                 ; ( nfa cfa addr+1 len )
+    .word _iddot
 #include "page.i65"
-    .word type                  ; ( nfa cfa )
+    .word smudge
 #include "page.i65"
     .word clit
-    .byt RVSOFF                 ; ( nfa cfa $92 )
+    .byt RVSOFF
 #include "pad.i65"
-    .word emit                  ; ( nfa cfa )
+    .word emit
 #include "page.i65"
     .word _pdq
-    .byt create02-*-1
-    .asc    " EXISTS"           ; ( nfa cfa )
+    .byt (create01-*-1)
+    .asc    " EXISTS "
+create01
+#include "pad.i65"
+    .word here
+#include "page.i65"
 create02
-#include "pad.i65"              ; ( nfa addr )
-create03                        ; THEN
-    .word drop                  ; ( nfa )
+    .word symtail
 #include "page.i65"
-    .word tor                   ; ( ) ( R; nfa )
+    .word fetch
 #include "page.i65"
-    .word clit                  ; ( $80 )
-    .byt $80
+    .word twodup
 #include "page.i65"
-    .word rfetch                ; ( $80 nfa ) ( R; nfa )
+    .word store
 #include "page.i65"
-    .word cfetch                ; ( $80 len ) ( R; nfa )
+    .word twoplus
 #include "page.i65"
-    .word twodup               ; ( $80 len $80 len ) ( R; nfa )
+    .word dup
 #include "page.i65"
-    .word orx                   ; ( $80 len len|bit7 ) ( R; nfa )
+   .word latest
 #include "page.i65"
-    .word rfetch                ; ( $80 len len|bit7 nfa ) ( R; nfa )
+   .word store
 #include "page.i65"
-    .word cstore                ; ( $80 len ) ( R; nfa )
+   .word over
 #include "page.i65"
-    .word rfetch                ; ( $80 len nfa ) ( R; nfa )
+    .word nfalen
 #include "page.i65"
-    .word plus                  ; ( $80 cfa-1 ) ( R; nfa )
+    .word oneplus
 #include "page.i65"
-    .word dup                   ; ( $80 cfa-1 cfa-1 ) ( R; nfa )
+    .word twodup
 #include "page.i65"
-    .word cfetch                ; ( $80 cfa-1 last ) ( R; nfa )
+    .word plus
 #include "page.i65"
-    .word rot                   ; ( cfa-1 last $80 ) ( R; nfa )
+    .word dup
 #include "page.i65"
-    .word orx                   ; ( cfa-1 last|bit7 ) ( R; nfa )
+    .word symtail
 #include "page.i65"
-    .word over                  ; ( cfa-1 last|bit7 cfa-1 ) ( R; nfa )
+    .word store
 #include "page.i65"
-    .word cstore                ; ( cfa-1 ) ( R; nfa )
+    .word three
 #include "page.i65"
-    .word oneplus               ; ( cfa ) ( R; nfa )
+    .word _erase
 #include "page.i65"
-    .word dp                    ; ( cfa dp ) ( R; nfa )
-#include "page.i65"
-    .word store                 ; ( )  ( R; nfa )
+    .word cmove
 #include "page.i65"
     .word plit
-    .word docreate              ; ( 'docreate ) ( R; nfa )
+    .word docreate
 #include "pad.i65"
-    .word _commacfa             ; ( ) ( R; nfa )
+    .word _commacfa
 #include "page.i65"
-    .word rfetch                ; ( nfa ) ( R; nfa )
-#include "page.i65"
-;    .word dhash                 ; ( hash1 hash2 ) ( R; nfa )
-#include "page.i65"
-;    .word bloomstore            ; ( hash1 ) ( R; nfa )
-#include "page.i65"
-    .word rfrom                 ; ( hash1 nfa ) ( R; nfa )
-#include "page.i65"
-    .word twominus              ; ( hash1 lfa )
-#include "page.i65"
-    .word swap                  ; ( lfa hash1 )
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-;    .word dhashstore            ; ( )
-#include "page.i65"
-    .word exit                  ; ( )
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -444,7 +531,11 @@ _colon
 #include "page.i65"
     .word _create
 #include "page.i65"
-    .word _smudge
+    .word latest
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word smudge
 #include "page.i65"
     .word _rbracket
 #include "page.i65"
@@ -470,7 +561,11 @@ semi
     .word _compile
     .word exit
 #include "page.i65"
-    .word _smudge
+    .word latest
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word smudge
 #include "page.i65"
     .word _lbracket
 #include "page.i65"
@@ -496,7 +591,7 @@ _constant
 #include "page.i65"
     .word _psemi
     jmp doconst
-    
+
 ;--------------------------------------------------------------
 ;
 ;       CCONSTANT   ( n -- )
@@ -517,7 +612,7 @@ _cconstant
 #include "page.i65"
     .word _psemi
     jmp docconst
-    
+
 ;--------------------------------------------------------------
 ;
 ;       VARIABLE   ( -- )
@@ -953,29 +1048,6 @@ rbracket05
 
 ;--------------------------------------------------------------
 ;
-;       SMUDGE
-;
-; tdict
-;
-#ifdef HEADERS
-smudgelfa
-    .byt $de,$ad
-    .byt (_smudge-*-1)|bit7
-    .asc "SMUDG","E"|bit7
-#endif
-_smudge
-#include "enter.i65"
-    .word _latest
-#include "page.i65"
-    .word clit
-    .byt bit5       ; $20
-#include "pad.i65"
-    .word toggle
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
 ;       (;CODE)
 ;
 ; tdict
@@ -1163,7 +1235,7 @@ _qtomark
 #include "enter.i65"
     .word _qcomp
 #include "page.i65"
-    .word _here
+    .word here
 #include "page.i65"
     .word swap
 #include "page.i65"
@@ -1187,7 +1259,7 @@ _qfrommark
 #include "enter.i65"
     .word _qcomp
 #include "page.i65"
-    .word _here
+    .word here
 #include "page.i65"
     .word zero
 #include "page.i65"
@@ -1217,7 +1289,7 @@ qtoresolve01
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word _here
+    .word here
 #include "page.i65"
     .word rot
 #include "page.i65"
@@ -1374,7 +1446,7 @@ _vocabulary
 ;#include "page.i65"
 ;               .word _comma
 ;#include "page.i65"
-;               .word _here
+;               .word here
 ;#include "page.i65"
 ;               .word voclink
 ;#include "page.i65"
@@ -1795,52 +1867,52 @@ _twovariable
 ;
 ;       ID.
 ;
-; tdict
+; Blazin' Forth's ID.
 ;
-#ifdef HEADERS
-iddotlfa
-    .byt $de,$ad
-    .byt (_iddot-*-1)|bit7
-    .asc "ID","."|bit7
-#endif
-_iddot
-#include "enter.i65"
-    .word _pad
-#include "page.i65"
-    .word clit
-    .byt 32
-#include "pad.i65"
-    .word clit
-    .asc '*'
-#include "pad.i65"
-    .word fill
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word _namefrom
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word _pad
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word _pad
-#include "page.i65"
-    .word count
-#include "page.i65"
-    .word clit
-    .byt $1f                ; ~ shouldn't this use WIDTH?
-#include "pad.i65"
-    .word andx
-#include "page.i65"
-    .word type
-#include "page.i65"
-    .word exit
+;#ifdef HEADERS
+;iddotlfa
+;    .byt $de,$ad
+;    .byt (_iddot-*-1)|bit7
+;    .asc "ID","."|bit7
+;#endif
+;_iddot
+;#include "enter.i65"
+;    .word _pad
+;#include "page.i65"
+;    .word clit
+;    .byt 32
+;#include "pad.i65"
+;    .word clit
+;    .asc '*'
+;#include "pad.i65"
+;    .word fill
+;#include "page.i65"
+;    .word dup
+;#include "page.i65"
+;    .word _namefrom
+;#include "page.i65"
+;    .word over
+;#include "page.i65"
+;    .word minus
+;#include "page.i65"
+;    .word _pad
+;#include "page.i65"
+;    .word swap
+;#include "page.i65"
+;    .word cmove
+;#include "page.i65"
+;    .word _pad
+;#include "page.i65"
+;    .word count
+;#include "page.i65"
+;    .word clit
+;    .byt $1f                ; ~ shouldn't this use WIDTH?
+;#include "pad.i65"
+;    .word andx
+;#include "page.i65"
+;    .word type
+;#include "page.i65"
+;    .word exit
 
 ;--------------------------------------------------------------
 ;
