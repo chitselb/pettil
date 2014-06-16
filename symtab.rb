@@ -94,7 +94,7 @@
 
     # build a label file so pettil-tdict.a65 can find things in core
     # fix problems with reserved words e.g. bc add in hex address
-    use_decimal = ' uarea usercold uservmbuf zgt01 _pudot dlt02 pushya i spaces01 _word _space '
+    use_decimal = ' i emit01 number07 _ddotr dectos01 fourdrop _tickstream j pushya '
     always_use_decimal = false
     symfile = File.open("pettil-core.def",'w') do |f|
 #       symfile.write(#{a[0]}=#{a[1]}\n")

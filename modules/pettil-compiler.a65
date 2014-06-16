@@ -356,66 +356,58 @@ qvocab01
 
 ;--------------------------------------------------------------
 ;
-;       CREATE   ( -- ; parses the next token in the input stream )
+;		(CREATE)   ( addr -- )
 ;
-; * 83 compiler tdict
+; Creates a new symbol table entry with a CFA linking back to HERE,
+; where (CREATE) will compile "jsr addr", with consideration for page
+; alignment
 ;
-; A defining word executed in the form
-;     CREATE <name>
-;     Creates a dictionary entry for <name>.  After <name> is
-;     created, the next available dictionary location is the first
-;     byte of <name>'s parameter field.  When <name> is
-;     subsequently executed, the address of the first byte of
-;     <name>'s parameter field is left on the stack.  CREATE does
-;     not allocate space in <name>'s parameter field.
-;
-;": create   ( -- )
+;": (create)   ( addr -- )
 ;\ parse input stream to here, and search context and its parents for name
 ;     exists? nip
-;  ( flag )
+;  ( addr flag )
 ;     here ?vocab swap          \ append vocabid if current != core
-;  ( here flag )
+;  ( addr here flag )
 ;     if
-;  ( here )
+;  ( addr here )
 ;\ is potential duplicate word in the current (not a parent) vocabulary?
 ;\ otherwise it's not a redefinition, treat it as a new word
 ;         (find) nip
-;  ( nfa flag )
+;  ( addr nfa flag )
 ;         if
-;  ( nfa )
+;  ( addr nfa )
 ;             [ RVSON ] cliteral emit
 ;             dup id. smudge    \ smudge the previously existing word
 ;             [ RVSOFF ] cliteral emit
 ;             ."  EXISTS"
 ;             here              \ leave the address of the name
 ;        then
-;  ( here )
+;  ( addr here )
 ;    then
-;   ( here )
+;   ( addr here )
 ;     symtail @                 \ add the symbol to the symbol table
-;   ( here symtail )
+;   ( addr here symtail )
 ;     2dup !                    \ new CFA
-;   ( here symtail )
-;     2+ dup latest !           \ set LATEST
-;   ( here symtail+2 )
+;   ( addr here symtail )
+;     2+ dup newest !           \ set NEWEST
+;   ( addr here symtail+2 )
 ;     over nfalen 1+ 2dup +     \ 
-;   ( here symtail+2 len+1 symtail+len+3 )
+;   ( addr here symtail+2 len+1 symtail+len+3 )
 ;     dup symtail ! 3 erase     \ mark new symtail
-;   ( here symtail+2 len+1 )
+;   ( addr here symtail+2 len+1 )
 ;     third bloomhash cbit!		\ add symbol to the bloom filter
-;   ( here symtail+2 len+1 )
+;   ( addr here symtail+2 len+1 )
 ;     cmove
-;   ( )
-;     [ docreate ] literal ,cfa ; \ enclose "JSR DOCREATE" in the dictionary
+;   ( addr )
+;     ,cfa ; \ enclose "JSR DOCREATE" in the dictionary
 ;
 #ifdef HEADERS
-createlfa
-    .byt $de,$ad
-    .byt (_create-*-1)|bit7
-    .asc "CREAT","E"|bit7
+pcreatelfa
+	.byt $de,$ad
+	.byt (_pcreate-*-1)|bit7
+	.asc "(CREATE",")"|bit7
 #endif
-_create
-#include "enter.i65"
+_pcreate
     .word _existsq
 #include "page.i65"
     .word nip
@@ -453,9 +445,9 @@ _create
     .word emit
 #include "page.i65"
     .word _pdq
-    .byt (create01-*-1)
+    .byt (pcreate01-*-1)
     .asc    " EXISTS "
-create01
+pcreate01
 #include "pad.i65"
     .word here
 #include "page.i65"
@@ -504,13 +496,40 @@ create02
 #include "page.i65"
     .word cmove
 #include "page.i65"
-    .word plit
-    .word docreate
-#include "pad.i65"
     .word _commacfa
 #include "page.i65"
     .word exit
 
+;--------------------------------------------------------------
+;
+;       CREATE   ( -- ; parses the next token in the input stream )
+;
+; * 83 compiler tdict
+;
+; A defining word executed in the form
+;     CREATE <name>
+;     Creates a dictionary entry for <name>.  After <name> is
+;     created, the next available dictionary location is the first
+;     byte of <name>'s parameter field.  When <name> is
+;     subsequently executed, the address of the first byte of
+;     <name>'s parameter field is left on the stack.  CREATE does
+;     not allocate space in <name>'s parameter field.
+;
+#ifdef HEADERS
+createlfa
+    .byt $de,$ad
+    .byt (_create-*-1)|bit7
+    .asc "CREAT","E"|bit7
+#endif
+_create
+#include "enter.i65"
+    .word plit
+    .word docreate
+#include "pad.i65"
+	.word _pcreate
+#include "page.i65"
+	.word exit
+	
 ;--------------------------------------------------------------
 ;
 ;"      :   ( -- sys )
@@ -535,6 +554,10 @@ create02
 ; storage, the input stream is exhausted before encountering ;
 ; or ;CODE .  sys is balanced with its corresponding ; .
 ;
+;": :   ( -- )
+;      current @ context !
+;      [ 'enter ]  (create)
+;      !csp   latest smudge  ] ;
 #ifdef HEADERS
 colonlfa
     .byt $de,$ad
@@ -543,8 +566,6 @@ colonlfa
 #endif
 _colon
 #include "enter.i65"
-    .word _storecsp
-#include "page.i65"
     .word current
 #include "page.i65"
     .word fetch
@@ -553,7 +574,12 @@ _colon
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word _create
+	.word plit
+	.word enter
+#include "pad.i65"
+    .word _pcreate
+#include "page.i65"
+    .word _storecsp
 #include "page.i65"
     .word _latest
 #include "page.i65"
@@ -561,14 +587,17 @@ _colon
 #include "page.i65"
     .word _rbracket
 #include "page.i65"
-    .word _psemi
-    jmp enter
+    .word exit
 
 ;--------------------------------------------------------------
 ;
-;       ;   ( -- )
+;       ;   ( == )
 ;
 ; * 83 compiler tdict
+;
+;": ;   ( -- )
+;     ?csp
+;     [ 'exit ] ,xt  latest smudge [ ; immediate
 ;
 #ifdef HEADERS
 semilfa
@@ -580,8 +609,10 @@ semi
 #include "enter.i65"
     .word _qcsp
 #include "page.i65"
-    .word _compile
+	.word plit
     .word exit
+#include "page.i65"
+	.word _commaxt
 #include "page.i65"
     .word _latest
 #include "page.i65"
@@ -597,6 +628,8 @@ semi
 ;
 ; * 83 compiler tdict
 ;
+;": constant   ( n -- )
+;
 #ifdef HEADERS
 constantlfa
     .byt $de,$ad
@@ -605,12 +638,14 @@ constantlfa
 #endif
 _constant
 #include "enter.i65"
-    .word _create
+	.word plit
+	.word doconst
+#include "pad.i65"
+    .word _pcreate
 #include "page.i65"
     .word _comma
 #include "page.i65"
-    .word _psemi
-    jmp doconst
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -626,12 +661,14 @@ cconstantlfa
 #endif
 _cconstant
 #include "enter.i65"
-    .word _create
-#include "page.i65"
+	.word plit
+	.word docconst
+#include "pad.i65"
+    .word _pcreate
+#include "enter.i65"
     .word _ccomma
 #include "page.i65"
-    .word _psemi
-    jmp docconst
+    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -647,7 +684,10 @@ variablelfa
 #endif
 _variable
 #include "enter.i65"
-    .word _create
+	.word plit
+	.word docreate
+#include "pad.i65"
+    .word _pcreate
 #include "page.i65"
     .word two
 #include "page.i65"
@@ -686,21 +726,21 @@ _latest
 ;
 ; returns the NFA of a given word
 ;
-#ifdef HEADERS
-tonamelfa
-    .byt $de,$ad
-    .byt (_toname-*-1)|bit7
-    .asc ">NAM","E"|bit7
-#endif
-_toname
-#include "enter.i65"
+;#ifdef HEADERS
+;tonamelfa
+;    .byt $de,$ad
+;    .byt (_toname-*-1)|bit7
+;    .asc ">NAM","E"|bit7
+;#endif
+;_toname
+;#include "enter.i65"
 ;    .word oneminus
 ;#include "page.i65"
 ;    .word minusone
 ;#include "page.i65"
 ;    .word _traverse
 ;#include "page.i65"
-    .word exit
+;    .word exit
 
 ;--------------------------------------------------------------
 ;
@@ -744,6 +784,34 @@ _storecsp
 
 ;--------------------------------------------------------------
 ;
+;       ."   ( -- )
+;
+; * 83 compiler tdict
+;
+#ifdef HEADERS
+dotqlfa
+    .byt $de,$ad
+    .byt (_dotq-*-1)|bit7
+    .asc ".",'"'|bit7
+#endif
+_dotq
+#include "enter.i65"
+	.word plit
+	.word _pdq
+#include "pad.i65"
+    .word _commaxt
+#include "page.i65"
+    .word clit
+    .asc '"'
+#include "pad.i65"
+    .word _qchar
+#include "page.i65"
+    .word _commadollar
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;       ABORT"   ( flag -- ) ( -- ; compiling )
 ;
 ; * 83 compiler immediate tdict
@@ -757,16 +825,12 @@ abortqlfa
 #endif
 _abortq
 #include "enter.i65"
-    .word _compile
+	.word _dotq
+	.word plit
 #include "page.i65"
-    .word _pabortq
-#include "page.i65"
-    .word clit
-    .asc '"'
+	.word _abort
 #include "pad.i65"
-    .word _qchar
-#include "page.i65"
-    .word _commadollar
+    .word _commaxt
 #include "page.i65"
     .word exit
 
@@ -861,7 +925,7 @@ qcsp01                      ; THEN
 
 ;--------------------------------------------------------------
 ;
-;       ?CHAR   ( -- )
+;       ?CHAR   ( c -- )
 ;
 ; tdict
 ;
@@ -920,15 +984,13 @@ _qchar
 #include "page.i65"
     .word emit
 #include "page.i65"
-    .word _pdq
-    .byt qchar01-*-1
-    .asc    " MISSING "
-    ;123456789
-qchar01
+    .word clit
+    .byt 10
 #include "pad.i65"
-    .word _abort
+	.word fail
 #include "page.i65"
-qchar02         .word rfrom
+qchar02
+    .word rfrom
 #include "page.i65"
     .word drop
 #include "page.i65"
@@ -1116,32 +1178,6 @@ _does
     .word _compile  ; ~ fix paging here
     .word dodoes
 #include "pad.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       ."   ( -- )
-;
-; * 83 compiler tdict
-;
-#ifdef HEADERS
-dotqlfa
-    .byt $de,$ad
-    .byt (_dotq-*-1)|bit7
-    .asc ".",'"'|bit7
-#endif
-_dotq
-#include "enter.i65"
-    .word _compile
-    .word _pdq
-#include "pad.i65"
-    .word clit
-    .asc '"'
-#include "pad.i65"
-    .word _qchar
-#include "page.i65"
-    .word _commadollar
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1359,7 +1395,8 @@ _addtomark
 #include "page.i65"
     .word tor
 #include "page.i65"
-addtomark01     .word one
+addtomark01
+    .word one
 #include "page.i65"
     .word roll
 #include "page.i65"
@@ -1376,7 +1413,8 @@ addtomark01     .word one
 #include "page.i65"
     .word _qtomark
 #include "page.i65"
-addtomark02     .word rfrom
+addtomark02
+    .word rfrom
 #include "page.i65"
     .word dup
 #include "page.i65"

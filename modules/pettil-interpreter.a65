@@ -33,7 +33,7 @@ msg08
     .asc "BLOCK OUT OF RANGE"
 msg09
     .byt msg10-*-1
-    .asc "UNIMPLEMENTED"
+    .asc " MISSING"
 msg10
 
 ;--------------------------------------------------------------
@@ -397,7 +397,7 @@ _vocid
 ;  ( vocabs$ context )
 ;         dup @ -rot
 ;  ( parent vocabs$ vocab )
-;		  vocid tuck c!+ -rot
+;         vocid tuck c!+ -rot
 ;  ( vocabs$ context )
 ;         0=
 ;     until
@@ -436,8 +436,6 @@ pvocablist01
     .byt <(pvocablist01-*+1)
 #include "pad.i65"
     .word twodrop
-#include "page.i65"
-    .word xyzzy
 #include "page.i65"
     .word exit
 
@@ -708,7 +706,7 @@ _pvocfind
 ;  ( addr1 0 bloomflag )
 ;     if
 ;  ( addr1 )
-;         0 rot >r  (vocablist) 
+;         0 rot >r  (vocablist)
 ;  ( 0 0 ) ( R; name )
 ;         begin
 ;             2drop vocabs> r@ over
@@ -1019,6 +1017,92 @@ _abort
 #include "page.i65"
     .word exit      ; make the decompiler happy
 
+
+;--------------------------------------------------------------
+;
+;       BETWEEN?   ( x a b -- flag )
+;
+; returns true iff a < x < b
+;
+#ifdef HEADERS
+betweenqlfa
+    .byt $de,$ad
+    .byt (betweenq-*-1)|bit7
+    .asc "BETWEEN","?"|bit7
+#endif
+betweenq
+    ldy #2
+    jsr locals
+    lda n
+    cmp tos
+    lda n+1
+    sbc tos+1
+    bcs betweenq01
+    lda n+2
+    cmp n
+    lda n+3
+    sbc n+1
+    bcs betweenq01
+    dey
+betweenq01
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+;
+;       INCORE?   ( cfa -- flag )
+;
+; Returns true if the CFA is in the core dictionary
+;
+;": incore?   ( cfa -- flag )
+;     1024 over u< swap here u< and ;
+;
+#ifdef HEADERS
+incoreqlfa
+    .byt $de,$ad
+    .byt (_incoreq-*-1)|bit7
+    .asc "INCORE","?"|bit7
+#endif
+_incoreq
+#include "enter.i65"
+    .word bperbuf   ; 1024
+#include "page.i65"
+    .word here      ; dp
+#include "page.i65"
+    .word betweenq
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       INTDICT?   ( cfa -- flag )
+;
+; Returns true if the CFA is in the temporary dictionary
+;
+;": intdict?   ( cfa -- flag )
+;     tdict @ over u< swap memsize @ u< and ;
+; description
+;
+#ifdef HEADERS
+intdictqlfa
+    .byt $de,$ad
+    .byt (_intdictq-*-1)|bit7
+    .asc "INTDICT","?"|bit7
+#endif
+_intdictq
+#include "enter.i65"
+    .word tdict
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word memsiz
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word betweenq
+#include "page.i65"
+    .word exit
+
 ;--------------------------------------------------------------
 ;
 ;       INDICT?   ( nfa -- flag )
@@ -1026,7 +1110,7 @@ _abort
 ; return true if the code field is in either dictionary
 ;
 ;": indict?   ( nfa -- flag )
-;       nfa>cfa tdict @ over u< swap here u< or ;
+;       name> dup intdict? swap incore? or ;
 ;#ifdef HEADERS
 ;indictqlfa
 ;    .byt $de,$ad
@@ -1035,23 +1119,15 @@ _abort
 ;#endif
 _indictq
 #include "enter.i65"
-    .word twominus
+    .word _namefrom
 #include "page.i65"
-    .word fetch
+    .word dup
 #include "page.i65"
-    .word tdict
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word ult
+    .word _intdictq
 #include "page.i65"
     .word swap
 #include "page.i65"
-    .word here
-#include "page.i65"
-    .word ult
+    .word _incoreq
 #include "page.i65"
     .word orx
 #include "page.i65"
@@ -1075,8 +1151,7 @@ _tosyms
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word clit
-    .byt 32
+    .word bl    ; 32
 #include "page.i65"
     .word plus
 #include "page.i65"
@@ -1084,21 +1159,21 @@ _tosyms
 
 ;--------------------------------------------------------------
 ;
-;       SYM+   ( target nfa -- )
+;       SYM+   ( nfa target -- target+ )
 ;
-; move a symbol up to pad and turn on its bloomfilter bit
+; add a symbol to the symbol table, and turn on its bloomfilter bit
+; leave the address following the symbol on the stack
 ;
 ;": sym+
-;     ( target nfa )
-;     dup>r
-;     ( target nfa ) ( R; nfa )
-;     nfalen 3 +
-;     ( target len+3 ) ( R; nfa )
-;     r@ 2- -rot
-;     ( nfa-2 target len+3 ) ( R; nfa )
-;     cmove
-;     ( R; nfa )
-;     r> bloomhash cbit! ;
+;     ( nfa target )
+;     over bloomhash cbit!
+;     ( nfa target )
+;     over nfalen 1+
+;     ( nfa target len+1 )
+;     2dup + >r
+;     ( nfa target len+1 ) ( R; target+ )
+;     cmove r> ;
+;     ( target+ )
 ;#ifdef HEADERS
 ;sympluslfa
 ;    .byt $de,$ad
@@ -1107,41 +1182,27 @@ _tosyms
 ;#endif
 _symplus
 #include "enter.i65"
-    .word duptor
-#include "page.i65"
-    .word nfalen
-#include "page.i65"
-    .word threeplus
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word dashrot
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-#ifdef ENTERTAINMENT
-    .word rfetch
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word nfalen
-#include "page.i65"
-    .word one
-#include "page.i65"
-    .word plusunder
-#include "page.i65"
-    .word type
-#include "page.i65"
-    .word _space
-#include "page.i65"
-#endif
-    .word rfrom
+    .word over
 #include "page.i65"
     .word bloomhash
 #include "page.i65"
     .word cbitstore
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word nfalen
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word rfrom
 #include "page.i65"
     .word exit
 
@@ -1180,13 +1241,7 @@ nfaplus02
 ; and (CFA < DP or CFA > TDICT?)
 ;
 ;": symbysize   ( searchlen nfa -- flag )
-;     dup nfalen rot =
-;     ( nfa samelength? )
-;     dup
-;     if
-;         ( nfa samelength? )
-;         drop indict?
-;     then nip ;  ( flag )
+;     nfalen = ;
 ;
 ;#ifdef HEADERS
 ;symbysizelfa
@@ -1196,25 +1251,9 @@ nfaplus02
 ;#endif
 _symbysize
 #include "enter.i65"
-    .word dup
-#include "page.i65"
     .word nfalen
 #include "page.i65"
-    .word rot
-#include "page.i65"
     .word eq
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word qbranch
-    .byt <(symbysize01-*+1)
-#include "pad.i65"
-    .word swap
-#include "page.i65"
-    .word _indictq
-#include "page.i65"
-symbysize01
-    .word nip
 #include "page.i65"
     .word exit
 
@@ -1227,7 +1266,16 @@ symbysize01
 ; and that matches the current hash?
 ;
 ;": symbyhash   ( hash nfa -- flag )
-;     pearsonhash = ;
+;     dup pearsonhash swap = 
+; ( nfa flag )
+;     dup 
+;     if
+;         drop name>
+; ( cfa )
+;		  dup b/buf newdp @ between?
+; ( cfa flag )
+;         swap tdict @ memsiz @ between?  or 
+;     then ;
 ;
 ;#ifdef HEADERS
 ;symbyhashlfa
@@ -1243,14 +1291,64 @@ _symbyhash
 #include "page.i65"
     .word exit
 
+
+
+
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word pearsonhash
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word qbranch
+	.byt <(symbyhash01-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+    .word _namefrom
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word bperbuf		; 1024 = $0400 start of BASIC
+#include "page.i65"
+    .word newdp
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word betweenq
+#include "page.i65"
+	.word swap
+#include "page.i65"
+	.word tdict
+#include "page.i65"
+	.word fetch
+#include "page.i65"
+	.word memsiz
+#include "page.i65"
+	.word fetch
+#include "page.i65"
+	.word betweenq
+#include "page.i65"
+	.word orx
+#include "page.i65"
+symbyhash01
+	.word nip
+#include "page.i65"
+    .word exit
+
 ;--------------------------------------------------------------
 ;
-;       SYMSORT   ( 'compare searchfor src dest -- dest+ )
+;       SYMSORT   ( 'compare searchfor src target -- target+ )
 ;
 ; Make a pass through the symbol table at PAD, copying eligible
 ; symbols to target
 ;
-;": symsort   ( 'compare searchfor src dest )
+;": symsort   ( 'compare searchfor src target )
 ;     >r 2+
 ;     ( 'compare searchfor nfa ) ( R; target )
 ;     begin
@@ -1262,14 +1360,12 @@ _symbyhash
 ;         3dup rot execute
 ;         ( 'compare searchfor nfa flag ) ( R; target )
 ;         if
-;             \ copy it up to the new symbol table
+;             \ copy the CFA
 ;             ( 'compare searchfor nfa ) ( R; target )
-;             r@ over
-;             ( 'compare searchfor nfa target nfa ) ( R; target )
-;             sym+
-;             ( 'compare searchfor nfa ) ( R; target )
-;             \ advance target pointer
-;             r> 2+ nfa+ 2- >r
+;             r> over name> !+
+;             \ copy the symbol
+;             ( 'compare searchfor nfa target+2 )
+;             under sym+ >r
 ;             ( 'compare searchfor nfa ) ( R; target+ )
 ;         then
 ;         \ advance source pointer
@@ -1277,7 +1373,7 @@ _symbyhash
 ;         ( 'compare searchfor nfa+ ) ( R; target+ )
 ;     repeat
 ;     ( 'compare searchfor nfa+ ) ( R; target+ )
-;     3drop r> ;   ( dest+ )
+;     3drop r> ;   ( target+ )
 ;
 ;#ifdef HEADERS
 ;symsortlfa
@@ -1308,19 +1404,17 @@ symsort01
     .word qbranch
     .byt <(symsort02-*+1)
 #include "pad.i65"
-    .word rfetch
+    .word rfrom
 #include "page.i65"
     .word over
 #include "page.i65"
+    .word _namefrom
+#include "page.i65"
+    .word _storeplus
+#include "page.i65"
+    .word under
+#include "page.i65"
     .word _symplus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word nfaplus
-#include "page.i65"
-    .word twominus
 #include "page.i65"
     .word tor
 #include "page.i65"
@@ -1363,106 +1457,32 @@ passbits
 ; offset = n/8
 ;
 ;": >bloom   ( n -- mask offset )
-;         dup 7 and [ power2 ] literal + c@
+;         dup 7 and power2 + c@
 ;         swap 2/ 2/ 2/ ;
 ;
-;#ifdef HEADERS
-;tobloomlfa
-;    .byt $de,$ad
-;    .byt (_tobloom-*-1)|bit7
-;    .asc ">BLOO","M"|bit7
-;#endif
-_tobloom
-#include "enter.i65"
-    .word dup
-#include "page.i65"
-    .word clit
-    .byt 7
-#include "pad.i65"
-    .word andx
-#include "page.i65"
-    .word plit
-    .word power2
-#include "pad.i65"
-    .word plus
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word twoslash
-#include "page.i65"
-    .word twoslash
-#include "page.i65"
-    .word twoslash
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       PASSFILTER   ( symbols -- )
-;
-; During the first half of rehash, it is unnecessary to make a
-; pass through the entire symbol table searching for words of a
-; given length, if none of that length exist.  This is a
-; bloom filter to eliminate those symbol table passes.
-;
-;": passfilter   ( symbols -- )
-;     2+
-;     ( nfa )
-;     begin
-;         dup nfalen ?dup
-;     while
-;         dup 7 and [ power2 ] literal + c@
-;         swap 2/ 2/ 2/ passbits +
-;     ( mask addr )
-;         cbit!
-;         nfa+
-;     repeat drop ;
-;
-;#ifdef HEADERS
-;passfilterlfa
-;    .byt $de,$ad
-;    .byt (_passfilter-*-1)|bit7
-;    .asc "PASSFILTE","R"|bit7
-;#endif
-_passfilter
-#include "enter.i65"
-    .word passbits
-#include "page.i65"
-    .word four
-#include "page.i65"
-    .word _erase
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-passfilter01
-    .word dup
-#include "page.i65"
-    .word nfalen
-#include "page.i65"
-    .word qdup
-#include "page.i65"
-    .word qbranch
-    .byt <(passfilter02-*+1)
-#include "pad.i65"
-    .word _tobloom
-#include "page.i65"
-    .word passbits
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word cbitstore
-#include "page.i65"
-    .word nfaplus
-#include "page.i65"
-    .word branch
-    .byt <(passfilter01-*+1)
-#include "page.i65"
-passfilter02
-    .word drop
-#include "page.i65"
-    .word exit
+#ifdef HEADERS
+tobloomlfa
+    .byt $de,$ad
+    .byt (tobloom-*-1)|bit7
+    .asc ">BLOO","M"|bit7
+#endif
+tobloom
+    dex
+    lda tos
+    and #7
+    tay
+    lda power2,y
+    sta stackl,x
+    lda #0
+    sta stackh,x
+    lsr tos+1
+    ror tos
+    lsr tos+1
+    ror tos
+    lsr tos+1
+    ror tos             ; /8
+    lda tos+1
+    jmp next
 
 ;--------------------------------------------------------------
 ;
@@ -1502,7 +1522,7 @@ passfilter02
 ;    .byt (_prehash-*-1)|bit7
 ;    .asc "(REHASH",")"|bit7
 ;#endif
-_prehash
+;_prehash
 #include "enter.i65"
     .word pdo
 #include "page.i65"
@@ -1510,7 +1530,7 @@ prehash01
 #include "page.i65"
     .word i
 #include "page.i65"
-    .word _tobloom
+    .word tobloom
 #include "page.i65"
     .word passbits
 #include "pad.i65"
@@ -1521,16 +1541,6 @@ prehash01
     .word qbranch
     .byt <(prehash03-*+1)
 #include "page.i65"
-#ifdef ENTERTAINMENT
-    .word cr
-#include "page.i65"
-    .word i
-#include "page.i65"
-    .word _dot
-#include "page.i65"
-    .word cr
-#include "page.i65"
-#endif
     .word tor
 #include "page.i65"
     .word threedup
@@ -1581,26 +1591,585 @@ prehash03
 
 ;--------------------------------------------------------------
 ;
+;       +MOVE   ( start end delta -- )
+;
+; Move a block of memory between start and end (inclusive) to 
+; a new address calculated by adding the signed delta to start
+;
+;": +move   ( start end delta -- )
+; ( start end delta )
+;     >r over - 1+
+; ( start howmany )
+;     over r> + swap move ;
+;
+#ifdef HEADERS
+plusmovelfa
+    .byt $de,$ad
+    .byt (_plusmove-*-1)|bit7
+    .asc "+MOV","E"|bit7
+#endif
+_plusmove
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word _move
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       AUTOMEM   ( lastpad -- )
+;
+; Automatically move symbol table and vmbuf to someplace that leaves
+; ~512 bytes for symbol table growth
+;
+;": automem   ( addr -- )
+;     pad - tdict @ swap - $ff00 and $200 -
+; ( newsymtab -- )
+;     symtab @ -
+; ( delta -- )
+;     #vmpkt @
+;     if
+;         vmbuf @
+;         symtab @
+;         third
+;         +move
+;         vmbuf over +!
+;     then
+;     symtab +! ;
+;         
+#ifdef HEADERS
+automemlfa
+    .byt $de,$ad
+    .byt (_automem-*-1)|bit7
+    .asc "AUTOME","M"|bit7
+#endif
+_automem
+#include "enter.i65"
+    .word _pad
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word tdict
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word plit
+    .word $ff00
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word plit
+    .word $200
+#include "pad.i65"
+    .word minus
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word numvmpkt
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qbranch
+    .byt <(automem01-*+1)
+#include "pad.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word _plusmove
+#include "page.i65"
+    .word _plusmove
+#include "page.i65"
+    .word _plusmove
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+automem01
+    .word symtab
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       ?ANCESTOR   ( min max youngest current -- min max youngest? current )
+;
+; A stack-transparent word that updates the second on stack if
+; it is a qualifying ancestor
+;
+#ifdef HEADERS
+ancestorqlfa
+    .byt $de,$ad
+    .byt (_ancestorq-*-1)|bit7
+    .asc "ANCESTOR","?"|bit7
+#endif
+_ancestorq
+#include "enter.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       REAWAKEN   ( nfa -- )
+;
+; for each active symbol being forgotten.
+; - search for its youngest living ancestor.
+; - if found, deactivate the descendant, activate the ancestor
+;
+; scan through the NFA list at PAD, awakening ancestors
+; * list is terminated by 0-length
+; * iterate each word from nfa until end (outer loop)
+; * newdp < nfa < dp and nfa is active
+; * - ancestor = 0
+; * - iterate each word from nfa until end (inner loop)
+; * - - is inactive
+; * - - and is same name
+; * - - and ancestor < cfa < newdp
+; * - - - replace ancestor
+; * ancestor = 0?
+; * - iterate each word from nfa until end (inner loop)
+; * - - is inactive
+; * - - and is same name
+; * - - and tdict < cfa < memsiz
+; * - - - replace ancestor
+; * ancestor <> 0?
+; * - deactivate active symbol
+; * - activate ancestor
+; ( start )
+; 2+ dup>r
+; ( startnfa ) ( R; startnfa )
+; begin
+;     dup
+;     nfalen
+; while
+; ( nfa )
+;     0 r@
+;     begin
+;         ...
+;         dup
+;         nfalen
+;     while
+;         nfa+
+;     repeat
+; ( youngest )
+;     ?dup 0=
+;     if
+;         0 r@
+;         begin
+;             ...
+;             dup
+;             nfalen
+;         while
+;             nfa+
+;         repeat
+;     then
+; ( youngest )
+;     ?dup
+;     if
+;         deactivate symbol
+;         activate ancestor
+;     then
+;     nfa+
+; ( nfa )
+; repeat ;
+;
+#ifdef HEADERS
+reawakenlfa
+    .byt $de,$ad
+    .byt (_reawaken-*-1)|bit7
+    .asc "REAWAKE","N"|bit7
+#endif
+_reawaken
+#include "enter.i65"
+    .word drop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       PASSFILTER   ( symbols -- )
+;
+; During the first half of rehash, it is unnecessary to make a
+; pass through the entire symbol table searching for words of a
+; given length, if none of that length exist.  This is a
+; bloom filter to eliminate those symbol table passes.
+;
+;": passfilter   ( symbols -- )
+;     2+
+;     ( nfa )
+;     begin
+;         dup nfalen ?dup
+;     while
+;         >bloom passbits + cbit!
+;         nfa+
+;     repeat drop ;
+;
+;#ifdef HEADERS
+;passfilterlfa
+;    .byt $de,$ad
+;    .byt (_passfilter-*-1)|bit7
+;    .asc "PASSFILTE","R"|bit7
+;#endif
+_passfilter
+#include "enter.i65"
+    .word passbits
+#include "page.i65"
+    .word four
+#include "page.i65"
+    .word _erase
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+passfilter01
+    .word dup
+#include "page.i65"
+    .word nfalen
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(passfilter02-*+1)
+#include "pad.i65"
+    .word tobloom
+#include "page.i65"
+    .word passbits
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word cbitstore
+#include "page.i65"
+    .word nfaplus
+#include "page.i65"
+    .word branch
+    .byt <(passfilter01-*+1)
+#include "page.i65"
+passfilter02
+    .word drop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       (REHASH1)   ( -- lastsym )
+;
+; Phase 1 of REHASH
+; * Make a pass through SYMTAB + SYMNEW, create Bloom filter of sizes
+; * For each size 1..31
+; * - If it has members, merge SYMTAB + SYMNEW to PAD, ordered by length
+; * - tack on three zeroes at the end
+; * - Make a pass through PAD at that size
+; * - - If active and between CFA..HERE
+; * - - - Make a pass through PAD at current size
+; * - - - Reawaken youngest ancestor less than CFA (or in TDICT)
+; * set DP = cfa
+; * Return the last symbol at PAD for automatic memory allocation
+;
+;": (rehash1)   ( -- )
+; ( )
+;     >syms pad   over passfilter
+; ( symbols pad )
+;     32 1 do
+; ( src targ )
+;         i >bloom
+; ( src targ mask offset )
+;         passbits + cbit@
+; ( src targ flag )
+;         if
+;             dup >r
+; ( src targ ) ( R; src )
+;             [ 'symbysize ] literal i
+; ( src targ 'compare i ) ( R; src )
+;             2over symsort nip
+; ( src targ+ ) ( R; src )
+;             over 3 erase r> reawaken
+;         then
+; ( src targ+ )
+;     loop  nip ;
+;
+#ifdef HEADERS
+prehash1lfa
+    .byt $de,$ad
+    .byt (_prehash1-*-1)|bit7
+    .asc "(REHASH1",")"|bit7
+#endif
+_prehash1
+#include "enter.i65"
+    .word _tosyms
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _passfilter
+#include "page.i65"
+    .word bl    ; 32
+#include "page.i65"
+    .word one
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+prehash101
+    .word i
+#include "page.i65"
+    .word tobloom
+#include "page.i65"
+    .word passbits
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word cbitfetch
+#include "page.i65"
+    .word qbranch
+    .byt <(prehash102-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word plit
+    .word _symbysize
+#include "pad.i65"
+    .word i
+#include "page.i65"
+    .word twoover
+#include "page.i65"
+    .word _symsort
+#include "page.i65"
+    .word nip
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word _erase
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word _reawaken
+#include "page.i65"
+prehash102
+    .word ploop
+    .byt <(prehash101-*+1)
+#include "pad.i65"
+    .word nip
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       (REHASH2)   ( -- )
+;
+; Phase 2 of REHASH
+; * symtab 32 erase
+; * bloom 8 erase
+; * target = symtab+32
+; * For each hashcode 0..15
+; * - set symtab+i*2 = target
+; * - run all the symbols
+; * - - if hashcode matches, and it's alive, append it to target
+; * set symnew = symtail = target
+; * symnew 3 erase
+;
+;": (rehash2)   ( -- )
+;     symtab @ 32 erase
+;     bloom 8 erase
+;     pad >syms
+;     16 0 do
+;         dup i 2* symtab @ + !
+;         [ 'symbyhash ] literal i
+;         2over symsort nip
+;     loop
+; ( target )
+;     dup symnew ! dup symtail !
+;     3 erase ;
+;
+#ifdef HEADERS
+prehash2lfa
+    .byt $de,$ad
+    .byt (_prehash2-*-1)|bit7
+    .asc "(REHASH2",")"|bit7
+#endif
+_prehash2
+#include "enter.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word bl    ; 32
+#include "page.i65"
+    .word _erase
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word clit
+    .byt 8
+#include "pad.i65"
+    .word _erase
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word _tosyms
+#include "page.i65"
+    .word clit
+    .byt 16
+#include "pad.i65"
+    .word zero
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+prehash201
+    .word dup
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word store
+#include "page.i65"
+	.word plit
+	.word _symbyhash
+#include "pad.i65"
+	.word i
+#include "page.i65"
+	.word twoover
+#include "page.i65"
+	.word _symsort
+#include "page.i65"
+	.word nip
+#include "page.i65"
+    .word ploop
+    .byt <(prehash201-*+1)
+#include "pad.i65"
+    .word nip
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word symnew
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word symtail
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word _erase
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       (REHASH)   ( cfa -- )
+;
+; rebuild the symbol table at SYMTAB, moving VMBUF and SYMTAB
+; at halftime, if necessary.  The CFA is used in phase 1 to
+; rewaken sleeping ancestors.  Passing HERE will not wake up
+; anything.
+;
+;": (rehash)   ( cfa -- )
+;     newdp !
+;     (rehash1)
+;     automem
+;     (rehash2)
+;     newdp @ dp ! ;
+;
+#ifdef HEADERS
+prehashlfa
+    .byt $de,$ad
+    .byt (_prehash-*-1)|bit7
+    .asc "(REHASH",")"|bit7
+#endif
+_prehash
+#include "enter.i65"
+    .word newdp
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word _prehash1
+#include "page.i65"
+    .word _automem
+#include "page.i65"
+    .word _prehash2
+#include "page.i65"
+    .word newdp
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
 ;        REHASH   ( -- )
 ;
 ; rebuilds the symbol table in high memory.
 ;
 ;": rehash  ( -- )
+;     here (rehash) ;   \ effectively a FORGET nil
+;
+;": rehash  ( -- )
 ;     pad >syms
-;  ( pad symbols )
+;  ( cfa pad symbols )
 ;     ['] symbysize false
-;  ( pad symbols 'compare flag )
+;  ( cfa pad symbols 'compare flag )
 ;     2over swap
-;  ( pad symbols 'compare flag symbols pad )
+;  ( cfa pad symbols 'compare flag symbols pad )
 ;     32 1  (rehash)
-;  ( pad symbols targ+ )
+;  ( cfa pad symbols targ+ )
 ;     symtab @ 32 erase
-;  ( pad symbols  )
+;  ( cfa pad symbols  )
 ;     bloom 8 erase
-;  ( pad symbols  )
+;  ( cfa pad symbols  )
 ;     passbits  on
 ;     ['] symbyhash true 2swap 16 0  (rehash)
-;  ( )
+;  ( cfa )
 ;
 #ifdef HEADERS
 rehashlfa
@@ -1610,7 +2179,14 @@ rehashlfa
 #endif
 _rehash
 #include "enter.i65"
-    .word _pad
+    .word here
+#include "page.i65"
+    .word _prehash
+#include "page.i65"
+    .word exit
+
+
+
 #include "page.i65"
     .word _tosyms
 #include "page.i65"
@@ -1627,9 +2203,8 @@ _rehash
 #include "page.i65"
     .word swap
 #include "page.i65"
-    .word clit
-    .byt 32
-#include "pad.i65"
+    .word bl    ; 32
+#include "page.i65"
     .word one
 #include "page.i65"
     .word _prehash
@@ -1640,9 +2215,8 @@ _rehash
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word clit
-    .byt 32
-#include "pad.i65"
+    .word bl    ; 32
+#include "page.i65"
     .word _erase
 #include "page.i65"
     .word bloom
@@ -1698,15 +2272,15 @@ _rehash
 ; * distinct symbols for separate vocabularies
 ;
 ;": forget   ( -- )
-;     r@ [ launch01 ] literal <>
-;     if
-;         '
-;     then
+;     '
+;  ( cfa )
 ;     dup fence @ u<
+;  ( cfa flag )
 ;     if
 ;         7 fail
 ;     then
-;     dp !  rehash ;
+;  ( cfa )
+;     (rehash) ;
 ;
 #ifdef HEADERS
 forgetlfa
@@ -1716,19 +2290,8 @@ forgetlfa
 #endif
 _forget
 #include "enter.i65"
-    .word rfetch                ; ( cfa caller )
-#include "page.i65"
-    .word plit
-    .word launch01              ; ( cfa caller launch01 )
-#include "pad.i65"
-    .word ne                    ; ( cfa iscold? )
-#include "page.i65"
-    .word qbranch               ; ( cfa )
-    .byt <(forget01-*+1)
-#include "pad.i65"
     .word _tick
 #include "page.i65"
-forget01
     .word dup
 #include "page.i65"
     .word fence
@@ -1746,10 +2309,6 @@ forget01
     .word fail                  ; CAN'T FORGET BELOW FENCE
 #include "page.i65"
 forget03
-    .word dp
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word _rehash
+    .word _prehash
 #include "page.i65"
     .word exit

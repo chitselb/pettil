@@ -128,7 +128,7 @@ power2
 #if (* <> $04a6)
 #echo PETTIL Build Error - Program counter is not at $04a6!
 #echo You moved something, didn't you?  Sweet16 is expected
-#echo to start at $04a6 (1190).  This is a problem. 
+#echo to start at $04a6 (1190).  This is a problem.
 #endif
 #echo .       program counter just before Sweet16 should be 1190, is:
 #print *
@@ -146,46 +146,53 @@ irqtoggle       .word 0
 ;==============================================================
 ; uarea initialization data
 userarea
-userup          .word uarea                             ; WARM
-usersp0         .word bos+1                             ;
-userrp0         .word $01fe                             ;
-usercontext     .word 0                                 ;
-usercurrent     .word 0                                 ;
+
+; WARM
+userup          .word uarea     ; 
+usersp0         .word bos+1     ;
+userrp0         .word $01fe     ;
+usercontext     .word 0         ; LAUNCH sets to FORTH
+usercurrent     .word 0         ; LAUNCH sets to FORTH
 userwarm
-; everything before userwarm is initialized at WARM start
 
-userfence       .word cold                              ; COLD
-userdp          .word cold                              ;
-usermemsiz      .word 0     ; set by COLD from BASIC (copy of $34)
-usersymtab      .word 0
-userstartup     .word hot   ; CFA of bootstrap code to run after warm
-usererrmess     .word 0     ; errmess off, prints message # only.
+; COLD
+userfence       .word cold      ;
+userdp          .word cold      ;
+userstartup     .word hot       ; bootstrap COLD->HOT->LAUNCH
+usermemsiz      .word 0         ; set by COLD (BASIC $34)
 usercold
-; everything before usercold is initialized at COLD start
 
-; everything below this is set to 0 by COLD and untouched by WARM
-uservmbuf       = usercold                              ; SOFT
-uservmsiz       = usercold+2                            ; (COLD = 0)
-usersymnew      = usercold+4                            ; set by REHASH
-usersymtail     = usercold+6                            ; set by CREATE
-usertdict       = usercold+8                            ; 
-userbase        = usercold+10                           ; (WARM = unchanged)
-userdpl         = usercold+12                           ;
-userhld         = usercold+14                           ;
-userblk         = usercold+16                           ;
-usertoin        = usercold+18                           ;
-userspan        = usercold+20                           ;
-usertib         = usercold+22                           ;
-usernumout      = usercold+24                           ;
-usernumline     = usercold+26                           ;
-userscr         = usercold+28                           ;
-userstate       = usercold+30                           ;
-usercsp         = usercold+32                           ;
-usernumvoc      = usercold+34                           ;
-usernewest      = usercold+36                           ;
+; SOFT
+; everything below initializes to 0 at COLD and is untouched by WARM
+;
+; memory pointers, in descending order
+usertdict       = usercold+0    ; set by COLD
+usersymtail     = usercold+2    ; set by REHASH
+usersymnew      = usercold+4    ; set by REHASH
+usersymtab      = usercold+6    ; set by COLD
+uservmbuf       = usercold+8    ; 
+;
+usernumvmpkt    = usercold+10   ; 
+userscr         = usercold+12   ;
+usernumvoc      = usercold+14   ;
+usernewest      = usercold+16   ;
+usernewdp       = usercold+18   ;
+usererrmess     = usercold+20   ;
+;
+userbase        = usercold+22   ;
+userdpl         = usercold+24   ;
+userhld         = usercold+26   ;
+userblk         = usercold+28   ;
+usertoin        = usercold+30   ;
+userspan        = usercold+32   ;
+usertib         = usercold+34   ;
+usernumout      = usercold+36   ;
+usernumline     = usercold+38   ;
+userstate       = usercold+40   ;
+usercsp         = usercold+42   ;
 
 ; User Pointer (UP) at $0002 points here
-uarea           .dsb usercold-userarea+48,0
+uarea           .dsb usercold-userarea+56,0
 
 ;==============================================================
 ;==== PETTIL dictionary                                    ====
@@ -345,36 +352,27 @@ cold01
     cpy bannermsg-1
     bne cold01
 
-    lda #<warm                  ; close the door on ourselves
-    sta pettillaunch+1          ; runs cold once, warm to reenter
-    lda #>warm
+    lda #<warm                  ; Overwrite the BASIC hook
+    sta pettillaunch+1          ; change +1037 JMP COLD to +1037 JMP WARM
+    lda #>warm                  ; for reentry
     sta pettillaunch+2
 
     lda MEMSIZ                  ; set top of memory address
-    sta usermemsiz              ; and symbol table pointers
-    sta usersymtab
+    sta usermemsiz
     lda MEMSIZ+1
-    sta usermemsiz+1            ; $6400 = SYMTAB
-    sec                         ; $7100 = temp dictionary
-    sbc #$1c                    ; $8000 = MEMSIZ
-    sta usersymtab+1
+    sta usermemsiz+1
 
-    jmp cold2warm
+    jmp cold2warm               ; start Forth, run HOT next
 
 ;--------------------------------------------------------------
 ;
 ;        HOT   ( -- )
 ;
-; The tail end of the one-time only (then disappear) system
-; bootstrap initialization.  HOT runs as the STARTUP word after
-; COLD invokes WARM to kick things off. Hence the name.
-;
-; HOT tasks
-; * set user variable ERRMESS
-; * find FIND
-; * ' ABORT DUP STARTUP !
-; * FORGET HOT
-; * ( abort ) EXECUTE
+; COLD does enough to kickstart Forth, then HOT is next.
+; * sets TDICT and SYMTAB user variables
+; * copy the temporary dictionary to TDICT
+; * copy the symbols to SYMTAB+32
+; * execute LAUNCH (first word at the first address in TDICT)
 ;
 ;#ifdef HEADERS
 ;hotlfa
@@ -385,62 +383,65 @@ cold01
 hot
 #include "enter.i65"
     .word plit
-    .word there                 ; ( there )
+    .word there
 #include "pad.i65"
-    .word dup                   ; ( there there ) 
+    .word dup
 #include "page.i65"
-    .word fetch                 ; ( there tdict-2 )
+    .word four
 #include "page.i65"
-    .word twoplus               ; ( there tdict )
+    .word plusunder
 #include "page.i65"
-    .word dup                   ; ( tdict there )
+    .word fetch
 #include "page.i65"
-    .word tdict                 ; ( tdict there )
+    .word twoplus
 #include "page.i65"
-    .word store                 ; ( tdict there )
+    .word dup
 #include "page.i65"
-    .word swap                  ; ( tdict there )
+    .word tdict
 #include "page.i65"
-    .word twoplus               ; ( tdict there+2 )
+    .word store
 #include "page.i65"
-    .word dup                   ; ( tdict there+2 there+2 )
-#include "page.i65"
-    .word fetch                 ; ( tdict there+2 tdictsiz )
-#include "page.i65"
-    .word swap                  ; ( tdict tdictsiz there+2 )
-#include "page.i65"
-    .word twoplus               ; ( tdict tdictsiz there+4 )
-#include "page.i65"
-    .word twodup               ; ( tdict tdictsiz there+4 tdictsiz there+4 )
-#include "page.i65"
-    .word plus                  ; ( tdict tdictsiz there+4 tdictsiz+there+4 )
+    .word dup
 #include "page.i65"
     .word plit
-    .word usersymtab            ; ( tdict tdictsiz there+4 tdictsiz+there+4 usersymtab )
+    .word 4096
 #include "pad.i65"
-    .word fetch                 ; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab )
+    .word minus
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word plus
 #include "page.i65"
     .word clit
-    .byt 32                     ; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab 32 )
+    .byt EAL
 #include "pad.i65"
-    .word twodup               ; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab 32 symtab 32 )
+    .word fetch
 #include "page.i65"
-    .word _erase                ; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab 32 )
+    .word third
 #include "page.i65"
-    .word plus                  ; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab+32 )
-#include "page.i65"
-    .word clit
-    .byt EAL                    ; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab+32 $c9 )
-#include "page.i65"
-    .word fetch                 ; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab+32 loadend )
-#include "page.i65"
-    .word third                 ; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab+32 loadend tdictsiz+there+4 )
-#include "page.i65"
-    .word minus                 ; ( tdict tdictsiz there+4 tdictsiz+there+4 symtab+32 symtabsiz )
+    .word minus
 #include "page.i65"
     .word cmove
-#include "page.i65"
-    .word dashrot
 #include "page.i65"
     .word cmove
 #include "page.i65"
@@ -455,8 +456,9 @@ hot
 bannermsg
     .asc    CLR,"FORTH FOR THE COMMODORE PET 2001",CR
     .asc    "HTTP:","/","/GITHUB.COM/CHITSELB/PETTIL",CR
-    .asc    "VERSION PRE-ALPHA 2014-06-10",CR
-    .asc    "1977 APPLE ][ GOES ON SALE",CR
+    .asc    "VERSION PRE-ALPHA 2014-06-15",CR
+    .asc    "1846 US-CANADIAN BORDER ESTABLISHED",CR
+    .asc    "1917 CONGRESS PASSES ESPIONAGE ACT",CR
             ;123456789.123456789.123456789.123456789.
 there
 ; temporary dictionary and symbols are built separately
@@ -467,13 +469,13 @@ there
 ; two byte load address of pettil-tdict.obj e.g. $71fe
 ; two byte length of pettil-tdict.obj
 ;
-; The actual load address is off by -2.  There are two bytes in 
+; The actual load address is off by -2.  There are two bytes in
 ; front of the tdict.obj code storing the length of tdict.obj.
 ; This length information is needed to figure out where the symbol
 ; table starts, following tdict
 ;
 ; All addresses in tdict in this example would be located as though
-; tdict had been assembled and loaded at *=$7200, in spite of the 
+; tdict had been assembled and loaded at *=$7200, in spite of the
 ; misleading load address.
 ;
 ;"pettil.sym looks like this:
