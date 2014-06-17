@@ -2532,10 +2532,10 @@ pfind08
 ;     2drop ;
 
 : :   ( -- )
-    [ enter ] literal 
+    [ enter ] literal
     !csp  current @ context !  (create)
     latest @ dup smudge ] ;
-    
+
 #ifdef HEADERS
 colonlfa
     .byt $de,$ad
@@ -2571,15 +2571,15 @@ _colon
 
 ;--------------------------------------------------------------
 ;
-;		CFA!   ( addr nfa -- )
+;       CFA!   ( addr nfa -- )
 ;
 ; puts a JSR addr at cfa, taking page alignment into account
 ;
 #ifdef HEADERS
 cfastorelfa
-	.byt $de,$ad
-	.byt (cfastore-*-1)|bit7
-	.asc "CFA","!"|bit7
+    .byt $de,$ad
+    .byt (cfastore-*-1)|bit7
+    .asc "CFA","!"|bit7
 #endif
 _cfastore
 #include "enter.i65"
@@ -2593,29 +2593,29 @@ _cfastore
     .word clit
     .byt #$fc
 #include "pad.i65"
-	.word eq
+    .word eq
 #include "page.i65"
-	.word qbranch
-	.byt <(cfastore01-*+1)
+    .word qbranch
+    .byt <(cfastore01-*+1)
 #include "pad.i65"
-	.word clit
-	.byt $ea
+    .word clit
+    .byt $ea
 #include "pad.i65"
-	.word dup
+    .word dup
 #include "page.i65"
-	.word cstore
+    .word cstore
 #include "page.i65"
-	.word oneplus
+    .word oneplus
 #include "page.i65"
 cfastore01
-	.word clit
-	.byt $20
+    .word clit
+    .byt $20
 #include "pad.i65"
-	.word dup
+    .word dup
 #include "page.i65"
-	.word cstore
+    .word cstore
 #include "page.i65"
-	.word oneplus
+    .word oneplus
 #include "page.i65"
 
 ;--------------------------------------------------------------
@@ -2680,19 +2680,99 @@ commacfa01
   ( vocabs$ context )
      begin
   ( vocabs$ context )
-         dup @ 
+         dup @
   ( vocabs$ context parent )
-		 -rot 
+         -rot
   ( parent vocabs$ context )
-		 vocid
+         vocid
   ( parent vocabs$ vocid )
-		 tuck
+         tuck
   ( parent vocid vocabs$ vocid )
-		 c!+
+         c!+
   ( parent id vocabs$+ )
-		 -rot
+         -rot
   ( vocabs$+ vocab id )
          0=
      until
      2drop ;
 ;
+
+;--------------------------------------------------------------
+;
+;       ANCESTOR?   ( -- )
+;
+; description
+;
+#ifdef HEADERS
+ancestorqlfa
+    .byt $de,$ad
+    .byt (_ancestorq-*-1)|bit7
+    .asc "ANCESTOR","?"|bit7
+#endif
+_ancestorq
+
+: ?candidate   ( descendant candidate -- )
+  ( descendant candidate )
+    \ candidate is inactive?
+    dup c@ $20 and  		
+  ( descendant candidate flag )
+    if
+  ( descendant candidate )
+		\ candidate remains in dictionary? 
+		\ and is more recent than prior candidates?
+        dup name>  ancestor @  newdp @  between?
+  ( descendant candidate flag )
+        if
+  ( descendant candidate )
+            2dup sameasme?
+  ( descendant candidate flag )
+            if 
+                dup name> ancestor !
+            then
+        then 
+    then           
+    2drop ;
+
+;--------------------------------------------------------------
+;
+;       ?ANCESTOR   ( descendant nfa -- )
+;
+; Searches for a qualifying ancestor and activates it
+;
+: ?ancestor   ( descendant startnfa -- )
+  ( descendant startnfa )
+    ancestor off
+  ( descendant startnfa )
+    begin
+  ( descendant nfa )
+        dup nfalen
+  ( descendant nfa length )
+    while
+  ( descendant nfa )
+        2dup ancestor?
+  ( descendant nfa flag )
+
+
+
+  ( descendant nfa )
+        dup c@ $20 and
+  ( descendant nfa flag )
+        if
+            dup name>
+            third under newdp @ between?
+            if
+                >r swap >r  2dup ?ancestor  r> r> rot
+                if
+                    third ancestor !
+                    swap
+                then
+                drop  swap
+            then
+        then
+        nfa+
+    repeat
+    over ?dup
+    if
+        >name smudge third smudge
+    then
+    3drop ;

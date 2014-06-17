@@ -1089,7 +1089,7 @@ _intdictq
 ;#endif
 _indictq
 #include "enter.i65"
-    .word _namefrom
+    .word namefrom
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -1236,11 +1236,11 @@ _symbysize
 ; and that matches the current hash?
 ;
 ;": symbyhash   ( hash nfa -- flag )
-;     dup pearsonhash rot = dup 
+;     dup pearsonhash rot = dup
 ;     if
 ;         swap name>
 ;         dup b/buf newdp @ between?
-;         swap tdict @ memsiz @ between?  or 
+;         swap tdict @ memsiz @ between?  or
 ;     then nip ;
 ;
 ;#ifdef HEADERS
@@ -1266,7 +1266,7 @@ _symbyhash
 #include "pad.i65"
     .word swap
 #include "page.i65"
-    .word _namefrom
+    .word namefrom
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -1364,7 +1364,7 @@ symsort01
 #include "page.i65"
     .word over
 #include "page.i65"
-    .word _namefrom
+    .word namefrom
 #include "page.i65"
     .word _storeplus
 #include "page.i65"
@@ -1389,9 +1389,10 @@ symsort03
 
 ;--------------------------------------------------------------
 ;
-;       PASSBITS   ( -- )
+;       PASSBITS   ( -- addr )
 ;
-; Bloom filter for skipping REHASH passes if no words of that length
+; 32-bit wide Bloom filter for skipping REHASH passes if there
+; are no words of a particular length
 ;
 #ifdef HEADERS
 passbitslfa
@@ -1442,114 +1443,9 @@ tobloom
 
 ;--------------------------------------------------------------
 ;
-;       (REHASH)   ( 'compare flag src targ end start -- targ+ )
-;
-;": (rehash)   ( 'compare flag src targ end start -- targ+ )
-;     do
-;         ( 'compare flag src targ )
-;         i >bloom passbits + cbit@
-;         ( 'compare flag src targ flag )
-;         if
-;             ( 'compare flag src targ )
-;             >r 3dup r>
-;             ( 'compare flag src 'compare flag src targ )
-;             2swap
-;             ( 'compare flag src src targ 'compare flag )
-;             if
-;             ( 'compare flag src src targ 'compare )
-;                 over i 2* symtab + !
-;             ( 'compare flag src src targ 'compare )
-;             then
-;             ( 'compare flag src src targ 'compare )
-;             i 2swap
-;             ( 'compare flag src 'compare i src targ )
-;             symsort
-;             ( 'compare flag src targ+ )
-;         then
-;         ( 'compare flag src targ+ )
-;     loop
-;     ( 'compare flag src targ+ )
-;     dup>r 3 erase 3drop r> ;
-;     ( targ+ )
-;
-;#ifdef HEADERS
-;prehashlfa
-;    .byt $de,$ad
-;    .byt (_prehash-*-1)|bit7
-;    .asc "(REHASH",")"|bit7
-;#endif
-;_prehash
-#include "enter.i65"
-    .word pdo
-#include "page.i65"
-prehash01
-#include "page.i65"
-    .word i
-#include "page.i65"
-    .word tobloom
-#include "page.i65"
-    .word passbits
-#include "pad.i65"
-    .word plus
-#include "page.i65"
-    .word cbitfetch
-#include "page.i65"
-    .word qbranch
-    .byt <(prehash03-*+1)
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word threedup
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word twoswap
-#include "page.i65"
-    .word qbranch
-    .byt <(prehash02-*+1)
-#include "pad.i65"
-    .word over
-#include "page.i65"
-    .word i
-#include "page.i65"
-    .word twostar
-#include "page.i65"
-    .word symtab
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word store
-#include "page.i65"
-prehash02
-    .word i
-#include "page.i65"
-    .word twoswap
-#include "page.i65"
-    .word _symsort
-#include "page.i65"
-prehash03
-    .word ploop
-    .byt <(prehash01-*+1)
-#include "pad.i65"
-    .word duptor
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word _erase
-#include "page.i65"
-    .word threedrop
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
 ;       +MOVE   ( start end delta -- )
 ;
-; Move a block of memory between start and end (inclusive) to 
+; Move a block of memory between start and end (inclusive) to
 ; a new address calculated by adding the signed delta to start
 ;
 ;": +move   ( start end delta -- )
@@ -1607,7 +1503,7 @@ _plusmove
 ;         vmbuf over +!
 ;     then
 ;     symtab +! ;
-;         
+;
 #ifdef HEADERS
 automemlfa
     .byt $de,$ad
@@ -1682,19 +1578,215 @@ automem01
 
 ;--------------------------------------------------------------
 ;
-;       ?ANCESTOR   ( min max youngest current -- min max youngest? current )
+;		ANCESTOR   ( -- addr )
 ;
-; A stack-transparent word that updates the second on stack if
-; it is a qualifying ancestor
+; variable that holds the youngest ancestor for REHASH
 ;
 #ifdef HEADERS
-ancestorqlfa
-    .byt $de,$ad
-    .byt (_ancestorq-*-1)|bit7
-    .asc "ANCESTOR","?"|bit7
+ancestorlfa
+	.byt $de,$ad
+	.byt (ancestor-*-1)|bit7
+	.asc "ANCESTO","R"|bit7
 #endif
-_ancestorq
+ancestor
+	jsr docreate
+	.word 0
+
+;--------------------------------------------------------------
+;
+;		SAMEASME?   ( descendant candidate -- flag )
+;
+; description
+;
+#ifdef HEADERS
+sameasmeqlfa
+	.byt $de,$ad
+	.byt (sameasmeq-*-1)|bit7
+	.asc "SAMEASME","?"|bit7
+#endif
+sameasmeq
+	ldy #1
+	jsr locals			; N0 = descendant; TOS = candidate
+	jsr nfalen01
+	sta n+6
+	jsr strcomp
+	ldy #0
+	bcc sameasmeq01
+	dey
+sameasmeq01
+	tya
+	jmp put
+
+;--------------------------------------------------------------
+;
+;		?CANDIDATE   ( descendant candidate -- )
+;
+;": ?candidate   ( descendant candidate -- )
+;   ( descendant candidate )
+;     \ candidate is inactive?
+;     dup c@ $20 and
+;   ( descendant candidate flag )
+;     if
+;   ( descendant candidate )
+; 		\ candidate remains in dictionary?
+; 		\ and is more recent than prior candidates?
+;         dup name>  ancestor @  dup
+;         if
+;             nip name>
+;         then
+;         newdp @  between?
+;   ( descendant candidate flag )
+;         if
+;   ( descendant candidate )
+;             2dup sameasme?
+;   ( descendant candidate flag )
+;             if
+;                 dup ancestor !
+;                 32 third cbit!
+;             then
+;         then
+;     then 
+;     2drop ;
+;
+#ifdef HEADERS
+qcandidatelfa
+	.byt $de,$ad
+	.byt (_qcandidate-*-1)|bit7
+	.asc "?CANDIDAT","E"|bit7
+#endif
+_qcandidate
 #include "enter.i65"
+	.word dup
+#include "page.i65"
+	.word cfetch
+#include "page.i65"
+	.word bl
+#include "page.i65"
+	.word andx
+#include "page.i65"
+	.word qbranch
+	.byt <(qcandidate01-*+1)
+#include "pad.i65"
+	.word dup
+#include "page.i65"
+	.word namefrom
+#include "page.i65"
+	.word ancestor
+#include "page.i65"
+	.word fetch
+#include "page.i65"
+	.word dup
+#include "page.i65"
+	.word qbranch
+	.byt <(qcandidate02-*+1)
+#include "pad.i65"
+	.word nip
+#include "page.i65"
+	.word namefrom
+#include "page.i65"
+qcandidate02
+	.word newdp
+#include "page.i65"
+	.word fetch
+#include "page.i65"
+	.word betweenq
+#include "page.i65"
+	.word qbranch
+	.byt <(qcandidate01-*+1)
+#include "pad.i65"
+	.word twodup
+#include "page.i65"
+	.word sameasmeq
+#include "page.i65"
+	.word qbranch
+	.byt <(qcandidate01-*+1)
+#include "pad.i65"
+	.word dup
+#include "page.i65"
+	.word ancestor
+#include "page.i65"
+	.word store
+#include "page.i65"
+	.word bl
+#include "page.i65"
+	.word third
+#include "page.i65"
+	.word cbitstore
+#include "page.i65"
+qcandidate01
+	.word twodrop
+#include "page.i65"
+	.word exit
+
+;--------------------------------------------------------------
+;
+;       ?ANCESTOR   ( descendant nfa -- )
+;
+; Searches for a qualifying ancestor and exchanges the smudge bit
+;
+;": ?ancestor   ( descendant startnfa -- )
+;   ( descendant startnfa )
+;     ancestor off
+;   ( descendant startnfa )
+;     begin
+;   ( descendant nfa )
+;         dup nfalen
+;   ( descendant nfa length )
+;     while
+;   ( descendant nfa )
+;         2dup ?candidate
+;         nfa+
+;     repeat
+;     ancestor @ ?dup
+;     if
+;         smudge
+;     then
+;     2drop ;
+;
+#ifdef HEADERS
+qancestorlfa
+    .byt $de,$ad
+    .byt (_qancestor-*-1)|bit7
+    .asc "?ANCESTO","R"|bit7
+#endif
+_qancestor
+#include "enter.i65"
+    .word ancestor
+#include "page.i65"
+    .word off
+#include "page.i65"
+qancestor01
+    .word dup
+#include "page.i65"
+    .word nfalen
+#include "page.i65"
+    .word qbranch
+	.byt <(qancestor02-*+1)
+#include "pad.i65"
+    .word twodup
+#include "page.i65"
+    .word _qcandidate
+#include "page.i65"
+    .word nfaplus
+#include "page.i65"
+    .word branch
+	.byt <(qancestor01-*+1)
+#include "pad.i65"
+qancestor02
+	.word ancestor
+#include "page.i65"
+	.word fetch
+#include "page.i65"
+	.word qdup
+#include "page.i65"
+	.word qbranch
+	.byt <(qancestor03-*+1)
+#include "pad.i65"
+	.word smudge
+#include "page.i65"
+qancestor03
+    .word twodrop
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1732,35 +1824,14 @@ _ancestorq
 ;     nfalen
 ; while
 ; ( nfa )
-;     0 r@
-;     begin
-;         ...
-;         dup
-;         nfalen
-;     while
-;         nfa+
-;     repeat
-; ( youngest )
-;     ?dup 0=
+;     dup c@ $20 and 0=
+;     over name>  newdp @ dp @ between? and
 ;     if
-;         0 r@
-;         begin
-;             ...
-;             dup
-;             nfalen
-;         while
-;             nfa+
-;         repeat
-;     then
-; ( youngest )
-;     ?dup
-;     if
-;         deactivate symbol
-;         activate ancestor
+;         dup r@ ?ancestor
 ;     then
 ;     nfa+
-; ( nfa )
-; repeat ;
+; repeat
+; r> 2drop ;
 ;
 #ifdef HEADERS
 reawakenlfa
@@ -1770,7 +1841,65 @@ reawakenlfa
 #endif
 _reawaken
 #include "enter.i65"
-    .word drop
+    .word twoplus
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+reawaken01
+    .word dup
+#include "page.i65"
+    .word nfalen
+#include "page.i65"
+    .word qbranch
+    .byt <(reawaken02-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word namefrom
+#include "page.i65"
+    .word newdp
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word betweenq
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word qbranch
+    .byt <(reawaken03-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word _qancestor
+#include "page.i65"
+reawaken03
+    .word nfaplus
+#include "page.i65"
+    .word branch
+    .byt <(reawaken01-*+1)
+#include "pad.i65"
+reawaken02
+    .word rfrom
+#include "page.i65"
+    .word twodrop
 #include "page.i65"
     .word exit
 
