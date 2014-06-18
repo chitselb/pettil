@@ -260,6 +260,57 @@ rldecode06
 
 ;--------------------------------------------------------------
 ;
+;       >PKT   ( n -- packet )
+;
+; Return the packet address of block n
+;
+;": >pkt   ( n -- packet )
+;     blkbuf 2-
+;     begin
+;         over 0>
+;     while
+;         dup @
+;         - swap 1- swap
+;     repeat
+;     swap drop ;
+;
+;#ifdef HEADERS
+;topktlfa
+;    .byt $de,$ad
+;    .byt (_topkt-*-1)|bit7
+;    .asc ">PK","T"|bit7
+;#endif
+_topkt
+#ifdef SWEET16
+#include "enter.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word to6502
+    brk                         ; ( blkbuf blk )
+    .byt ld | TOS
+    .byt st | N0
+    .byt pull
+topkt01
+    .byt popd | TOS
+    .byt bz , <(topkt02-*-2)
+    .byt dcr | N0
+    .byt bm , <(topkt02-*-2)
+    .byt ext
+    .word pktheader16
+    .byt ld | TOS
+    .byt sub | R11
+    .byt st | TOS
+    .byt br , <(topkt01-*-2)
+topkt02
+    .byt rtn
+#include "toforth.i65"
+    .word exit
+#endif
+
+;--------------------------------------------------------------
+;
 ;       (BLOCK)   ( blk -- blkbuf new? )
 ;
 ; return the buffer address of block N. Create it if necessary.
@@ -279,7 +330,7 @@ rldecode06
 ;                                 ( blk #vmpkt-blk exists? )
 ;     if
 ;                                 ( blk #vmpkt-blk )
-;         drop pkt@
+;         drop >pkt
 ;                                 ( packet )
 ;     else
 ;                                 ( blk #vmpkt-blk )
@@ -328,7 +379,7 @@ _pblock
 #include "pad.i65"
     .word drop
 #include "page.i65"
-    .word _pktfetch
+    .word _topkt
 #include "page.i65"
     .word branch
     .byt <(pblock03-*+1)
@@ -633,57 +684,6 @@ wrapplus03
     ldy stackh,x
     tya
     jmp put
-
-;--------------------------------------------------------------
-;
-;       PKT@ ( n -- packet )
-;
-; Return the packet address of block n
-;
-;": pkt@   ( n -- packet )
-;     blkbuf 2-
-;     begin
-;         over 0>
-;     while
-;         dup @
-;         - swap 1- swap
-;     repeat
-;     swap drop ;
-;
-;#ifdef HEADERS
-;pktfetchlfa
-;    .byt $de,$ad
-;    .byt (_pktfetch-*-1)|bit7
-;    .asc "PKT","@"|bit7
-;#endif
-_pktfetch
-#ifdef SWEET16
-#include "enter.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word to6502
-    brk                         ; ( blkbuf blk )
-    .byt ld | TOS
-    .byt st | N0
-    .byt pull
-pktfetch01
-    .byt popd | TOS
-    .byt bz , <(pktfetch02-*-2)
-    .byt dcr | N0
-    .byt bm , <(pktfetch02-*-2)
-    .byt ext
-    .word pktheader16
-    .byt ld | TOS
-    .byt sub | R11
-    .byt st | TOS
-    .byt br , <(pktfetch01-*-2)
-pktfetch02
-    .byt rtn
-#include "toforth.i65"
-    .word exit
-#endif
 
 ;--------------------------------------------------------------
 ;
