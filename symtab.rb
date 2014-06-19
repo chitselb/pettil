@@ -4,7 +4,9 @@
     def make_symbol(name="", cfa=0, isimmediate)
         # values calculated by pearson.rb
         # 14..22        102 162 3 150 98 88 207 149
-        pearson = [27, 120, 229, 241, 111, 44, 47, 141]
+        # 27, 120, 229, 241, 111, 44, 47, 141
+        # 
+        pearson = [231, 8, 197, 27, 61, 59, 64, 192]
         psize=pearson.length-1
 
         c1 = [cfa.to_i].pack("S<")
