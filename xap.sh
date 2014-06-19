@@ -10,7 +10,7 @@
 alias xap='./xap.sh --norun'
 #
 # runs it
-alias pettil='xpet -moncommand pettil.mon pettil.obj'
+alias pettil='xpet -moncommand pettil.mon pettil.obj > /dev/null'
 #
 #
 
@@ -67,5 +67,5 @@ mv t.t pettil.mon
 #
 if [ "$1" != "--norun" ]; then
 echo . . . . Launching PETTIL
-xpet -moncommand pettil.mon pettil.obj
+xpet -moncommand pettil.mon pettil.obj >/dev/null
 fi

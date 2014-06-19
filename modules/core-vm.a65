@@ -3,38 +3,6 @@
 
 ;--------------------------------------------------------------
 ;
-;       WRAP!   ( d -- )
-;
-; Updates the linewrap table at $E0 to reflect the bits
-; stored in d.  Since line 0 is *always* $80, never a continuation
-; line, only 24 bits are required, not 25.
-;
-;#ifdef HEADERS
-;wrapstorelfa
-;    .byt $de,$ad
-;    .byt (wrapstore-*-1)|bit7|bit5
-;    .asc "WRAP","!"|bit7
-;    .byt 1
-;#endif
-wrapstore
-    ldy #1
-    jsr locals
-    stx storex
-    ldx #24
-wrapstore01
-    asl $e0,x
-    lsr tos+1
-    ror tos
-    ror n+1
-    ror n
-    ror $e0,x
-    dex
-    bne wrapstore01
-    ldx storex
-    jmp pops
-
-;--------------------------------------------------------------
-;
 ;       B/BUF   ( -- n )
 ;
 #ifdef HEADERS
@@ -657,79 +625,6 @@ _block
 #include "enter.i65"
     .word _pblock
 #include "page.i65"
+    .word drop
+#include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-;
-;       WRAP^   ( logline -- d )
-;
-; Reads (a portion of) the linewrap table above the current physical
-; line (stored at $d8) up to but not including the current logical line.
-; Returns a right-aligned double with a copy of those high bit values
-;
-;#ifdef HEADERS
-;wrapabovelfa
-;    .byt $de,$ad
-;    .byt (wrapabove-*-1)|bit7
-;    .asc "WRAP",94|bit7
-;#endif
-wrapabove
-    stx storex      ; preserve Forth data stack pointer
-    ldx #0
-    stx n+1
-    stx n
-    stx tos+1
-    ldy tos         ; first physical line of this logical line
-    stx tos
-    tya
-    beq wrapabove03
-    sty n+2
-    dex
-wrapabove02
-    inx
-    cpx n+2         ; are we there yet?
-    beq wrapabove03 ; leave if done
-    lda $e0,x
-    asl             ; nondestructively
-    rol tos
-    rol tos+1
-    rol n
-    rol n+1         ; append the next high bit to the double
-    beq wrapabove02 ; this should always take the branch
-wrapabove03
-    lda n
-    ldy n+1         ; high half of the double is going on the stack
-    ldx storex      ; restore Forth data stack pointer
-    jmp pushya
-
-;--------------------------------------------------------------
-;
-;       WRAP+   ( d 40|80 -- d flag )
-;
-; Shift and append one or two bits to the double.  Return nonzero
-; once 25 bits have been stored.  40 = <<,1; 80 = <<,1 <<,0
-;
-;#ifdef HEADERS
-;wrappluslfa
-;    .byt $de,$ad
-;    .byt (wrapplus-*-1)|bit7
-;    .asc "WRAP","+"|bit7
-;#endif
-wrapplus
-    sec             ; always shift in a 1
-wrapplus01
-    ldy stackh,x
-    bne wrapplus03
-    rol stackl+1,x  ; shift in a single bit
-    rol stackh+1,x
-    rol stackl,x
-    rol stackh,x
-    lda #40
-    cmp tos
-    sta tos         ; so we only do this once
-    bcc wrapplus01  ; maybe shift in a 0 (if 80-column)
-wrapplus03
-    ldy stackh,x
-    tya
-    jmp put
-

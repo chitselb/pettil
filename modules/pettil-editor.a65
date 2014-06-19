@@ -34,6 +34,110 @@ flipscr01
 
 ;--------------------------------------------------------------
 ;
+;       WRAP!   ( d -- )
+;
+; Updates the linewrap table at $E0-F8 to reflect the bits
+; stored in d.  Since line 0 ($e0) is never a continuation
+; line, (always $80) it is not written to.  Only 24 bits are 
+; written to $E1-$F8, not 25.  Although unused, the most
+; significant (2^24) bit will always be set, as a framing bit 
+; used to detect when the wrap double is full.
+;
+#ifdef HEADERS
+wrapstorelfa
+    .byt $de,$ad
+    .byt (wrapstore-*-1)|bit7
+    .asc "WRAP","!"|bit7
+#endif
+wrapstore
+    ldx #24
+wrapstore01
+    asl $e0,x
+    lsr tos+1
+    ror tos
+    ror stackh,x
+    ror stackl,x
+    ror $e0,x
+    dex
+    bne wrapstore01
+    jmp poptwo
+
+;--------------------------------------------------------------
+;
+;       WRAP^   ( logline -- d )
+;
+; Reads (a portion of) the linewrap table above the current physical
+; line (stored at $d8) up to but not including the current logical line.
+; Returns a right-aligned double with a copy of those high bit values
+;
+#ifdef HEADERS
+wrapabovelfa
+    .byt $de,$ad
+    .byt (wrapabove-*-1)|bit7
+    .asc "WRAP",94|bit7
+#endif
+wrapabove
+    stx storex      ; preserve Forth data stack pointer
+    ldx #0
+    stx n+1
+    stx n
+    stx tos+1
+    ldy tos         ; first physical line of this logical line
+    stx tos
+    tya
+    beq wrapabove03
+    sty n+2
+    dex
+wrapabove02
+    inx
+    cpx n+2         ; are we there yet?
+    beq wrapabove03 ; leave if done
+    lda $e0,x
+    asl             ; nondestructively
+    rol tos
+    rol tos+1
+    rol n
+    rol n+1         ; append the next high bit to the double
+    beq wrapabove02 ; this should always take the branch
+wrapabove03
+    lda n
+    ldy n+1         ; high half of the double is going on the stack
+    ldx storex      ; restore Forth data stack pointer
+    jmp pushya
+
+;--------------------------------------------------------------
+;
+;       WRAP+   ( d 40|80 -- d flag )
+;
+; Shift and append one or two bits to the double.  Return nonzero
+; once 25 bits have been stored.  40 = <<,1; 80 = <<,1 <<,0
+;
+;#ifdef HEADERS
+;wrappluslfa
+;    .byt $de,$ad
+;    .byt (wrapplus-*-1)|bit7
+;    .asc "WRAP","+"|bit7
+;#endif
+wrapplus
+    sec             ; always shift in a 1
+wrapplus01
+    ldy stackh,x
+    bne wrapplus03
+    rol stackl+1,x  ; shift in a single bit
+    rol stackh+1,x
+    rol stackl,x
+    rol stackh,x
+    lda #40
+    cmp tos
+    sta tos         ; so we only do this once
+    bcc wrapplus01  ; maybe shift in a 0 (if 80-column)
+wrapplus03
+    ldy stackh,x
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+;
 ;       LINEINFO   ( logline -- addr 40|80 )
 ;
 ; return the start address and length of the logical line
@@ -672,32 +776,26 @@ pscrstore
 ;
 ;       MKPKT ( blkbuf -- packetsize )
 ;
-; Build a packet at BLKBUF from the current video screen.
+; Build an editor packet at BLKBUF from the current video screen.
 ; The first three bytes of the packet are the linewrap bits for
 ; lines 1..24.  This is followed by RLE-encoded (or stored)
 ; screen codes, with the last two bytes being the packet header.
 ;
 ;": mkpkt   ( blkbuf -- size )
-;     25 wrap^
-;                                 ( blkbuf d )
-;     rot dup >r
-;                                 ( d blkbuf ) ( R; blkbuf )
-;     dup 3 + >r
-;                                 ( d blkbuf ) ( R; blkbuf blkbuf+3 )
-;     3c!
-;                                 ( ) ( R; blkbuf blkbuf+3 )
-;     vidram b/scr -trailing
-;                                 ( vidram nonblanksize ) ( R; blkbuf blkbuf+3 )
-;     r> swap
-;                                 ( vidram blkbuf+3 nonblanksize ) ( R; blkbuf )
-;     rlencode
-;                                 ( targend uncompressed? ) ( R; blkbuf )
-;     over r> - >r
-;                                 ( targend uncompressed? ) ( R; size )
-;     r@ 2+ or vidram or swap !
-;                                 ( ) ( R; size )
+;     >r 25 wrap^ r@ 3c!        \ retrieve linewrap from screen
+; ( ) ( R; blkbuf )
+;     vidram b/scr -trailing	\ squeeze trailing spaces from screen
+; ( vidram vidsize ) ( R; blkbuf )
+;     r@ 3+ swap rlencode		\ rlencode it
+; ( targend uncompressed? ) ( R; blkbuf )
+;     $4000 and vidram or
+; ( targend pktflags ) ( R; blkbuf )
+;     over r> - dup>r
+; ( targend uncompressed? size ) ( R; size )
+;     2+ + swap !
+; ( ) ( R; size )
 ;     r> ;
-;                                 ( size )
+; ( size )
 ;
 #ifdef HEADERS
 mkpktlfa
@@ -707,24 +805,14 @@ mkpktlfa
 #endif
 _mkpkt
 #include "enter.i65"
+    .word tor
+#include "page.i65"
     .word clit
     .byt 25
 #include "pad.i65"
     .word wrapabove
 #include "page.i65"
-    .word rot
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word tor
+    .word rfetch
 #include "page.i65"
     .word threecstore
 #include "page.i65"
@@ -732,13 +820,24 @@ _mkpkt
 #include "page.i65"
     .word bperscr
 #include "page.i65"
-    .word _dashtrailing
+    .word dashtrailing
 #include "page.i65"
-    .word rfrom
+    .word rfetch
+#include "page.i65"
+    .word threeplus
 #include "page.i65"
     .word swap
 #include "page.i65"
     .word rlencode
+#include "page.i65"
+    .word plit
+    .word $4000
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word orx
 #include "page.i65"
     .word over
 #include "page.i65"
@@ -746,17 +845,11 @@ _mkpkt
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rfetch
+    .word duptor
 #include "page.i65"
     .word twoplus
 #include "page.i65"
-    .word orx
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word orx
+    .word plus
 #include "page.i65"
     .word swap
 #include "page.i65"
@@ -1166,7 +1259,7 @@ editnowrap01
 
 ;--------------------------------------------------------------
 ;
-;		>EDIT   ( toscr -- )
+;       >EDIT   ( toscr -- )
 ;
 ; Save current editor screen in packet buffer
 ; Set "toscr" as the current SCR and edit it
@@ -1177,25 +1270,25 @@ editnowrap01
 ;
 #ifdef HEADERS
 toeditlfa
-	.byt $de,$ad
-	.byt (_toedit-*-1)|bit7
-	.asc ">EDI","T"|bit7
+    .byt $de,$ad
+    .byt (_toedit-*-1)|bit7
+    .asc ">EDI","T"|bit7
 #endif
 _toedit
 #include "enter.i65"
-	.word scr
+    .word scr
 #include "page.i65"
-	.word fetch
+    .word fetch
 #include "page.i65"
-	.word _scrstore
+    .word _scrstore
 #include "page.i65"
-	.word zero
+    .word zero
 #include "page.i65"
-	.word _max
+    .word _max
 #include "page.i65"
-	.word _scrfetch
+    .word _scrfetch
 #include "page.i65"
-	.word exit
+    .word exit
 
 ;--------------------------------------------------------------
 ;
