@@ -1742,50 +1742,6 @@ dashtrailing03
     ldy tos+1
     jmp put
 
-;_dashtrailing
-;#include "enter.i65"
-;   .word dup
-#include "page.i65"
-;   .word zero
-;#include "page.i65"
-;   .word pqdo
-;#include "page.i65"
-;dashtrailing01
-;   .word twodup
-;#include "page.i65"
-;   .word plus
-;#include "page.i65"
-;   .word oneminus
-;#include "page.i65"
-;   .word cfetch
-;#include "page.i65"
-;   .word bl
-;#include "page.i65"
-;   .word ne
-;#include "page.i65"
-;   .word pqleave
-;   .byt <(dashtrailing02-*+1)
-;#include "pad.i65"
-;   .word oneminus
-;#include "page.i65"
-;   .word ploop
-;   .byt <(dashtrailing01-*+1)
-;#include "pad.i65"
-;dashtrailing02
-;   .word exit
-;    brk
-;    .byt ld | TOS
-;    .byt st | N1
-;    .byt pull
-;    .byt add | N1
-;    .byt st | N0
-;    .byt ext
-;    .word dashtrailing16
-;    .byt ld | N0
-;    .byt sub | TOS
-;    .byt push
-;    .byt nxt
-
 ;--------------------------------------------------------------
 ;
 ;       CMOVE   ( from to howmany -- )
@@ -1838,72 +1794,47 @@ cmove03
 ; for u bytes.  If u is zero nothing is moved.
 ; Useful for sliding a string towards higher addresses.
 ;
-;": cmove>   ( from to howmany -- )
-;     dup>r 1- tuck
-;  ( from howmany-1 to howmany-1 )
-;     + -rot + r@
-;  ( to+howmany-1 from+howmany-1 )
 ;     >6502
-;
 #ifdef HEADERS
 cmovegtlfa
     .byt $de,$ad
-    .byt (_cmovegt-*-1)|bit7
+    .byt (cmovegt-*-1)|bit7
     .asc "CMOVE",">"|bit7
 #endif
-_cmovegt
-#include "enter.i65"
-    .word duptor
-    .word oneminus
-    .word tuck
-    .word plus
-    .word dashrot
-    .word plus
-    .word rfetch
-    .word to6502
-;    brk
-;    .byt ld | TOS
-;    .byt st | N2                ; howmany
-;    .byt dcr | N2
-;    .byt pull
-;    .byt add | N2
-;    .byt st | N1                ; to
-;    .byt pull
-;    .byt add | N2
-;    .byt st | N0                ; from
-;    .byt ld | N2
-;    .byt bp, <(cmovegt06-*-2)
-;    .byt pull
-;    .byt nxt
-;cmovegt06
-;    .byt inr | N2
-;    .byt rtn
-    clc
-    ldy #0                     ; done by Sweet16
-    stx storex
-    ldx #0
+cmovegt
+	stx storex
+	ldy #2
+	jsr locals
+	ldx tos+1
+	clc
+	txa
+	adc n+1
+	sta n+1
+	clc
+	txa
+	lda n+3
+	sta n+3
+	inx
+	ldy tos
+	beq cmovegt03
+	dey
+	beq cmovegt02
 cmovegt01
-    dec n+5
-    bpl cmovegt03
-cmovegt02       ; last page
-    ldx n+4                         
-    beq cmovegt05
-    sec
+	lda (n),y
+	sta (n+2),y
+	dey
+	bne cmovegt01
+cmovegt02
+	lda (n),y
+	sta (n+2),y
 cmovegt03
-    lda (n),y
-    sta (n+2),y
-    tya
-    bne cmovegt04
-    dec n+1
-    dec n+3
-cmovegt04
-    dey
-    dex
-    bne cmovegt03
-    bcc cmovegt01
-cmovegt05
-    ldx storex
-    jmp pops
+	dey
+	dec n+1
+	dec n+3
+	dex
+	bne cmovegt01
+	ldx storex
+	jmp pops
 
 ;--------------------------------------------------------------
 ;
@@ -1941,7 +1872,7 @@ _move
     .word qbranch
     .byt <(move01-*+1)
 #include "pad.i65"
-    .word _cmovegt
+    .word cmovegt
 #include "page.i65"
     .word branch
     .byt <(move02-*+1)
@@ -1950,6 +1881,50 @@ move01
     .word cmove
 #include "page.i65"
 move02
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       +MOVE   ( start end delta -- )
+;
+; Move a block of memory between start and end (inclusive) to
+; a new address calculated by adding the signed delta to start
+;
+; for example, x = (5 of each letter)     AAAAABBBBBCCCCCDDDDD 
+; after  x 8 + x 11 + -7 +move, x becomes ABBCCBBBBBCCCCCDDDDD
+; vidram dup 3+ 3+ 12 +move
+;": +move   ( start end delta -- )
+; ( start end delta )
+;     >r over - 1+
+; ( start howmany )
+;     over r> + swap move ;
+;
+#ifdef HEADERS
+plusmovelfa
+    .byt $de,$ad
+    .byt (_plusmove-*-1)|bit7
+    .asc "+MOV","E"|bit7
+#endif
+_plusmove
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word _move
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------

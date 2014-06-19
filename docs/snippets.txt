@@ -3078,3 +3078,148 @@ dashtrailing03
 	ldy tos+1
 	inx
 	jmp puts
+
+;": scr>pkt   ( scr -- )
+;     editblk? @
+;                                 ( scr flag )
+;     if
+;                                 ( scr )
+;         dup >pkt blkbuf tuck
+;                                 ( scr blkbuf packet blkbuf )
+;         vmbuf @ -rot
+;                                 ( scr blkbuf vmbuf packet blkbuf )
+;         dup mkpkt
+;                                 ( scr blkbuf vmbuf packet blkbuf newsize )
+;         (scr!)
+;                                 ( scr blkbuf packet-newsize+2 newsize vmbuf vmbuf+oldsize-newsize packet-oldsize-vmbuf+2 )
+;         over vmbuf !
+;                                 ( scr blkbuf packet-newsize+2 newsize vmbuf vmbuf+oldsize-newsize packet-oldsize-vmbuf+2 )
+;         move
+;                                 ( scr blkbuf packet-newsize+2 newsize )
+;         move
+;                                 ( scr )
+;     then 
+;                                 ( scr )
+;     drop ;
+
+: scr>pkt   ( scr -- )
+    writable? @
+ ( scr flag )
+    if
+ ( scr )
+        blkbuf dup mkpkt
+ ( scr blkbuf newsize )
+        third @ $7ff and
+ ( scr blkbuf newsize oldsize )
+		vmbuf @
+ ( scr blkbuf newsize oldsize vmbuf )
+		>6502
+	ldy #4
+	jsr locals
+	brk
+
+		
+		jsr toforth
+ ( vmbuf oldtail delta )
+		+move 
+ ( blkbuf newtail newsize )
+		cmove
+    then
+    drop ;
+
+
+
+
+oldpacket
+oldsize
+newsize
+vmbuf
+blkbuf
+delta
+oldtail = oldpacket-oldsize+2
+newtail = oldpacket-newsize
+
+vmbuf oldtail delta +move
+blkbuf newtail newsize cmove
+
+
+; * mkpkt in the block buffer
+ ( newsize )
+; * calculate the delta between the existing packet size and the new packet size
+; delta = oldpacketsize - newsize
+; * calculate the bottom address of the old packet
+
+( scr )
+>pkt dup @ 
+( addr header )
+$7ff and + 2+
+ ( bottom )
+
+; vmbuf 
+; * +MOVE vmbuf "00" through the following packet header by delta bytes
+; * MOVE the packet in BLKBUF into place
+;
+: scr>pkt   ( scr -- )
+    writable? @
+    if
+    
+;": cmove>   ( from to howmany -- )
+;     dup>r 1- tuck
+;  ( from howmany-1 to howmany-1 ) ( R; howmany )
+;     + -rot + r>
+;  ( to+howmany-1 from+howmany-1 howmany )
+;     >6502
+
+
+
+1- dup>r
++under r@ +
+r> 1+
+
+L2: ; assert Y = 0
+        ldx ptr3 ; Get the low byte of n
+        beq done ; something to copy
+
+L3: lda (ptr1),Y ; copy a byte
+        sta (ptr2),Y
+        iny
+        dex
+        bne L3
+
+	
+_memcpy:
+        jsr memcpy_getparams
+
+memcpy_upwards: ; assert Y = 0
+        ldx ptr3+1 ; Get high byte of n
+        beq L2 ; Jump if zero
+
+L1: .repeat 2 ; Unroll this a bit to make it faster...
+        lda (ptr1),Y ; copy a byte
+        sta (ptr2),Y
+        iny
+        .endrepeat
+        bne L1
+        inc ptr1+1
+        inc ptr2+1
+        dex ; Next 256 byte block
+        bne L1 ; Repeat if any
+
+        ; the following section could be 10% faster if we were able to copy
+        ; back to front - unfortunately we are forced to copy strict from
+        ; low to high since this function is also used for
+        ; memmove and blocks could be overlapping!
+        ; {
+L2: ; assert Y = 0
+        ldx ptr3 ; Get the low byte of n
+        beq done ; something to copy
+
+L3: lda (ptr1),Y ; copy a byte
+        sta (ptr2),Y
+        iny
+        dex
+        bne L3
+
+        ; }
+
+done: jmp popax ; Pop ptr and return as result

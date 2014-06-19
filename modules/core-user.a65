@@ -178,41 +178,58 @@ numvmpkt
 
 ;--------------------------------------------------------------
 ;
-;		EDITMODE?   ( -- addr )
+;		EDITING?   ( -- addr )
 ;
-; New VM packets are being created by the editor if nonzero
-; New VM packets are created as data packets if false
+; BLOCK will generate new packets in the virtual memory packet 
+; buffer if they don't already exist.  This user variable decides
+; whether those created packets are read-only (data) blocks or 
+; writable (screens).
 ;
 #ifdef HEADERS
-editmodeqlfa
+editingqlfa
 	.byt $de,$ad
-	.byt (editmodeq-*-1)|bit7
-	.asc "EDITMODE","?"|bit7
+	.byt (editingq-*-1)|bit7
+	.asc "EDITING","?"|bit7
 #endif
-editmodeq
+editingq
 	jsr uservar
-	.byt usereditmodeq-userarea
+	.byt usereditingq-userarea
 
 ;--------------------------------------------------------------
 ;
-;		EDITBLK?   ( -- addr )
+;		WRITABLE?   ( -- addr )
 ;
-; True if block currently pointed to by SCR is an editor block,
-; False if current block is a data block.  Editor shows data 
-; blocks in read-only mode unless the user changes the block
-; type with the STOP-CLR command (resets linewrap table and 
-; converts data blocks into editor blocks, discarding the last
-; 24 unseen bytes from $8E78-8FFF)
+; PETTIL's editor distinguishes between "data" and "screen" blocks
+; using a bitflag (metadata) in the packet header.
+;
+; Data blocks are 1024 bytes and can't be completely displayed on
+; the PET's 40x25 hardware.  The editor will show the first 1000 bytes
+; and otherwise treats such blocks as read-only.
+;
+; Screens (typically source code) are read-write and the editor
+; will update the virtual memory packet buffer when leaving the screen,
+; e.g. via the STOP-Q editor command.  Screens also contain 24 bits
+; of linewrap information (the first three bytes of the block buffer), 
+; and are treated as a collection of 40-character or 80-character 
+; lines by the compiler.  In other words, line terminations are 
+; considered to be whitespace when loading screens, and source lines 
+; can extend all the way to the left and right edges.
+;
+; The STOP-CLR editor command converts a data block into a screen,
+; discarding the last (unseen) 24 bytes and initializing the linewrap
+; to all 40-character lines, or it will reset the linewrap on existing
+; screens.  Changes aren't saved to the packet buffer until the screen
+; is exited.
 ;
 #ifdef HEADERS
-editblkqlfa
+writableqlfa
 	.byt $de,$ad
-	.byt (editblkq-*-1)|bit7
-	.asc "EDITBLK","?"|bit7
+	.byt (writableq-*-1)|bit7
+	.asc "WRITABLE","?"|bit7
 #endif
-editblkq
+writableq
 	jsr uservar
-	.byt usereditblkq-userarea
+	.byt userwritableq-userarea
 
 ;--------------------------------------------------------------
 ;

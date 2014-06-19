@@ -50,17 +50,21 @@ wrapstorelfa
     .asc "WRAP","!"|bit7
 #endif
 wrapstore
+    ldy #1
+    jsr locals
+    stx storex
     ldx #24
 wrapstore01
     asl $e0,x
     lsr tos+1
     ror tos
-    ror stackh,x
-    ror stackl,x
+    ror n+1
+    ror n
     ror $e0,x
     dex
     bne wrapstore01
-    jmp poptwo
+    ldx storex
+    jmp pops
 
 ;--------------------------------------------------------------
 ;
@@ -645,21 +649,20 @@ pastefrom04                     ; THEN
 
 ;--------------------------------------------------------------
 ;
-;       SCR@   ( scr -- )
+;       PKT>SCR   ( scr -- )
 ;
-; Locate or create the packet for this screen, set the current
-; screen variable SCR, and display it with linewrap
+; Locate (or create) the packet for "scr" and open it in the editor
 ;
-;": scr@   ( scr -- )
+;": pkt>scr   ( scr -- )
 ;     dup scr ! (block) drop
 ;                               ( blkbuf )
-;     editable? @
+;     writable? @
 ;                               ( blkbuf editable? )
 ;     if
 ;                               ( blkbuf )
 ;         dup 3c@ wrap!
 ;                               ( blkbuf )
-;         3 +
+;         3+
 ;                               ( blkbuf+3 )
 ;     then
 ;                               ( blkbuf|blkbuf+3 )
@@ -668,12 +671,12 @@ pastefrom04                     ; THEN
 ;     cmove ;
 ;
 ;#ifdef HEADERS
-;scrfetchlfa
+;pkttoscrlfa
 ;    .byt $de,$ad
-;    .byt (_scrfetch-*-1)|bit7
-;    .asc "SCR","@"|bit7
+;    .byt (_pkttoscr-*-1)|bit7
+;    .asc "PKT>SC","R"|bit7
 ;#endif
-_scrfetch
+_pkttoscr
 #include "enter.i65"
     .word dup
 #include "page.i65"
@@ -685,12 +688,12 @@ _scrfetch
 #include "page.i65"
     .word drop
 #include "page.i65"
-    .word editblkq
+    .word writableq
 #include "page.i65"
     .word fetch
 #include "page.i65"
     .word qbranch               ; IF
-    .byt <(scrfetch01-*+1)
+    .byt <(pkttoscr01-*+1)
 #include "pad.i65"
     .word dup
 #include "page.i65"
@@ -698,11 +701,9 @@ _scrfetch
 #include "page.i65"
     .word wrapstore
 #include "page.i65"
-    .word three
+    .word threeplus
 #include "page.i65"
-    .word plus
-#include "page.i65"
-scrfetch01
+pkttoscr01
     .word vidram
 #include "page.i65"
     .word bperscr
@@ -774,7 +775,7 @@ pscrstore
 
 ;--------------------------------------------------------------
 ;
-;       MKPKT ( blkbuf -- packetsize )
+;       MKPKT ( blkbuf -- size )
 ;
 ; Build an editor packet at BLKBUF from the current video screen.
 ; The first three bytes of the packet are the linewrap bits for
@@ -784,15 +785,15 @@ pscrstore
 ;": mkpkt   ( blkbuf -- size )
 ;     >r 25 wrap^ r@ 3c!        \ retrieve linewrap from screen
 ; ( ) ( R; blkbuf )
-;     vidram b/scr -trailing	\ squeeze trailing spaces from screen
+;     vidram b/scr -trailing    \ squeeze trailing spaces from screen
 ; ( vidram vidsize ) ( R; blkbuf )
-;     r@ 3+ swap rlencode		\ rlencode it
+;     r@ 3+ swap rlencode       \ rlencode it
 ; ( targend uncompressed? ) ( R; blkbuf )
-;     $4000 and vidram or
+;     $4000 and vidram or       \ editable, uncompressed flags
 ; ( targend pktflags ) ( R; blkbuf )
-;     over r> - dup>r
-; ( targend uncompressed? size ) ( R; size )
-;     2+ + swap !
+;     over r> - 2+ dup>r
+; ( targend pktflags size ) ( R; size )
+;     or swap !
 ; ( ) ( R; size )
 ;     r> ;
 ; ( size )
@@ -845,11 +846,11 @@ _mkpkt
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word duptor
-#include "page.i65"
     .word twoplus
 #include "page.i65"
-    .word plus
+    .word duptor
+#include "page.i65"
+    .word orx
 #include "page.i65"
     .word swap
 #include "page.i65"
@@ -861,123 +862,123 @@ _mkpkt
 
 ;--------------------------------------------------------------
 ;
-;       SCR!   ( scr -- )
+;       SCR>PKT   ( scr -- )
 ;
-; Store the current screen in the block buffer.  It uses a
-; helper word (SCR!) to set up the pointers, then performs 
-; two moves to open the correct amount of space in the packet
-; buffer, and to move the current screen packet into that
-; space.  If the current screen is uneditable, SCR! exits
-; without changing the packet buffer.
+; Store the current screen into the virtual memory (packet) buffer
+; as screen "scr".  If the screen is read-only, no change occurs.
 ;
-;": scr!   ( scr -- )
-;     editblk? @
-;                                 ( scr flag )
+;": scr>pkt   ( scr -- )
+;     writable? @
+;  ( scr flag )
 ;     if
-;                                 ( scr )
-;         dup >pkt blkbuf tuck
-;                                 ( scr blkbuf packet blkbuf )
-;         vmbuf @ -rot
-;                                 ( scr blkbuf vmbuf packet blkbuf )
-;         dup mkpkt
-;                                 ( scr blkbuf vmbuf packet blkbuf newsize )
-;         (scr!)
-;                                 ( scr blkbuf packet-newsize+2 newsize vmbuf vmbuf+oldsize-newsize packet-oldsize-vmbuf+2 )
-;         over vmbuf !
-;                                 ( scr blkbuf packet-newsize+2 newsize vmbuf vmbuf+oldsize-newsize packet-oldsize-vmbuf+2 )
-;         move
-;                                 ( scr blkbuf packet-newsize+2 newsize )
-;         move
-;                                 ( scr )
-;     then 
-;                                 ( scr )
+;  ( scr )
+;         >r blkbuf dup mkpkt
+;  ( blkbuf newsize ) ( R; scr )
+;         r@ >pkt dup @ $7ff and
+;  ( blkbuf newsize packet oldsize )
+;         vmbuf @
+;  ( blkbuf newsize packet oldsize vmbuf )
+;         true
+;  ( blkbuf newsize packet oldsize vmbuf true )
+;         >6502
+;   ldy #5
+;   jsr locals
+;     ...   \ TOS=-1; N0=blkbuf; N1=newsize; N2=oldsize; N3=vmbuf R9=packet
+;     jsr toforth
+;  ( scr blkbuf newtail newsize vmbuf oldtail delta newvmbuf ) ( R; scr )
+;         vmbuf !
+;  ( scr blkbuf newtail newsize vmbuf oldtail delta ) ( R; scr )
+;         +move 
+;  ( scr blkbuf newtail newsize ) ( R; scr )
+;         cmove r>
+;     then
+;  ( scr )
 ;     drop ;
 ;
 ;#ifdef HEADERS
-;scrstorelfa
+;scrtopktlfa
 ;    .byt $de,$ad
-;    .byt (_scrstore-*-1)|bit7
-;    .asc "SCR","!"|bit7
+;    .byt (_scrtopkt-*-1)|bit7
+;    .asc "SCR>PK","T"|bit7
 ;#endif
-_scrstore
+_scrtopkt
 #include "enter.i65"
-    .word editblkq
+    .word writableq
 #include "page.i65"
     .word fetch
 #include "page.i65"
     .word qbranch               ; IF
-    .byt <(scrstore01-*+1)
+    .byt <(scrtopkt01-*+1)
 #include "pad.i65"
-    .word
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word _topkt
+    .word tor
 #include "page.i65"
     .word _blkbuf
-#include "page.i65"
-    .word tuck
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word dashrot
 #include "page.i65"
     .word dup
 #include "page.i65"
     .word _mkpkt
 #include "page.i65"
-    .word pscrstore
+    .word rfetch
 #include "page.i65"
-    .word over
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word _move
-#include "page.i65"
-    .word _move
-#include "page.i65"
-scrstore01                      ; THEN
-    .word drop
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       EMPTY-BUFFERS
-;
-; Unassign all virtual memory.  UPDATEed blocks are not written
-; to mass storage.
-;
-;": empty-buffers   ( -- )
-;     #vmpkt off blkbuf 2- dup off vmbuf ! ;
-;
-#ifdef HEADERS
-emptybufferslfa
-    .byt $de,$ad
-    .byt (_emptybuffers-*-1)|bit7
-    .asc "EMPTY-BUFFER","S"|bit7
-#endif
-_emptybuffers
-#include "enter.i65"
-    .word numvmpkt
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word twominus
+    .word _topkt
 #include "page.i65"
     .word dup
 #include "page.i65"
-    .word off
+    .word fetch
+#include "page.i65"
+    .word plit
+    .word $7ff
+#include "pad.i65"
+    .word andx
 #include "page.i65"
     .word vmbuf
 #include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word true
+#include "page.i65"
+;  ( blkbuf newsize packet oldsize vmbuf true )
+    .word to6502
+    ldy #5
+    jsr locals
+;     ...   \ TOS=true; N0=blkbuf; N1=newsize; N2=packet; N3=oldsize R9=vmbuf
+    brk
+    .byt ld | N0
+    .byt st | TOS               ; blkbuf
+    .byt ld | N2
+    .byt sub | N1
+    .byt push                   ; newtail
+    .byt ldd | TOS              ; 2+
+    .byt ld | N1
+    .byt push                   ; newsize
+    .byt ld | R9
+    .byt push                   ; vmbuf
+    .byt ld | N2
+    .byt sub | N3
+    .byt push                   ; oldtail
+    .byt ldi | TOS              ; 1+
+    .byt ld | N3
+    .byt sub | N1
+    .byt push                   ; delta
+    .byt add | R9
+    .byt push                   ; newvmbuf
+    .byt rtn
+#include "toforth.i65"
+;  ( blkbuf newtail newsize vmbuf oldtail delta newvmbuf ) ( R; scr )
+    .word vmbuf
+#include "page.i65"
     .word store
+#include "page.i65"
+    .word _plusmove
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+scrtopkt01                      ; THEN
+    .word xyzzy
+#include "page.i65"
+    .word drop
 #include "page.i65"
     .word exit
 
@@ -1241,7 +1242,7 @@ _editzilch
 ;#endif
 _editnowrap
 #include "enter.i65"
-    .word editblkq
+    .word writableq
 #include "page.i65"
     .word on
 #include "page.i65"
@@ -1280,13 +1281,13 @@ _toedit
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word _scrstore
+    .word _scrtopkt
 #include "page.i65"
     .word zero
 #include "page.i65"
     .word _max
 #include "page.i65"
-    .word _scrfetch
+    .word _pkttoscr
 #include "page.i65"
     .word exit
 
@@ -1382,9 +1383,9 @@ _editquit
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word _scrstore
+    .word _scrtopkt
 #include "page.i65"
-    .word editmodeq
+    .word editingq
 #include "page.i65"
     .word off
 #include "page.i65"
@@ -1487,7 +1488,7 @@ editrestore
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word _scrfetch
+    .word _pkttoscr
 #include "page.i65"
     .word exit
 
@@ -1540,11 +1541,11 @@ editinsscr
 ;#endif
 _editinit
 #include "enter.i65"
-    .word editmodeq
+    .word editingq
 #include "page.i65"
     .word on
 #include "page.i65"
-    .word _scrfetch
+    .word _pkttoscr
 #include "page.i65"
     .word _editzilch
 #include "page.i65"
