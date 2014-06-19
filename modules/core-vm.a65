@@ -6,7 +6,7 @@
 ;       WRAP!   ( d -- )
 ;
 ; Updates the linewrap table at $E0 to reflect the bits
-; stored in d.  Since line 0 is *always* $80, never a continuation 
+; stored in d.  Since line 0 is *always* $80, never a continuation
 ; line, only 24 bits are required, not 25.
 ;
 ;#ifdef HEADERS
@@ -66,9 +66,9 @@ bperscr
 
 ;--------------------------------------------------------------
 ;
-;       BLKBUF
+;       BLKBUF   ( -- addr )
 ;
-; return the address of the block buffer
+; return the address of the 1K block buffer
 ;
 #ifdef HEADERS
 blkbuflfa
@@ -111,7 +111,7 @@ _update
 ; encode length {srclen} bytes from source address {srcaddr} to
 ; target address {targaddr}.  Return target end address {targend}
 ;
-; test cases -- 
+; test cases --
 ; vvwwxxyyyzz
 ; xxyyzz
 ;
@@ -274,84 +274,309 @@ rldecode06
 ;     repeat
 ;     swap drop ;
 ;
-;#ifdef HEADERS
-;topktlfa
-;    .byt $de,$ad
-;    .byt (_topkt-*-1)|bit7
-;    .asc ">PK","T"|bit7
-;#endif
+#ifdef HEADERS
+topktlfa
+    .byt $de,$ad
+    .byt (_topkt-*-1)|bit7
+    .asc ">PK","T"|bit7
+#endif
 _topkt
-#ifdef SWEET16
 #include "enter.i65"
     .word _blkbuf
 #include "page.i65"
-    .word swap
+    .word twominus
 #include "page.i65"
-    .word to6502
-    brk                         ; ( blkbuf blk )
-    .byt ld | TOS
-    .byt st | N0
-    .byt pull
 topkt01
-    .byt popd | TOS
-    .byt bz , <(topkt02-*-2)
-    .byt dcr | N0
-    .byt bm , <(topkt02-*-2)
-    .byt ext
-    .word pktheader16
-    .byt ld | TOS
-    .byt sub | R11
-    .byt st | TOS
-    .byt br , <(topkt01-*-2)
+    .word over
+#include "page.i65"
+    .word zgt
+#include "page.i65"
+    .word qbranch
+    .byt <(topkt02-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plit
+    .word $7ff
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word minusone
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
+    .word branch
+    .byt <(topkt01-*+1)
+#include "pad.i65"
 topkt02
-    .byt rtn
-#include "toforth.i65"
+    .word nip
+#include "page.i65"
     .word exit
+
+;--------------------------------------------------------------
+;
+;       PKT+ ( editable? -- packet )
+;
+; Append a new packet to the bottom of vmbuf, return its address
+; flag = false for data packet, true for editor packet
+;
+;": pkt+   ( editable? -- packet )
+;                                 ( editable? )
+;     >r vmbuf @ 14 r@ 9 and -      \ packet length editor=5 data=14
+; ( vmtail size )
+;     2dup - dup third erase        \ clear packet and new tail
+;     dup 2+ 3 r@ fill              \ first 3 bytes of packet = flag
+;     vmbuf !                       \ update vmbuf to new tail
+;     VIDRAM r> and or over !       \ set packet length
+;     #vmpkt 1+! ;                  \ increment packet counter )
+;     ( vmbuf )                     \ packet address
+;
+#ifdef HEADERS
+pktpluslfa
+    .byt $de,$ad
+    .byt (_pktplus-*-1)|bit7
+    .asc "PKT","+"|bit7
 #endif
+_pktplus
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word clit
+    .byt 14
+#include "pad.i65"
+    .word rfetch
+#include "page.i65"
+    .word clit
+    .byt 9
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word _erase
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word fill
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word numvmpkt
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;
+;       UNPKT ( packet -- blkbuf )
+;
+; Given the address of a packet (its size/flags word, at the top)
+; this will unpack the packet to the block buffer and return
+; the address of the unpacked block. Distinguishes among
+; compressed/uncompressed and editable/uneditable packets
+;
+;": unpkt   ( packet -- blkbuf )
+;     dup @ dup 0< editblk !
+;  ( packet header )
+;     dup 2* 0< >r
+;  ( packet header ) ( R; uncompressed? )
+;     $7ff and 2dup - 2+
+;  ( packet size data ) ( R; uncompressed? )
+;     blkbuf dup>r rswap dup b/buf blank
+;  ( packet size data blkbuf ) ( R; blkbuf uncompressed? )
+;     editblk @
+;  ( packet size data blkbuf editable? ) ( R; blkbuf uncompressed? )
+;     if
+;  ( packet size data blkbuf ) ( R; blkbuf uncompressed? )
+;         over 3c@ third 3c!
+;         3+ rot 3- rot 3+ rot
+;     then
+;     rot 2- r>
+;  ( packet data blkbuf size uncompressed? ) ( R; blkbuf )
+;     if
+;         cmove
+;     else
+;         rldecode
+;     then
+;    rfrom nip ;
+;
+#ifdef HEADERS
+unpktlfa
+    .byt $de,$ad
+    .byt (_unpkt-*-1)|bit7
+    .asc "UNPK","T"|bit7
+#endif
+_unpkt
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word editblkq
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word plit
+    .word $7ff
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word rswap
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word _blank
+#include "page.i65"
+    .word editblkq
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qbranch
+    .byt <(unpkt01-*+1)
+#include "pad.i65"
+    .word over
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word threeplus
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word threeminus
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word threeplus
+#include "page.i65"
+    .word rot
+#include "page.i65"
+unpkt01
+    .word rot
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word qbranch
+    .byt <(unpkt02-*+1)
+#include "pad.i65"
+    .word cmove
+#include "page.i65"
+    .word branch
+    .byt <(unpkt03-*+1)
+#include "pad.i65"
+unpkt02
+    .word rldecode
+#include "page.i65"
+unpkt03
+    .word rfrom
+#include "page.i65"
+    .word nip
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 ;
 ;       (BLOCK)   ( blk -- blkbuf new? )
 ;
-; return the buffer address of block N. Create it if necessary.
+; Retrieves or creates the VM block "blk" and returns the block
+; buffer address.  If the block was created, "new?" is true
 ; flag is true if the block is new, false if it already exists
 ;
-; *** TRICK ALERT ***
-; Uses the address on the return stack to determine if the caller 
-; was the screen editor.  Then does an OR with $8000 (VIDRAM)
-; on the packet length, setting the "editable" flag on the block.
-;
-; Any other caller creates a data block.
+; New packets are created as data blocks (1024 zeroes) or as editor
+; screens (3 bytes linewrap + 1000 spaces) if EDITMODE is set
 ;
 ;": (block)   ( blk -- blkbuf )
-;     #vmpkt @ over -
-;                                 ( blk #vmpkt-blk )
-;     dup 0>
-;                                 ( blk #vmpkt-blk exists? )
+;     dup 1+ #vmpkt @  >  dup>r
+; ( blk new? )
 ;     if
-;                                 ( blk #vmpkt-blk )
-;         drop >pkt
-;                                 ( packet )
-;     else
-;                                 ( blk #vmpkt-blk )
-;         r@ usingeditor = >r
-;                                 ( junk #vmpkt-blk ) ( R; editor? )
+; ( blk )
+;         #vmpkt @ - 0
+; ( howmany junk )
 ;         begin
-;                                 ( packet #vmpkt-blk ) ( R; editor? )
-;             swap drop 1+ r@
-;                                 ( #vmpkt-blk+ editor? ) ( R; editor? )
-;             pkt+
-;                                 ( #vmpkt-blk+ packet ) ( R; editor? )
-;             swap dup 0>
-;                                 ( packet #vmpkt-blk+ enough? ) ( R; editor? )
+; ( howmany junk )
+;             drop 1-
+; ( howmany )
+;             editmode @ pkt+
+; ( howmany packet )
+;             over 0<
 ;         until
-;                                 ( packet #vmpkt-blk+ ) ( R; editor? )
-;         r> 2drop
-;                                 ( #vmpkt-blk+ )
+; ( howmany packet )
+;         nip
+; ( howmany packet )
+;     else
+; ( blk )
+;         >pkt
+; ( packet )
 ;     then
-;                                 ( packet )
-;     unpkt ; 
-;                                 ( blkbuf )
+; ( packet )
+;     unpkt  r> ;
+; ( blkbuf new? )
 ;
 ;#ifdef HEADERS
 ;pblocklfa
@@ -362,84 +587,61 @@ topkt02
 ;#endif
 _pblock
 #include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
     .word numvmpkt
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word over
+    .word gt
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word qbranch               ; IF
+    .byt <(pblock02-*+1)
+#include "pad.i65"
+    .word numvmpkt
+#include "page.i65"
+    .word fetch
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word dup
+    .word zero
 #include "page.i65"
-    .word zgt
-#include "page.i65"
-    .word qbranch               ; IF
-    .byt <(pblock01-*+1)
-#include "pad.i65"
+pblock01                        ; BEGIN
     .word drop
 #include "page.i65"
-    .word _topkt
+    .word oneminus
+#include "page.i65"
+    .word editmodeq
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _pktplus
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word qbranch               ; UNTIL
+    .byt <(pblock01-*+1)
+#include "pad.i65"
+    .word nip
 #include "page.i65"
     .word branch
     .byt <(pblock03-*+1)
 #include "pad.i65"
-pblock01                        ; ELSE
-    .word rfetch
-#include "page.i65"
-    .word plit
-    .word usingeditor
-#include "pad.i65"
-    .word eq
-#include "page.i65"
-    .word tor
-#include "page.i65"
-pblock02                        ; BEGIN
-    .word swap
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word _pktplus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word zgt
-#include "page.i65"
-    .word qbranch               ; UNTIL
-    .byt <(pblock02-*+1)
-#include "pad.i65"
-    .word rfrom
-#include "pad.i65"
-    .word twodrop
+pblock02                        ; ELSE
+    .word _topkt
 #include "page.i65"
 pblock03                        ; THEN
     .word _unpkt
 #include "page.i65"
+    .word rfrom
+#include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-;
-;       EDITABLE?   ( -- addr )
-;
-; Variable reflecting whether the current screen is text (true)
-; or a data block (false)
-;
-;#ifdef HEADERS
-;iseditablelfa
-;    .byt $de,$ad
-;    .byt (iseditable-*-1)|bit7|bit5
-;    .asc "EDITABLE","?"|bit7
-;    .byt 1
-;#endif
-iseditable
-    jsr docreate
-    .word 0
 
 ;--------------------------------------------------------------
 ;
@@ -459,164 +661,10 @@ _block
 
 ;--------------------------------------------------------------
 ;
-;       SCR@   ( scr -- )
-;
-; Locate or create the packet for this screen, set the current
-; screen variable SCR, and display it with linewrap
-;
-;": scr@   ( scr -- )
-;     dup scr ! (block)
-;                               ( blkbuf )
-;     editable? @
-;                               ( blkbuf editable? )
-;     if
-;                               ( blkbuf )
-;         dup 3c@ wrap!
-;                               ( blkbuf )
-;         3 +
-;                               ( blkbuf+3 )
-;     then
-;                               ( blkbuf|blkbuf+3 )
-;     vidram b/scr
-;                               ( blkbuf $8000 1000 )
-;     cmove ;
-;
-;#ifdef HEADERS
-;scrfetchlfa
-;    .byt $de,$ad
-;    .byt (_scrfetch-*-1)|bit7|bit5
-;    .asc "SCR","@"|bit7
-;    .byt 1
-;#endif
-_scrfetch
-#include "enter.i65"
-    .word dup
-#include "page.i65"
-    .word scr
-#include "page.i65"
-    .word store
-#include "page.i65"
-usingeditor                     ; this address is tested for by (BLOCK) to see if it's the editor calling
-    .word _pblock
-#include "page.i65"
-    .word iseditable
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word qbranch               ; IF
-    .byt <(scrfetch01-*+1)
-#include "pad.i65"
-    .word dup
-#include "page.i65"
-    .word threecfetch
-#include "page.i65"
-    .word wrapstore
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word plus
-#include "page.i65"
-scrfetch01
-    .word vidram
-#include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       UNPKT ( packet -- blkbuf )
-;
-; Given the address of a packet (its size/flags word, at the top)
-; this will unpack the packet to the block buffer and return
-; the address of the unpacked block. Distinguishes among 
-; compressed/uncompressed and editable/uneditable packets
-;
-;#ifdef HEADERS
-;unpktlfa
-;    .byt $de,$ad
-;    .byt (_unpkt-*-1)|bit7|bit5
-;    .asc "UNPK","T"|bit7
-;    .byt 1
-;#endif
-_unpkt
-#ifdef SWEET16
-#include "enter.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word _blank                ; blank the block buffer
-#include "page.i65"
-    .word to6502
-    brk                         ; ( packet blkbuf )
-    .byt ld | TOS
-    .byt st | R9                ; blkbuf
-    .byt st | R10               ; "to"
-    .byt pull
-    .byt st | N0                ; packet address
-    .byt ldd | TOS              ; get packet header
-    .byt ext             
-    .word pktheader16              ; get R11=packet length, N2=editable? N3=uncompressed? 
-    .byt ld | N0
-    .byt sub | R11              ; packet data
-    .byt st | R13               ; "from" (don't use R12, it turns the packet into the Sweet16 return stack!)
-    .byt ld | N2
-    .byt bz , <(unpkt01-*-2)    ; data packet?
-    .byt ldi | R13              ; copy 3 bytes of linewrap from packet
-    .byt sti | R10
-    .byt dcr | R11              ; subtract 3 from length
-    .byt ldi | R13
-    .byt sti | R10
-    .byt dcr | R11
-    .byt ldi | R13
-    .byt sti | R10
-    .byt dcr | R11
-unpkt01                         ; start stacking it back up
-    .byt ld | R9
-    .byt st | TOS               ; blkbuf
-    .byt ld | R13
-    .byt push                   ; from
-    .byt ld | R10
-    .byt push                   ; to
-    .byt ld | R11
-    .byt push                   ; howmany
-    .byt ld | N3
-    .byt push                   ; uncompressed?
-    .byt ld | N2
-    .byt push                   ; editable?
-    .byt rtn
-#include "toforth.i65"
-    .word iseditable
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word qbranch               ; IF
-    .byt <(unpkt03-*+1)
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word branch
-    .byt <(unpkt04-*+1)
-#include "page.i65"
-unpkt03                         ; ELSE
-    .word rldecode
-#include "page.i65"
-unpkt04                         ; THEN
-    .word exit
-                                ; ( blkbuf )
-#endif
-
-;--------------------------------------------------------------
-;
 ;       WRAP^   ( logline -- d )
 ;
 ; Reads (a portion of) the linewrap table above the current physical
-; line (stored at $d8) up to but not including the current logical line.  
+; line (stored at $d8) up to but not including the current logical line.
 ; Returns a right-aligned double with a copy of those high bit values
 ;
 ;#ifdef HEADERS
@@ -641,7 +689,7 @@ wrapabove02
     inx
     cpx n+2         ; are we there yet?
     beq wrapabove03 ; leave if done
-    lda $e0,x 
+    lda $e0,x
     asl             ; nondestructively
     rol tos
     rol tos+1
@@ -684,218 +732,4 @@ wrapplus03
     ldy stackh,x
     tya
     jmp put
-
-;--------------------------------------------------------------
-;
-;       PKT+ ( editable? -- packet )
-;
-; Append a new packet to the bottom of vmbuf, return its address
-; flag = false for data packet, true for editor packet
-;
-;": pkt+   ( editable? -- packet )
-;                                 ( editable? )
-;     >r vmbuf @ 14 r@
-;                                 ( vmbuf 14 editable? ) ( R; editable? )
-;     if
-;                                 ( vmbuf 14 ) ( R; editable? )
-;         drop 5
-;                                 ( vmbuf 5 ) ( R; editable? )
-;     then
-;                                 ( vmbuf 5 ) ( R; editable? )
-;     2dup 2dup 2dup - over
-;                                 ( vmbuf 5 vmbuf 5 vmbuf 5 vmbuf-5 5 ) ( R; flag )
-;     erase
-;                                 ( vmbuf 5 vmbuf 5 vmbuf 5 ; clear packet ) ( R; flag )
-;     VIDRAM r@ and or swap
-;                                 ( vmbuf 5 vmbuf 5 VIDRAM|5 vmbuf ) ( R; flag )
-;     !
-;                                 ( vmbuf 5 vmbuf 5 ; set packet length ) ( R; flag )
-;     - dup vmbuf !
-;                                 ( vmbuf 5 vmbuf-5 ; update vmbuf to point to new tail )
-;     2+ r> tuck over ! 1+ !
-;                                 ( vmbuf 5 ; set first three bytes of packet = flag )
-;     #vmpkt 1+!
-;                                 ( vmbuf 5 ; increment packet counter )
-;     drop ;
-;                                 ( vmbuf ; packet address )
-;
-;#ifdef HEADERS
-;pktpluslfa
-;    .byt $de,$ad
-;    .byt (_pktplus-*-1)|bit7
-;    .asc "PKT","+"|bit7
-;#endif
-_pktplus
-#include "enter.i65"
-    .word tor
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word clit
-    .byt 14
-#include "pad.i65"
-    .word rfetch
-#include "page.i65"
-    .word qbranch
-    .byt <(pktplus01-*+1)
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word clit
-    .byt 5
-#include "pad.i65"
-pktplus01
-    .word twodup
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word _erase
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word tuck
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word numvmpkt
-#include "page.i65"
-    .word oneplusstore
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-;
-;       MKPKT ( blkbuf -- packetsize )
-;
-; Build a packet at BLKBUF from the current video screen.
-; The first three bytes of the packet are the linewrap bits for
-; lines 1..24.  This is followed by RLE-encoded (or stored)
-; screen codes, with the last two bytes being the packet header.
-;
-;": mkpkt   ( blkbuf -- size )
-;     25 wrap^
-;                                 ( blkbuf d )
-;     rot dup >r
-;                                 ( d blkbuf ) ( R; blkbuf )
-;     dup 3 + >r
-;                                 ( d blkbuf ) ( R; blkbuf blkbuf+3 )
-;     3c!
-;                                 ( ) ( R; blkbuf blkbuf+3 )
-;     vidram b/scr -trailing
-;                                 ( vidram nonblanksize ) ( R; blkbuf blkbuf+3 )
-;     r> swap
-;                                 ( vidram blkbuf+3 nonblanksize ) ( R; blkbuf )
-;     rlencode
-;                                 ( targend uncompressed? ) ( R; blkbuf )
-;     over r> - >r
-;                                 ( targend uncompressed? ) ( R; size )
-;     r@ 2+ or vidram or swap !
-;                                 ( ) ( R; size )
-;     r> ;
-;                                 ( size )
-;
-;#ifdef HEADERS
-;mkpktlfa
-;    .byt $de,$ad
-;    .byt (_mkpkt-*-1)|bit7
-;    .asc "MKPK","T"|bit7
-;#endif
-_mkpkt
-#include "enter.i65"
-    .word clit
-    .byt 25
-#include "pad.i65"
-    .word wrapabove
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word _dashtrailing
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rlencode
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word exit
 

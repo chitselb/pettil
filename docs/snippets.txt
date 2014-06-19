@@ -2800,3 +2800,205 @@ ccomma
 	adc #0
 	sta (n),y
 	jmp pops
+
+: >pkt   ( n -- packet )
+    blkbuf 2-
+    begin
+        over 0>
+    while
+        dup @ $7ff and -
+        -1 +under
+    repeat
+    nip ;
+
+: >pkt   ( n -- packet )
+    blkbuf 2- 
+ ( n addr )
+    begin
+ ( n junk )
+        swap 1-
+ ( n junk )
+        dup @
+        - swap 1- swap
+    repeat
+    swap drop ;
+
+
+;         #vmpkt @ - 0
+; ( howmany junk )
+;         begin
+; ( howmany junk )
+;             drop 1-
+; ( howmany )
+;             editmode @ pkt+
+; ( howmany packet )
+;             over 0<
+;         until
+; ( howmany packet )
+;         nip
+; ( howmany packet )
+
+;--------------------------------------------------------------
+;
+;		PKTHEAD   ( packet -- uncompressed? len )
+;
+; Given the address of a packet, set the EDITBLK uservariable to
+; true if the packet is editable, false otherwise.
+;
+#ifdef HEADERS
+pktheadlfa
+	.byt $de,$ad
+	.byt (pkthead-*-1)|bit7
+	.asc "PKTHEA","D"|bit7
+#endif
+pkthead
+
+
+
+;--------------------------------------------------------------
+;
+;       UNPKT ( packet -- blkbuf )
+;
+; Given the address of a packet (its size/flags word, at the top)
+; this will unpack the packet to the block buffer and return
+; the address of the unpacked block. Distinguishes among
+; compressed/uncompressed and editable/uneditable packets
+; * set the EDITBLK flag true if packet is editable, false if readonly
+; * leave the linewrap in BLKBUF first 3 bytes if editor
+; 
+: unpkt   ( packet -- blkbuf )
+    dup @ dup 0< editblk ! 
+ ( packet header )
+    dup 2* 0< >r
+ ( packet header ) ( R; uncompressed? )
+    $7ff and 2dup - 2+
+ ( packet size data ) ( R; uncompressed? )
+    blkbuf dup>r rswap b/buf blank	
+ ( packet size data blkbuf ) ( R; blkbuf uncompressed? )
+    editblk @
+ ( packet size data blkbuf editable? ) ( R; blkbuf uncompressed? )
+    if
+ ( packet size data blkbuf ) ( R; blkbuf uncompressed? )
+        over 3c@ third 3c!
+        3+ rot 3- rot 3+ rot
+    then
+    rot 2- r>
+ ( packet data blkbuf size uncompressed? ) ( R;  )
+ ( packet size data blkbuf uncompressed? )
+    if
+	    cmove
+	else
+	    rldecode
+	then
+	rfrom ;
+
+    dup @ dup 0< editblk !
+ ( packet header ) ( R; blkbuf )
+    tuck $7ff and
+ ( header packet size ) ( R; blkbuf )
+    dup>r - 2+ r> r>
+ ( header data size blkbuf )
+    2swap editblk @
+ ( size blkbuf header data editable? )
+    if
+ ( header data size ) ( R; blkbuf )
+        dup 3c@ r@ 3c!
+        3+ r> 3+ >r -3 +under
+	then
+ ( data blkbuf size uncompressed? )
+    if
+        cmove
+    else
+		rldecode
+	then
+ ( packet header size packet data ) ( R; blkbuf )
+    editblk @
+ ( packet header size packet data editable? ) ( R; blkbuf )
+    if
+ ( packet header size packet data ) ( R; blkbuf )
+        dup 3c@ r@ 3c! 
+        r> 3+ >r
+        3+ -3 +under
+    then
+ ( packet header packet size' data' ) ( R; blkbuf )
+
+ ( packet blkbuf )
+    over @ $7ff and
+ ( packet blkbuf len )
+
+;#ifdef HEADERS
+;unpktlfa
+;    .byt $de,$ad
+;    .byt (_unpkt-*-1)|bit7|bit5
+;    .asc "UNPK","T"|bit7
+;    .byt 1
+;#endif
+_unpkt
+#ifdef SWEET16
+#include "enter.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word _blank                ; blank the block buffer
+#include "page.i65"
+    .word to6502
+    brk                         ; ( packet blkbuf )
+    .byt ld | TOS
+    .byt st | R9                ; blkbuf
+    .byt st | R10               ; "to"
+    .byt pull
+    .byt st | N0                ; packet address
+    .byt ldd | TOS              ; get packet header
+    .byt ext
+    .word pktheader16           ; get R11=packet length, N2=editable? N3=uncompressed?
+    .byt ld | N0
+    .byt sub | R11              ; address of packet data
+    .byt st | R13               ; "from" (don't use R12, it turns the packet into the Sweet16 return stack!)
+    .byt ld | N2
+    .byt bz , <(unpkt01-*-2)    ; data packet?
+    .byt ldi | R13              ; copy 3 bytes of linewrap from packet
+    .byt sti | R10
+    .byt dcr | R11              ; subtract 3 from length
+    .byt ldi | R13
+    .byt sti | R10
+    .byt dcr | R11
+    .byt ldi | R13
+    .byt sti | R10
+    .byt dcr | R11
+unpkt01                         ; start stacking it back up
+    .byt ld | R9
+    .byt st | TOS               ; blkbuf
+    .byt ld | R13
+    .byt push                   ; from
+    .byt ld | R10
+    .byt push                   ; to
+    .byt ld | R11
+    .byt push                   ; howmany
+    .byt ld | N3
+    .byt push                   ; uncompressed?
+    .byt ld | N2
+    .byt push                   ; editable?
+    .byt rtn
+#include "toforth.i65"
+    .word editblk
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word qbranch               ; IF
+    .byt <(unpkt03-*+1)
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word branch
+    .byt <(unpkt04-*+1)
+#include "page.i65"
+unpkt03                         ; ELSE
+    .word rldecode
+#include "page.i65"
+unpkt04                         ; THEN
+    .word exit
+                                ; ( blkbuf )
+#endif

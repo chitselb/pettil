@@ -537,51 +537,39 @@ wordlen16
     rts
 
 ;--------------------------------------------------------------
-
-; xor TOS with ACC, leaving the result in ACC
-;inputs
-;    TOS (R4) = some value
-;    ACC (R0) = some other value
-;returns
-;    ACC = TOS^ACC
-xor16
-    lda tos
-    eor r0
-    sta r0
-    lda tos+1
-    eor r0+1
-    sta r0+1
-    rts
-
 ; mask off just the length portion of the packet header
 ;
 ;inputs
 ;    ACC (R0) = packet header
 ;returns
 ;    N1 = packet header
-;    N2 = editable? $8000 if editable, $0000 if data
-;    N3 = uncompressed? $4000 if uncompressed, $0000 if compressed
+;    N2 = editable? $ffff if editable, $0000 if data
+;    N3 = uncompressed? $ffff if uncompressed, $0000 if compressed
 ;    R11 = length
 pktheader16
     ;ldy #1
     dey
-    sty 2*N2
-    sty 2*N3
+    sty n+4						; N2 = editable?, off
+    sty n+5
+    sty n+6						; N3 = uncompressed?, off
+    sty n+7
+    bit r0+1
+    bpl pktheader16a			; N flag is editable vs. data
+    dec n+4
+    dec n+5
+pktheader16a
+	bvc pktheader16b			; V flag is uncompressed vs. compressed
+    dec n+6
+    dec n+7
+pktheader16b
     lda r0
-    sta 2*N1                    ; packet header (low)
+    sta n+2                     ; packet header (low)
     sta r11                     ; packet length (low)
-    ldy r0+1
-    tya
-    sta 1+2*N1                  ; packet header (high)
+    lda r0+1
+    sta n+3                     ; packet header (high)
     and #$7
-    sta r11+1                   ; packet length
-    tya
-    and #$80
-    sta 1+2*N2                  ; editable? to N2(high)
-    tya
-    and #$40
-    sta 1+2*N3                  ; uncompressed? to N3(high)
-    ;ldx #r11
+    sta r11+1                   ; packet length (high)
+	rts
 
 ;inputs
 ;   TOS (R4) = addr
