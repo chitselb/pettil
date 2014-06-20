@@ -1,7 +1,7 @@
 #!/home/chitselb/bin/ruby
     # given a string (name) and address (symbol), construct and
     # return a hash with a symbol table entry in it
-    def make_symbol(name="", cfa=0, isimmediate)
+    def make_symbol(name="", cfa=0, nfaflags)
         # values calculated by pearson.rb
         # 14..22        102 162 3 150 98 88 207 149
         # 27, 120, 229, 241, 111, 44, 47, 141
@@ -10,15 +10,11 @@
         psize=pearson.length-1
 
         c1 = [cfa.to_i].pack("S<")
-    #   puts c1
         c2 = [name.length].pack("C")
     #   puts c2
         c3 = name.bytes.pack("C")
         namelen = name.length
-        if name[namelen-1].ord < 33
-            namelen |= 0x40     # set vocabulary bit if name ends in a control-character
-        end
-        namelen |= isimmediate
+        namelen |= nfaflags
         nfa = [namelen].pack("C")+name
         data = [cfa.to_i].pack("S<")+nfa
 
@@ -129,13 +125,12 @@
 
 =begin
 
-#ifdef HEADERS
-rehashlfa
-    .byt $de,$ad
-    .byt (_rehash-*-1)|bit7
-    .asc "REHAS","H"|bit7
+#if 0
++++NAME+++
+immediate
+vocabulary 1
 #endif
-_rehash
+_plus3nameplus3
 #include "enter.i65"
     .word exit
 
@@ -145,71 +140,81 @@ _rehash
     # output file with the symbol table in it
     b=Hash.new
 
-        coredict = "../pettil-core.a65 " +
-                    "core-subroutines.a65 " +
-                    "core-user.a65 " +
-                    "core-inner.a65 " +
-                    "core-nucleus.a65 " +
-                    "core-device.a65 " +
-                    "core-pet.a65 " +
-                    "core-numword.a65 " +
-                    "core-double.a65 " +
-                    "core-string.a65 " +
-                    "core-vm.a65 "
+    coredict = "../pettil-core.a65 " +
+                "core-subroutines.a65 " +
+                "core-user.a65 " +
+                "core-inner.a65 " +
+                "core-nucleus.a65 " +
+                "core-device.a65 " +
+                "core-pet.a65 " +
+                "core-numword.a65 " +
+                "core-double.a65 " +
+                "core-string.a65 " +
+                "core-vm.a65 "
 
-        tempdict = "pettil-tdict.a65 " +
-                    "pettil-user.a65 " +
-                    "pettil-interpreter.a65 " +
-                    "pettil-compiler.a65 " +
-                    "pettil-editor.a65 " +
-                    "pettil-assembler.a65"
+    tempdict = "pettil-tdict.a65 " +
+                "pettil-user.a65 " +
+                "pettil-interpreter.a65 " +
+                "pettil-compiler.a65 " +
+                "pettil-editor.a65 " +
+                "pettil-assembler.a65"
 
-        ((coredict+tempdict).split " ").each do |filename|
-        #((coredict).split " ").each do |filename|
-        #((tempdict).split " ").each do |filename|
+    #["../pettil-core.a65"].each do |filename|
+    ((coredict+tempdict).split " ").each do |filename|
+    #((coredict).split " ").each do |filename|
+    #((tempdict).split " ").each do |filename|
         infile = File.open("modules/"+filename,'r')
-        while (line = infile.gets) do
-            if (line.chomp == "\#ifdef HEADERS")
-                # grab the next few lines
-                lfasymbol = infile.gets
-                dead = infile.gets
-                namelenline = infile.gets
-                nfaline = infile.gets   # this is useful
-                if (namelenline =~ /\|bit5/)
-                    vocabline = infile.gets # belongs to a vocabulary?
-                else
-                    vocabline = ""
-                end
-                endifline = infile.gets
-                symbol = infile.gets    # so is this
-                # make a few validation checks
-                if !(dead =~ /^\s+\.byt \$de,\$ad$/)
-                    puts "uh oh", symbol, dead
-                end
-                if !(namelenline =~ /^\s+\.byt\ \(#{symbol.chomp}-\*-1\)(\|bit5|\|bit6|\|bit7)+$/)
-                    puts "uh oh", symbol, namelenline
-                end
-                if !(endifline.chomp =~ /^\#endif$/)
-                    puts "uh oh",symbol, endifline
-                end
-
-                # turn this:    .asc "REHAS","H"|bit7
-                # into this:    REHASH
-                nfaline = parse_name(nfaline,vocabline)
-       # # #    puts nfaline            # uncomment and feed this to pearson.rb
-
-                if (namelenline =~ /\|bit6/) # is immmediate
-                    isimmediate = 0x80
-                else
-                    isimmediate = 0
-                end
-                # we should have enough (a name and an address)
-                a = make_symbol(nfaline, symbols[symbol.chomp],isimmediate)
+        while (line = infile.gets) do 
+			line.chomp!
+			if line =~ /\#if 0$/
+				wordname, flags, vocab, t = nil
+				nfaflags = 0
+                while !((line = infile.gets.chomp) =~ /^\#endif$/)
+					wordname = t   if t = line.split(/^name=/)[1]
+					flags = t   if t = line.split(/^flags=/)[1]
+					vocab = t   if t = line.split(/^vocab=/)[1]
+				end
+				nfaflags |= 0x80   if flags =~ /immediate/
+				if vocab != nil
+					wordname += vocab.to_i.chr
+					nfaflags |= 0x40
+				end
+				symbol = infile.gets.chomp
+                print "#{wordname} #{symbol} #{nfaflags.to_s}  #{flags}\n"
+                a = make_symbol(wordname, symbols[symbol], nfaflags)
                 b[a[:name]] = a
-            end
+			end
+		end
+=begin
+         =~ /\#if 0$/) do
+				while !((line = infile.gets.chomp) =~ /^\#endif$/) do
+					puts line
+				end
+			end
         end
+            if (line =~ /\#if 0$/)
+                nfaflags = 0
+                while !(line =~ /^\#endif$/)
+					wordname = line[/^name=/,1]
+					modifier = line[/^modifier=/,1]
+					modifier = infile.gets.chomp
+					line = infile.gets.chomp
+				end
+				symbol = infile.gets.chomp
+				if modifier =~ /immediate/
+					
+				end
+				if modifier =~ /vocab/
+					nfaflags |= 0x40
+				end
+                print "#{wordname} #{symbol} #{nfaflags.to_s}  #{modifier}\n"
+                a = make_symbol(wordname, symbols[symbol], nfaflags)
+                b[a[:name]] = a
+			end
+			line = infile.gets.chomp
+		end
+=end
     end
-
     symfile = File.open("pettil.sym",'w')
     Hash[b.sort_by { | k, v | v[:hash1]*32+v[:len] }].each do |h|
         a = h[1][:data].bytes

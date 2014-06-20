@@ -36,11 +36,16 @@
 ; things between ;==== bars == use caution if relocating
 ; things between ;---- bars -- may be moved freely
 
+; include debugging logic
 #define DEBUG
+
+; build with Sweet-16
 #define SWEET16
-#define PET_ROM4                ; target machine
-#undefine HEADERS                 ; put headers in code?
-                                ; PET target memory size
+
+; target machine
+#define PET_ROM4
+
+; PET target memory size
 #define PETRAM 32
 
 #include modules/cbm.def
@@ -211,30 +216,27 @@ uarea           .dsb usercold-userarea+56,0
 #include modules/core-vm.a65
 
 ;--------------------------------------------------------------
-;
-;       WARM
-;
-; Dropping out to BASIC can be accomplished on purpose with
-; MON (to get to TIM), then .X to get to BASIC.  It also will
-; happen by mistake if cassette i/o is interrupted by the STOP
-; key or any tape error.  There may be other ways.  WARM should
-; be able to bring the system back to a usable state.
-;
-; Tasks
-; * aloha
-; * - swap zero page with zpbuf
-; * - switch Sweet16<-->TIM BRK vector
-; * - switch PETTIL<-->BASIC IRQ vector
-; * reset Forth return stack (machine stack)
-; * reset Forth data stack
-; * print start message CR,"WELCOME TO PETTIL!",CR
-; * STARTUP @ EXECUTE
-;
-#ifdef HEADERS
-warmlfa
-    .byt $de,$ad
-    .byt (warm-*-1)|bit7
-    .asc "WAR","M"|bit7
+#if 0
+name=WARM
+stack=( -- )
+[desc]
+Dropping out to BASIC can be accomplished on purpose with MON
+(to get to TIM), then .X to get to BASIC.  It also will happen
+by mistake if cassette i/o is interrupted by the STOP key or 
+any tape error.  There may be other ways.  WARM should be able
+to bring the system back to a usable state.
+[heading]Tasks[/heading]
+[list]
+* aloha
+* - swap zero page with zpbuf
+* - switch Sweet16<-->TIM BRK vector
+* - switch PETTIL<-->BASIC IRQ vector
+* reset Forth return stack (machine stack)
+* reset Forth data stack
+* print start message CR,"WELCOME TO PETTIL!",CR
+* STARTUP @ EXECUTE
+[/list]
+[/desc]
 #endif
 warm
     ldy #userwarm-userarea-1    ; init only warm uservariables
@@ -281,67 +283,90 @@ warm04
 ;==============================================================
 
 ;--------------------------------------------------------------
-;
-;        COLD   ( -- )
-;
-; One-time only (then disappear) system bootstrap initialization.
-; Runs once after "pettil.obj" loads, to prepare a development
-; environment.  The size of COLD doesn't really matter.  As
-; the final word in the core dictionary, COLD will FORGET
-; itself and its address becomes the value of FENCE.
-; It's a little hairy, I hope my comments will explain.
-;
-; the pieces at load time
-; * 0400-040c   BASIC bootstrap (10 SYS 1037)
-; * 040d-0410   pettillaunch (JMP COLD)
-; * 0410-049c   zpbuf (partial zero page mirror $00-$8C)
-; * 049d-04a4   power2 (01 02 04 08 10 20 40 80)
-; * 04a5        unused byte
-; * 04a6-065a   Sweet16
-; * 065b-       slip, slide, Sweet16 extensions
-; * brktoggle,  the EOR of TIM and Sweet16 entry points
-; * userarea,   User variable storage
-; * swapzp,     and other native 6502 code subroutines
-; * core,       permanent dictionary (bodies only)
-;
-;
-; * cold,       bootstrap initialization
-;---------------tdict & symbol table concatenated to there-----
-; * there,      target load address of temporary dictionary (2)
-; * there+2,    size of temporary dictionary (2)
-; * there+4,    temporary dictionary, bodies only
-; * tdict       outer interpreter, compiler, editor, assembler
-; * symbols,    symbol table data
-;
-; COLD tasks
-; * change the startup vector from COLD to WARM
-; * set MEMSIZ from BASIC $34-35
-; * set SYMTAB as an offset from MEMSIZ
-; * set TDICT as the load address + 2 of part 2 (found at 'there')
-; * display a banner
-; * set STARTUP uservariable to LAUNCH
-; * move temporary dictionary to TDICT
-; * move symbol table to SYMTAB
-; * set FENCE
-; * call WARM to put us in Forth mode
-;
-; There is no knowledge in the core dictionary (at the bottom of memory)
-; of what is in the temporary dictionary or where it resides.  To kick
-; things off upstairs, WARM starts Forth, then executes the word LAUNCH
-; in the upper dictionary, via the STARTUP uservariable.  The requirement
-; is that the first thing in tdict must be the executable CFA of LAUNCH
-; That's where we will pick things up.
-;
-; temporary dictionary and symbols are built separately
-; and concatenated to the PETTIL.OBJ core binary
-;
-#ifdef HEADERS
-coldlfa
-    .byt $de,$ad
-    .byt (cold-*-1)|bit7
-    .asc "COL","D"|bit7
+#if 0
+name=COLD
+stack=( -- )
+tags=transient,nosymbol
+[desc]
+One-time only (then disappear) system bootstrap initialization.
+Runs once after "pettil.obj" loads, to prepare a development
+environment.  The size of COLD doesn't really matter.  As
+the final word in the core dictionary, COLD will FORGET
+itself and its address becomes the value of FENCE.
+It's a little hairy, I hope my comments will explain.
+[heading]the pieces at load time[/heading]
+[list]
+* 0400-040c   BASIC bootstrap (10 SYS 1037)
+* 040d-0410   pettillaunch (JMP COLD)
+* 0410-049c   zpbuf (partial zero page mirror $00-$8C)
+* 049d-04a4   power2 (01 02 04 08 10 20 40 80)
+* 04a5        unused byte
+* 04a6-065a   Sweet16
+* 065b-       slip, slide, Sweet16 extensions
+* brktoggle,  the EOR of TIM and Sweet16 entry points
+* userarea,   User variable storage
+* swapzp,     and other native 6502 code subroutines
+* core,       permanent dictionary (bodies only)
+
+* cold,       bootstrap initialization
+---------------tdict & symbol table concatenated to there-----
+* there,      target load address of temporary dictionary (2)
+* there+2,    size of temporary dictionary (2)
+* there+4,    temporary dictionary, bodies only
+* tdict       outer interpreter, compiler, editor, assembler
+* symbols,    symbol table data
+[/list]
+
+[heading]COLD tasks[/heading
+[list]
+* change the startup vector from COLD to WARM
+* set MEMSIZ from BASIC $34-35
+* set SYMTAB as an offset from MEMSIZ
+* set TDICT as the load address + 2 of part 2 (found at 'there')
+* display a banner
+* set STARTUP uservariable to LAUNCH
+* move temporary dictionary to TDICT
+* move symbol table to SYMTAB
+* set FENCE
+* call WARM to put us in Forth mode
+[/list]
+There is no knowledge in the core dictionary (at the bottom of memory)
+of what is in the temporary dictionary or where it resides.  To kick
+things off upstairs, WARM starts Forth, then executes the word LAUNCH
+in the upper dictionary, via the STARTUP uservariable.  The requirement
+is that the first thing in tdict must be the executable CFA of LAUNCH
+That's where we will pick things up.
+
+temporary dictionary and symbols are built separately
+as PETTIL-TDICT.OBJ and PETTIL.SYM, then they are both
+appended to the PETTIL.OBJ core binary
+
+pettil-tdict.obj looks like this:
+two byte load address of pettil-tdict.obj e.g. $71fe
+two byte length of pettil-tdict.obj
+
+The actual load address is off by -2.  There are two bytes in
+front of the tdict.obj code storing the length of tdict.obj.
+This length information is needed to figure out where the symbol
+table starts, following tdict
+
+All addresses in tdict in this example would be located as though
+tdict had been assembled and loaded at *=$7200, in spite of the
+misleading load address.
+
+pettil.sym looks like this:
+repeated for each head
+[ two byte CFA
+  one byte length and flags
+  name
+  one byte vocabulary identifier, if present ]
+[/desc]
 #endif
 cold
+	nop							; make it easy to find here
+	nop
+	nop
+	nop
     lda #<bannermsg             ; display a banner
     sta TEMPF1
     lda #>bannermsg
@@ -367,20 +392,19 @@ cold01
     jmp cold2warm               ; start Forth, run HOT next
 
 ;--------------------------------------------------------------
-;
-;        HOT   ( -- )
-;
-; COLD does enough to kickstart Forth, then HOT is next.
-; * sets TDICT and SYMTAB user variables
-; * copy the temporary dictionary to TDICT
-; * copy the symbols to SYMTAB+32
-; * execute LAUNCH (first word at the first address in TDICT)
-;
-#ifdef HEADERS
-hotlfa
-    .byt $de,$ad
-    .byt (hot-*-1)|bit7
-    .asc "HO","T"|bit7
+#if 0
+name=HOT
+stack=( -- )
+tags=transient,nosymbol
+[desc]
+COLD does enough to kickstart Forth, then HOT is next.
+[list]
+* sets TDICT and SYMTAB user variables
+* copy the temporary dictionary to TDICT
+* copy the symbols to SYMTAB+32
+* execute LAUNCH (first word at the first address in TDICT)
+[/list]
+[/desc]
 #endif
 hot
 #include "enter.i65"
@@ -462,26 +486,3 @@ bannermsg
     .asc    "1623 PASCAL'S BIRTHDAY",CR
             ;123456789.123456789.123456789.123456789.
 there
-; temporary dictionary and symbols are built separately
-; as PETTIL-TDICT.OBJ and PETTIL.SYM, then they are both
-; appended to the PETTIL.OBJ core binary
-;
-;"pettil-tdict.obj looks like this:
-; two byte load address of pettil-tdict.obj e.g. $71fe
-; two byte length of pettil-tdict.obj
-;
-; The actual load address is off by -2.  There are two bytes in
-; front of the tdict.obj code storing the length of tdict.obj.
-; This length information is needed to figure out where the symbol
-; table starts, following tdict
-;
-; All addresses in tdict in this example would be located as though
-; tdict had been assembled and loaded at *=$7200, in spite of the
-; misleading load address.
-;
-;"pettil.sym looks like this:
-; repeated for each head
-; [ two byte CFA
-;   one byte length and flags
-;   name
-;   one byte vocabulary identifier, if present ]
