@@ -159,7 +159,7 @@ _plus3nameplus3
                 "pettil-editor.a65 " +
                 "pettil-assembler.a65"
 
-    #["../pettil-core.a65"].each do |filename|
+    #["pettil-interpreter.a65"].each do |filename|
     ((coredict+tempdict).split " ").each do |filename|
     #((coredict).split " ").each do |filename|
     #((tempdict).split " ").each do |filename|
@@ -180,7 +180,7 @@ _plus3nameplus3
 					nfaflags |= 0x40
 				end
 				symbol = infile.gets.chomp
-                print "#{wordname} #{symbol} #{nfaflags.to_s}  #{flags}\n"
+                print "#{wordname}                       #{symbol}                  #{nfaflags.to_s} #{flags}\n"
                 a = make_symbol(wordname, symbols[symbol], nfaflags)
                 b[a[:name]] = a
 			end
