@@ -53,6 +53,7 @@ forth
 #if 0
 name=BLOOM
 stack=( -- addr )
+tags=nosymbol
 [desc]
 The 8-byte Bloom filter used by the core dictionary.  The hash
 is designed to tend to filter out tokens containing numbers
@@ -165,6 +166,7 @@ _query
 #if 0
 name=PEARSON#
 stack=( nfa -- pearsonhash )
+tags=nosymbol
 [desc]
 input is NFA or address of a counted string
 pearsonhash is the thread index (0..f)
@@ -222,6 +224,7 @@ pearsonhash01
 #if 0
 name=BLOOM#
 stack=( nfa -- mask addr )
+tags=nosymbol
 [desc]
 The dictionary Bloom filter tries to answer the question,
 'is this word a number or does it contain numbers?'
@@ -282,6 +285,7 @@ bloomhash03
 #if 0
 name=NFALEN
 stack=( nfa -- length )
+tags=nosymbol
 [desc]
 Return the length of the name
 [/desc]
@@ -307,6 +311,7 @@ vocabsd
 #if 0
 name=VOCABS>
 stack=( -- vocabid )
+tags=nosymbol
 [desc]
 Presents the next one-byte vocabulary id from VOCABS$, slides
 the rest of the vocab string buffer to the left by one
@@ -328,6 +333,7 @@ vocabsfrom01
 #if 0
 name=VOCID
 stack=( vocabulary -- vocabid )
+tags=nosymbol
 [desc]
 Retrieves the vocabulary identifier from the given vocabulary
 [/desc]
@@ -346,6 +352,7 @@ _vocid
 #if 0
 name=(VOCABLIST)
 stack=( -- )
+tags=nosymbol
 [desc]
 Sets the VOCABS$ string to the chain of vocabularies between
 context and core
@@ -394,6 +401,7 @@ pvocablist01
 #if 0
 name=VOC+
 stack=( vocabid nfa -- )
+tags=nosymbol
 [desc]
 Append the vocabulary id to the string at NFA, and set the 
 vocabulary member bit on the name field
@@ -414,6 +422,7 @@ vocplus
 #if 0
 name=VOC-
 stack=( nfa -- )
+tags=nosymbol
 [desc]
 Strip the vocabulary byte from the string and clear the vocabulary
 member bit
@@ -432,54 +441,8 @@ vocminus01
 #if 0
 name=((FIND))
 stack=( name fflag startnfa -- nfa xfa flag )
-tags=interpreter
+tags=interpreter,nosymbol
 [desc]
-* outer interpreter
-name is the address of a counted string we are searching for.
-fflag is the find mode.  False means NFAs are sorted, True means check them all
-nfa is the first nfa in the hash list
-
-vocid identifies which vocabulary to search.  Vocabularies may be
-nested.  FIND walks up the CONTEXT tree and leaves a set of hashed
-NFAs (with the vocid appended to the name before hashing) on the stack.
-The final vocabulary searched will be core, and (FIND) will exit afterward.
-  0 = corelist
-  1 = assembler
-  2+ = vocabularies added by the user
-
-(FIND) first searches the unsorted names beginning at SYMTAIL, and keeps
-going without regard to name length.  If it fails to find the word there,
-it tries the hash list, which is expected to be sorted in ascending size
-order.  Vocabularies are searched first, beginning with CONTEXT and chaining
-up until core (0) is reached.  The vocid is appended to the word when
-searching that vocabulary.  Only one symbol within a vocabulary may be
-active (unsmudged) at a time.  Smudged words are ignored.  The same symbol
-may exist within more than one vocabulary.
-
-For example, at cold start the user types in,
-VOCABULARY LATIN          \ creates a new user vocabulary with vocid = 3
-LATIN DEFINITIONS         \ sets CURRENT to LATIN, definitions added there
-: EPLURIBUSUNUM ;         \ adds a new word to the LATIN vocabulary
-VOCABULARY PIGLATIN       \ creates a new user vocabulary with vocid = 4
-                          \ PIGLATIN is a member of the LATIN vocabulary
-PIGLATIN DEFINITIONS      \ sets CURRENT to PIGLATIN, new definitions there
-: IXNAY ;                 \ adds a new word to the PIGLATIN vocabulary
-FORTH                     \ set CONTEXT to core
-IXNAY  not found          \ IXNAY is a member of PIGLATIN, out of context
-PIGLATIN  not found       \ PIGLATIN is a member of LATIN vocabulary
-LATIN PIGLATIN            \ set context to LATIN; set context to PIGLATIN
-IXNAY  ok                 \ search for "IXNAY" + $04, found in PIGLATIN(4)
-EPLURIBUSUNUM  ok         \ search for "EPLURIBUSUNUM" + $04, not found.
-                          \ search for "EPLURIBUSUNUM" + $03, in LATIN(3)
-DEPTH .  0 ok             \ search for "DEPTH" + $04, not found in PIGLATIN(4)
-                          \ search for "DEPTH" + $03, not found in LATIN(3)
-                          \ search for "DEPTH", found in core(0)
-
- returns
-       ( cfa -1 ) if found normal word
-       ( cfa 1 ) if found immediate word
-       ( name 0 ) if not in dictionary
-
 [/desc]
 #endif
 ppfind
@@ -539,6 +502,7 @@ ppfind08
 #if 0
 name=(FIND)
 stack=( name -- nfa xfa flag )
+tags=nosymbol
 [desc]
 [/desc]
 [code]
@@ -600,6 +564,7 @@ pfind01
 #if 0
 name=(VOCFIND)
 stack=( vocid name -- nfa xfa flag )
+tags=nosymbol
 [desc]
 [/desc]
 [code]
@@ -634,6 +599,60 @@ up in the dictionary.
 if not found, addr2 is the original addr1, and flag = 0
 if found, addr2 is the code field address of the word,
 and flag = -1 for normal words, +1 for immediate words
+
+! outer interpreter
+
+name is the address of a counted string we are searching for.
+fflag is the find mode.  False means NFAs are sorted, True means check them all
+nfa is the first nfa in the hash list
+
+vocid identifies which vocabulary to search.  Vocabularies may be
+nested.  FIND walks up the CONTEXT tree and leaves a set of hashed
+NFAs (with the vocid appended to the name before hashing) on the stack.
+The final vocabulary searched will be core, and (FIND) will exit afterward.
+
+  0 = corelist
+
+  1 = assembler
+
+  2+ = vocabularies added by the user
+
+(FIND) first searches the unsorted names beginning at SYMTAIL, and keeps
+going without regard to name length.  If it fails to find the word there,
+it tries the hash list, which is expected to be sorted in ascending size
+order.  Vocabularies are searched first, beginning with CONTEXT and chaining
+up until core (0) is reached.  The vocid is appended to the word when
+searching that vocabulary.  Only one symbol within a vocabulary may be
+active (unsmudged) at a time.  Smudged words are ignored.  The same symbol
+may exist within more than one vocabulary.
+
+For example, at cold start the user types in,
+
+```
+VOCABULARY LATIN          \ creates a new user vocabulary with vocid = 3
+LATIN DEFINITIONS         \ sets CURRENT to LATIN, definitions added there
+: EPLURIBUSUNUM ;         \ adds a new word to the LATIN vocabulary
+VOCABULARY PIGLATIN       \ creates a new user vocabulary with vocid = 4
+                          \ PIGLATIN is a member of the LATIN vocabulary
+PIGLATIN DEFINITIONS      \ sets CURRENT to PIGLATIN, new definitions there
+: IXNAY ;                 \ adds a new word to the PIGLATIN vocabulary
+FORTH                     \ set CONTEXT to core
+IXNAY  not found          \ IXNAY is a member of PIGLATIN, out of context
+PIGLATIN  not found       \ PIGLATIN is a member of LATIN vocabulary
+LATIN PIGLATIN            \ set context to LATIN; set context to PIGLATIN
+IXNAY  ok                 \ search for "IXNAY" + $04, found in PIGLATIN(4)
+EPLURIBUSUNUM  ok         \ search for "EPLURIBUSUNUM" + $04, not found.
+                          \ search for "EPLURIBUSUNUM" + $03, in LATIN(3)
+DEPTH .  0 ok             \ search for "DEPTH" + $04, not found in PIGLATIN(4)
+                          \ search for "DEPTH" + $03, not found in LATIN(3)
+                          \ search for "DEPTH", found in core(0)
+
+ returns
+       ( cfa -1 ) if found normal word
+       ( cfa 1 ) if found immediate word
+       ( name 0 ) if not in dictionary
+
+```
 [/desc]
 [code]
 : find   ( addr1 -- addr2 flag )
@@ -950,6 +969,7 @@ _abort
 #if 0
 name=INCORE?
 stack=( cfa -- flag )
+tags=nosymbol
 [desc]
 Returns true if the CFA is in the core dictionary
 [/desc]
@@ -972,6 +992,7 @@ _incoreq
 #if 0
 name=INTDICT?
 stack=( cfa -- flag )
+tags=nosymbol
 [desc]
 Returns true if the CFA is in the temporary dictionary
 [/desc]
@@ -994,6 +1015,7 @@ _intdictq
 #if 0
 name=INDICT?
 stack=( nfa -- flag )
+tags=nosymbol
 [desc]
 return true if the code field is in either the core or pettil 
 dictionary
@@ -1020,16 +1042,12 @@ _indictq
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       >SYMS   ( -- addr )
-;
-; returns the address of the symbol portion of the symbol table
-;
-#ifdef HEADERS
-tosymslfa
-    .byt $de,$ad
-    .byt (_tosyms-*-1)|bit7
-    .asc ">SYM","S"|bit7
+#if 0
+name=>SYMS
+stack=( -- addr )
+[desc]
+returns the address of the symbol portion of the symbol table
+[/desc]
 #endif
 _tosyms
 #include "enter.i65"
@@ -1044,28 +1062,27 @@ _tosyms
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       SYM+   ( nfa target -- target+ )
-;
-; add a symbol to the symbol table, and turn on its bloomfilter bit
-; leave the address following the symbol on the stack
-;
-;": sym+
-;     ( nfa target )
-;     over bloomhash cbit!
-;     ( nfa target )
-;     over nfalen 1+
-;     ( nfa target len+1 )
-;     2dup + >r
-;     ( nfa target len+1 ) ( R; target+ )
-;     cmove r> ;
-;     ( target+ )
-;
-#ifdef HEADERS
-sympluslfa
-    .byt $de,$ad
-    .byt (_symplus-*-1)|bit7
-    .asc "SYM","+"|bit7
+#if 0
+name=SYM+
+stack=( nfa target -- target+ )
+[desc]
+add a symbol to the symbol table, and turn on its bloomfilter bit
+leave the address following the symbol on the stack
+
+```
+: sym+
+    ( nfa target )
+    over bloomhash cbit!
+    ( nfa target )
+    over nfalen 1+
+    ( nfa target len+1 )
+    2dup + >r
+    ( nfa target len+1 ) ( R; target+ )
+    cmove r> ;
+    ( target+ )
+
+```
+[/desc]
 #endif
 _symplus
 #include "enter.i65"
@@ -1094,16 +1111,12 @@ _symplus
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       NFA+   ( nfa -- nfa+ )
-;
-; description
-;
-#ifdef HEADERS
-nfapluslfa
-    .byt $de,$ad
-    .byt (nfaplus-*-1)|bit7
-    .asc "NFA","+"|bit7
+#if 0
+name=NFA+
+stack=( nfa -- nfa+ )
+[desc]
+Chain to the next NFA on the list
+[/desc]
 #endif
 nfaplus
     jsr nfaplus01
@@ -1120,21 +1133,22 @@ nfaplus02
     rts
 
 ;--------------------------------------------------------------
-;
-;       SYMBYSIZE   ( searchlen nfa -- flag )
-;
-; returns true iff
-; searchleng matches the current length? (I)
-; and (CFA < DP or CFA > TDICT?)
-;
-;": symbysize   ( searchlen nfa -- flag )
-;     nfalen = ;
-;
-#ifdef HEADERS
-symbysizelfa
-    .byt $de,$ad
-    .byt (_symbysize-*-1)|bit7
-    .asc "SYMBYSIZ","E"|bit7
+#if 0
+name=SYMBYSIZE
+stack=( searchlen nfa -- flag )
+[desc]
+returns true iff
+
+searchleng matches the current length? (I)
+
+and (CFA < DP or CFA > TDICT?)
+
+```
+: symbysize   ( searchlen nfa -- flag )
+    nfalen = ;
+
+```
+[/desc]
 #endif
 _symbysize
 #include "enter.i65"
@@ -1145,26 +1159,27 @@ _symbysize
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       SYMBYHASH   ( hash nfa -- flag )
-;
-; returns true iff
-; calculate its pearson hash
-; and that matches the current hash?
-;
-;": symbyhash   ( hash nfa -- flag )
-;     dup pearsonhash rot = dup
-;     if
-;         swap name>
-;         dup b/buf newdp @ between?
-;         swap tdict @ memsiz @ between?  or
-;     then nip ;
-;
-#ifdef HEADERS
-symbyhashlfa
-    .byt $de,$ad
-    .byt (_symbyhash-*-1)|bit7
-    .asc "SYMBYHAS","H"|bit7
+#if 0
+name=SYMBYHASH
+stack=( hash nfa -- flag )
+[desc]
+returns true iff
+
+calculate its pearson hash
+
+and that matches the current hash?
+
+```
+: symbyhash   ( hash nfa -- flag )
+    dup pearsonhash rot = dup
+    if
+        swap name>
+        dup b/buf newdp @ between?
+        swap tdict @ memsiz @ between?  or
+    then nip ;
+
+```
+[/desc]
 #endif
 _symbyhash
 #include "enter.i65"
@@ -1215,44 +1230,44 @@ symbyhash01
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       SYMSORT   ( 'compare searchfor src target -- target+ )
-;
-; Make a pass through the symbol table at PAD, copying eligible
-; symbols to target
-;
-;": symsort   ( 'compare searchfor src target )
-;     >r 2+
-;     ( 'compare searchfor nfa ) ( R; target )
-;     begin
-;         \ not done yet?
-;         dup nfalen
-;         ( 'compare searchfor nfa currlen ) ( R; target )
-;     while
-;         ( 'compare searchfor nfa ) ( R; target )
-;         3dup rot execute
-;         ( 'compare searchfor nfa flag ) ( R; target )
-;         if
-;             \ copy the CFA
-;             ( 'compare searchfor nfa ) ( R; target )
-;             r> over name> !+
-;             \ copy the symbol
-;             ( 'compare searchfor nfa target+2 )
-;             under sym+ >r
-;             ( 'compare searchfor nfa ) ( R; target+ )
-;         then
-;         \ advance source pointer
-;         nfa+
-;         ( 'compare searchfor nfa+ ) ( R; target+ )
-;     repeat
-;     ( 'compare searchfor nfa+ ) ( R; target+ )
-;     3drop r> ;   ( target+ )
-;
-#ifdef HEADERS
-symsortlfa
-    .byt $de,$ad
-    .byt (_symsort-*-1)|bit7
-    .asc "SYMSOR","T"|bit7
+;--------------------------------------------------------------
+#if 0
+name=SYMSORT
+stack=( 'compare searchfor src target -- target+ )
+[desc]
+Make a pass through the symbol table at PAD, copying eligible
+symbols to target
+
+```
+: symsort   ( 'compare searchfor src target )
+    >r 2+
+    ( 'compare searchfor nfa ) ( R; target )
+    begin
+        \ not done yet?
+        dup nfalen
+        ( 'compare searchfor nfa currlen ) ( R; target )
+    while
+        ( 'compare searchfor nfa ) ( R; target )
+        3dup rot execute
+        ( 'compare searchfor nfa flag ) ( R; target )
+        if
+            \ copy the CFA
+            ( 'compare searchfor nfa ) ( R; target )
+            r> over name> !+
+            \ copy the symbol
+            ( 'compare searchfor nfa target+2 )
+            under sym+ >r
+            ( 'compare searchfor nfa ) ( R; target+ )
+        then
+        \ advance source pointer
+        nfa+
+        ( 'compare searchfor nfa+ ) ( R; target+ )
+    repeat
+    ( 'compare searchfor nfa+ ) ( R; target+ )
+    3drop r> ;   ( target+ )
+
+```
+[/desc]
 #endif
 _symsort
 #include "enter.i65"
@@ -1305,40 +1320,58 @@ symsort03
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       PASSBITS   ( -- addr )
-;
-; 32-bit wide Bloom filter for skipping REHASH passes if there
-; are no words of a particular length
-;
-#ifdef HEADERS
-passbitslfa
-    .byt $de,$ad
-    .byt (passbits-*-1)|bit7
-    .asc "PASSBIT","S"|bit7
+#if 0
+name=PASSBITS
+stack=( -- addr )
+tags=nosymbol
+[desc]
+32-bit wide Bloom filter for skipping REHASH passes if there
+are no words of a particular length
+[/desc]
 #endif
 passbits
     jsr docreate
     .word 0,0
 
 ;--------------------------------------------------------------
-;
-;       >BLOOM   ( n -- mask offset )
-;
-; transform an integer into a bitmask and offset, suitable for
-; addressing a bloom filter
-; mask = 2^(n%8)
-; offset = n/8
-;
-;": >bloom   ( n -- mask offset )
-;         dup 7 and power2 + c@
-;         swap 2/ 2/ 2/ ;
-;
-#ifdef HEADERS
-tobloomlfa
-    .byt $de,$ad
-    .byt (tobloom-*-1)|bit7
-    .asc ">BLOO","M"|bit7
+;--------------------------------------------------------------
+#if 0
+name=>BLOOM
+stack=( n -- mask offset )
+[desc]
+transform an integer into a bitmask and offset, suitable for
+addressing a bloom filter
+
+mask = 2^(n%8)
+
+offset = n/8
+
+```
+: >bloom   ( n -- mask offset )
+        dup 7 and power2 + c@
+        swap 2/ 2/ 2/ ;
+
+tobloom
+    dex
+    lda tos
+    and #7
+    tay
+    lda power2,y
+    sta stackl,x
+    lda #0
+    sta stackh,x
+    lsr tos+1
+    ror tos
+    lsr tos+1
+    ror tos
+    lsr tos+1
+    ror tos             ; /8
+    lda tos+1
+    jmp next
+
+
+```
+[/desc]
 #endif
 tobloom
     dex
@@ -1359,37 +1392,37 @@ tobloom
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       AUTOMEM   ( lastpad -- )
-;
-; Automatically move symbol table and vmbuf to someplace that leaves
-; ~512 bytes for symbol table growth
-;
-; The "lastpad" address points to the null byte at the end of the
-; sorted-by-size symbol table copy at pad
-;
-;": automem   ( addr -- )
-;     pad - tdict @ swap - $ff00 and $200 -
-; ( newsymtab -- )
-;     dup symtab @ -  swap symtab !
-; ( delta -- )
-;     #vmpkt @
-;     if
-;         vmbuf @
-;         symtab @
-;         third
-;         +move
-;         vmbuf over +!
-;     else
-;         drop blkbuf
-;         2- dup off vmbuf !
-;     then ;
-;
-#ifdef HEADERS
-automemlfa
-    .byt $de,$ad
-    .byt (_automem-*-1)|bit7
-    .asc "AUTOME","M"|bit7
+#if 0
+name=AUTOMEM
+stack=( lastpad -- )
+tags=nosymbol
+[desc]
+Automatically move symbol table and vmbuf to someplace that leaves
+~512 bytes for symbol table growth
+
+The "lastpad" address points to the null byte at the end of the
+sorted-by-size symbol table copy at pad
+
+```
+: automem   ( addr -- )
+    pad - tdict @ swap - $ff00 and $200 -
+( newsymtab -- )
+    dup symtab @ -  swap symtab !
+( delta -- )
+    #vmpkt @
+    if
+        vmbuf @
+        symtab @
+        third
+        +move
+        vmbuf over +!
+    else
+        drop blkbuf
+        2- dup off vmbuf !
+    then ;
+
+```
+[/desc]
 #endif
 _automem
 #include "enter.i65"
@@ -1480,32 +1513,26 @@ automem02
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       ANCESTOR   ( -- addr )
-;
-; variable that holds the youngest ancestor for REHASH
-;
-#ifdef HEADERS
-ancestorlfa
-   .byt $de,$ad
-   .byt (ancestor-*-1)|bit7
-   .asc "ANCESTO","R"|bit7
+#if 0
+name=ANCESTOR
+stack=( -- addr )
+tags=nosymbol
+[desc]
+variable that holds the youngest ancestor for REHASH
+[/desc]
 #endif
 ancestor
     jsr docreate
     .word 0
 
 ;--------------------------------------------------------------
-;
-;       SAMEASME?   ( descendant candidate -- flag )
-;
-; description
-;
-#ifdef HEADERS
-sameasmeqlfa
-    .byt $de,$ad
-    .byt (sameasmeq-*-1)|bit7
-    .asc "SAMEASME","?"|bit7
+;--------------------------------------------------------------
+#if 0
+name=SAMEASME?
+stack=( descendant candidate -- flag )
+tags=nosymbol
+[desc]
+[/desc]
 #endif
 sameasmeq
     ldy #1
@@ -1521,41 +1548,43 @@ sameasmeq01
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       ?CANDIDATE   ( descendant candidate -- )
-;
-;": ?candidate   ( descendant candidate -- )
-;   ( descendant candidate )
-;     \ candidate is inactive?
-;     dup c@ $20 and
-;   ( descendant candidate flag )
-;     if
-;   ( descendant candidate )
-;       \ candidate remains in dictionary?
-;       \ and is more recent than prior candidates?
-;         dup name>  ancestor @  dup
-;         if
-;             nip name>
-;         then
-;         newdp @  between?
-;   ( descendant candidate flag )
-;         if
-;   ( descendant candidate )
-;             2dup sameasme?
-;   ( descendant candidate flag )
-;             if
-;                 dup ancestor !
-;                 32 third cbit!
-;             then
-;         then
-;     then
-;     2drop ;
-;
-#ifdef HEADERS
-qcandidatelfa
-    .byt $de,$ad
-    .byt (_qcandidate-*-1)|bit7
-    .asc "?CANDIDAT","E"|bit7
+;--------------------------------------------------------------
+#if 0
+name=?CANDIDATE
+stack=( descendant candidate -- )
+tags=nosymbol
+[desc]
+
+```
+: ?candidate   ( descendant candidate -- )
+  ( descendant candidate )
+    \ candidate is inactive?
+    dup c@ $20 and
+  ( descendant candidate flag )
+    if
+  ( descendant candidate )
+      \ candidate remains in dictionary?
+      \ and is more recent than prior candidates?
+        dup name>  ancestor @  dup
+        if
+            nip name>
+        then
+        newdp @  between?
+  ( descendant candidate flag )
+        if
+  ( descendant candidate )
+            2dup sameasme?
+  ( descendant candidate flag )
+            if
+                dup ancestor !
+                32 third cbit!
+            then
+        then
+    then
+    2drop ;
+
+```
+[/desc]
 #endif
 _qcandidate
 #include "enter.i65"
@@ -1622,35 +1651,34 @@ qcandidate01
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       ?ANCESTOR   ( descendant nfa -- )
-;
-; Searches for a qualifying ancestor and exchanges the smudge bit
-;
-;": ?ancestor   ( descendant startnfa -- )
-;   ( descendant startnfa )
-;     ancestor off
-;   ( descendant startnfa )
-;     begin
-;   ( descendant nfa )
-;         dup nfalen
-;   ( descendant nfa length )
-;     while
-;   ( descendant nfa )
-;         2dup ?candidate
-;         nfa+
-;     repeat
-;     ancestor @ ?dup
-;     if
-;         smudge
-;     then
-;     2drop ;
-;
-#ifdef HEADERS
-qancestorlfa
-    .byt $de,$ad
-    .byt (_qancestor-*-1)|bit7
-    .asc "?ANCESTO","R"|bit7
+#if 0
+name=?ANCESTOR
+stack=( descendant nfa -- )
+[desc]
+Searches for a qualifying ancestor and exchanges the smudge bit
+
+```
+: ?ancestor   ( descendant startnfa -- )
+  ( descendant startnfa )
+    ancestor off
+  ( descendant startnfa )
+    begin
+  ( descendant nfa )
+        dup nfalen
+  ( descendant nfa length )
+    while
+  ( descendant nfa )
+        2dup ?candidate
+        nfa+
+    repeat
+    ancestor @ ?dup
+    if
+        smudge
+    then
+    2drop ;
+
+```
+[/desc]
 #endif
 _qancestor
 #include "enter.i65"
@@ -1694,53 +1722,76 @@ qancestor03
 
 ;--------------------------------------------------------------
 ;
-;       REAWAKEN   ( nfa -- )
-;
-; for each active symbol being forgotten.
-; - search for its youngest living ancestor.
-; - if found, deactivate the descendant, activate the ancestor
-;
-; scan through the NFA list at PAD, awakening ancestors
-; * list is terminated by 0-length
-; * iterate each word from nfa until end (outer loop)
-; * newdp < nfa < dp and nfa is active
-; * - ancestor = 0
-; * - iterate each word from nfa until end (inner loop)
-; * - - is inactive
-; * - - and is same name
-; * - - and ancestor < cfa < newdp
-; * - - - replace ancestor
-; * ancestor = 0?
-; * - iterate each word from nfa until end (inner loop)
-; * - - is inactive
-; * - - and is same name
-; * - - and tdict < cfa < memsiz
-; * - - - replace ancestor
-; * ancestor <> 0?
-; * - deactivate active symbol
-; * - activate ancestor
-; ( start )
-; 2+ dup>r
-; ( startnfa ) ( R; startnfa )
-; begin
-;     dup
-;     nfalen
-; while
-; ( nfa )
-;     dup c@ $20 and 0=
-;     over name>  newdp @ dp @ between? and
-;     if
-;         dup r@ ?ancestor
-;     then
-;     nfa+
-; repeat
-; r> 2drop ;
-;
-#ifdef HEADERS
-reawakenlfa
-    .byt $de,$ad
-    .byt (_reawaken-*-1)|bit7
-    .asc "REAWAKE","N"|bit7
+;--------------------------------------------------------------
+#if 0
+name=REAWAKEN
+stack=( nfa -- )
+tags=nosymbol
+[desc]
+for each active symbol being forgotten.
+
+- search for its youngest living ancestor.
+
+- if found, deactivate the descendant, activate the ancestor
+
+scan through the NFA list at PAD, awakening ancestors
+
+* list is terminated by 0-length
+
+* iterate each word from nfa until end (outer loop)
+
+* newdp < nfa < dp and nfa is active
+
+* - ancestor = 0
+
+* - iterate each word from nfa until end (inner loop)
+
+* - - is inactive
+
+* - - and is same name
+
+* - - and ancestor < cfa < newdp
+
+* - - - replace ancestor
+
+* ancestor = 0?
+
+* - iterate each word from nfa until end (inner loop)
+
+* - - is inactive
+
+* - - and is same name
+
+* - - and tdict < cfa < memsiz
+
+* - - - replace ancestor
+
+* ancestor <> 0?
+
+* - deactivate active symbol
+
+* - activate ancestor
+
+```
+ ( start )
+ 2+ dup>r
+ ( startnfa ) ( R; startnfa )
+ begin
+     dup
+     nfalen
+ while
+ ( nfa )
+     dup c@ $20 and 0=
+     over name>  newdp @ dp @ between? and
+     if
+         dup r@ ?ancestor
+     then
+     nfa+
+    repeat
+    r> 2drop ;
+
+```
+[/desc]
 #endif
 _reawaken
 #include "enter.i65"
@@ -1807,30 +1858,31 @@ reawaken02
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       PASSFILTER   ( symbols -- )
-;
-; During the first half of rehash, it is unnecessary to make a
-; pass through the entire symbol table searching for words of a
-; given length, if none of that length exist.  This is a
-; bloom filter to eliminate those symbol table passes.
-;
-;": passfilter   ( symbols -- )
-;     passbits 4 erase
-;     2+
-;     ( nfa )
-;     begin
-;         dup nfalen ?dup
-;     while
-;         >bloom passbits + cbit!
-;         nfa+
-;     repeat drop ;
-;
-#ifdef HEADERS
-passfilterlfa
-    .byt $de,$ad
-    .byt (_passfilter-*-1)|bit7
-    .asc "PASSFILTE","R"|bit7
+;--------------------------------------------------------------
+#if 0
+name=PASSFILTER
+stack=( symbols -- )
+tags=nosymbol
+[desc]
+During the first half of rehash, it is unnecessary to make a
+pass through the entire symbol table searching for words of a
+given length, if none of that length exist.  This is a
+bloom filter to eliminate those symbol table passes.
+
+```
+: passfilter   ( symbols -- )
+    passbits 4 erase
+    2+
+    ( nfa )
+    begin
+        dup nfalen ?dup
+    while
+        >bloom passbits + cbit!
+        nfa+
+    repeat drop ;
+
+```
+[/desc]
 #endif
 _passfilter
 #include "enter.i65"
@@ -1871,48 +1923,58 @@ passfilter02
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       (REHASH1)   ( -- lastsym )
-;
-; Phase 1 of REHASH
-; * Make a pass through SYMTAB + SYMNEW, create Bloom filter of sizes
-; * For each size 1..31
-; * - If it has members, merge SYMTAB + SYMNEW to PAD, ordered by length
-; * - tack on three zeroes at the end
-; * - Make a pass through PAD at that size
-; * - - If active and between CFA..HERE
-; * - - - Make a pass through PAD at current size
-; * - - - Reawaken youngest ancestor less than CFA (or in TDICT)
-; * set DP = cfa
-; * Return the last symbol at PAD for automatic memory allocation
-;
-;": (rehash1)   ( -- )
-; ( )
-;     >syms pad   over passfilter
-; ( symbols pad )
-;     32 1 do
-; ( src targ )
-;         i >bloom
-; ( src targ mask offset )
-;         passbits + cbit@
-; ( src targ flag )
-;         if
-;             dup >r
-; ( src targ ) ( R; src )
-;             [ 'symbysize ] literal i
-; ( src targ 'compare i ) ( R; src )
-;             2over symsort nip
-; ( src targ+ ) ( R; src )
-;             over 3 erase r> reawaken
-;         then
-; ( src targ+ )
-;     loop  nip ;
-;
-#ifdef HEADERS
-prehash1lfa
-    .byt $de,$ad
-    .byt (_prehash1-*-1)|bit7
-    .asc "(REHASH1",")"|bit7
+;--------------------------------------------------------------
+#if 0
+name=(REHASH1)
+stack=( -- lastsym )
+[desc]
+Phase 1 of REHASH
+
+* Make a pass through SYMTAB + SYMNEW, create Bloom filter of sizes
+
+* For each size 1..31
+
+* - If it has members, merge SYMTAB + SYMNEW to PAD, ordered by length
+
+* - tack on three zeroes at the end
+
+* - Make a pass through PAD at that size
+
+* - - If active and between CFA..HERE
+
+* - - - Make a pass through PAD at current size
+
+* - - - Reawaken youngest ancestor less than CFA (or in TDICT)
+
+* set DP = cfa
+
+* Return the last symbol at PAD for automatic memory allocation
+
+```
+: (rehash1)   ( -- )
+( )
+    >syms pad   over passfilter
+( symbols pad )
+    32 1 do
+( src targ )
+        i >bloom
+( src targ mask offset )
+        passbits + cbit@
+( src targ flag )
+        if
+            dup >r
+( src targ ) ( R; src )
+            [ 'symbysize ] literal i
+( src targ 'compare i ) ( R; src )
+            2over symsort nip
+( src targ+ ) ( R; src )
+            over 3 erase r> reawaken
+        then
+( src targ+ )
+    loop  nip ;
+
+```
+[/desc]
 #endif
 _prehash1
 #include "enter.i65"
@@ -1978,38 +2040,47 @@ prehash102
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       (REHASH2)   ( -- )
-;
-; Phase 2 of REHASH
-; * symtab 32 erase
-; * bloom 8 erase
-; * target = symtab+32
-; * For each hashcode 0..15
-; * - set symtab+i*2 = target
-; * - run all the symbols
-; * - - if hashcode matches, and it's alive, append it to target
-; * set symnew = symtail = target
-; * symnew 3 erase
-;
-;": (rehash2)   ( -- )
-;     symtab @ 32 erase
-;     bloom 8 erase
-;     pad >syms
-;     16 0 do
-;         dup i 2* symtab @ + !
-;         [ 'symbyhash ] literal i
-;         2over symsort nip
-;     loop
-; ( target )
-;     dup symnew ! dup symtail !
-;     3 erase ;
-;
-#ifdef HEADERS
-prehash2lfa
-    .byt $de,$ad
-    .byt (_prehash2-*-1)|bit7
-    .asc "(REHASH2",")"|bit7
+#if 0
+name=(REHASH2)
+stack=( -- )
+tags=nosymbol
+[desc]
+Phase 2 of REHASH
+
+* symtab 32 erase
+
+* bloom 8 erase
+
+* target = symtab+32
+
+* For each hashcode 0..15
+
+* - set symtab+i*2 = target
+
+* - run all the symbols
+
+* - - if hashcode matches, and it's alive, append it to target
+
+* set symnew = symtail = target
+
+* symnew 3 erase
+
+```
+: (rehash2)   ( -- )
+    symtab @ 32 erase
+    bloom 8 erase
+    pad >syms
+    16 0 do
+        dup i 2* symtab @ + !
+        [ 'symbyhash ] literal i
+        2over symsort nip
+    loop
+( target )
+    dup symnew ! dup symtail !
+    3 erase ;
+
+```
+[/desc]
 #endif
 _prehash2
 #include "enter.i65"
@@ -2089,26 +2160,26 @@ prehash201
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       (REHASH)   ( cfa -- )
-;
-; rebuild the symbol table at SYMTAB, moving VMBUF and SYMTAB
-; at halftime, if necessary.  The CFA is used in phase 1 to
-; rewaken sleeping ancestors.  Passing HERE will not wake up
-; anything.
-;
-;": (rehash)   ( cfa -- )
-;     newdp !
-;     (rehash1)
-;     automem
-;     (rehash2)
-;     newdp @ dp ! ;
-;
-#ifdef HEADERS
-prehashlfa
-    .byt $de,$ad
-    .byt (_prehash-*-1)|bit7
-    .asc "(REHASH",")"|bit7
+#if 0
+name=(REHASH)
+stack=( cfa -- )
+tags=nosymbol
+[desc]
+rebuild the symbol table at SYMTAB, moving VMBUF and SYMTAB
+at halftime, if necessary.  The CFA is used in phase 1 to
+rewaken sleeping ancestors.  Passing HERE will not wake up
+anything.
+
+```
+: (rehash)   ( cfa -- )
+    newdp !
+    (rehash1)
+    automem
+    (rehash2)
+    newdp @ dp ! ;
+
+```
+[/desc]
 #endif
 _prehash
 #include "enter.i65"
@@ -2133,36 +2204,18 @@ _prehash
     .word exit
 
 ;--------------------------------------------------------------
-;
-;        REHASH   ( -- )
-;
-; rebuilds the symbol table in high memory.
-;
-;": rehash  ( -- )
-;     here (rehash) ;   \ effectively a FORGET nil
-;
-;": rehash  ( -- )
-;     pad >syms
-;  ( cfa pad symbols )
-;     ['] symbysize false
-;  ( cfa pad symbols 'compare flag )
-;     2over swap
-;  ( cfa pad symbols 'compare flag symbols pad )
-;     32 1  (rehash)
-;  ( cfa pad symbols targ+ )
-;     symtab @ 32 erase
-;  ( cfa pad symbols  )
-;     bloom 8 erase
-;  ( cfa pad symbols  )
-;     passbits  on
-;     ['] symbyhash true 2swap 16 0  (rehash)
-;  ( cfa )
-;
-#ifdef HEADERS
-rehashlfa
-    .byt $de,$ad
-    .byt (_rehash-*-1)|bit7
-    .asc "REHAS","H"|bit7
+#if 0
+name=REHASH
+stack=( -- )
+[desc]
+rebuilds the symbol table in high memory.
+
+```
+: rehash  ( -- )
+    here (rehash) ;   \ effectively a FORGET nil
+
+```
+[/desc]
 #endif
 _rehash
 #include "enter.i65"
@@ -2173,29 +2226,26 @@ _rehash
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       FORGET   ( -- )
-;
-; * 83 interpreter
-;
-; checks FENCE, moves DP, sorts symbol table
-;
-;": forget   ( -- )
-;     '
-;  ( cfa )
-;     dup fence @ u<
-;  ( cfa flag )
-;     if
-;         7 fail
-;     then
-;  ( cfa )
-;     (rehash) ;
-;
-#ifdef HEADERS
-forgetlfa
-    .byt $de,$ad
-    .byt (_forget-*-1)|bit7
-    .asc "FORGE","T"|bit7
+#if 0
+name=FORGET
+stack=( -- )
+[desc]
+checks FENCE, moves DP, sorts symbol table
+
+```
+: forget   ( -- )
+    '
+ ( cfa )
+    dup fence @ u<
+ ( cfa flag )
+    if
+        7 fail
+    then
+ ( cfa )
+    (rehash) ;
+
+```
+[/desc]
 #endif
 _forget
 #include "enter.i65"

@@ -1,7 +1,9 @@
 #!/home/chitselb/bin/ruby
+	require 'json'
+	
     # given a string (name) and address (symbol), construct and
     # return a hash with a symbol table entry in it
-    def make_symbol(name="", cfa=0, nfaflags)
+    def make_symbol(name="", cfa=0, nfaflags, desc, tags)
         # values calculated by pearson.rb
         # 14..22        102 162 3 150 98 88 207 149
         # 27, 120, 229, 241, 111, 44, 47, 141
@@ -37,7 +39,9 @@
         name: name ,
         data: data ,
         len: name.length ,
-        hash1: eornybble }
+        hash1: eornybble,
+        desc: desc, 
+        tags: tags }
         return t
     end
 
@@ -167,12 +171,20 @@ _plus3nameplus3
         while (line = infile.gets) do 
 			line.chomp!
 			if line =~ /\#if 0$/
-				wordname, flags, vocab, t = nil
+				wordname, flags, vocab, desc, t = nil
 				nfaflags = 0
+				capture_desc = false
+				tags = []
+				desc=""
                 while !((line = infile.gets.chomp) =~ /^\#endif$/)
 					wordname = t   if t = line.split(/^name=/)[1]
 					flags = t   if t = line.split(/^flags=/)[1]
 					vocab = t   if t = line.split(/^vocab=/)[1]
+					desc = "!! " + wordname + "&nbsp;&nbsp;&nbsp;" + t +"\n"  if t = line.split(/^stack=/)[1]
+					tags = t.split(',')   if t = line.split(/^tags=/)[1]
+					capture_desc = false  if line =~ /^\[\/desc\]$/
+					desc += "\n" + line   if capture_desc
+					capture_desc = true  if line =~ /^\[desc\]$/
 				end
 				nfaflags |= 0x80   if flags =~ /immediate/
 				if vocab != nil
@@ -180,8 +192,7 @@ _plus3nameplus3
 					nfaflags |= 0x40
 				end
 				symbol = infile.gets.chomp
-                print "#{wordname}                       #{symbol}                  #{nfaflags.to_s} #{flags}\n"
-                a = make_symbol(wordname, symbols[symbol], nfaflags)
+                a = make_symbol(wordname, symbols[symbol], nfaflags, desc, tags)
                 b[a[:name]] = a
 			end
 		end
@@ -218,12 +229,23 @@ _plus3nameplus3
     symfile = File.open("pettil.sym",'w')
     Hash[b.sort_by { | k, v | v[:hash1]*32+v[:len] }].each do |h|
         a = h[1][:data].bytes
-        symfile.write a.pack("C*")
+        symfile.write a.pack("C*")   unless h[1][:tags].index("nosymbol")
     end
     symfile.write [0,0,0].pack("C*")        # null length ends pettil.sym
 
     symfile = File.open("junk/pearson.txt",'w')
     Hash[b.sort_by { | k, v | v[:hash1]*32+v[:len] }].each do |h|
         a = h[1][:name]
-        symfile.write "#{a}\n"
+        symfile.write "#{a}\n"   unless h[1][:tags].index("nosymbol")
     end
+
+	symfile = File.open("junk/pettil.json",'w')
+	symfile.write "[\n"
+	glossary=""
+	b.each do |h|
+		glossary += "\[\["+ h[1][:name] + "\]\] "
+		symfile.write "\{ \"title\":#{h[1][:name].to_json},\"text\":#{h[1][:desc].to_json},\"tags\":#{h[1][:tags].to_json}\},\n"
+
+#,\"tags\":#{h[1][:tags].to_json}
+	end
+	symfile.write "\{ \"title\":\"Glossary\",\"text\":#{glossary.to_json}\}\]"
