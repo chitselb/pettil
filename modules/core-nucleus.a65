@@ -1,61 +1,42 @@
 ; core-nucleus.a65
 #echo .       core-nucleus.a65          Nucleus
-
-;"~ check http://6502.org/source/ for multiply and divide and stuff
 ;--------------------------------------------------------------
-;
-;       UM*   ( u1 u2 -- ud )
-;
-; * 83 nucleus divstar
-;
-; multiply u1 times u2 returning the double length product ud.
-; All values and arithmetic are unsigned.
-#ifdef HEADERS
-umstarlfa
-    .byt $de,$ad
-    .byt (umstar-*-1)|bit7
-    .asc "UM","*"|bit7
-#endif
-umstar
-    lda stackl,x
-    sta n+4
-    lda stackh,x            ;multiplicand in tos
-    sta n+5                 ;multiplier in N2
-    jsr multiply            ;16 bit unsigned multiply
-    lda n
-    sta stackl,x
-    lda n+1
-    sta stackh,x
-    lda n+2
-    sta tos
-    lda n+3
-    sta tos+1
-    jmp next
+#if 0
+name=UM*
+stack=( u1 u2 -- ud )
+[desc]
+ multiply u1 times u2 returning the double length product ud.
+ All values and arithmetic are unsigned.
 
-multiply
-    lda #0                  ; unsigned multiply tos*N2 destroys tos
-    sta n+2                 ;clear upper half of product
-    sta n+3
-    ldy #16
-rshift
-    lsr tos+1
-    ror tos
-    bcc rrot                ;Go rotate right if c = 0
-    clc                     ; and add multiplicand to
-    lda n+2                 ;Get upper half of product
-    adc n+4                 ; it
-    sta n+2
-    lda n+3
-    adc n+5
-rrot
-    ror                     ;shift partial product right
-    sta n+3
-    ror n+2
-    ror n+1
-    ror n
-    dey                     ;Decrement bit count and
-    bne rshift
-    rts
+A proper 6502 assembler solution.
+
+Features
+
+* multiplies two 8-bit numbers with 16 bit result
+
+* inner loop of only 17 clock cycles per iteration
+
+* worst case behaviour of 40 clock cycles per iteration
+
+* minimizes number of iterations
+
+* total execution time 25 - 320 cycles
+
+(i.e. only 3x slower (worst case) than MUL on Intel 8088)
+
+* 43 bytes size
+
+* relocatable to about anywhere in address space
+
+* uses C64-friendly memory locations
+
+ INPUT  = op1 in A, op2 in X
+
+ OUTPUT = low byte in X, high byte in Y
+
+ memory locations used as temp space = $fb, $fc, $fd
+
+```
 ;You beat me to the punch, but there is some unnecessary code in there (you don't need to clear the carry before a LSR). And trashing X is unnecessary since you can test for zero just as fast with LDA $02. Or with some crazy jujitsu to save a byte...
 ;Here's my version, handles 8-bit operands:
 ;--$00 holds operand 1
@@ -127,21 +108,93 @@ rrot
 ;    rts        ; otherwise return result
 ;
 
+    stx $fc    ; save op2
+    cmp $fc    ; compare both operands
+    bcc noswap ; swap them unless op1 < op2
+    sta $fc    ; save op1 instead of op2
+    txa        ; swap op2 for op1
+noswap
+    ldx #$00   ; prepare result low byte
+    stx $fd    ; clear high byte of op2
+    ldy #$00   ; prepare result high byte
+    beq begin  ; skip shift of op2 for first iteration
+loop
+    asl $fc    ; multiply op2 by 2, low byte
+    rol $fd    ; multiply op2 by 2, high byte
+begin
+    lsr        ; divide op1 by 2
+    bcs add    ; if op1 was odd before division, add op2
+    bne loop   ; if op1 is not zero repeat loop
+    rts        ; otherwise return result
+add
+    sta $fb    ; save current value of op1
+    clc        ; prepare addition
+    txa        ; fetch low byte
+    adc $fc    ; add op2, low byte
+    tax        ; store low byte
+    tya        ; fetch high byte
+    adc $fd    ; add op2, high byte
+    tay        ; store high byte
+    lda $fb    ; restore op1
+    bne loop   ; if op1 is not zero repeat loop
+    rts        ; otherwise return result
+
+```
+check http://6502.org/source/ for multiply and divide and stuff
+[/desc]
+#endif
+umstar
+    lda stackl,x
+    sta n+4
+    lda stackh,x            ;multiplicand in tos
+    sta n+5                 ;multiplier in N2
+    jsr multiply            ;16 bit unsigned multiply
+    lda n
+    sta stackl,x
+    lda n+1
+    sta stackh,x
+    lda n+2
+    sta tos
+    lda n+3
+    sta tos+1
+    jmp next
+
+multiply
+    lda #0                  ; unsigned multiply tos*N2 destroys tos
+    sta n+2                 ;clear upper half of product
+    sta n+3
+    ldy #16
+rshift
+    lsr tos+1
+    ror tos
+    bcc rrot                ;Go rotate right if c = 0
+    clc                     ; and add multiplicand to
+    lda n+2                 ;Get upper half of product
+    adc n+4                 ; it
+    sta n+2
+    lda n+3
+    adc n+5
+rrot
+    ror                     ;shift partial product right
+    sta n+3
+    ror n+2
+    ror n+1
+    ror n
+    dey                     ;Decrement bit count and
+    bne rshift
+    rts
+
 ;--------------------------------------------------------------
-;
-;       UD/MOD   ( d1 n1 -- n2 d2 )
-;
-; * divstar
-;
-; d2 is the double quotient of d1/n1.  n2 is the remainder.  All
-; values are unsigned.
-; ~ make this 32-bit divisor?
-; ~ fix for /0
-#ifdef HEADERS
-udslashmodlfa
-    .byt $de,$ad
-    .byt (udslashmod-*-1)|bit7
-    .asc "UD/MO","D"|bit7
+#if 0
+name=UD/MOD
+stack=( d1 n1 -- n2 d2 )
+tags=forth-83,nucleus
+[desc]
+ d2 is the double quotient of d1/n1.  n2 is the remainder.  All
+ values are unsigned.
+ ~ make this 32-bit divisor?
+ ~ fix for /0
+[/desc]
 #endif
 udslashmod
     ldy #2
@@ -225,14 +278,15 @@ divmod05
     rts
 
 ;--------------------------------------------------------------
-;
-;       UM/MOD   ( ud u -- rem quot )
-;
-; * 83 nucleus divstar
-;
-;       ~ needs a lot of work
-;"      http://6502.org/source/integers/ummodfix/ummodfix.htm
-#ifdef HEADERS
+#if 0
+name=UM/MOD
+stack=( ud u -- rem quot )
+tags=forth-83,nucleus
+[desc]
+       ~ needs a lot of work
+      http://6502.org/source/integers/ummodfix/ummodfix.htm
+[/desc]
+#endif
 umslashmodlfa
     .byt $de,$ad
     .byt (_umslashmod-*-1)|bit7
@@ -247,16 +301,12 @@ _umslashmod
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       AND   ( n1 n2 -- n1&n2 )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-andxlfa
-    .byt $de,$ad
-    .byt (andx-*-1)|bit7
-    .asc "AN","D"|bit7
+#if 0
+name=AND
+stack=( n1 n2 -- n1&n2 )
+tags=forth-83,nucleus
+[desc]
+[/desc]
 #endif
 andx
     lda tos+1
@@ -268,16 +318,12 @@ andx
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       OR   ( n1 n2 -- n1|n2 )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-orxlfa
-    .byt $de,$ad
-    .byt (orx-*-1)|bit7
-    .asc "O","R"|bit7
+#if 0
+name=OR
+stack=( n1 n2 -- n1|n2 )
+tags=forth-83,nucleus
+[desc]
+[/desc]
 #endif
 orx
     lda tos+1
@@ -289,16 +335,12 @@ orx
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       XOR   ( n1 n2 -- n1^n2 )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-xorlfa
-    .byt $de,$ad
-    .byt (xor-*-1)|bit7
-    .asc "XO","R"|bit7
+#if 0
+name=XOR
+stack=( n1 n2 -- n1^n2 )
+tags=forth-83,nucleus
+[desc]
+[/desc]
 #endif
 xor
     lda tos+1
@@ -310,32 +352,25 @@ xor
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       NOT   ( n -- !n )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-notlfa
-    .byt $de,$ad
-    .byt (not-*-1)|bit7
-    .asc "NO","T"|bit7
+#if 0
+name=NOT
+stack=( n -- !n )
+tags=forth-83,nucleus
+[desc]
+[/desc]
 #endif
 not
     jsr invert
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       >R   ( n -- )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-torlfa
-    .byt $de,$ad
-    .byt (tor-*-1)|bit7
-    .asc ">","R"|bit7
+#if 0
+name=>R
+stack=( n -- )
+tags=forth-83,nucleus
+[desc]
+Move the top element of the data stack to the return stack
+[/desc]
 #endif
 tor
     lda tos+1
@@ -345,16 +380,13 @@ tor
     jmp pops
 
 ;--------------------------------------------------------------
-;
-;       R>   ( -- n )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-rfromlfa
-    .byt $de,$ad
-    .byt (rfrom-*-1)|bit7
-    .asc "R",">"|bit7
+#if 0
+name=R>
+stack=( -- n )
+tags=forth-83,nucleus
+[desc]
+Move the top element of the return stack to the data stack
+[/desc]
 #endif
 rfrom
     pla
@@ -365,16 +397,13 @@ rfrom
     jmp pushya
 
 ;--------------------------------------------------------------
-;
-;       R@   ( -- n )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-rfetchlfa
-    .byt $de,$ad
-    .byt (rfetch-*-1)|bit7
-    .asc "R","@"|bit7
+#if 0
+name=R@
+stack=( -- n )
+tags=forth-83,nucleus
+[desc]
+Copy the top element of the return stack to the data stack
+[/desc]
 #endif
 rfetch
     stx storex  ; [3]
@@ -383,34 +412,29 @@ rfetch
     lda $0101,x ; [4]
     ldx storex  ; [3]
     jmp pushya ; [14|15]
-    
+
 ;--------------------------------------------------------------
-;
-;       DUP>R   ( n -- )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-duptorlfa
-    .byt $de,$ad
-    .byt (duptor-*-1)|bit7
-    .asc "DUP>","R"|bit7
+#if 0
+name=DUP>R
+stack=( n -- )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 duptor
     jsr slip
     jmp tor
 
 ;--------------------------------------------------------------
-;
-;       RSWAP   ( -- ) ( R; a b -- b a )
-;
-; description
-;
-#ifdef HEADERS
-rswaplfa
-    .byt $de,$ad
-    .byt (rswap-*-1)|bit7
-    .asc "RSWA","P"|bit7
+#if 0
+name=RSWAP
+stack=( -- ) ( R; a b -- b a )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 rswap
     stx storex
@@ -429,16 +453,14 @@ rswap
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       RDROP   ( -- ) ( R; a -- )
-;
-; description
-;
-#ifdef HEADERS
-rdroplfa
-    .byt $de,$ad
-    .byt (rdrop-*-1)|bit7
-    .asc "RDRO","P"|bit7
+#if 0
+name=RDROP
+stack=( -- ) ( R; a -- )
+tags=nucleus
+[desc]
+
+
+[/desc]
 #endif
 rdrop
     pla
@@ -446,16 +468,14 @@ rdrop
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       0>   ( n -- flag )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-zgtlfa
-    .byt $de,$ad
-    .byt (zgt-*-1)|bit7
-    .asc "0",">"|bit7
+#if 0
+name=0>
+stack=( n -- flag )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 zgt
     ldy #0
@@ -469,14 +489,13 @@ zgt01
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       <>   ( n1 n2 -- flag )
-;
-#ifdef HEADERS
-nelfa
-    .byt $de,$ad
-    .byt (ne-*-1)|bit7
-    .asc "<",">"|bit7
+#if 0
+name=<>
+stack=( n1 n2 -- flag )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 ne
     ldy #$ff                ; assume inequality
@@ -493,29 +512,27 @@ ne01
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       OFF   ( addr -- )
-;
-; store 0 at ADDR
-#ifdef HEADERS
-offlfa
-    .byt $de,$ad
-    .byt (off-*-1)|bit7
-    .asc "OF","F"|bit7
+#if 0
+name=OFF
+stack=( addr -- )
+tags=nucleus
+[desc]
+
+ store 0 at ADDR
+[/desc]
 #endif
 off
     lda #$00
     .byt $2c
 ;--------------------------------------------------------------
-;
-;       ON   ( addr -- )
-;
-; store -1 at ADDR
-#ifdef HEADERS
-onlfa
-    .byt $de,$ad
-    .byt (on-*-1)|bit7
-    .asc "O","N"|bit7
+#if 0
+name=ON
+stack=( addr -- )
+tags=nucleus
+[desc]
+
+ store -1 at ADDR
+[/desc]
 #endif
 on
     lda #$ff
@@ -527,17 +544,14 @@ on1
     jmp pops
 
 ;--------------------------------------------------------------
-;
-;       +   ( n1 n2 -- n1+n2 )
-;
-; * 83 nucleus
-;
-; 09/15/10 cah
-#ifdef HEADERS
-pluslfa
-    .byt $de,$ad
-    .byt (plus-*-1)|bit7
-    .asc "+"|bit7
+#if 0
+name=+
+stack=( n1 n2 -- n1+n2 )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 plus
     clc
@@ -551,32 +565,26 @@ plus
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       ABS   ( n -- +n )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-abslfa
-    .byt $de,$ad
-    .byt (abs-*-1)|bit7
-    .asc "AB","S"|bit7
+#if 0
+name=ABS
+stack=( n -- +n )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 abs
     bit tos+1
     bpl negate01
 ;--------------------------------------------------------------
-;
-;       NEGATE   ( n -- -n )
-;
-; * 83 nucleus
-;
-; 09/15/10 cah
-#ifdef HEADERS
-negatelfa
-    .byt $de,$ad
-    .byt (negate-*-1)|bit7
-    .asc "NEGAT","E"|bit7
+#if 0
+name=NEGATE
+stack=( n -- -n )
+tags=forth-83,nucleus
+[desc]
+
+[/desc]
 #endif
 negate
     jsr donegate
@@ -594,17 +602,13 @@ neg2
     rts
 
 ;--------------------------------------------------------------
-;
-;       OVER   ( n1 n2 -- n1 n2 n1 )
-;
-; * 83 nucleus
-;
-; 09/15/10 cah
-#ifdef HEADERS
-overlfa
-    .byt $de,$ad
-    .byt (over-*-1)|bit7
-    .asc "OVE","R"|bit7
+#if 0
+name=OVER
+stack=( n1 n2 -- n1 n2 n1 )
+tags=forth-83,nucleus
+[desc]
+
+[/desc]
 #endif
 over
     ldy stackh,x
@@ -612,16 +616,14 @@ over
     jmp pushya
 
 ;--------------------------------------------------------------
-;
-;       SWAP   ( n1 n2 -- n2 n1 )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-swaplfa
-    .byt $de,$ad
-    .byt (swap-*-1)|bit7
-    .asc "SWA","P"|bit7
+#if 0
+name=SWAP
+stack=( n1 n2 -- n2 n1 )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 swap
     ldy tos+1
@@ -635,16 +637,14 @@ swap
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       TUCK   ( n1 n2 -- n2 n1 n2 )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-tucklfa
-    .byt $de,$ad
-    .byt (tuck-*-1)|bit7
-    .asc "TUC","K"|bit7
+#if 0
+name=TUCK
+stack=( n1 n2 -- n2 n1 n2 )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 tuck
     dex
@@ -659,49 +659,43 @@ tuck
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       NIP   ( n1 n2 -- n2 )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-niplfa
-    .byt $de,$ad
-    .byt (nip-*-1)|bit7
-    .asc "NI","P"|bit7
+#if 0
+name=NIP
+stack=( n1 n2 -- n2 )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 nip
     inx
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       DUP   ( n -- n n )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-duplfa
-    .byt $de,$ad
-    .byt (dup-*-1)|bit7
-    .asc "DU","P"|bit7
+#if 0
+name=DUP
+stack=( n -- n n )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 dup
     jsr slip
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       +!   ( n addr -- )
-;
-; * 83 nucleus
-;
-; add N to the cell at ADDR
-#ifdef HEADERS
-plusstorelfa
-    .byt $de,$ad
-    .byt (plusstore-*-1)|bit7
-    .asc "+","!"|bit7
+#if 0
+name=+!
+stack=( n addr -- )
+tags=forth-83,nucleus
+[desc]
+
+
+ add N to the cell at ADDR
+[/desc]
 #endif
 plusstore
     ldy #0
@@ -716,16 +710,15 @@ plusstore
     jmp poptwo
 
 ;--------------------------------------------------------------
-;
-;       TOGGLE   ( addr bitmask -- )
-;
-; Toggles setting of bits with bitmask at addr
+#if 0
+name=TOGGLE
+stack=( addr bitmask -- )
+tags=nucleus
+[desc]
 
-#ifdef HEADERS
-togglelfa
-    .byt $de,$ad
-    .byt (toggle-*-1)|bit7
-    .asc "TOGGL","E"|bit7
+ Toggles setting of bits with bitmask at addr
+
+[/desc]
 #endif
 toggle
     lda stackl,x
@@ -739,16 +732,14 @@ toggle
     jmp poptwo
 
 ;--------------------------------------------------------------
-;
-;       @   ( addr -- n )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-fetchlfa
-    .byt $de,$ad
-    .byt (fetch-*-1)|bit7
-    .asc "@"|bit7
+#if 0
+name=@
+stack=( addr -- n )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 fetch
     ldy #0
@@ -761,19 +752,17 @@ fetch
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       C@   ( addr -- 8b )
-;
-; * 83 nucleus
-;
-; "c-fetch"
-; 8b is the contents of the byte at addr.
-;
-#ifdef HEADERS
-cfetchlfa
-    .byt $de,$ad
-    .byt (cfetch-*-1)|bit7
-    .asc "C","@"|bit7
+#if 0
+name=C@
+stack=( addr -- 8b )
+tags=forth-83,nucleus
+[desc]
+
+
+ "c-fetch"
+ 8b is the contents of the byte at addr.
+
+[/desc]
 #endif
 cfetch
     ldy #0
@@ -781,14 +770,17 @@ cfetch
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       !   ( 16b addr -- )
-;
-; * 83 nucleus
-;
-; "store"
-; 16b is stored at addr.
-#ifdef HEADERS
+#if 0
+name=!
+stack=( 16b addr -- )
+tags=forth-83,nucleus
+[desc]
+
+
+ "store"
+ 16b is stored at addr.
+[/desc]
+#endif
 storelfa
     .byt $de,$ad
     .byt (store-*-1)|bit7
@@ -804,12 +796,16 @@ store
     jmp poptwo
 
 ;--------------------------------------------------------------
-;
-;       !+   ( addr n -- addr+2 )
-;
-; Stores n at addr, returns the following address
-;
-#ifdef HEADERS
+#if 0
+name=!+
+stack=( addr n -- addr+2 )
+tags=nucleus
+[desc]
+
+ Stores n at addr, returns the following address
+
+[/desc]
+#endif
 storepluslfa
     .byt $de,$ad
     .byt (_storeplus-*-1)|bit7
@@ -826,20 +822,18 @@ _storeplus
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       C!   ( 8b addr --
-;
-; * 83 nucleus
-;
-; "c-store"
-; The least-significant 8 bits of 16b are stored into the byte
-; at addr.
-;
-#ifdef HEADERS
-cstorelfa
-    .byt $de,$ad
-    .byt (cstore-*-1)|bit7
-    .asc "C","!"|bit7
+#if 0
+name=C!
+stack=( 8b addr -- )
+tags=forth-83,nucleus
+[desc]
+
+
+ "c-store"
+ The least-significant 8 bits of 16b are stored into the byte
+ at addr.
+
+[/desc]
 #endif
 cstore
     lda stackl,x
@@ -848,19 +842,18 @@ cstore
     jmp poptwo
 
 ;--------------------------------------------------------------
-;
-;       C!+   ( addr c -- addr+1 )
-;
-; "c-store-plus"
-;
-; The least-significant 8 bits of c are stored into the byte
-; at addr, and addr is incremented by one
-;
-#ifdef HEADERS
-cstorepluslfa
-    .byt $de,$ad
-    .byt (_cstoreplus-*-1)|bit7
-    .asc "C!","+"|bit7
+#if 0
+name=C!+
+stack=( addr c -- addr+1 )
+tags=nucleus
+[desc]
+
+ "c-store-plus"
+
+ The least-significant 8 bits of c are stored into the byte
+ at addr, and addr is incremented by one
+
+[/desc]
 #endif
 _cstoreplus
 #include "enter.i65"
@@ -873,16 +866,15 @@ _cstoreplus
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       CBIT!   ( mask addr -- )
-;
-; turn on the mask bits in the byte at address
-;
-#ifdef HEADERS
-cbitstorelfa
-    .byt $de,$ad
-    .byt (cbitstore-*-1)|bit7
-    .asc "CBIT","!"|bit7
+#if 0
+name=CBIT!
+stack=( mask addr -- )
+tags=nucleus
+[desc]
+
+ turn on the mask bits in the byte at address
+
+[/desc]
 #endif
 cbitstore
     ldy #0
@@ -892,16 +884,15 @@ cbitstore
     jmp poptwo
 
 ;--------------------------------------------------------------
-;
-;       CBIT@   ( mask addr -- flag )
-;
-; test the mask bits in the byte at address
-;
-#ifdef HEADERS
-cbitfetchlfa
-    .byt $de,$ad
-    .byt (cbitfetch-*-1)|bit7
-    .asc "CBIT","@"|bit7
+#if 0
+name=CBIT@
+stack=( mask addr -- flag )
+tags=nucleus
+[desc]
+
+ test the mask bits in the byte at address
+
+[/desc]
 #endif
 cbitfetch
     ldy #0
@@ -911,126 +902,116 @@ cbitfetch
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       TIB   ( -- addr )
-;
-; * 83 interpreter tdict
-;
-#ifdef HEADERS
-tiblfa
-    .byt $de,$ad
-    .byt (tib-*-1)|bit7
-    .asc "TI","B"|bit7
+#if 0
+name=TIB
+stack=( -- addr )
+tags=nucleus,const
+[desc]
+
+
+[/desc]
 #endif
 tib
     jsr doconst
     .word BUF       ; $0200
 
 ;--------------------------------------------------------------
-;
-;       -2   ( -- -2 )
-;
-#ifdef HEADERS
-minustwolfa
-    .byt $de,$ad
-    .byt (minustwo-*-1)|bit7
-    .asc "-","2"|bit7
+#if 0
+name=-2
+stack=( -- -2 )
+tags=nucleus,const
+[desc]
+
+[/desc]
 #endif
 minustwo
     jsr docconst
     .byt $fe
 
 ;--------------------------------------------------------------
-;
-;       1   ( -- 1 )
-;
-#ifdef HEADERS
-onelfa
-    .byt $de,$ad
-    .byt (one-*-1)|bit7
-    .asc "1"|bit7
+#if 0
+name=1
+stack=( -- 1 )
+tags=nucleus,const
+[desc]
+
+[/desc]
 #endif
 one
     jsr docconst
     .byt 1
 
 ;--------------------------------------------------------------
-;
-;       2   ( -- 2 )
-;
-#ifdef HEADERS
-twolfa
-    .byt $de,$ad
-    .byt (two-*-1)|bit7
-    .asc "2"|bit7
+#if 0
+name=2
+stack=( -- 2 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 two
     jsr docconst
     .byt 2
 
 ;--------------------------------------------------------------
-;
-;       3   ( -- 3 )
-;
-#ifdef HEADERS
-threelfa
-    .byt $de,$ad
-    .byt (three-*-1)|bit7
-    .asc "3"|bit7
+#if 0
+name=3
+stack=( -- 3 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 three
     jsr docconst
     .byt 3
 
 ;--------------------------------------------------------------
-;
-;       4   ( -- 4 )
-;
-#ifdef HEADERS
-fourlfa
-    .byt $de,$ad
-    .byt (four-*-1)|bit7
-    .asc "4"|bit7
+#if 0
+name=4
+stack=( -- 4 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 four
     jsr docconst
     .byt 4
 
 ;--------------------------------------------------------------
-;
-;       BL   ( -- n )
-;
-#ifdef HEADERS
-bllfa
-    .byt $de,$ad
-    .byt (bl-*-1)|bit7
-    .asc "B","L"|bit7
+#if 0
+name=BL
+stack=( -- n )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 bl
     jsr docconst
     .byt $20
 
 ;--------------------------------------------------------------
-;
-;       -1   ( -- -1 )
-;
-#ifdef HEADERS
-minusonelfa
-    .byt $de,$ad
-    .byt (minusone-*-1)|bit7
-    .asc "-","1"|bit7
+#if 0
+name=-1
+stack=( -- -1 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 minusone
                 ; fall through
 ;--------------------------------------------------------------
-;
-;       TRUE   ( -- -1 )
-;
-#ifdef HEADERS
-truelfa
-    .byt $de,$ad
-    .byt (true-*-1)|bit7
-    .asc "TRU","E"|bit7
+#if 0
+name=TRUE
+stack=( -- -1 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 true
     lda #$ff
@@ -1039,42 +1020,38 @@ true01
     jmp pushya
 
 ;--------------------------------------------------------------
-;
-;       0   ( -- 0 )
-;
-#ifdef HEADERS
-zerolfa
-    .byt $de,$ad
-    .byt (zero-*-1)|bit7
-    .asc "0"|bit7
+#if 0
+name=0
+stack=( -- 0 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 zero
                 ; fall through
 ;--------------------------------------------------------------
-;
-;       FALSE   ( -- 0 )
-;
-#ifdef HEADERS
-falselfa
-    .byt $de,$ad
-    .byt (false-*-1)|bit7
-    .asc "FALS","E"|bit7
+#if 0
+name=FALSE
+stack=( -- 0 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 false
     lda #0
     beq true01
 
 ;--------------------------------------------------------------
-;
-;       0=
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-zeqlfa
-    .byt $de,$ad
-    .byt (zeq-*-1)|bit7
-    .asc "0","="|bit7
+#if 0
+name=0=
+stack=( n -- flag )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 zeq
     ldy #$00
@@ -1088,16 +1065,14 @@ zeq02
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       0<
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-zltlfa
-    .byt $de,$ad
-    .byt (zlt-*-1)|bit7
-    .asc "0","<"|bit7
+#if 0
+name=0<
+stack=( n -- flag )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 zlt
     ldy #0
@@ -1106,14 +1081,13 @@ zlt
     bpl zeq02
 
 ;--------------------------------------------------------------
-;
-;       0<>
-;
-#ifdef HEADERS
-znelfa
-    .byt $de,$ad
-    .byt (zne-*-1)|bit7
-    .asc "0<",">"|bit7
+#if 0
+name=0<>
+stack=( n -- flag )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 zne
     ldy #0
@@ -1123,73 +1097,66 @@ zne
     beq zeq02
 
 ;--------------------------------------------------------------
-;
-;       1+
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-onepluslfa
-    .byt $de,$ad
-    .byt (oneplus-*-1)|bit7
-    .asc "1","+"|bit7
+#if 0
+name=1+
+stack=( n -- n+1 )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 oneplus
     jsr inctos
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       1-
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-oneminuslfa
-    .byt $de,$ad
-    .byt (oneminus-*-1)|bit7
-    .asc "1","-"|bit7
+#if 0
+name=1-
+stack=( n -- n-1 )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 oneminus
     jsr dectos
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       3-
-;
-#ifdef HEADERS
-threeminuslfa
-    .byt $de,$ad
-    .byt (threeminus-*-1)|bit7
-    .asc "3","-"|bit7
+#if 0
+name=3-
+stack=( n -- n-3 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 threeminus
     lda #$fd
     .byt $2c ; BIT absolute instruction, fall through to twominus
 ;--------------------------------------------------------------
-;
-;       2-
-;
-#ifdef HEADERS
-twominuslfa
-    .byt $de,$ad
-    .byt (twominus-*-1)|bit7
-    .asc "2","-"|bit7
+#if 0
+name=2-
+stack=( n -- n-2 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 twominus
     lda #$fe
     dec tos+1
     .byt $2c ; BIT absolute instruction, fall through to twoplus
 ;--------------------------------------------------------------
-;
-;       2+
-;
-#ifdef HEADERS
-twopluslfa
-    .byt $de,$ad
-    .byt (twoplus-*-1)|bit7
-    .asc "2","+"|bit7
+#if 0
+name=2+
+stack=( n -- n+2 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 twoplus
     lda #2
@@ -1202,30 +1169,27 @@ nplus
 twoplus01
     jmp next
 ;--------------------------------------------------------------
-;
-;       3+
-;
-#ifdef HEADERS
-threepluslfa
-    .byt $de,$ad
-    .byt (threeplus-*-1)|bit7
-    .asc "3","+"|bit7
+#if 0
+name=3+
+stack=( n -- n+3 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 threeplus
     lda #3
     bne nplus                   ; bra
 
 ;--------------------------------------------------------------
-;
-;       2/
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-twoslashlfa
-    .byt $de,$ad
-    .byt (twoslash-*-1)|bit7
-    .asc "2","/"|bit7
+#if 0
+name=2/
+stack=( n -- n/2 )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 twoslash
     lsr tos+1
@@ -1233,14 +1197,13 @@ twoslash
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       2*
-;
-#ifdef HEADERS
-twostarlfa
-    .byt $de,$ad
-    .byt (twostar-*-1)|bit7
-    .asc "2","*"|bit7
+#if 0
+name=2*
+stack=( n -- n*2 )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 twostar
     asl tos
@@ -1248,33 +1211,28 @@ twostar
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       -
-;
-; * 83 nucleus
-;
-; 09/15/10 cah
-#ifdef HEADERS
-minuslfa
-    .byt $de,$ad
-    .byt (minus-*-1)|bit7
-    .asc "-"|bit7
+#if 0
+name=-
+stack=( a b -- a-b )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 minus
     jsr donegate
     jmp plus
 
 ;--------------------------------------------------------------
-;
-;       =   ( n1 n2 -- flag )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-eqlfa
-    .byt $de,$ad
-    .byt (eq-*-1)|bit7
-    .asc "="|bit7
+#if 0
+name==
+stack=( n1 n2 -- flag )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 eq
     ldy #0
@@ -1292,16 +1250,14 @@ cmpout02
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       U<
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-ultlfa
-    .byt $de,$ad
-    .byt (ult-*-1)|bit7
-    .asc "U","<"|bit7
+#if 0
+name=U<
+stack=( n1 n2 -- flag )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 ult
     ldy #0
@@ -1313,16 +1269,14 @@ ult
     bcc cmpout01
 
 ;--------------------------------------------------------------
-;
-;       <   ( n1 n2 -- flag )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-ltlfa
-    .byt $de,$ad
-    .byt (lt-*-1)|bit7
-    .asc "<"|bit7
+#if 0
+name=<
+stack=( n1 n2 -- flag )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 lt
     ldy #0
@@ -1338,17 +1292,14 @@ lt01
     bmi cmpout01
 
 ;--------------------------------------------------------------
-;
-;       >   ( n1 n2 -- flag )
-;
-; * 83 nucleus
-;
-; V is the exclusive or of the carrys out of bits 6 and 7 - Bogax
-#ifdef HEADERS
-gtlfa
-    .byt $de,$ad
-    .byt (gt-*-1)|bit7
-    .asc ">"|bit7
+#if 0
+name=>
+stack=( n1 n2 -- flag )
+tags=forth-83,nucleus
+[desc]
+
+ V is the exclusive or of the carrys out of bits 6 and 7 - Bogax
+[/desc]
 #endif
 gt
     ldy #0
@@ -1359,16 +1310,15 @@ gt
     jmp sgntst
 
 ;--------------------------------------------------------------
-;
-;       BETWEEN?   ( x a b -- flag )
-;
-; returns true iff a < x < b, unsigned
-;
-#ifdef HEADERS
-betweenqlfa
-    .byt $de,$ad
-    .byt (betweenq-*-1)|bit7
-    .asc "BETWEEN","?"|bit7
+#if 0
+name=BETWEEN?
+stack=( x a b -- flag )
+tags=nucleus
+[desc]
+
+ returns true iff a < x < b, unsigned
+
+[/desc]
 #endif
 betweenq
     ldy #0
@@ -1390,16 +1340,14 @@ betweenq01
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       ROT   ( a b c -- b c a )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-rotlfa
-    .byt $de,$ad
-    .byt (rot-*-1)|bit7
-    .asc "RO","T"|bit7
+#if 0
+name=ROT
+stack=( a b c -- b c a )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 rot
     ldy stackh+1,x
@@ -1417,14 +1365,13 @@ rot
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       -ROT   ( a b c -- c a b )
-;
-#ifdef HEADERS
-dashrotlfa
-    .byt $de,$ad
-    .byt (dashrot-*-1)|bit7
-    .asc "-RO","T"|bit7
+#if 0
+name=-ROT
+stack=( a b c -- c a b )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 dashrot
     ldy stackh,x
@@ -1442,16 +1389,14 @@ dashrot
     jmp put             ; b -> c
 
 ;--------------------------------------------------------------
-;
-;       THIRD   ( n1 n2 n3 -- n1 n2 n3 n1 )
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-thirdlfa
-    .byt $de,$ad
-    .byt (third-*-1)|bit7
-    .asc "THIR","D"|bit7
+#if 0
+name=THIRD
+stack=( n1 n2 n3 -- n1 n2 n3 n1 )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 third
     lda stackl+1,x
@@ -1459,16 +1404,15 @@ third
     jmp pushya
 
 ;--------------------------------------------------------------
-;
-;       3DUP   ( n1 n2 n3 -- n1 n2 n3 n1 n2 n3 )
-;
-; Copy top three elements on the stack onto top of stack. 
-;
-#ifdef HEADERS
-threeduplfa
-    .byt $de,$ad
-    .byt (threedup-*-1)|bit7
-    .asc "3DU","P"|bit7
+#if 0
+name=3DUP
+stack=( n1 n2 n3 -- n1 n2 n3 n1 n2 n3 )
+tags=nucleus
+[desc]
+
+ Copy top three elements on the stack onto top of stack.
+
+[/desc]
 #endif
 threedup
     dex
@@ -1489,16 +1433,15 @@ threedup
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       UNDER   ( n1 n2 -- n1 n1 n2 )
-;
-; Make a duplicate of the second stack element
-;
-#ifdef HEADERS
-underlfa
-    .byt $de,$ad
-    .byt (under-*-1)|bit7
-    .asc "UNDE","R"|bit7
+#if 0
+name=UNDER
+stack=( n1 n2 -- n1 n1 n2 )
+tags=nucleus
+[desc]
+
+ Make a duplicate of the second stack element
+
+[/desc]
 #endif
 under
     dex
@@ -1509,16 +1452,15 @@ under
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       +UNDER   ( n1 n2 n3 -- n1+n3 n2 )
-;
-; Add the top of stack to item underneath the second on stack
-;
-#ifdef HEADERS
-plusunderlfa
-    .byt $de,$ad
-    .byt (plusunder-*-1)|bit7
-    .asc "+UNDE","R"|bit7
+#if 0
+name=+UNDER
+stack=( n1 n2 n3 -- n1+n3 n2 )
+tags=nucleus
+[desc]
+
+ Add the top of stack to item underneath the second on stack
+
+[/desc]
 #endif
 plusunder
     clc
@@ -1531,17 +1473,15 @@ plusunder
     jmp pops
 
 ;--------------------------------------------------------------
-;
-;       ?DUP   ( 0 -- 0 | n -- n n )
-;
-; * 83 nucleus
-;
-; DUP if top of stack is nonzero
-#ifdef HEADERS
-qduplfa
-    .byt $de,$ad
-    .byt (qdup-*-1)|bit7
-    .asc "?DU","P"|bit7
+#if 0
+name=?DUP
+stack=( 0 -- 0 | n -- n n )
+tags=forth-83,nucleus
+[desc]
+
+
+ DUP if top of stack is nonzero
+[/desc]
 #endif
 qdup
     lda tos
@@ -1554,25 +1494,28 @@ qdup01
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       3C@   ( addr -- d )
-;
-; fetches three bytes as a double.  Useful for retrieving screen
-; linewrap bits from the beginning of the block buffer or the jiffy
-; clock
-;
-; msb addr+0
-; 2sb addr+1
-; lsb addr+2
-;
-;": 3c@   ( addr -- d )
-;     dup 1+ @ swap c@ ;
-;
-#ifdef HEADERS
-threecfetchlfa
-    .byt $de,$ad
-    .byt (threecfetch-*-1)|bit7
-    .asc "3C","@"|bit7
+#if 0
+name=3C@
+stack=( addr -- d )
+tags=nucleus
+[desc]
+
+ fetches three bytes as a double.  Useful for retrieving screen
+ linewrap bits from the beginning of the block buffer or the jiffy
+ clock
+
+ msb addr+0
+
+ 2sb addr+1
+
+ lsb addr+2
+
+```
+: 3c@   ( addr -- d )
+     dup 1+ @ swap c@ ;
+
+```
+[/desc]
 #endif
 threecfetch
     jsr slip
@@ -1587,23 +1530,25 @@ threecfetch
     jmp put             ; [20]
 
 ;--------------------------------------------------------------
-;
-;       3C!   ( d addr -- )
-;
-; store low 3 bytes of d at addr in jiffy clock order
-;
-; msb addr
-; 2sb addr+1
-; lsb addr+2
-;
-;": 3c!    ( d addr -- )
-;     2dup c!  nip 1+ ! ;
-;
-#ifdef HEADERS
-threecstorelfa
-    .byt $de,$ad
-    .byt (threecstore-*-1)|bit7
-    .asc "3C","!"|bit7
+#if 0
+name=3C!
+stack=( d addr -- )
+tags=nucleus
+[desc]
+ store low 3 bytes of d at addr in jiffy clock order
+
+ msb addr
+
+ 2sb addr+1
+
+ lsb addr+2
+
+```
+: 3c!    ( d addr -- )
+    2dup c!  nip 1+ ! ;
+
+```
+[/desc]
 #endif
 threecstore
     ldy #0
@@ -1619,18 +1564,16 @@ threecstore
     jmp poptwo
 
 ;--------------------------------------------------------------
-;
-;       FILL   ( addr howmany value -- )
-;
-; * 83 nucleus
-;
-; howmany has an upper limit of 32K bytes
-;
-#ifdef HEADERS
-filllfa
-    .byt $de,$ad
-    .byt (fill-*-1)|bit7
-    .asc "FIL","L"|bit7
+#if 0
+name=FILL
+stack=( addr howmany value -- )
+tags=forth-83,nucleus
+[desc]
+
+
+ howmany has an upper limit of 32K bytes
+
+[/desc]
 #endif
 fill
     ldy #2
@@ -1654,14 +1597,13 @@ fill03
     jmp pops
 
 ;--------------------------------------------------------------
-;
-;       ERASE
-;
-#ifdef HEADERS
-eraselfa
-    .byt $de,$ad
-    .byt (_erase-*-1)|bit7
-    .asc "ERAS","E"|bit7
+#if 0
+name=ERASE
+stack=( addr howmany -- )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 _erase
 #include "enter.i65"
@@ -1672,14 +1614,13 @@ _erase
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       BLANK
-;
-#ifdef HEADERS
-blanklfa
-    .byt $de,$ad
-    .byt (_blank-*-1)|bit7
-    .asc "BLAN","K"|bit7
+#if 0
+name=BLANK
+stack=( addr howmany -- )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 _blank
 #include "enter.i65"
@@ -1690,34 +1631,33 @@ _blank
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       -TRAILING   ( addr +n1 -- addr +n2 )
-;
-; The character count +n1 of a text string beginning at addr
-; is adjusted to exclude trailing spaces.  If +n1 is zero,
-; then +n2 is also zero.  If the entire string consists of
-; spaces, then +n2 is zero.
-;
-;": -trailing   ( addr n1 -- addr n2 )
-;     dup 0
-;     ?do
-;         2dup + 1- c@
-;         bl <>
-;     ?leave
-;         1-
-;     loop ;
-;
-#ifdef HEADERS
-dashtrailinglfa
-    .byt $de,$ad
-    .byt (dashtrailing-*-1)|bit7
-    .asc "-TRAILIN","G"|bit7
+#if 0
+name=-TRAILING
+stack=( addr +n1 -- addr +n2 )
+tags=nucleus
+[desc]
+
+ The character count +n1 of a text string beginning at addr
+ is adjusted to exclude trailing spaces.  If +n1 is zero,
+ then +n2 is also zero.  If the entire string consists of
+ spaces, then +n2 is zero.
+
+": -trailing   ( addr n1 -- addr n2 )
+     dup 0
+     ?do
+         2dup + 1- c@
+         bl <>
+     ?leave
+         1-
+     loop ;
+
+[/desc]
 #endif
 dashtrailing
     lda stackl,x
     sta n
     lda stackh,x
-    sta n+1                     ; N0 = addr 
+    sta n+1                     ; N0 = addr
    ldy tos
     lda tos+1
     beq dashtrailing01
@@ -1743,17 +1683,15 @@ dashtrailing03
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       CMOVE   ( from to howmany -- )
-;
-; * 83 nucleus
-;
-;"~ see http://6502.org/source/general/memory_move.html
-#ifdef HEADERS
-cmovelfa
-    .byt $de,$ad
-    .byt (cmove-*-1)|bit7
-    .asc "CMOV","E"|bit7
+#if 0
+name=CMOVE
+stack=( from to howmany -- )
+tags=forth-83,nucleus
+[desc]
+
+
+"~ see http://6502.org/source/general/memory_move.html
+[/desc]
 #endif
 cmove
     ldy #2          ; pull two items off the data stack
@@ -1782,80 +1720,76 @@ cmove03
     jmp pops    ; [37]
 
 ;--------------------------------------------------------------
-;
-;       CMOVE>   ( from to howmany -- )
-;
-; * 83 nucleus
-;
-; Move the u bytes beginning at address addr1 to
-; addr2.  The move begins by moving the byte at
-; (addr1 plus u minus 1) to (addr2 plus u minus 1)
-; and proceeds to successively lower addresses
-; for u bytes.  If u is zero nothing is moved.
-; Useful for sliding a string towards higher addresses.
-;
-;     >6502
-#ifdef HEADERS
-cmovegtlfa
-    .byt $de,$ad
-    .byt (cmovegt-*-1)|bit7
-    .asc "CMOVE",">"|bit7
+#if 0
+name=CMOVE>
+stack=( from to howmany -- )
+tags=forth-83,nucleus
+[desc]
+
+
+ Move the u bytes beginning at address addr1 to
+ addr2.  The move begins by moving the byte at
+ (addr1 plus u minus 1) to (addr2 plus u minus 1)
+ and proceeds to successively lower addresses
+ for u bytes.  If u is zero nothing is moved.
+ Useful for sliding a string towards higher addresses.
+
+[/desc]
 #endif
 cmovegt
-	stx storex
-	ldy #2
-	jsr locals
-	ldx tos+1
-	clc
-	txa
-	adc n+1
-	sta n+1
-	clc
-	txa
-	lda n+3
-	sta n+3
-	inx
-	ldy tos
-	beq cmovegt03
-	dey
-	beq cmovegt02
+    stx storex
+    ldy #2
+    jsr locals
+    ldx tos+1
+    clc
+    txa
+    adc n+1
+    sta n+1
+    clc
+    txa
+    lda n+3
+    sta n+3
+    inx
+    ldy tos
+    beq cmovegt03
+    dey
+    beq cmovegt02
 cmovegt01
-	lda (n),y
-	sta (n+2),y
-	dey
-	bne cmovegt01
+    lda (n),y
+    sta (n+2),y
+    dey
+    bne cmovegt01
 cmovegt02
-	lda (n),y
-	sta (n+2),y
+    lda (n),y
+    sta (n+2),y
 cmovegt03
-	dey
-	dec n+1
-	dec n+3
-	dex
-	bne cmovegt01
-	ldx storex
-	jmp pops
+    dey
+    dec n+1
+    dec n+3
+    dex
+    bne cmovegt01
+    ldx storex
+    jmp pops
 
 ;--------------------------------------------------------------
-;
-;       MOVE   ( from to howmany -- )
-;
-; Move the u bytes beginning at address addr1 to
-; addr2.  Overlap clobber does not occur in either direction
-;
-;": move   ( from to howmany -- )
-;     >r 2dup u< r> swap
-;     if
-;         cmove>
-;     else
-;         cmove
-;     then ;
-;
-#ifdef HEADERS
-movelfa
-    .byt $de,$ad
-    .byt (_move-*-1)|bit7
-    .asc "MOV","E"|bit7
+#if 0
+name=MOVE
+stack=( from to howmany -- )
+tags=nucleus
+[desc]
+
+ Move the u bytes beginning at address addr1 to
+ addr2.  Overlap clobber does not occur in either direction
+
+": move   ( from to howmany -- )
+     >r 2dup u< r> swap
+     if
+         cmove>
+     else
+         cmove
+     then ;
+
+[/desc]
 #endif
 _move
 #include "enter.i65"
@@ -1884,26 +1818,28 @@ move02
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       +MOVE   ( start end delta -- )
-;
-; Move a block of memory between start and end (inclusive) to
-; a new address calculated by adding the signed delta to start
-;
-; for example, x = (5 of each letter)     AAAAABBBBBCCCCCDDDDD 
-; after  x 8 + x 11 + -7 +move, x becomes ABBCCBBBBBCCCCCDDDDD
-; vidram dup 3+ 3+ 12 +move
-;": +move   ( start end delta -- )
-; ( start end delta )
-;     >r over - 1+
-; ( start howmany )
-;     over r> + swap move ;
-;
-#ifdef HEADERS
-plusmovelfa
-    .byt $de,$ad
-    .byt (_plusmove-*-1)|bit7
-    .asc "+MOV","E"|bit7
+#if 0
+name=+MOVE
+stack=( start end delta -- )
+tags=nucleus
+[desc]
+
+ Move a block of memory between start and end (inclusive) to
+ a new address calculated by adding the signed delta to start
+
+```
+ for example, x = (5 of each letter)     AAAAABBBBBCCCCCDDDDD
+ after  x 8 + x 11 + -7 +move, x becomes ABBCCBBBBBCCCCCDDDDD
+ vidram dup 3+ 3+ 12 +move
+
+: +move   ( start end delta -- )
+ ( start end delta )
+     >r over - 1+
+ ( start howmany )
+     over r> + swap move ;
+
+```
+[/desc]
 #endif
 _plusmove
 #include "enter.i65"
@@ -1928,16 +1864,13 @@ _plusmove
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       HERE
-;
-; * 83 interpreter 
-;
-#ifdef HEADERS
-herelfa
-    .byt $de,$ad
-    .byt (here-*-1)|bit7
-    .asc "HER","E"|bit7
+#if 0
+name=HERE
+stack=( -- addr )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 here
     ldy #(userdp-userarea)
@@ -1950,22 +1883,19 @@ here
     jmp pushya
 
 ;--------------------------------------------------------------
-;
-;       PAD   ( -- addr )
-;
-; * 83 interpreter 
-;
-; The lower address of a scratch area used to hold data for
-; intermediate processing.  The address or contents of PAD may
-; change and the data lost if the address of the next
-; available dictionary location is changed.  The minimum
-; capacity of PAD is 84 characters.
+#if 0
+name=PAD
+stack=( -- addr )
+tags=nucleus
+[desc]
 
-#ifdef HEADERS
-padlfa
-    .byt $de,$ad
-    .byt (_pad-*-1)|bit7
-    .asc "PA","D"|bit7
+ The lower address of a scratch area used to hold data for
+ intermediate processing.  The address or contents of PAD may
+ change and the data lost if the address of the next
+ available dictionary location is changed.  The minimum
+ capacity of PAD is 84 characters.
+
+[/desc]
 #endif
 _pad
 #include "enter.i65"
@@ -1979,14 +1909,13 @@ _pad
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       S>D
-;
-#ifdef HEADERS
-stodlfa
-    .byt $de,$ad
-    .byt (_stod-*-1)|bit7
-    .asc "S>","D"|bit7
+#if 0
+name=S>D
+stack=( n -- d )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 _stod
 #include "enter.i65"
@@ -1997,16 +1926,15 @@ _stod
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       SGN   ( n -- -1|0|1 )
-;
-; return the sign of n
-;
-#ifdef HEADERS
-sgnlfa
-    .byt $de,$ad
-    .byt (sgn-*-1)|bit7
-    .asc "SG","N"|bit7
+#if 0
+name=SGN
+stack=( n -- -1|0|1 )
+tags=nucleus
+[desc]
+
+ return the sign of n
+
+[/desc]
 #endif
 sgn
     ldy #$ff
@@ -2022,17 +1950,16 @@ sgn01
     jmp put
 
 ;--------------------------------------------------------------
-;
-;       RANDU   ( -- r )
-;
-; return a random number in the range 0..255
-; from the First Book of KIM-1
-;
-#ifdef HEADERS
-randulfa
-    .byt $de,$ad
-    .byt (randu-*-1)|bit7
-    .asc "RAND","U"|bit7
+#if 0
+name=RANDU
+stack=( -- r )
+tags=nucleus
+[desc]
+
+ return a random number in the range 0..255
+ from the First Book of KIM-1
+
+[/desc]
 #endif
 randu
     stx storex
@@ -2052,16 +1979,15 @@ rpl
     jmp pushya
 
 ;--------------------------------------------------------------
-;
-;       1+!   ( n -- )
-;
-; increments the word addressed by n
-;
-#ifdef HEADERS
-oneplusstorelfa
-    .byt $de,$ad
-    .byt (oneplusstore-*-1)|bit7
-    .asc "1+","!"|bit7
+#if 0
+name=1+!
+stack=( n -- )
+tags=nucleus
+[desc]
+
+ increments the word addressed by n
+
+[/desc]
 #endif
 oneplusstore
     ldy #$FF
@@ -2076,16 +2002,15 @@ oneplusstore01
     jmp pops
 
 ;--------------------------------------------------------------
-;
-;       1-!   ( n -- )
-;
-; decrements the word addressed by n
-;
-#ifdef HEADERS
-oneminusstorelfa
-    .byt $de,$ad
-    .byt (oneminusstore-*-1)|bit7
-    .asc "1-","!"|bit7
+#if 0
+name=1-!
+stack=( n -- )
+tags=nucleus
+[desc]
+
+ decrements the word addressed by n
+
+[/desc]
 #endif
 oneminusstore
     ldy #$ff
@@ -2100,16 +2025,14 @@ oneminusstore01
     jmp pops
 
 ;--------------------------------------------------------------
-;
-;       MIN
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-minlfa
-    .byt $de,$ad
-    .byt (_min-*-1)|bit7
-    .asc "MI","N"|bit7
+#if 0
+name=MIN
+stack=( n1 n2 -- n )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 _min
 #include "enter.i65"
@@ -2128,16 +2051,14 @@ min01
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       MAX
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-maxlfa
-    .byt $de,$ad
-    .byt (_max-*-1)|bit7
-    .asc "MA","X"|bit7
+#if 0
+name=MAX
+stack=( n1 n2 -- n )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 _max
 #include "enter.i65"
@@ -2156,17 +2077,14 @@ max01
     .word exit
 
 ;--------------------------------------------------------------
-;
-;       M*   ( n1 n2 -- d )
-;
-; * divstar
-;
-; multiply two signed words, leaving the double product on the stack
-#ifdef HEADERS
-mstarlfa
-    .byt $de,$ad
-    .byt (mstar-*-1)|bit7
-    .asc "M","*"|bit7
+#if 0
+name=M*
+stack=( n1 n2 -- d )
+tags=nucleus
+[desc]
+
+ multiply two signed words, leaving the double product on the stack
+[/desc]
 #endif
 mstar
     jsr mult
@@ -2208,14 +2126,13 @@ mult03
     rts
 
 ;--------------------------------------------------------------
-;
-;       M/   ( d n -- rem quotient )
-;
-#ifdef HEADERS
-mslashlfa
-    .byt $de,$ad
-    .byt (mslash-*-1)|bit7
-    .asc "M","/"|bit7
+#if 0
+name=M/
+stack=( d n -- rem quotient )
+tags=nucleus
+[desc]
+
+[/desc]
 #endif
 mslash
     jsr domslash
@@ -2291,58 +2208,49 @@ remult
     rts
 
 ;--------------------------------------------------------------
-;
-;       M*/   ( n1 n2 n3 -- d )
-;
-; * divstar
-;
-; multiplies n1*n2 giving an intermediate 16-bit value, and divides
-; that by n3 yielding a 16-bit quotient.  Remainder is ignored,
-; all values are signed.
-;
-#ifdef HEADERS
-mstarslashlfa
-    .byt $de,$ad
-    .byt (mstarslash-*-1)|bit7
-    .asc "M*","/"|bit7
+#if 0
+name=M*/
+stack=( n1 n2 n3 -- d )
+tags=nucleus
+[desc]
+
+ multiplies n1*n2 giving an intermediate 16-bit value, and divides
+ that by n3 yielding a 16-bit quotient.  Remainder is ignored,
+ all values are signed.
+
+[/desc]
 #endif
 mstarslash
 
 ;--------------------------------------------------------------
-;
-;       *   ( n1 n2 -- n1*n2 )
-;
-; * 83 nucleus divstar
-;
-; multiply two signed words
-#ifdef HEADERS
-starlfa
-    .byt $de,$ad
-    .byt (star-*-1)|bit7
-    .asc "*"|bit7
+#if 0
+name=*
+stack=( n1 n2 -- n1*n2 )
+tags=forth-83,nucleus
+[desc]
+
+ multiply two signed words
+[/desc]
 #endif
 star
     jsr mult
     jmp pops
 
 ;--------------------------------------------------------------
-;
-;       /MOD    ( n1 n2 -- n3 n4 )
-;
-; * 83 nucleus divstar
-;
-; n3 is the remainder and n4 the floor of the
-; quotient of n1 divided by the divisor n2.  n3
-; has the same sign as n2 or is zero.  An error
-; condition results if the divisor is zero or if
-; the quotient falls outside the range {-32,768
-; ... 32,676}.
-; ~wut? should probably use ud/mod and then set signs
-#ifdef HEADERS
-slashmodlfa
-    .byt $de,$ad
-    .byt (slashmod-*-1)|bit7
-    .asc "/MO","D"|bit7
+#if 0
+name=/MOD
+stack=( n1 n2 -- n3 n4 )
+tags=forth-83,nucleus
+[desc]
+
+ n3 is the remainder and n4 the floor of the
+ quotient of n1 divided by the divisor n2.  n3
+ has the same sign as n2 or is zero.  An error
+ condition results if the divisor is zero or if
+ the quotient falls outside the range {-32,768
+ ... 32,676}.
+ ~wut? should probably use ud/mod and then set signs
+[/desc]
 #endif
 slashmod
     jsr doslashmod
@@ -2368,20 +2276,17 @@ doslashmod01
     jmp domslash
 
 ;--------------------------------------------------------------
-;
-;       /   ( n1 n2 -- n3 )
-;
-; * 83 nucleus divstar
-;
-; n3 is the floor of the quotient of n1 divided
-; by the divisor n2.  An error condition results
-; if the divisor is zero or if the quotient falls
-; outside the range {-32,768 ... 32,767}.
-#ifdef HEADERS
-slashlfa
-    .byt $de,$ad
-    .byt (slash-*-1)|bit7
-    .asc "/"|bit7
+#if 0
+name=/
+stack=( n1 n2 -- n3 )
+tags=forth-83,nucleus
+[desc]
+
+ n3 is the floor of the quotient of n1 divided
+ by the divisor n2.  An error condition results
+ if the divisor is zero or if the quotient falls
+ outside the range {-32,768 ... 32,767}.
+[/desc]
 #endif
 slash
     jsr doslashmod
@@ -2392,48 +2297,42 @@ slash
     jmp pops
 
 ;--------------------------------------------------------------
-;
-;       MOD   ( n1 n2 -- n3 )
-;
-; * 83 nucleus divstar
-;
-; n3 is the remainder after dividing n1 by the
-; divisor n2.  n3 has the same sign as n2 or is
-; zero.  An error condition results if the
-; divisor is zero or if the quotient falls out-
-; side the range {32,768...32,768}.
-;
-#ifdef HEADERS
-modlfa
-    .byt $de,$ad
-    .byt (mod-*-1)|bit7
-    .asc "MO","D"|bit7
+#if 0
+name=MOD
+stack=( n1 n2 -- n3 )
+tags=forth-83,nucleus
+[desc]
+
+ n3 is the remainder after dividing n1 by the
+ divisor n2.  n3 has the same sign as n2 or is
+ zero.  An error condition results if the
+ divisor is zero or if the quotient falls out-
+ side the range {32,768...32,768}.
+
+[/desc]
 #endif
 mod
     jsr doslashmod
     jmp pops
 
 ;--------------------------------------------------------------
-;
-;       */MOD   ( n1 n2 n3 -- n4 n5 )
-;
-; * 83 nucleus divstar
-;
-; n1 is first multiplied by n2 producing an inter-
-; mediate 32 bit result.  n4 is the remainder and
-; n5 is the floor of the quotient of the inter-
-; mediate 32-bit result divided by the divisor
-; n3.  A 32-bit intermediate product is used for
-; */ .  n4 has the same sign as n3 or is zero.
-; An error condition results if the divisor is
-; zero or if the quotient falls outside of the
-; range {-32,768...32,767}.
-;
-#ifdef HEADERS
-starslashmodlfa
-    .byt $de,$ad
-    .byt (starslashmod-*-1)|bit7
-    .asc "*/MO","D"|bit7
+#if 0
+name=*/MOD
+stack=( n1 n2 n3 -- n4 n5 )
+tags=forth-83,nucleus
+[desc]
+
+ n1 is first multiplied by n2 producing an inter-
+ mediate 32 bit result.  n4 is the remainder and
+ n5 is the floor of the quotient of the inter-
+ mediate 32-bit result divided by the divisor
+ n3.  A 32-bit intermediate product is used for
+ */ .  n4 has the same sign as n3 or is zero.
+ An error condition results if the divisor is
+ zero or if the quotient falls outside of the
+ range {-32,768...32,767}.
+
+[/desc]
 #endif
 starslashmod
     jsr dostarslashmod
@@ -2455,27 +2354,24 @@ dostarslashmod
     jmp domslash
 
 ;--------------------------------------------------------------
-;
-;       */   ( n1 n2 n3 -- n4 )
-;
-; * 83 nucleus divstar
-;
-; n1 is first multiplied by n2 producing an inter-
-; mediate 32-bit result.  n4 is the floor of the
-; quotient of the intermediate 32-bit result
-; divided by the divisor n3.  The product of n1
-; times n2 is maintained as an intermediate 32-
-; bit result for greater precision than the other-
-; wise equivalent sequence n1 n2 * n3 / .  An
-; error condition results if the divisor is zero
-; or if the quotient falls outside the range
-; {-32,768...32,767}.
-;
-#ifdef HEADERS
-starslashlfa
-    .byt $de,$ad
-    .byt (starslash-*-1)|bit7
-    .asc "*","/"|bit7
+#if 0
+name=*/
+stack=( n1 n2 n3 -- n4 )
+tags=forth-83,nucleus
+[desc]
+
+ n1 is first multiplied by n2 producing an inter-
+ mediate 32-bit result.  n4 is the floor of the
+ quotient of the intermediate 32-bit result
+ divided by the divisor n3.  The product of n1
+ times n2 is maintained as an intermediate 32-
+ bit result for greater precision than the other-
+ wise equivalent sequence n1 n2 * n3 / .  An
+ error condition results if the divisor is zero
+ or if the quotient falls outside the range
+ {-32,768...32,767}.
+
+[/desc]
 #endif
 starslash
     jsr dostarslashmod
@@ -2486,23 +2382,21 @@ starslash
     jmp pops
 
 ;--------------------------------------------------------------
-;
-;       M/MOD   ( d n1 -- n2 n3 )
-;
-; * divstar
-;
-; n2 is the remainder and n3 is the floor of the
-; quotient after dividing d by the divisor n1.
-; All values and arithmetic are unsigned.  An er-
-; ror condition results if the divisor is zero or
-; if the quotient lies outside the range
-; {-32,768...32,767}.
-;
-#ifdef HEADERS
-mslashmodlfa
-    .byt $de,$ad
-    .byt (mslashmod-*-1)|bit7
-    .asc "M/MO","D"|bit7
+#if 0
+name=M/MOD
+stack=( d n1 -- n2 n3 )
+tags=nucleus
+[desc]
+
+
+ n2 is the remainder and n3 is the floor of the
+ quotient after dividing d by the divisor n1.
+ All values and arithmetic are unsigned.  An er-
+ ror condition results if the divisor is zero or
+ if the quotient lies outside the range
+ {-32,768...32,767}.
+
+[/desc]
 #endif
 mslashmod
     ldy #2
@@ -2536,18 +2430,16 @@ mslashmod04
     jmp pushya
 
 ;--------------------------------------------------------------
-;
-;       PICK   ( an ... a3 a2 a1 n -- an ... a3 a2 a1 an )
-;
-; * 83 nucleus
-;
-; 0 pick = same as dup
-; 1 pick = same as over
-#ifdef HEADERS
-picklfa
-    .byt $de,$ad
-    .byt (pick-*-1)|bit7
-    .asc "PIC","K"|bit7
+#if 0
+name=PICK
+stack=( an ... a3 a2 a1 n -- an ... a3 a2 a1 an )
+tags=forth-83,nucleus
+[desc]
+
+
+ 0 pick = same as dup
+ 1 pick = same as over
+[/desc]
 #endif
 pick
     txa
@@ -2561,22 +2453,20 @@ pick
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       ROLL   ( an ... a3 a2 a1 n -- an-1 ... a3 a2 a1 an )
-;
-; * 83 nucleus
-;
-; remove the nth stack element (excluding n itself) to TOS, dropping n
-;
-; 2 roll = rot
-; 1 roll = swap
-; 0 roll has no effect
-;
-#ifdef HEADERS
-rolllfa
-    .byt $de,$ad
-    .byt (roll-*-1)|bit7
-    .asc "ROL","L"|bit7
+#if 0
+name=ROLL
+stack=( an ... a3 a2 a1 n -- an-1 ... a3 a2 a1 an )
+tags=forth-83,nucleus
+[desc]
+
+
+ remove the nth stack element (excluding n itself) to TOS, dropping n
+
+ 2 roll = rot
+ 1 roll = swap
+ 0 roll has no effect
+
+[/desc]
 #endif
 roll
     stx storex
@@ -2604,16 +2494,14 @@ roll02
     jmp next
 
 ;--------------------------------------------------------------
-;
-;       DEPTH
-;
-; * 83 nucleus
-;
-#ifdef HEADERS
-depthlfa
-    .byt $de,$ad
-    .byt (depth-*-1)|bit7
-    .asc "DEPT","H"|bit7
+#if 0
+name=DEPTH
+stack=( -- n )
+tags=forth-83,nucleus
+[desc]
+
+
+[/desc]
 #endif
 depth
     txa
