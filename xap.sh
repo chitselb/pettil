@@ -21,7 +21,7 @@ alias pettil='xpet -moncommand pettil.mon pettil.obj > /dev/null'
 
 
 
-# first build the core from $0400..COLD
+# first build the PETTIL core from $0400..COLD
 echo . Phase I
 echo . . . . Building PETTIL core = PETTIL-CORE.OBJ
 xa pettil-core.a65 -o pettil-core.obj -e pettil-core.err -l pettil-core.lab
@@ -33,15 +33,13 @@ xa pettil-core.a65 -o pettil-core.obj -e pettil-core.err -l pettil-core.lab
 echo . . . . Generating core labels = PETTIL-CORE.DEF
 ruby symtab.rb
 #
-# build the temporary dictionary
-echo .
+# build the temporary dictionary with the PETTIL development tools
 echo . Phase II
 echo . . . . Building PETTIL temporary dictionary = PETTIL-TDICT.OBJ
 #xa -x modules/pettil-tdict.a65
 xa modules/pettil-tdict.a65 -o modules/pettil-tdict.obj -e modules/pettil-tdict.err -l modules/pettil-tdict.lab
 #
 # run this again after compiling the upper dictionary for all labels
-echo .
 echo . Phase III
 echo . . . . Generating combined symbol table = PETTIL.SYM
 ruby symtab.rb
@@ -53,6 +51,11 @@ ls -la modules/pettil-tdict.obj
 ls -la pettil.sym
 cat pettil-core.obj modules/pettil-tdict.obj pettil.sym > pettil.obj
 ls -la pettil.obj
+#
+# build the tiddlywiki
+echo . Phase IV
+echo . . . . Building docs/tiddlypettil.html
+tiddlywiki ./docs/tiddlypettil --verbose --load ./pettil.json -- >/dev/null
 #
 # clean up junk
 echo . . . . Cleaning up \(look in junk/ folder\)

@@ -154,7 +154,8 @@ _plus3nameplus3
                 "core-numword.a65 " +
                 "core-double.a65 " +
                 "core-string.a65 " +
-                "core-vm.a65 "
+                "core-vm.a65 " +
+                "sweet16.a65 "
 
     tempdict = "pettil-tdict.a65 " +
                 "pettil-user.a65 " +
@@ -192,7 +193,25 @@ _plus3nameplus3
 					nfaflags |= 0x40
 				end
 				symbol = infile.gets.chomp
-                a = make_symbol(wordname, symbols[symbol], nfaflags, desc, tags)
+
+
+				code = "\n```\n" + symbol
+				
+				codeblock = true
+				while codeblock && (line = infile.gets) do
+					codeblock = !(line =~ /^\;(-)\1*$/)
+					keepline = !(line =~ /#include "(page|enter|pad).i65"/) 
+						code += "\n" + line.chomp   if codeblock && keepline
+				end
+				code += "\n```\n"
+#				while !((line = infile.gets.chomp) =~ /^;(-)(\1)*/)
+#					puts line
+#				end
+				text = desc+"\n\n"\
+				"<$button popup=\"$:/state/codeSlider\">code</$button>"\
+				"<$reveal type=\"nomatch\" text=\"\" default=\"\" state=\"$:/state/codeSlider\" animate=\"yes\">\n"\
+				+ code + "</$reveal>"
+                a = make_symbol(wordname, symbols[symbol], nfaflags, text, tags)
                 b[a[:name]] = a
 			end
 		end
