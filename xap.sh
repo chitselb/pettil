@@ -55,7 +55,17 @@ ls -la pettil.obj
 # build the tiddlywiki
 echo . Phase IV
 echo . . . . Building docs/tiddlypettil.html
-tiddlywiki ./docs/tiddlypettil --verbose --load ./pettil.json -- >/dev/null
+rm -rf ./docs/tiddlypettil
+mkdir ./docs/tiddlypettil/
+cd ./docs/tiddlypettil/
+cp ../tiddlywiki.info ./
+mkdir tiddlers
+cp ../*.tid tiddlers/
+tiddlywiki --load ../../junk/pettil.json --rendertiddler $:/core/save/all tiddlypettil.html text/plain  >/dev/null
+cd ../..
+mv ./docs/tiddlypettil/output/tiddlypettil.html docs/tiddlypettil.html
+# copy a fresh tiddly up to http://chitselb.com/files because github doesn't like hosting single files
+scp docs/tiddlypettil.html www-puri:chitselb.com/current/public/files/
 #
 # clean up junk
 echo . . . . Cleaning up \(look in junk/ folder\)

@@ -87,13 +87,40 @@ memsiz
 #if 0
 name=SYMTAB
 stack=( -- addr)
-tags=uservar,pettil
-[heading]User variable[/heading]
-Symbol table start address
+tags=uservar,interpreter,compiler
+!!! User variable
+The symbol table design is one of the most un-Forthy things about PETTIL, or
+maybe it's one of the most-Forthy things.  Depends on your perspective.  It's
+very nonstandard, I'll grant you that.  But it accomplishes much with a small
+code footprint.  Some people would say that Forth is whatever can run a standard
+Forth program.  I would say the definition of Forth is closer to "whatever 
+Chuck Moore wants it to do."  Or in this case what I want it to do.
 
-First 32 bytes are thread pointers for each possible Pearson
-hash value, followed by 16 threads of symbols, ordered by size.  
-~wut? Why is it necessary in core?
+* Very fast [[FIND]] (and compile) times
+* Searches (on average) only 1/16th of the dictionary
+* Uses a Bloom filter to weed out numbers
+* Disappears completely once the application is built
+
+Symbol table start address, points to a structure in memory
+consisting of
+
+|!Field|!Size|!Description|
+|Thread addresses|32 bytes|16 pointers to the start of each symbol thread,<br>balanced by a Pearson hash|
+|^Thread<br>(repeats 16x)|^2 bytes<br>1 byte<br>1..31&nbsp;bytes<br>(repeats for each<br>symbol in the<br>thread)|Code field address<br>Length and flags, sorted by ascending length<br>Symbol text|
+|>|>|New symbols are appended, unsorted, after the 16th thread<br>See [[SYMNEW]] and [[SYMTAIL]] |
+|^Symbols|^2 bytes<br>1 byte<br>1..31 bytes|Code field address<br>Length and flags<br>Symbol text|
+
+The symbol table will vary in size, and as words are added to [[SYMNEW]], 
+searches will slow down. The word [[REHASH]] rebuilds the symbol table and 
+empties out [[SYMNEW]].  The symbol table is easily moved as there are no
+link fields in PETTIL.`SYMTAB` may be repositioned during [[REHASH]] by
+[[AUTOMEM]], which starts it at a page boundary a minimum of two pages
+lower than [[BLKBUF]]
+
+* whenever [[FORGET]] is invoked
+* whenever the user types [[REHASH]]
+
+!!! pronounced: "sim-tab"
 #endif
 symtab
     jsr uservar
