@@ -6,11 +6,9 @@
 name=FLIPSCR
 stack=( -- )
 tags=editor
-[desc]
 
  invert the entire screen
 
-[/desc]
 #endif
 flipscr
     ldy #0
@@ -36,7 +34,6 @@ flipscr01
 name=WRAP!
 stack=( d -- )
 tags=editor
-[desc]
 
  Updates the linewrap table at $E0-F8 to reflect the bits
  stored in d.  Since line 0 ($e0) is never a continuation
@@ -45,7 +42,6 @@ tags=editor
  significant (2^24) bit will always be set, as a framing bit
  used to detect when the wrap double is full.
 
-[/desc]
 #endif
 wrapstore
     ldy #1
@@ -68,14 +64,14 @@ wrapstore01
 #if 0
 name=WRAP^
 stack=( logline -- d )
-tags=editor
-[desc]
+tags=editor,primitive
 
- Reads (a portion of) the linewrap table above the current physical
- line (stored at $d8) up to but not including the current logical line.
+ Reads (a portion of) the linewrap table above the requested
+ `logline`, up to but not including `logline`.
+
  Returns a right-aligned double with a copy of those high bit values
 
-[/desc]
+!!! pronounced: "wrap-above"
 #endif
 wrapabove
     stx storex      ; preserve Forth data stack pointer
@@ -109,30 +105,30 @@ wrapabove03
 ;--------------------------------------------------------------
 #if 0
 name=WRAP+
-stack=( d 40|80 -- d flag )
-tags=editor
-[desc]
+stack=( d columns -- d' flag )
+tags=editor,primitive
+Append bits to the linewrap double `d` based on whether `columns`
+is 40 or 80.  For 80, a '10' bit pair is appended,  and for 40 a
+single '1' bit.  The return `flag` is zero if there are not yet 25
+bits of linewrap in `d'`
 
- Shift and append one or two bits to the double.  Return nonzero
- once 25 bits have been stored.  40 = <<,1; 80 = <<,1 <<,0
-
-[/desc]
+!!! pronounced: "wrap-plus"
 #endif
 wrapplus
-    sec             ; always shift in a 1
+    sec                         ; always shift in a 1
 wrapplus01
-    ldy stackh,x
+    ldy stackh,x                ; check msb 25.  full?
     bne wrapplus03
-    rol stackl+1,x  ; shift in a single bit
+    rol stackl+1,x              ; shift in a single bit
     rol stackh+1,x
     rol stackl,x
     rol stackh,x
     lda #40
     cmp tos
-    sta tos         ; so we only do this once
-    bcc wrapplus01  ; maybe shift in a 0 (if 80-column)
-wrapplus03
+    sta tos                     ; so we only do this once
+    bcc wrapplus01              ; maybe shift in a 0 (if 80-column)
     ldy stackh,x
+wrapplus03
     tya
     jmp put
 
@@ -140,25 +136,24 @@ wrapplus03
 #if 0
 name=LINEINFO
 stack=( logline -- addr 40|80 )
-tags=editor
-[desc]
+tags=editor,nosymbol,primitive
 
- return the start address and length of the logical line
- logline must already point to the first line of the logical line
+Returns the start address and length of the logical line.
+ `logline` is a physical screen line that is assumed to
+ point to the upper physical line if the line is 80 columns.
 
-[/desc]
 #endif
 lineinfo
     stx storex
     ldx tos
     lda WRAPLO,x
     sta tos
-    lda $e0,x
+    lda LDTB1,x
     sta tos+1
     lda #40
     cpx #24
     beq lineinfo01
-    ldy $e1,x
+    ldy LDTB1+1,x
     bmi lineinfo01
     asl                     ; 80 char
 lineinfo01
@@ -170,27 +165,22 @@ lineinfo01
 #if 0
 name=LOGLINE
 stack=( -- logline )
-tags=editor
-[desc]
+tags=editor,nosymbol,primitive
+ Returns the physical line number of the logical line where the
+ PET cursor is currently located.  The `logline` value returned
+ is the first/top/upper line if the logical line has 80 characters.
 
- return the physical line number of the current logical line.
- The return value is the first line of the logical line, which
- may be the physical line of the cursor or the line above it.
- From this position, leapfrogging forward through the screen will
- always return addresses with bit7 set.
-
- A man with a watch always knows what time it is.  A man
- with two watches is never sure.
-
-[/desc]
+ From this position, [[leapfrogging forward|LOGLINE+]] down the
+ screen will always return logical line addresses (with
+ wraptable bit7 set), never continuation lines.
 #endif
 logline
     stx storex
-    ldx $d8
+    ldx TBLX        ; $d8 = Current Cursor Physical Line Number
     inx
 logline01
     dex
-    ldy $e0,x
+    ldy LDTB1,x     ; $e0 = 25-byte screen wrap table
     bpl logline01
     txa
     ldy #0
@@ -202,11 +192,9 @@ logline01
 name=LOGLINE+
 stack=( logline -- logline+|0 )
 tags=editor
-[desc]
 
  Return the next logical line number or 0 after bottom of screen
 
-[/desc]
 #endif
 loglineplus
     stx storex
@@ -216,7 +204,7 @@ loglineplus01
     cpx #24
     beq loglineplus02
     inx
-    ldy $e0,x
+    ldy LDTB1,x
     bpl loglineplus01
     txa
 loglineplus02
@@ -229,7 +217,6 @@ loglineplus02
 name=PASTE
 stack=( -- addr )
 tags=editor
-[desc]
 
  Return the tail of the paste buffer, marked by 0
 
@@ -272,7 +259,6 @@ paste02
 name=(>PASTE)
 stack=( paste screen 40|80 -- paste+len+1 screen+len screen paste+1 len )
 tags=editor,nosymbol
-[desc]
 
  set up the stack to append the line on the screen to the paste buffer with cmove
 
@@ -283,7 +269,6 @@ tags=editor,nosymbol
     r@ + dup off swap r> + ; [37]
 
 ```
-[/desc]
 #endif
 ptopaste
     ldy #2
@@ -313,7 +298,6 @@ ptopaste
 name=EOS>PASTE
 stack=( paste logline -- )
 tags=editor,nosymbol
-[desc]
 
  append every line from the logical line passed in (expected to be
  nonzero ) to the end of screen to the paste buffer.
@@ -332,7 +316,6 @@ tags=editor,nosymbol
     drop ;
 
 ```
-[/desc]
 #endif
 _eostopaste
 #include "enter.i65"
@@ -371,7 +354,6 @@ eostopaste02
 name=WRAPPASTE
 stack=( -- dwrap )
 tags=editor,nosymbol
-[desc]
 
  Leave a double of screenwrap bits on the stack, treating the
  current cursor position as the target of a paste (above from
@@ -392,7 +374,6 @@ tags=editor,nosymbol
     r> drop ;   ( d )
 
 ```
-[/desc]
 #endif
 _wrappaste
 #include "enter.i65"
@@ -437,7 +418,6 @@ wrappaste02
 name=TEST25
 stack=( screenaddr offset -- screenaddr offset|40 )
 tags=editor,nosymbol
-[desc]
 
  Adjusts the offset from anything to 40 if offset+screenaddr is
  beyond the end of the screen
@@ -456,7 +436,6 @@ tags=editor,nosymbol
 
 ```
 ~wut? this is awful
-[/desc]
 #endif
 _test25
 #include "enter.i65"
@@ -485,10 +464,8 @@ test2501                        ; THEN
 name=FLAGAB
 stack=( paste screen -- flagab )
 tags=editor,nosymbol
-[desc]
  true if we've hit exit condition A or B
 
-[/desc]
 #endif
 _flagab
 #include "enter.i65"
@@ -515,7 +492,6 @@ _flagab
 name=PASTE>
 stack=( paste screen -- d paste+ screen+ )
 tags=editor,nosymbol
-[desc]
 
  copy logical lines from the paste buffer to screen until
 
@@ -556,7 +532,6 @@ tags=editor,nosymbol
     until ;
 
 ```
-[/desc]
 #endif
 _pastefrom
 #include "enter.i65"
@@ -646,7 +621,7 @@ pastefrom03
 pastefrom04                     ; THEN
     .word rfrom
 #include "page.i65"
-    .word qbranch               ; UNTIL 
+    .word qbranch               ; UNTIL
     .byt <(pastefrom03-*+1)
 #include "page.i65"
     .word exit
@@ -656,7 +631,6 @@ pastefrom04                     ; THEN
 name=PKT>SCR
 stack=( scr -- )
 tags=editor
-[desc]
 
  Locate (or create) the packet for "scr" and open it in the editor
 
@@ -679,7 +653,6 @@ tags=editor
      cmove ;
 
 ```
-[/desc]
 #endif
 _pkttoscr
 #include "enter.i65"
@@ -722,7 +695,6 @@ pkttoscr01
 name=(SCR!)
 stack=( scr blkbuf vmbuf packet blkbuf newsize -- blkbuf pkt-newsize+2 newsize vmbuf vmbuf+oldsize-newsize pkt-oldsize-vmbuf+2 )
 tags=editor,nosymbol
-[desc]
 
  Uses Sweet16 to take a lot of the ridiculousness out of the
  pointer math involved in juggling packets in the buffer.
@@ -730,7 +702,6 @@ tags=editor,nosymbol
  a hole correctly sized for the replacement packet.  The new
  packet is then moved into the hole.
 
-[/desc]
 #endif
 pscrstore
 #ifdef SWEET16
@@ -741,7 +712,7 @@ pscrstore
     .byt add | R10              ; newpacket
     .byt st | TOS               ; end of new packet
     .byt ldd | TOS              ; new packetheader
-    .byt ext 
+    .byt ext
     .word pktheader16
 ;    N1 = packet header
 ;    N2 = editable? $8000 if editable, $0000 if data
@@ -779,13 +750,21 @@ pscrstore
 #if 0
 name=MKPKT
 stack=( blkbuf -- size )
-tags=editor
-[desc]
+tags=editor,nosymbol
 
- Build an editor packet at BLKBUF from the current video screen.
+ Builds an editable packet at `BLKBUF` from the current screen.
  The first three bytes of the packet are the linewrap bits for
- lines 1..24.  This is followed by RLE-encoded (or stored)
- screen codes, with the last two bytes being the packet header.
+ lines 1..24.  This is followed by 1000 screen code bytes,
+ RLE-encoded unless storing them occupies less room.  The last
+ two bytes of the packet are the packet header, containing the
+ 11-bit total packet length, in the range 5..1026, and the
+ packet flags
+
+ * $8000 = editable?  //true for editor screens, false for data blocks//
+
+ * $4000 = uncompressed?
+
+!!! pronounced: "make-packet"
 
 ```
 : mkpkt   ( blkbuf -- size )
@@ -805,7 +784,6 @@ tags=editor
 ( size )
 
 ```
-[/desc]
 #endif
 _mkpkt
 #include "enter.i65"
@@ -867,11 +845,11 @@ _mkpkt
 #if 0
 name=SCR>PKT
 stack=( scr -- )
-tags=editor
-[desc]
+tags=editor,nosymbol
+Stores the current screen into the packet buffer as screen `scr`.
+If screen `scr` is read-only, nothing is written to the buffer
 
-Store the current screen into the virtual memory (packet) buffer
-as screen "scr".  If the screen is read-only, no change occurs.
+pronounced: "s-c-r-to-packet"
 
 ```
 : scr>pkt   ( scr -- )
@@ -903,7 +881,6 @@ as screen "scr".  If the screen is read-only, no change occurs.
     drop ;
 
 ```
-[/desc]
 #endif
 _scrtopkt
 #include "enter.i65"
@@ -939,7 +916,7 @@ _scrtopkt
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word true
+    .word true          ; TOS=junk, Sweet-16 restacks the stack
 #include "page.i65"
 ;  ( blkbuf newsize packet oldsize vmbuf true )
     .word to6502
@@ -980,8 +957,6 @@ _scrtopkt
     .word rfrom
 #include "page.i65"
 scrtopkt01                      ; THEN
-    .word xyzzy
-#include "page.i65"
     .word drop
 #include "page.i65"
     .word exit
@@ -990,10 +965,17 @@ scrtopkt01                      ; THEN
 #if 0
 name=SCRDEL
 stack=( scr -- packet )
-tags=editor
-[desc]
+tags=editor,nosymbol
+~STOP-DEL Delete Screen
 
- delete the screen from the packet buffer.
+Deletes the current screen from the packet buffer.  The edit
+screen is replaced by the first available of:
+
+* The next screen in the packet buffer, if it already exists
+
+* The previous screen in the packet buffer
+
+* Screen 0 is blanked and written to the packet buffer
 
 ```
 : scrdel   ( scr -- packet )
@@ -1006,7 +988,6 @@ tags=editor
     #vmpkt 1-! ;
 
 ```
-[/desc]
 #endif
 _scrdel
 #include "enter.i65"
@@ -1045,16 +1026,16 @@ _scrdel
 name=EDITCOPY
 stack=( -- )
 tags=editor,nosymbol
-[desc]
+~STOP-C Copy Line
 
- STOP-C   Copy current line to end of paste buffer
+Appends a copy of the current logical screen line to the paste buffer
 
 ```
 : editcopy
-   currline >paste 2drop ;
+   paste logline lineinfo
+   (>paste) cmove 2drop ;
 
 ```
-[/desc]
 #endif
 _editcopy
 #include "enter.i65"
@@ -1077,9 +1058,10 @@ _editcopy
 name=EDITDEL
 stack=( -- )
 tags=editor,nosymbol
-[desc]
+~STOP-D Delete Line
 
- delete the current line, appending it to the paste buffer
+Append the current logical screen line and delete it from the
+screen
 
 ```
 : editdel
@@ -1100,7 +1082,6 @@ tags=editor,nosymbol
    wrap! ;
 
 ```
-[/desc]
 #endif
 _editdel
 #include "enter.i65"
@@ -1130,8 +1111,8 @@ _editdel
 #include "page.i65"
     .word plit                  ; ( d pastebuf2 screen 33768 ) ( R; pastebuf2 )
     .word VIDRAM+1000
-#include "pad.i65"              
-    .word over                  ; ( d pastebuf2 screen 33768 screen ) ( R; pastebuf2 ) 
+#include "pad.i65"
+    .word over                  ; ( d pastebuf2 screen 33768 screen ) ( R; pastebuf2 )
 #include "page.i65"
     .word minus                 ; should always get 40 or 80
 #include "page.i65"
@@ -1161,10 +1142,10 @@ editdel01                       ; BEGIN
 name=EDITPASTE
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
-STOP-P
-insert the paste buffer before the current line
+~STOP-P
+
+Insert the paste buffer above the current logical line
 
 ```
 : editpaste   ( -- )
@@ -1179,7 +1160,6 @@ insert the paste buffer before the current line
     2drop  r> off  wrap! ;
 
 ```
-[/desc]
 #endif
 _editpaste
 #include "enter.i65"
@@ -1218,7 +1198,6 @@ _editpaste
 name=EDITZILCH
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  STOP-Z   Zilch the paste buffer
 
@@ -1227,7 +1206,6 @@ tags=editor,nosymbol
      pad off ;
 
 ```
-[/desc]
 #endif
 _editzilch
 #include "enter.i65"
@@ -1242,11 +1220,9 @@ _editzilch
 name=EDITNOWRAP
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  reset the linewrap table and make this screen writeable
 
-[/desc]
 #endif
 _editnowrap
 #include "enter.i65"
@@ -1271,7 +1247,6 @@ editnowrap01
 name=>EDIT
 stack=( toscr -- )
 tags=editor,nosymbol
-[desc]
 
  Save current editor screen in packet buffer
  Set "toscr" as the current SCR and edit it
@@ -1282,7 +1257,6 @@ tags=editor,nosymbol
      0 max scr@ ;
 
 ```
-[/desc]
 #endif
 _toedit
 #include "enter.i65"
@@ -1305,11 +1279,9 @@ _toedit
 name=EDITTOPSCR
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  from the top (first) screen
 
-[/desc]
 #endif
 _edittopscr
 #include "enter.i65"
@@ -1324,7 +1296,6 @@ _edittopscr
 name=EDITNEXTSCR
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  restore from the next screen or append a blank one
 
@@ -1333,7 +1304,6 @@ tags=editor,nosymbol
    scr @ 1+ editto ;
 
 ```
-[/desc]
 #endif
 _editnextscr
 #include "enter.i65"
@@ -1352,7 +1322,6 @@ _editnextscr
 name=EDITPREVSCR
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  restore from the previous screen or insert a blank one
 
@@ -1361,7 +1330,6 @@ tags=editor,nosymbol
    scr @ 1- editto ;
 
 ```
-[/desc]
 #endif
 _editprevscr
 #include "enter.i65"
@@ -1380,7 +1348,6 @@ _editprevscr
 name=EDITQUIT
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  STOP-Q   Quit the editor
 
@@ -1389,7 +1356,6 @@ screen, and screen on here (=-1) so left-arrow becomes "edit
 the current display as a screen" Leave SCR alone on the info
 page and use left-arrow to return to edit mode on that screen
 
-[/desc]
 #endif
 _editquit
 #include "enter.i65"
@@ -1420,11 +1386,9 @@ _editquit
 name=EDITINDEX
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  STOP-I   Present an index screen and let the user select one to edit
 
-[/desc]
 #endif
 editindex
 #include "enter.i65"
@@ -1435,11 +1399,9 @@ editindex
 name=EDITSAVE
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  STOP-S   Save all buffers to a PRG file
 
-[/desc]
 #endif
 editsave
 #include "enter.i65"
@@ -1450,11 +1412,9 @@ editsave
 name=EDITLOAD
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  STOP-L   Load a group of buffers from a PRG file
 
-[/desc]
 #endif
 _editload
 #include "enter.i65"
@@ -1473,7 +1433,6 @@ tags=editor,nosymbol
 
  STOP-V   Verify a buffer file vs. memory
 
-[/desc]
 #endif
 editverify
 #include "enter.i65"
@@ -1484,11 +1443,9 @@ editverify
 name=EDITRESTORE
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  STOP-R   Restore the current screen from the buffer
 
-[/desc]
 #endif
 editrestore
 #include "enter.i65"
@@ -1505,11 +1462,9 @@ editrestore
 name=EDITDELSCR
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  delete the current screen.  restore from next, then prev, then blank
 
-[/desc]
 #endif
 editdelscr
 #include "enter.i65"
@@ -1520,11 +1475,9 @@ editdelscr
 name=EDITINSSCR
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  insert a new, blank screen
 
-[/desc]
 #endif
 editinsscr
 #include "enter.i65"
@@ -1535,7 +1488,6 @@ editinsscr
 name=EDITINIT
 stack=( scr -- )
 tags=editor,nosymbol
-[desc]
 
  prepare before we drop into the editor infinite loop
 
@@ -1544,7 +1496,6 @@ tags=editor,nosymbol
      scr@ editzilch ;
 
 ```
-[/desc]
 #endif
 _editinit
 #include "enter.i65"
@@ -1563,11 +1514,9 @@ _editinit
 name=EDITMENU
 stack=( -- addr )
 tags=editor,nosymbol
-[desc]
 
  returns the address of a counted string of menu commands
 
-[/desc]
 #endif
 editmenu
      jsr docreate
@@ -1597,11 +1546,9 @@ editmenu01
 name=EDITCMD
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  get a key and perform that command
 
-[/desc]
 #endif
 _editcmd
 #include "enter.i65"
@@ -1622,17 +1569,17 @@ _editcmd
 #include "pad.i65"
     .word twostar               ; ( 2*index )
 #include "page.i65"
-    .word editmenu              ; ( 2*index editmenu ) 
+    .word editmenu              ; ( 2*index editmenu )
 #include "page.i65"
-    .word dup                   ; ( 2*index editmenu editmenu ) 
+    .word dup                   ; ( 2*index editmenu editmenu )
 #include "page.i65"
-    .word cfetch                ; ( 2*index editmenu #items ) 
+    .word cfetch                ; ( 2*index editmenu #items )
 #include "page.i65"
-    .word plus                  ; ( 2*index editmenu+#items ) 
+    .word plus                  ; ( 2*index editmenu+#items )
 #include "page.i65"
-    .word plus                  ; ( 2*index+editmenu+#items ) 
+    .word plus                  ; ( 2*index+editmenu+#items )
 #include "page.i65"
-    .word oneminus              ; ( 2*index+editmenu+#items-1 ) 
+    .word oneminus              ; ( 2*index+editmenu+#items-1 )
 #include "page.i65"
     .word fetch                 ; ( editcmdcfa )
 #include "page.i65"
@@ -1647,7 +1594,6 @@ editcmd01                       ; THEN
 name=EDITIRQTOGGLE
 stack=( -- )
 tags=editor,nosymbol
-[desc]
 
  Enable or disable the IRQ handler within EDIT that checks for
  the STOP key in the screen editor.
@@ -1657,7 +1603,6 @@ tags=editor,nosymbol
      MAINIRQ^edit02  irq^ ;
 
 ```
-[/desc]
 #endif
 _editirqtoggle
 #include "enter.i65"
@@ -1673,8 +1618,6 @@ _editirqtoggle
 name=EDIT
 stack=( scr -- )
 tags=editor
-[desc]
-[/desc]
 #endif
 _edit
 #include "enter.i65"

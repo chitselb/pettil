@@ -1,6 +1,6 @@
 #!/home/chitselb/bin/ruby
-	require 'json'
-	
+    require 'json'
+    
     # given a string (name) and address (symbol), construct and
     # return a hash with a symbol table entry in it
     def make_symbol(name="", cfa=0, nfaflags, desc, tags)
@@ -127,19 +127,7 @@
         end
     end
 
-=begin
-
-#if 0
-+++NAME+++
-immediate
-vocabulary 1
-#endif
-_plus3nameplus3
-#include "enter.i65"
-    .word exit
-
-=end
-    # Scan the assembler source file for headers, that look something like
+   # Scan the assembler source file for headers, that look something like
     # the block up above this comment.  parse them and create a binary
     # output file with the symbol table in it
     b=Hash.new
@@ -155,7 +143,7 @@ _plus3nameplus3
                 "core-double.a65 " +
                 "core-string.a65 " +
                 "core-vm.a65 " +
-                "sweet16.a65 "
+                "sweet16.a65"
 
     tempdict = "pettil-tdict.a65 " +
                 "pettil-user.a65 " +
@@ -165,84 +153,96 @@ _plus3nameplus3
                 "pettil-assembler.a65"
 
     #["pettil-interpreter.a65"].each do |filename|
-    ((coredict+tempdict).split " ").each do |filename|
+    ((coredict+" "+tempdict).split " ").each do |filename|
     #((coredict).split " ").each do |filename|
     #((tempdict).split " ").each do |filename|
         infile = File.open("modules/"+filename,'r')
         while (line = infile.gets) do 
-			line.chomp!
-			if line =~ /\#if 0$/
-				wordname, flags, vocab, desc, t = nil
-				nfaflags = 0
-				capture_desc = false
-				tags = []
-				desc=""
+            line.chomp!
+            if line =~ /\#if 0$/
+                wordname, flags, vocab, desc, t = nil
+                nfaflags = 0
+                capture_desc = false
+                tags = []
+                desc=""
                 while !((line = infile.gets.chomp) =~ /^\#endif$/)
-					wordname = t   if t = line.split(/^name=/)[1]
-					flags = t   if t = line.split(/^flags=/)[1]
-					vocab = t   if t = line.split(/^vocab=/)[1]
-					desc = "!! " + wordname + "&nbsp;&nbsp;&nbsp;" + t +"\n"  if t = line.split(/^stack=/)[1]
-					tags = t.split(',')   if t = line.split(/^tags=/)[1]
-					capture_desc = false  if line =~ /^\[\/desc\]$/
-					desc += "\n" + line   if capture_desc
-					capture_desc = true  if line =~ /^\[desc\]$/
-				end
-				nfaflags |= 0x80   if flags =~ /immediate/
-				if vocab != nil
-					wordname += vocab.to_i.chr
-					nfaflags |= 0x40
-				end
-				symbol = infile.gets.chomp
+					capture = true
+                    if t = line.split(/^name=/)[1]
+						wordname = t   
+						capture = false
+					end
+                    
+                    if t = line.split(/^flags=/)[1]
+						flags = t   
+						capture = false
+                    end
+                    if t = line.split(/^vocab=/)[1]
+						vocab = t   
+						capture = false
+					end
 
-
-				code = "\n```\n" + symbol
-				
-				codeblock = true
-				while codeblock && (line = infile.gets) do
-					codeblock = !(line =~ /^\;(-)\1*$/)
-					keepline = !(line =~ /#include "(page|enter|pad).i65"/) 
-						code += "\n" + line.chomp   if codeblock && keepline
-				end
-				code += "\n```\n"
-#				while !((line = infile.gets.chomp) =~ /^;(-)(\1)*/)
-#					puts line
-#				end
-				text = desc+"\n\n"\
-				"<$button popup=\"$:/state/codeSlider\">code</$button>"\
-				"<$reveal type=\"nomatch\" text=\"\" default=\"\" state=\"$:/state/codeSlider\" animate=\"yes\">\n"\
-				+ code + "</$reveal>"
+					if t = line.split(/^stack=/)[1]
+						desc = "!! " + wordname + "&nbsp;&nbsp;&nbsp;" + t +"\n"
+						capture = false
+					end
+                    if t = line.split(/^tags=/)[1]
+						tags = t.split(',')   
+						capture = false
+					end
+#                    capture_desc = false  if line =~ /^\[\/desc\]$/
+                    desc += "\n" + line   if capture
+#                    capture_desc = true  if line =~ /^\[desc\]$/
+                end
+                nfaflags |= 0x80   if flags =~ /immediate/
+                if vocab != nil
+                    wordname += vocab.to_i.chr
+                    nfaflags |= 0x40
+                end
+                symbol = infile.gets.chomp
+                code = "\n```\n" + symbol
+                codeblock = true
+                while codeblock && (line = infile.gets) do
+                    codeblock = !(line =~ /^\;(-)\1*$/)
+                    keepline = !(line =~ /#include "(page|enter|pad).i65"/) 
+                    code += "\n" + line.chomp   if codeblock && keepline
+                end
+                code += "\n```\n"
+                text = desc+"\n\n"\
+                "<$button popup=\"$:/state/codeSlider\">code</$button>"\
+                "<$reveal type=\"nomatch\" text=\"\" default=\"\" state=\"$:/state/codeSlider\" animate=\"yes\">\n"\
+                + code + "</$reveal>"
                 a = make_symbol(wordname, symbols[symbol], nfaflags, text, tags)
                 b[a[:name]] = a
-			end
-		end
+            end
+        end
 =begin
          =~ /\#if 0$/) do
-				while !((line = infile.gets.chomp) =~ /^\#endif$/) do
-					puts line
-				end
-			end
+                while !((line = infile.gets.chomp) =~ /^\#endif$/) do
+                    puts line
+                end
+            end
         end
             if (line =~ /\#if 0$/)
                 nfaflags = 0
                 while !(line =~ /^\#endif$/)
-					wordname = line[/^name=/,1]
-					modifier = line[/^modifier=/,1]
-					modifier = infile.gets.chomp
-					line = infile.gets.chomp
-				end
-				symbol = infile.gets.chomp
-				if modifier =~ /immediate/
-					
-				end
-				if modifier =~ /vocab/
-					nfaflags |= 0x40
-				end
+                    wordname = line[/^name=/,1]
+                    modifier = line[/^modifier=/,1]
+                    modifier = infile.gets.chomp
+                    line = infile.gets.chomp
+                end
+                symbol = infile.gets.chomp
+                if modifier =~ /immediate/
+                    
+                end
+                if modifier =~ /vocab/
+                    nfaflags |= 0x40
+                end
                 print "#{wordname} #{symbol} #{nfaflags.to_s}  #{modifier}\n"
                 a = make_symbol(wordname, symbols[symbol], nfaflags)
                 b[a[:name]] = a
-			end
-			line = infile.gets.chomp
-		end
+            end
+            line = infile.gets.chomp
+        end
 =end
     end
     symfile = File.open("pettil.sym",'w')
@@ -258,13 +258,14 @@ _plus3nameplus3
         symfile.write "#{a}\n"   unless h[1][:tags].index("nosymbol")
     end
 
-	symfile = File.open("junk/pettil.json",'w')
-	symfile.write "[\n"
-	glossary=""
-	b.each do |h|
-		glossary += "\[\["+ h[1][:name] + "\]\] "
-		symfile.write "\{ \"title\":#{h[1][:name].to_json},\"text\":#{h[1][:desc].to_json},\"tags\":#{h[1][:tags].to_json}\},\n"
+    symfile = File.open("junk/pettil.json",'w')
+    symfile.write "[\n"
+    glossary=""
+    b.each do |h|
+        glossary += "\[\["+ h[1][:name] + "\]\] "
+        h[1][:tags].concat ["glossary"]
+        symfile.write "\{ \"title\":#{h[1][:name].to_json},\"text\":#{h[1][:desc].to_json},\"tags\":#{h[1][:tags].to_json}\},\n"
 
 #,\"tags\":#{h[1][:tags].to_json}
-	end
-	symfile.write "\{ \"title\":\"Glossary\",\"text\":#{glossary.to_json}\}\]"
+    end
+    symfile.write "\{ \"title\":\"Glossary\",\"text\":#{glossary.to_json}\}\]"
