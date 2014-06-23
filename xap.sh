@@ -7,7 +7,7 @@
 # some handy aliases if we source this script
 #
 # builds it
-alias xap='./xap.sh --norun'
+alias xap='./xap.sh --norun &'
 #
 # runs it
 alias pettil='xpet -moncommand ./build/pettil.mon ./build/pettil.obj > /dev/null'
@@ -69,7 +69,7 @@ tiddlywiki --rendertiddler $:/core/save/all tiddlypettil.html text/plain >/dev/n
 cd ../..
 mv -v ./build/tiddlypettil/output/tiddlypettil.html ./docs/tiddlypettil.html
 # copy a fresh tiddly up to http://chitselb.com/files because github doesn't like hosting single files
-#scp ./docs/tiddlypettil.html www-puri:chitselb.com/current/public/files/
+scp ./docs/tiddlypettil.html www-puri:chitselb.com/current/public/files/
 #
 # run it
 sort ./build/pettil.mon > ./build/t.t
