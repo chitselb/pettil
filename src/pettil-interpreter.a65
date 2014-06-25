@@ -38,18 +38,6 @@ msg09
 msg10
 ;--------------------------------------------------------------
 #if 0
-name=FORTH
-stack=( -- )
-tags=vocabulary,forth-83
-Set the core vocabulary as context
-#endif
-forth
-    jsr dovocab				; pagealign!
-    .word 0                 ; no parent
-    .byt 0                  ; root vocabulary
-
-;--------------------------------------------------------------
-#if 0
 name=BLOOM
 stack=( -- addr )
 tags=nosymbol,ext
@@ -59,24 +47,20 @@ is designed to tend to filter out tokens containing numbers
 bloom
     jsr docreate
     .dsb 8,0      ; 64 bits, used by hash2 (bloom filter)
-bloomx
-pearson
-;    .byt 27, 120, 229, 241, 111, 44, 47, 141
-;    .byt 231, 8, 197, 27, 61, 59, 64, 192   ; 384 words
+pearson             ; the bytes between pearson..forth
     .byt 243, 178, 217, 2, 54, 84, 189, 60 ; 310 words
-pearsonx
 
 ;--------------------------------------------------------------
 #if 0
-name=ASSEMBLER
+name=FORTH
 stack=( -- )
-tags=vocabulary,ext
-Sets context to the ASSEMBLER vocabulary
+tags=vocabulary,forth-83
+Set the core vocabulary as context
 #endif
-editor
-    jsr dovocab				; pagealign!
-    .word forth+3           ; parent vocabulary
-    .byt 1                  ; vocabulary identifier
+forth
+    jsr dovocab
+    .word 0                 ; no parent
+    .byt 0                  ; root vocabulary
 
 ;--------------------------------------------------------------
 #if 0
@@ -156,7 +140,7 @@ pearsonhash
     tay                     ; count backwards
 pearsonhash01
     lda (tos),y                     ;[5]
-    and #(pearsonx-pearson-1)       ;[2]
+    and #(forth-pearson-1)          ;[2]
     tax                             ;[2]
     lda n                           ;[3]
     eor pearson,x                   ;[4]
@@ -203,7 +187,7 @@ bloomhash01
     adc #'9'-'0'+1              ;[2]
     bcc bloomhash02             ;[3] carry is set only for digits
     adc n                       ;[3] anything with digits is nonzero
-    and #(8*(bloomx-(bloom+3)))-1   ;[2] keep it within the filter bits
+    and #(8*(pearson-(bloom+3)))-1   ;[2] keep it within the filter bits
     sta n                       ;[3]
     bne bloomhash02             ; never return 0 if any digits present
     ldy #1                      ; if total of digits hits some multiple
@@ -782,10 +766,10 @@ Accept a line of input from the user
 
 ```
 : query   ( -- )
-	tib 80 expect
-	span @ #tib !
-	blk off
-	>in off ;
+    tib 80 expect
+    span @ #tib !
+    blk off
+    >in off ;
 ```
 #endif
 _query
@@ -817,35 +801,6 @@ _query
 
 ;--------------------------------------------------------------
 #if 0
-name=QUIT?
-stack=( flag -- flag )
-tags=compiler
-
-#endif
-_quitq
-#include "enter.i65"
-    .word state
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word ne
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word numtib
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word gt
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=INTERPRET
 stack=( -- )
 tags=fig,forth-83,interpreter
@@ -853,36 +808,41 @@ The Forth interpreter loop
 
 ```
 : interpret
-	begin  
-		?stack exists? ?dup
-		if 
- ( cfa flag )
-			state @ < 
-			if
-				,xt
-			else
-				execute
-			then
-		else
-			number 
-			state @
-			if
-				swap literal 
-				dpl @ 0<
-				if
-					drop
-				else
-					literal
-				then
-			then
-		then
-		quit?
-	until ;
+    begin
+        ?stack exists? ?dup
+        if
+ ( cfa findflag )
+            state @ <>
+            ( state -1 or 0; find -1 or +1 )
+            ( only compile if state -1 and find -1, otherwise execute )
+            if
+                execute
+            else
+                ,xt
+            then
+        else
+ ( nfa )
+            number
+            state @             ( compiling? )
+            if
+                swap literal    ( low word first for doubles )
+                dpl @ 0<        ( no decimal point? )
+                if
+                    drop        ( it's a single )
+                else
+                    literal     ( high word of double )
+                then
+            then
+        then
+        >in @ #tib @ >          ( end of input stream? )
+    until ;
 ```
 #endif
 _interpret
 #include "enter.i65"
 interpret01
+    .word xyzzy
+#include "page.i65"
     .word qstack            ; ( )
 #include "page.i65"
     .word _existsq
@@ -896,17 +856,7 @@ interpret01
 #include "page.i65"
     .word fetch
 #include "page.i65"
-
-	.word xyzzy
-#include "page.i65"
-	.word xyzzy
-#include "page.i65"
-	.word xyzzy
-#include "page.i65"
-	.word xyzzy
-#include "page.i65"
-
-    .word lt
+    .word ne
 #include "page.i65"
     .word qbranch
     .byt <(interpret02-*+1)
