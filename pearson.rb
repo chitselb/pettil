@@ -4,14 +4,16 @@
 # given a file containing Forth words, generate random pearson hash
 # tables forever, printing out each one that is more efficient than
 # the best so far.
+lowest_so_far=25
+
+
 
 psize=7
 pearson = Array.new(psize+1,0)
-lowest_so_far=50
 # 128 153 126 204 94 193 211 4
 # 118 208 124 83 15 168 74 126
 wordlist = Array.new
-    file=File.new("junk/pearson.txt", "r")
+    file=File.new("build/pearson.txt", "r")
     while line=(file.gets) do
         wordlist += [line.chomp]
         puts line
@@ -66,7 +68,7 @@ while true
         hash = ((hash&240)/16)^(hash&15)
         bucket[hash] += 1
     }
-    t = bucket.max
+    t = bucket.max-bucket.min
     if t<lowest_so_far
         lowest_so_far = t
         pearson.each { |x| print "#{x} " }

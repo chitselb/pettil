@@ -36,7 +36,6 @@ msg09
     .byt msg10-*-1
     .asc " MISSING"
 msg10
-
 ;--------------------------------------------------------------
 #if 0
 name=FORTH
@@ -45,7 +44,7 @@ tags=vocabulary,forth-83
 Set the core vocabulary as context
 #endif
 forth
-    jsr vocabdoes
+    jsr dovocab				; pagealign!
     .word 0                 ; no parent
     .byt 0                  ; root vocabulary
 
@@ -63,7 +62,8 @@ bloom
 bloomx
 pearson
 ;    .byt 27, 120, 229, 241, 111, 44, 47, 141
-    .byt 231, 8, 197, 27, 61, 59, 64, 192   ; 384 words
+;    .byt 231, 8, 197, 27, 61, 59, 64, 192   ; 384 words
+    .byt 243, 178, 217, 2, 54, 84, 189, 60 ; 310 words
 pearsonx
 
 ;--------------------------------------------------------------
@@ -74,7 +74,7 @@ tags=vocabulary,ext
 Sets context to the ASSEMBLER vocabulary
 #endif
 editor
-    jsr vocabdoes
+    jsr dovocab				; pagealign!
     .word forth+3           ; parent vocabulary
     .byt 1                  ; vocabulary identifier
 
@@ -113,39 +113,6 @@ _lparen
     .word _qchar
 #include "page.i65"
     .word twodrop
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=QUERY
-stack=( -- )
-tags=forth-83,fig
-#endif
-_query
-#include "enter.i65"
-    .word tib
-#include "page.i65"
-    .word clit
-    .byt 80
-#include "pad.i65"
-    .word expect
-#include "page.i65"
-    .word span
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word numtib
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word blk
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word off
 #include "page.i65"
     .word exit
 
@@ -734,41 +701,55 @@ and returns either
 
 ```
 : exists?
-   bl word find ;
+   bl word dup c@ if find then ;
 ```
 #endif
 _existsq
 #include "enter.i65"
-    .word bl                ; ( c )
+    .word bl
 #include "page.i65"
-    .word _word             ; ( name )
+    .word _word
 #include "page.i65"
-    .word _find             ; ( ( nfa -1|+1 ) | ( name false ) )
+    .word dup
 #include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word qbranch
+    .byt <(existsq01-*+1)
+#include "pad.i65"
+    .word _find
+#include "page.i65"
+existsq01
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=?FIND
-stack=( flag -- )
+name=?FAIL
+stack=( flag err# -- )
 tags=nosymbol
-Aborts with the error message "NOT FOUND" if flag is true
+Aborts with the error message if flag is true
 
 ```
-: ?find
-    if 3 fail then ;
+: ?fail   ( flag err# -- )
+    swap if fail else drop then ;
 ```
 #endif
-_qfind
+_qfail
 #include "enter.i65"
-    .word qbranch
-    .byt <(qfind01-*+1)
-#include "pad.i65"
-    .word three                 ; not found
+    .word swap
 #include "page.i65"
+    .word qbranch
+    .byt <(qfail01-*+1)
+#include "pad.i65"
     .word fail
 #include "page.i65"
-qfind01
+    .word branch
+    .byt <(qfind02-*+1)
+#include "pad.i65"
+qfail01
+    .word drop
+#include "page.i65"
+qfind02
     .word exit
 
 ;--------------------------------------------------------------
@@ -786,7 +767,80 @@ _tick
 #include "page.i65"
     .word zeq
 #include "page.i65"
-    .word _qfind
+    .word three
+#include "page.i65"
+    .word _qfail
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=QUERY
+stack=( -- )
+tags=forth-83,fig
+Accept a line of input from the user
+
+```
+: query   ( -- )
+	tib 80 expect
+	span @ #tib !
+	blk off
+	>in off ;
+```
+#endif
+_query
+#include "enter.i65"
+    .word tib
+#include "page.i65"
+    .word clit
+    .byt 80
+#include "pad.i65"
+    .word expect
+#include "page.i65"
+    .word span
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word numtib
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word toin
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=QUIT?
+stack=( flag -- flag )
+tags=compiler
+
+#endif
+_quitq
+#include "enter.i65"
+    .word state
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word ne
+#include "page.i65"
+    .word toin
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word numtib
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word gt
+#include "page.i65"
+    .word orx
 #include "page.i65"
     .word exit
 
@@ -798,38 +852,32 @@ tags=fig,forth-83,interpreter
 The Forth interpreter loop
 
 ```
-: interpret   ( -- )
-    begin   ?stack
-        exists?
-        if
-                link>
-                execute
-        else
-                number dpl @ 1+ 0=
-                if      drop
-                then
-        then
-        false
-        quit?
-    again ;
-
 : interpret
-    begin
-		?stack
-		bl word  dup c@
-	while
-	    find
-	    if
-			execute
+	begin  
+		?stack exists? ?dup
+		if 
+ ( cfa flag )
+			state @ < 
+			if
+				,xt
+			else
+				execute
+			then
 		else
-			number
-			dpl @ 0<
-			if drop then
+			number 
+			state @
+			if
+				swap literal 
+				dpl @ 0<
+				if
+					drop
+				else
+					literal
+				then
+			then
 		then
-		drop
-		false
 		quit?
-	until
+	until ;
 ```
 #endif
 _interpret
@@ -837,18 +885,28 @@ _interpret
 interpret01
     .word qstack            ; ( )
 #include "page.i65"
-    .word bl
+    .word _existsq
 #include "page.i65"
-    .word _word
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word cfetch
+    .word qdup
 #include "page.i65"
     .word qbranch
-    .byt <(interpret04-*+1)
+    .byt <(interpret03-*+1)
 #include "pad.i65"
-    .word _find
+    .word state
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+
+	.word xyzzy
+#include "page.i65"
+	.word xyzzy
+#include "page.i65"
+	.word xyzzy
+#include "page.i65"
+	.word xyzzy
+#include "page.i65"
+
+    .word lt
 #include "page.i65"
     .word qbranch
     .byt <(interpret02-*+1)
@@ -856,10 +914,27 @@ interpret01
     .word execute
 #include "page.i65"
     .word branch
-    .byt <(interpret03-*+1)
+    .byt <(interpret05-*+1)
 #include "pad.i65"
 interpret02
+    .word _commaxt
+#include "page.i65"
+    .word branch
+    .byt <(interpret05-*+1)
+#include "pad.i65"
+interpret03
     .word _number
+#include "page.i65"
+    .word state
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qbranch
+    .byt <(interpret05-*+1)
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+    .word _literal
 #include "page.i65"
     .word dpl
 #include "page.i65"
@@ -868,15 +943,26 @@ interpret02
     .word zlt
 #include "page.i65"
     .word qbranch
-    .byt <(interpret03-*+1)
+    .byt <(interpret04-*+1)
 #include "pad.i65"
-interpret04
     .word drop
 #include "page.i65"
-interpret03
-    .word false
+    .word branch
+    .byt <(interpret05-*+1)
+#include "pad.i65"
+interpret04
+    .word _literal
 #include "page.i65"
-    .word _quitq
+interpret05
+    .word toin
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word numtib
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word gt
 #include "page.i65"
     .word qbranch
     .byt <(interpret01-*+1)
@@ -902,9 +988,9 @@ _quit
 #include "page.i65"
     .word _lbracket         ; STATE OFF
 #include "page.i65"
-quit01                                  ; BEGIN
-;    .word rpstore         ; -wut?
+    .word rpstore
 #include "page.i65"
+quit01                                  ; BEGIN
     .word cr
 #include "page.i65"
     .word _query
@@ -935,17 +1021,19 @@ quit03                                  ; THEN AGAIN
 #if 0
 name=ABORT
 stack=( -- )
-tags=fig,forth-83,interpreter
+tags=fig,forth-79,forth-83,interpreter
 #endif
 _abort
 #include "enter.i65"
     .word spstore
 #include "page.i65"
-    .word rpstore
+    .word _decimal
+#include "page.i65"
+    .word forth
+#include "page.i65"
+    .word _definitions
 #include "page.i65"
     .word _quit
-#include "page.i65"
-    .word exit      ; make the decompiler happy
 
 ;--------------------------------------------------------------
 #if 0
@@ -1246,26 +1334,6 @@ offset = n/8
 : >bloom   ( n -- mask offset )
         dup 7 and power2 + c@
         swap 2/ 2/ 2/ ;
-
-tobloom
-    dex
-    lda tos
-    and #7
-    tay
-    lda power2,y
-    sta stackl,x
-    lda #0
-    sta stackh,x
-    lsr tos+1
-    ror tos
-    lsr tos+1
-    ror tos
-    lsr tos+1
-    ror tos             ; /8
-    lda tos+1
-    jmp next
-
-
 ```
 #endif
 tobloom
@@ -1468,7 +1536,6 @@ tags=nosymbol,interpreter,ext
         then
     then
     2drop ;
-
 ```
 #endif
 _qcandidate
@@ -1605,56 +1672,11 @@ qancestor03
     .word exit
 
 ;--------------------------------------------------------------
-;
-;--------------------------------------------------------------
 #if 0
 name=REAWAKEN
 stack=( nfa -- )
 tags=nosymbol
-for each active symbol being forgotten.
-
-- search for its youngest living ancestor.
-
-- if found, deactivate the descendant, activate the ancestor
-
-scan through the NFA list at PAD, awakening ancestors
-
-* list is terminated by 0-length
-
-* iterate each word from nfa until end (outer loop)
-
-* newdp < nfa < dp and nfa is active
-
-* - ancestor = 0
-
-* - iterate each word from nfa until end (inner loop)
-
-* - - is inactive
-
-* - - and is same name
-
-* - - and ancestor < cfa < newdp
-
-* - - - replace ancestor
-
-* ancestor = 0?
-
-* - iterate each word from nfa until end (inner loop)
-
-* - - is inactive
-
-* - - and is same name
-
-* - - and tdict < cfa < memsiz
-
-* - - - replace ancestor
-
-* ancestor <> 0?
-
-* - deactivate active symbol
-
-* - activate ancestor
-
+Scans the symbol table for ancestors of forgotten descendants to reactivate
 ```
  ( start )
  2+ dup>r

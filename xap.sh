@@ -57,6 +57,12 @@ ls -la ./build/pettil.sym
 cat ./build/pettil-core.obj ./build/pettil-tdict.obj ./build/pettil.sym > ./build/pettil.obj
 ls -la ./build/pettil.obj
 #
+sort ./build/pettil.mon > ./build/t.t
+if [ -e ./pettil.dbg ]; then
+	cat ./pettil.dbg >> ./build/t.t
+fi
+mv ./build/t.t ./build/pettil.mon
+#
 # build the tiddlywiki
 echo . Phase IV
 echo . . . . Building docs/tiddlypettil.html
@@ -72,12 +78,6 @@ mv -v ./build/tiddlypettil/output/tiddlypettil.html ./docs/tiddlypettil.html
 scp ./docs/tiddlypettil.html www-puri:chitselb.com/current/public/files/
 #
 # run it
-sort ./build/pettil.mon > ./build/t.t
-if [ -e ./pettil.dbg ]; then
-	cat ./pettil.dbg >> ./build/t.t
-fi
-mv ./build/t.t ./build/pettil.mon
-#
 if [ "$1" != "--norun" ]; then
 #echo . . . . Launching PETTIL
 xpet -moncommand ./build/pettil.mon ./build/pettil.obj >/dev/null
