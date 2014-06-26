@@ -6,7 +6,7 @@ tags=nosymbol
 Woz's Sweet-16 interpreter
 
 I added four no-argment opcodes and renumbered them, partly to gain a better
-undertanding and partly to see if I could improve things.  See 
+undertanding and partly to see if I could improve things.  See
 [[this article|http://pettil.tumblr.com/post/82927214679/in-which-i-take-on-the-great-stevewoz-at-code-golf]]
 
 * ext
@@ -103,7 +103,7 @@ TOBR
     ; X = opcode*2
     ; N = top/bottom of addr[low]
     ; Z = 0
-    ; C = 0 
+    ; C = 0
     BMI TOBR4
     INC R15L
     BEQ TOBR5
@@ -125,7 +125,7 @@ disp2
 TOBR3
     LDA R14H
     LSR
-    
+
     ; bs, bc, bnc
     ; A = ?
     ; X = opcode*2
@@ -139,7 +139,7 @@ disp3
 TOBR5
     INC R15H
     BNE TOBR2
-    
+
 
 ;* FOLLOWING CODE MUST BE
 ;* CONTAINED ON A SINGLE PAGE!
@@ -311,7 +311,7 @@ RTN2
     STA $0105,X
     LDA R15H
     STA $0106,X
-    JMP DORTI		; $E600 on my PET
+    JMP DORTI       ; $E600 on my PET
 RS
     BMI RSZ         ;bra
 PULL
@@ -397,9 +397,55 @@ SW16B
 #if 0
 name=Sweet-16 extensions
 tags=nosymbol
-These are some of the 
-[[native 6502 extensions|http://pettil.tumblr.com/post/81057827224/flexible-native-6502-extensions-for-sweet16]] 
-Available in PETTIL
+!!!Sweet-16 extensions
+These are some of the
+[[native 6502 extensions|http://pettil.tumblr.com/post/81057827224/flexible-native-6502-extensions-for-sweet16]]
+Available in PETTIL.  They work like Sweet-16 instructions, and should 
+probably have a register contract between the caller and the extension.  
+R11 is used for transferring control to the extension, and R11 is a good 
+candidate for a return argument register.
+
+Here's how adding an extension might look in the Forth assembler...
+
+```
+CODE DIGITFLIP
+    .N0  STA,
+    .A   LSR,  .A   LSR,
+    .A   LSR,  .A   LSR,
+    .N0  ASL,  .N0  ASL,      
+    .N0  ASL,  .N0  ASL,      
+    .N0  ORA,  ( REVERSE HEXDIGITS )
+         RTS,
+END-CODE
+
+CODE BACKWARD
+    .R11 LDA,
+         PHA,
+    .R11 1+ LDA,
+    DIGITFLIP JSR,
+    .R11 STA,
+         PLA,
+    DIGITFLIP JSR,
+    .R11 1+ STA,
+         RTS,
+END-CODE
+
+CODE TRIVIAL
+         BRK,
+         PULL,
+    .ACC SET,
+    6502 ,
+    .TOS ADD,
+    BACKWARD EXT,
+    .R11 LD,
+         PUSH,
+         NXT,
+END-CODE
+```
+There's a lot going on.  The new Sweet-16 instructions PUSH, PULL, EXT, and 
+NXT, are all in use in the above example.  Native code extensions end with 
+an RTS instruction, and just like any other Sweet-16 opcode handler, control 
+is returned to the opcode dispatcher.
 #endif
 ; xor of two vectors, to switch BRK vector between Sweet16 and TIM
 brktoggle       .word SW16^TIMBRK
@@ -412,10 +458,10 @@ brktoggle       .word SW16^TIMBRK
 ;    R11 = length only of the string
 ;    C is set if the word is smudged
 wordlen16
-	jsr nfalen01
-	rol R14H
-	sty r11+1
-	sta r11
+    jsr nfalen01
+    rol R14H
+    sty r11+1
+    sta r11
     rts
 
 ; mask off just the length portion of the packet header
@@ -430,16 +476,16 @@ wordlen16
 pktheader16
     ;ldy #1
     dey
-    sty n+4						; N2 = editable?, off
+    sty n+4                     ; N2 = editable?, off
     sty n+5
-    sty n+6						; N3 = uncompressed?, off
+    sty n+6                     ; N3 = uncompressed?, off
     sty n+7
     bit r0+1
-    bpl pktheader16a			; N flag is editable vs. data
+    bpl pktheader16a            ; N flag is editable vs. data
     dec n+4
     dec n+5
 pktheader16a
-	bvc pktheader16b			; V flag is uncompressed vs. compressed
+    bvc pktheader16b            ; V flag is uncompressed vs. compressed
     dec n+6
     dec n+7
 pktheader16b
@@ -450,12 +496,12 @@ pktheader16b
     sta n+3                     ; packet header (high)
     and #$7
     sta r11+1                   ; packet length (high)
-	rts
+    rts
 
 ;inputs
 ;   TOS (R4) = addr
 ;   N0 (R5) = addr+size
-;   N1 (R6) = count 
+;   N1 (R6) = count
 ;returns
 ;   TOS = addr (unchanged)
 ;   N0 = addr of last non-blank character (= addr if all are blank)

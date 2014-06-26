@@ -59,7 +59,7 @@ ls -la ./build/pettil.obj
 #
 sort ./build/pettil.mon > ./build/t.t
 if [ -e ./pettil.dbg ]; then
-	cat ./pettil.dbg >> ./build/t.t
+    cat ./pettil.dbg >> ./build/t.t
 fi
 mv ./build/t.t ./build/pettil.mon
 #

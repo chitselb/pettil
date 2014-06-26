@@ -20,13 +20,13 @@ wordlist = Array.new
     end
     file.close
 
-		puts "lda (tos),y" 
-		puts "and #(pearsonx-pearson-1)"
-		puts "tax"
-		puts "lda n"
-		puts "eor pearson,x"
-		puts "sta n"
-		puts "dey"
+        puts "lda (tos),y"
+        puts "and #(pearsonx-pearson-1)"
+        puts "tax"
+        puts "lda n"
+        puts "eor pearson,x"
+        puts "sta n"
+        puts "dey"
 #puts "char^pearson[hash&psize]"
 tries = 0
 while true
@@ -50,7 +50,7 @@ while true
             #            hash = char^pearson[hash&psize]
 #           hash ^= pearson[char&psize]
         }
-#	puts
+#   puts
 # this really wouldn't work without a larger table
 #       line.each_byte { |char|
 #            index = hash^char

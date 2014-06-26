@@ -111,7 +111,7 @@ _semi
 
         def is_done?(line)
             # ;(row of dashes), eof, or end of input stream finishes a word
-            if line =~ /^;-*$/ || line.nil? || line == :eof
+            if (line =~ /^\;(-)\1*$/) || line.nil? || line == :eof
                 @done = true
                 @skip = true
                 @tags += @flags   unless @flags.nil?
@@ -125,7 +125,7 @@ _semi
                 @skip = true
             end
             if t = line.split(/^wikiname=/)[1]
-				# an alternative name for use in the wiki
+                # an alternative name for use in the wiki
                 @wikiname = t
                 @skip = true
             end
@@ -168,9 +168,8 @@ _semi
                         @label = line
                         @addr = labelhash[@label]
                     end
-
                     # start with a code quote and a slider button
-                    @code = 
+                    @code =
                         "\n\n\n<$button popup=\"$:/state/codeSlider\">code</$button>"\
                         "<$reveal type=\"nomatch\" text=\"\" default=\"\" "\
                         "state=\"$:/state/codeSlider\" animate=\"yes\">\n\n```"
@@ -211,7 +210,7 @@ _semi
         def wikiname
             (@wikiname.nil?) ? @name : @wikiname
         end
-        
+
         def label
             @label
         end
@@ -220,34 +219,34 @@ _semi
             @done
         end
 
-		def tiddler
-			text = "!!!#{@name}"
-			text += ((@stack.nil?) ? '' : "&nbsp;&nbsp;&nbsp;#{@stack}\n\n")
-			text += ((@desc.nil?) ? '' : @desc)
-			text += ((@code.nil?) ? '' : @code)
-			return "\{ \"title\":#{wikiname.to_json},"\
-					"\"text\":#{text.to_json},"\
-					"\"tags\":#{@tags.to_json}\},\n"
-		end
+        def tiddler
+            text = "!!!#{@name}"
+            text += ((@stack.nil?) ? '' : "&nbsp;&nbsp;&nbsp;#{@stack}\n\n")
+            text += ((@desc.nil?) ? '' : @desc)
+            text += ((@code.nil?) ? '' : @code)
+            return "\{ \"title\":#{wikiname.to_json},"\
+                    "\"text\":#{text.to_json},"\
+                    "\"tags\":#{@tags.to_json}\},\n"
+        end
 
         def symbol_table_entry
-			if @addr.nil?
-				return nil
-			else
-				length = @name.length
-				length |= 0x80   if @flags.index("immediate")  unless @flags.nil?
-				# length |= 0x40   if ....  add vocabulary support ~
-				
-				# a String, 
-				# - 2 byte address
-				# - 1 byte length|flags
-				# - n byte name
-				return [@addr].pack("S<")+[length].pack("C")+@name.bytes.pack("C*")
-			end
+            if @addr.nil?
+                return nil
+            else
+                length = @name.length
+                length |= 0x80   if @flags.index("immediate")  unless @flags.nil?
+                # length |= 0x40   if ....  add vocabulary support ~
+
+                # a String,
+                # - 2 byte address
+                # - 1 byte length|flags
+                # - n byte name
+                return [@addr].pack("S<")+[length].pack("C")+@name.bytes.pack("C*")
+            end
         end
     end
 
-	# read an assembler-generated label file in:  label, address
+    # read an assembler-generated label file in:  label, address
     def add_labels(filename)
         labels = Hash.new
         if File.exist? "./build/"+filename
@@ -288,32 +287,32 @@ _semi
         end
     end
 
-	def write_symtab_file(outputfile,forthwordhash)
-		symfile = File.open("./build/"+outputfile,'w')
-		forthwordhash.each do |wordname, stuff|
-			symfile.write stuff.symbol_table_entry   unless stuff.tags.index "nosymbol"
-		end
-		symfile.write [0,0,0].pack("C*")        # null length ends pettil.sym
-	end
+    def write_symtab_file(outputfile,forthwordhash)
+        symfile = File.open("./build/"+outputfile,'w')
+        forthwordhash.each do |wordname, stuff|
+            symfile.write stuff.symbol_table_entry   unless stuff.tags.index "nosymbol"
+        end
+        symfile.write [0,0,0].pack("C*")        # null length ends pettil.sym
+    end
 
-	def write_json_file(outputfile,forthwordhash)
-		jsonfile = File.open("./build/"+outputfile,'w')
-		jsonfile.write "[\n"
-		glossary = ""
-		forthwordhash.each do |wordname, stuff|
-			glossary += ("\[\["+ stuff.wikiname + "\]\] ")
-			jsonfile.write stuff.tiddler
-		end
-		jsonfile.write "{ \"title\":\"Glossary\",\"text\":#{glossary.to_json}}]"
-	end
+    def write_json_file(outputfile,forthwordhash)
+        jsonfile = File.open("./build/"+outputfile,'w')
+        jsonfile.write "[\n"
+        glossary = ""
+        forthwordhash.each do |wordname, stuff|
+            glossary += ("\[\["+ stuff.wikiname + "\]\] ")
+            jsonfile.write stuff.tiddler
+        end
+        jsonfile.write "{ \"title\":\"Glossary\",\"tags\":\"default\",\"text\":#{glossary.to_json}}]"
+    end
 
-	# write a simple list of names for the pearson cruncher
-	def write_pearson_file(outputfile,forthwordhash)
-		pearsonfile = File.open("./build/"+outputfile,'w')
-		forthwordhash.each do |wordname, stuff|
-			pearsonfile.write "#{wordname}\n"   unless stuff.tags.index "nosymbol"
-		end
-	end
+    # write a simple list of names for the pearson cruncher
+    def write_pearson_file(outputfile,forthwordhash)
+        pearsonfile = File.open("./build/"+outputfile,'w')
+        forthwordhash.each do |wordname, stuff|
+            pearsonfile.write "#{wordname}\n"   unless stuff.tags.index "nosymbol"
+        end
+    end
 
 
     ### The main event ###
@@ -349,10 +348,12 @@ _semi
                 "pettil-editor.a65 "\
                 "pettil-assembler.a65 "
 
+	test_files="sweet16.a65"
+
     all_words = Hash.new
     pettil = PettilSource.new core_files+transient_files
 
-	forthword = nil
+    forthword = nil
     until (line = pettil.nextline) == nil
         if !forthword.nil?
             forthword.feed line,all_labels
@@ -367,13 +368,13 @@ _semi
         end
     end
 
-	# output symbol table file
+    # output symbol table file
     write_symtab_file "pettil.sym",all_words
 
-	# output tiddlers for tiddlypettil
+    # output tiddlers for tiddlypettil
     write_json_file "pettil.json",all_words
 
-	# output word names for pearson cruncher
-	write_pearson_file "pearson.txt",all_words
+    # output word names for pearson cruncher
+    write_pearson_file "pearson.txt",all_words
 
     exit
