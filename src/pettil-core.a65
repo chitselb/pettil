@@ -138,9 +138,8 @@ userwarm
 userfence       .word cold      ;
 userdp          .word cold      ;
 userstartup     .word hot       ; bootstrap COLD->HOT->LAUNCH
-usermemsiz      .word 0         ; set by COLD (BASIC $34)
-userdrvnum		.word 1			; cassette #1 is default device
-userfilename	.word currname	; counted string, default filename
+userdrvnum      .word 1         ; cassette #1 is default device
+userfilename    .word currname  ; counted string, default filename
 usercold
 
 ; SOFT
@@ -149,30 +148,31 @@ usercold
 ; memory pointers, in descending order
 usercontext     = usercold+0
 usercurrent     = usercold+2
-usertdict       = usercold+4
-usersymtail     = usercold+6
-usersymnew      = usercold+8
-usersymtab      = usercold+10
-uservmbuf       = usercold+12
-usernumvmpkt    = usercold+14   ;
-userscr         = usercold+16   ;
-usereditingq    = usercold+18   ;
-userwritableq   = usercold+20   ;
-usernumvoc      = usercold+22   ;
-usernewest      = usercold+24   ;
-usernewdp       = usercold+26   ;
-userwarning     = usercold+28   ;
-userbase        = usercold+30   ;
-userdpl         = usercold+32   ;
-userhld         = usercold+34   ;
-userblk         = usercold+36   ;
-usertoin        = usercold+38   ;
-userspan        = usercold+40   ;
-usertib         = usercold+42   ;
-usernumout      = usercold+44   ;
-usernumline     = usercold+46   ;
-userstate       = usercold+48   ;
-usercsp         = usercold+50   ;
+usermemsiz      = usercold+4
+usertdict       = usercold+6
+usersymtail     = usercold+8
+usersymnew      = usercold+10
+usersymtab      = usercold+12
+uservmbuf       = usercold+14
+usernumvmpkt    = usercold+16
+userblk         = usercold+18
+userscr         = usercold+20
+usereditingq    = usercold+22
+userwritableq   = usercold+24
+usernumvoc      = usercold+26
+usernewest      = usercold+28
+usernewdp       = usercold+30
+userwarning     = usercold+32
+userbase        = usercold+34
+userdpl         = usercold+36
+userhld         = usercold+38
+usertoin        = usercold+40
+userspan        = usercold+42
+usertib         = usercold+44
+usernumout      = usercold+46
+usernumline     = usercold+48
+userstate       = usercold+50
+usercsp         = usercold+52
 
 ; User Pointer (UP) at $0002 points here
 uarea           .dsb usercold-userarea+64,0
@@ -274,41 +274,40 @@ environment.  The size of COLD doesn't really matter.  As
 the final word in the core dictionary, COLD will FORGET
 itself and its address becomes the value of FENCE.
 It's a little hairy, I hope my comments will explain.
+
 !!The pieces at load time
+```
+* 0400-040F   BASIC bootstrap (10 SYS 1037)
+* 0410-       Core dictionary
+              (about 6K of code)
+* WARM        last permanent word in core dictionary
+              <--FENCE -->
+* HERE        COLD  initialize Forth
+              HOT   more initialization in high-level Forth
+              bannermsg
 
-* 0400-040c   BASIC bootstrap (10 SYS 1037)
-* 040d-0410   pettillaunch (JMP COLD)
-* 0410-049c   zpbuf (partial zero page mirror $00-$8C)
-* 049d-04a4   power2 (01 02 04 08 10 20 40 80)
-* 04a5        unused byte
-* 04a6-065a   Sweet16
-* 065b-       slip, slide, Sweet16 extensions
-* brktoggle,  the EOR of TIM and Sweet16 entry points
-* userarea,   User variable storage
-* swapzp,     and other native 6502 code subroutines
-* core,       permanent dictionary (bodies only)
+* there       2-byte load address of transient dictionary
+              2-byte size of transient dictionary
+* LAUNCH      first word in Transient dictionary
+              Transient dictionary
+              (about 5K of code}
 
-* cold,       bootstrap initialization
-!!!---------------tdict & symbol table concatenated at `there`-----
-
-* there,      target load address of transient dictionary (2)
-* there+2,    size of transient dictionary (2)
-* there+4,    transient dictionary, bodies only
-* tdict       outer interpreter, compiler, editor, assembler
-* symbols,    symbol table data
-
+              Symbol table
+              (about 2K of headers)
+* ($C9)       end of program
+```
 !!!COLD tasks
 
-* change the startup vector from COLD to WARM
-* set MEMSIZ from BASIC $34-35
-* set SYMTAB as an offset from MEMSIZ
-* set TDICT as the load address + 2 of part 2 (found at 'there')
-* display a banner
-* set STARTUP uservariable to LAUNCH
-* move transient dictionary to TDICT
-* move symbol table to SYMTAB
-* set FENCE
-* call WARM to put us in Forth mode
+* change the [[pettillaunch|BASIC bootstrap]] vector from [[COLD]] to [[WARM]]
+* set [[MEMSIZ]] from BASIC $34-35
+* set [[SYMTAB]] as an offset from [[MEMSIZ]]
+* set [[TDICT]] as the load address + 2 of part 2 (found at 'there')
+* display a [[banner|bannermsg]]
+* set STARTUP uservariable to [[LAUNCH]]
+* move transient dictionary to [[TDICT]]
+* move symbol table to [[SYMTAB]]
+* set [[FENCE]]
+* call [[WARM]] to put us in Forth mode
 
 There is no knowledge in the core dictionary (at the bottom of memory)
 of what is in the transient dictionary or where it resides.  To kick
@@ -317,33 +316,16 @@ in the upper dictionary, via the STARTUP uservariable.  The requirement
 is that the first thing in tdict must be the executable CFA of LAUNCH
 That's where we will pick things up.
 
-transient dictionary and symbols are built separately
-as PETTIL-TDICT.OBJ and PETTIL.SYM, then they are both
-appended to the PETTIL.OBJ core binary
+Transient dictionary and symbols are built separately
+as ~PETTIL-TDICT.OBJ and PETTIL.SYM.
 
-`pettil-tdict.obj` looks like this:
-two byte load address of pettil-tdict.obj e.g. $71fe
-two byte length of pettil-tdict.obj
-
-The actual load address is off by -2.  There are two bytes in
-front of the tdict.obj code storing the length of tdict.obj.
-This length information is needed to figure out where the symbol
-table starts, following tdict
-
-All addresses in tdict in this example would be located as though
-tdict had been assembled and loaded at *=$7200, in spite of the
-misleading load address.
-
-pettil.sym looks like this:
-(repeated for each head)
-
-```
-[ two byte CFA
-  one byte length and flags
-  name string
-  one byte vocabulary identifier, if present ]
-
-```
+The true load address of `pettil-tdict.obj` is offset by -2.
+That's because there are two bytes stuffed in the front (the file size)
+which are not part of the [[TDICT]] code.  It's done this way so
+the cold start can figure out where the transient dictionary ends
+and where the symbol table begins.  ($C9) in zero page tells the
+cold start the last address in the file load, which is the end of the
+symbol table.
 #endif
 cold
     nop                         ; make it easy to find here
@@ -379,12 +361,12 @@ cold01
 name=HOT
 stack=( -- )
 tags=system,nosymbol
-COLD does enough to kickstart Forth, then HOT is next.
+[[COLD]] does enough to kickstart Forth, then HOT is next.
 
-* sets TDICT and SYMTAB user variables
-* copy the transient dictionary to TDICT
-* copy the symbols to SYMTAB+32
-* execute LAUNCH (first word at the first address in TDICT)
+* sets [[TDICT]] and [[SYMTAB]] user variables
+* copy the transient dictionary to [[TDICT]]
+* copy the symbols to [[SYMTAB]]+32
+* execute [[LAUNCH]] (first word at the first address in [[TDICT]])
 #endif
 hot
 #include "enter.i65"
@@ -457,15 +439,21 @@ hot
 #include "page.i65"
     .word execute               ; launch
 
-    .byt (there-*-1)			; length of bannermsg
+    .byt (there-*-1)            ; length of bannermsg
 ;--------------------------------------------------------------
 #if 0
 name=bannermsg
 tags=system,nosymbol
 The message of the day.  In pre-beta, I like to put a "this day
-in history" sort of note on the git commits, which appears at 
-startup in the welcome banner.  This message does not occupy 
+in history" sort of note on the git commits, which appears at
+startup in the welcome banner.  This message does not occupy
 any precious RAM after startup completes.
+
+The size of this word is large because the next thing after it
+is [[LAUNCH]] in the transient dictionary.  Adding the sizes of
+[[bannermsg]]+[[HOT]]+[[COLD]] together will accurately reflect the
+available RAM for the symbol table, virtual memory buffers, and
+user code.
 #endif
 bannermsg
     .asc    CLR,"FORTH FOR THE COMMODORE PET 2001",CR
