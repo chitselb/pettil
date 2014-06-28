@@ -1,0 +1,51 @@
+tags: static default concepts
+title: PETTIL packet map
+
+!!Diagram illustrating storage of data and screen blocks
+
+Forth blocks are 1024 bytes.  At 40x25 characters, the PET screen is a mismatch
+for the Forth block, coming up 24 bytes short.  Traditionally, Forth blocks
+are edited in screen-sized units, and the PET has (in my opinion) the best 
+native editing capabilities of any of the three machines in the [["class of '77"|http://www.computerhistory.org/revolution/personal-computers/17/298]]
+
+My solution was metadata.  Packets have two flags.  The "editable?" flag 
+is true if this packet is an editor packet.  Screens are editable.  Data blocks
+are not.  Data blocks will be displayed by the screen editor (except for the
+last 24 bytes) but when leaving the screen, the editor will not update the
+packet for uneditable blocks. Data blocks can be converted to screens by the 
+STOP-CLR editor command
+
+The other flag is "uncompressed?" (usually false) which indicates if this
+packet is RLE-encoded or merely stored.  Packets are stored in situations where
+
+* the programmer does not want to [[RLENCODE]] or [[RLDECODE]] them
+* the [[encoder|RLENCODE]] detects that "negative compression" would occur
+ 
+Packet data is 0..1024 bytes of screen codes or data
+
+Packet headers consist of the total packet size ("size") ORed with the
+"uncompressed?" and "editable?" flags
+
+---
+!!Data packet ("block")
+| !packet data 0..1024 bytes |<|<|
+|''runlength datagram''<br>usually present if 'uncompressed?' is false|^3 bytes<br>(byte, byte, count)|<|
+|''byte''|1 byte|<|
+| !packet header (2 bytes) |<|<|
+||<|mask|
+|''//editable?//'' (always FALSE)|1 bit|$8000|
+|''//uncompressed?//''|1 bit|$4000|
+|''//size//''|11 bits|$03FF|
+---
+!!Editor packet ("screen")
+| !packet linewrap 3 bytes |<|<|
+|''linewrap''|^3 bytes|<|
+| !packet data 0..1024 bytes |<|<|
+|''runlength datagram''<br>usually present if 'uncompressed?' is false|^3 bytes<br>(byte, byte, count)|<|
+|''byte''|1 byte|<|
+| !packet header (2 bytes) |<|<|
+||<|mask|
+|''//editable?//'' (always TRUE)|1 bit|$8000|
+|''//uncompressed?//''|1 bit|$4000|
+|''//size//''|11 bits|$03FF|
+

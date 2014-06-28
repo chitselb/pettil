@@ -164,10 +164,8 @@ _semi
             if @to_code
                 if @code.nil?
                     # first line is special, the label
-                    unless @tags.index("nolabel") || @tags.index("nosymbol")
-                        @label = line
-                        @addr = labelhash[@label]
-                    end
+					@label = line
+					@addr = labelhash[@label]
                     # start with a code quote and a slider button
                     @code =
                         "\n\n\n<$button popup=\"$:/state/codeSlider\">code</$button>"\
@@ -221,7 +219,8 @@ _semi
 
         def tiddler
             text = "!!!#{@name}"
-            text += ((@stack.nil?) ? '' : "&nbsp;&nbsp;&nbsp;#{@stack}\n\n")
+            text += ((@stack.nil?) ? "\n\n" : "&nbsp;&nbsp;&nbsp;#{@stack}\n\n")
+            text += ((@addr.nil?) ? 'wut?' : "address: $#{hex4out @addr}\n\n")
             text += ((@desc.nil?) ? '' : @desc)
             text += ((@code.nil?) ? '' : @code)
             return "\{ \"title\":#{wikiname.to_json},"\
@@ -246,6 +245,10 @@ _semi
         end
     end
 
+	def hex4out(addr)
+		return addr.to_s(16).rjust(4,'0')
+	end
+
     # read an assembler-generated label file in:  label, address
     def add_labels(filename)
         labels = Hash.new
@@ -265,7 +268,7 @@ _semi
     def write_xpet_monfile(outputfile,labels)
         monfile = File.open("./build/"+outputfile,'w') do |file|
             labels.each do |label, addr|
-                file.write("al C:#{addr.to_s(16).rjust(4,'0')} .#{label}\n")
+                file.write("al C:#{hex4out addr} .#{label}\n")
             end
         end
     end
@@ -274,7 +277,7 @@ _semi
     def write_core_defs(outputfile,labels)
         # these labels have an address that conflicts with a keyword,
         # e.g. addresses containing 'bc' or 'add' used by Sweet-16
-        bogus = " usersp0 slashmod "
+        bogus = " usersp0 userrp0 slashmod put umstar twodup type01 "
         always_use_decimal = false
         symfile = File.open("./build/"+outputfile,'w') do |file|
             labels.each do |label, addr|
@@ -300,7 +303,7 @@ _semi
         jsonfile.write "[\n"
         glossary = ""
         forthwordhash.each do |wordname, stuff|
-            glossary += ("\[\["+ stuff.wikiname + "\]\] ")
+            glossary += ("\[\["+ stuff.wikiname + "\]\] ")   unless stuff.tags.index "nosymbol"
             jsonfile.write stuff.tiddler
         end
         jsonfile.write "{ \"title\":\"Glossary\",\"tags\":\"default\",\"text\":#{glossary.to_json}}]"
