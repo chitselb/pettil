@@ -229,6 +229,7 @@ _semi
             text = "!!!#{@name}"
             text += ((@stack.nil?) ? "\n\n" : "&nbsp;&nbsp;&nbsp;#{@stack}\n\n")
             text += ((@addr.nil?) ? 'wut?' : "address: $#{hex4out @addr}\n\n")
+            text += ((@size.nil?) ? 'wut?' : "size: $#{@size}\n\n")
             text += ((@desc.nil?) ? '' : @desc)
             text += ((@code.nil?) ? '' : @code)
             return "\{ \"title\":#{wikiname.to_json},"\
