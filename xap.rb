@@ -185,6 +185,14 @@ _semi
             @addr
         end
 
+		def size
+			@size
+		end
+		
+		def set_size(size)
+			@size = size
+		end
+		
         def desc
             @desc
         end
@@ -277,7 +285,7 @@ _semi
     def write_core_defs(outputfile,labels)
         # these labels have an address that conflicts with a keyword,
         # e.g. addresses containing 'bc' or 'add' used by Sweet-16
-        bogus = " usersp0 userrp0 slashmod put umstar twodup type01 "
+        bogus = " usersp0 userrp0 slashmod put umstar twodup type01 _emptybuffers "
         always_use_decimal = false
         symfile = File.open("./build/"+outputfile,'w') do |file|
             labels.each do |label, addr|
@@ -289,6 +297,25 @@ _semi
             end
         end
     end
+
+	def set_sizes(forthwordhash)
+		sortedbyaddr = forthwordhash.sort_by {|wordname, stuff| stuff.addr}
+		puts sortedbyaddr.size
+		puts sortedbyaddr.last[1].addr
+		puts sortedbyaddr.last[1].label
+		for i in 0..(sortedbyaddr.size-2)
+			size = sortedbyaddr[i+1][1].addr-sortedbyaddr[i][1].addr
+			sortedbyaddr[i][1].set_size size
+			print "#{i} #{sortedbyaddr[i][1].addr} #{sortedbyaddr[i+1][1].addr}"
+			print " #{sortedbyaddr[i][1].label}"
+			print " #{size}\n"
+		end
+		sortedbyaddr.last[1].set_size 6		# assembler vocabulary
+#  # => [[:joan, 18], [:fred, 23], [:pete, 54]]
+#		forthwordhash.each do |wordname, stuff|#
+#			print stuff.addr, stuff.label
+#		end
+	end
 
     def write_symtab_file(outputfile,forthwordhash)
         symfile = File.open("./build/"+outputfile,'w')
@@ -370,6 +397,9 @@ _semi
             forthword = ForthWord.new
         end
     end
+
+	#calculate the @size field of each forthword
+	set_sizes all_words
 
     # output symbol table file
     write_symtab_file "pettil.sym",all_words
