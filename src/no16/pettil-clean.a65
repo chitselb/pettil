@@ -1,6 +1,7 @@
-; pettil-core.a65
-#echo .       pettil-core.a65
+; pettil-clean.a65
+#echo .       pettil-clean.a65
 #echo .       PETTIL - Personal Electronics Transactor Threaded Interpretive Language
+#echo .       remix - just the core, no Sweet16
 ; wrapper to build PETTIL core dictionary
 
 ; include debugging logic
@@ -12,8 +13,8 @@
 ; PET target memory size
 #define PETRAM 32
 
-#include "inc/cbm.def"
-#include "inc/pettil.def"
+#include "../inc/cbm.def"
+#include "../inc/pettil.def"
 
 ;==============================================================
 ;==== BASIC bootstrap                                      ====
@@ -100,25 +101,6 @@ zpnext
 power2
     .byt $01,$02,$04,$08,$10,$20,$40,$80
 
-;==============================================================
-;==== ALL SWEET16 OPERATION HANDLERS MUST BE ON SAME PAGE! ====
-;==============================================================
-    nop                         ; fine tune position of Sweet16
-
-#if (* <> $04a6)
-#echo PETTIL Build Error - Program counter is not at $04a6!
-#echo You moved something, didn't you?  Sweet16 is expected
-#echo to start at $04a6 (1190).  This is a problem.
-#endif (sweet16 address check)
-#echo .       program counter just before Sweet16 should be 1190, is:
-#print *
-
-#include "sweet16.a65"
-;==============================================================
-;==== ALL SWEET16 OPERATION HANDLERS MUST BE ON SAME PAGE! ====
-;==============================================================
-
-
 ;--------------------------------------------------------------
 #if 0
 name=User Area
@@ -140,7 +122,7 @@ userdp          .word cold      ;
 userstartup     .word hot       ; bootstrap COLD->HOT->LAUNCH
 usermemsiz      .word 0
 userdrvnum      .word 1         ; cassette #1 is default device
-userfilename    .word currname  ; counted string, default filename
+userfilename    .word 0         ; counted string, default filename
 usercold
 
 ; SOFT
@@ -188,15 +170,15 @@ These are the source files included in [[PETTIL-CORE]]
 #endif
 corebase
 #include "core-subroutines.a65"
-#include "core-user.a65"
-#include "core-inner.a65"
-#include "core-nucleus.a65"
-#include "core-device.a65"
-#include "core-pet.a65"
+#include "../core-user.a65"
+#include "../core-inner.a65"
+#include "../core-nucleus.a65"
+#include "../core-device.a65"
+#include "../core-pet.a65"
 #include "core-numword.a65"
-#include "core-double.a65"
-#include "core-string.a65"
-#include "core-vm.a65"
+#include "../core-double.a65"
+#include "../core-string.a65"
+;#include "../core-vm.a65"
 
 ;--------------------------------------------------------------
 #if 0
@@ -268,87 +250,9 @@ warm04
 name=COLD
 stack=( -- )
 tags=system,nosymbol
-One-time only (then disappear) system bootstrap initialization.
-Runs once after "pettil.obj" loads, to prepare a development
-environment.  The size of COLD doesn't really matter.  As
-the final word in the core dictionary, COLD will FORGET
-itself and its address becomes the value of FENCE.
-It's a little hairy, I hope my comments will explain.
-
-!!The pieces at load time
-```
-* 0400-040F   BASIC bootstrap (10 SYS 1037)
-* 0410-       Core dictionary
-              (about 6K of code)
-* WARM        last permanent word in core dictionary
-              <--FENCE -->
-* HERE        COLD  initialize Forth
-              HOT   more initialization in high-level Forth
-              bannermsg
-
-* there       2-byte load address of transient dictionary
-              2-byte size of transient dictionary
-* LAUNCH      first word in Transient dictionary
-              Transient dictionary
-              (about 5K of code}
-
-              Symbol table
-              (about 2K of headers)
-* ($C9)       end of program
-```
-!!!COLD tasks
-
-* change the [[pettillaunch|BASIC bootstrap]] vector from [[COLD]] to [[WARM]]
-* set [[MEMSIZ]] from BASIC $34-35
-* set [[SYMTAB]] as an offset from [[MEMSIZ]]
-* set [[TDICT]] as the load address + 2 of part 2 (found at 'there')
-* display a [[banner|bannermsg]]
-* set STARTUP uservariable to [[LAUNCH]]
-* move transient dictionary to [[TDICT]]
-* move symbol table to [[SYMTAB]]
-* set [[FENCE]]
-* call [[WARM]] to put us in Forth mode
-
-There is no knowledge in the core dictionary (at the bottom of memory)
-of what is in the transient dictionary or where it resides.  To kick
-things off upstairs, WARM starts Forth, then executes the word LAUNCH
-in the upper dictionary, via the STARTUP uservariable.  The requirement
-is that the first thing in tdict must be the executable CFA of LAUNCH
-That's where we will pick things up.
-
-Transient dictionary and symbols are built separately
-as ~PETTIL-TDICT.OBJ and PETTIL.SYM.
-
-The true load address of `pettil-tdict.obj` is offset by -2.
-That's because there are two bytes stuffed in the front (the file size)
-which are not part of the [[TDICT]] code.  It's done this way so
-the cold start can figure out where the transient dictionary ends
-and where the symbol table begins.  ($C9) in zero page tells the
-cold start the last address in the file load, which is the end of the
-symbol table.
+A sample application
 #endif
 cold
-    nop                         ; make it easy to find here
-    nop
-    nop
-    nop
-    lda #<bannermsg             ; display a banner
-    sta TEMPF1
-    lda #>bannermsg
-    sta TEMPF1+1
-    ldy #0
-cold01
-    lda (TEMPF1),y
-    jsr CHROUT
-    iny
-    cpy bannermsg-1
-    bne cold01
-
-    lda #<warm                  ; Overwrite the BASIC hook
-    sta pettillaunch+1          ; change +1037 JMP COLD to +1037 JMP WARM
-    lda #>warm                  ; for reentry
-    sta pettillaunch+2
-
     lda MEMSIZ                  ; set top of memory address
     sta usermemsiz
     lda MEMSIZ+1
@@ -361,105 +265,36 @@ cold01
 name=HOT
 stack=( -- )
 tags=system,nosymbol
-[[COLD]] does enough to kickstart Forth, then HOT is next.
-
-* sets [[TDICT]] and [[SYMTAB]] user variables
-* copy the transient dictionary to [[TDICT]]
-* copy the symbols to [[SYMTAB]]+32
-* execute [[LAUNCH]] (first word at the first address in [[TDICT]])
+A sample application
 #endif
 hot
 #include "enter.i65"
-    .word plit
-    .word there
+hot01
+	.word cr
+#include "page.i65"
+	.word clit
+	.byt 39
 #include "pad.i65"
-    .word dup
+	.word zero
 #include "page.i65"
-    .word four
+	.word pdo
 #include "page.i65"
-    .word plusunder
+hot02
+	.word randu
 #include "page.i65"
-    .word fetch
+	.word one
 #include "page.i65"
-    .word twoplus
+	.word andx
 #include "page.i65"
-    .word dup
-#include "page.i65"
-    .word tdict
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word plit
-    .word 4096
+	.word clit
+	.byt 205
 #include "pad.i65"
-    .word minus
+	.word plus
 #include "page.i65"
-    .word symtab
+	.word emit
 #include "page.i65"
-    .word store
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word symtab
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word bl
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word clit
-    .byt EAL
+	.word ploop
+	.byt <(hot02-*+1)
 #include "pad.i65"
-    .word fetch
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word tdict
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word execute               ; launch
-
-    .byt (there-*-1)            ; length of bannermsg
-;--------------------------------------------------------------
-#if 0
-name=bannermsg
-tags=system,nosymbol
-The message of the day.  In pre-beta, I like to put a "this day
-in history" sort of note on the git commits, which appears at
-startup in the welcome banner.  This message does not occupy
-any precious RAM after startup completes.
-
-The size of this word is large because the next thing after it
-is [[LAUNCH]] in the transient dictionary.  Adding the sizes of
-[[bannermsg]]+[[HOT]]+[[COLD]] together will accurately reflect the
-available RAM for the symbol table, virtual memory buffers, and
-user code.
-#endif
-bannermsg
-    .asc    CLR,"FORTH FOR THE COMMODORE PET 2001",CR
-    .asc    "HTTP:","/","/GITHUB.COM/CHITSELB/PETTIL",CR
-    .asc    "VERSION PRE-ALPHA 2014-06-26",CR
-    .asc    "1997 SUPREME COURT RULES THAT CDA",CR
-    .asc    "     VIOLATES FIRST AMENDMENT",CR
-            ;123456789.123456789.123456789.123456789.
-there
+	.word branch
+	.byt <(hot01-*+1)

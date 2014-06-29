@@ -1,0 +1,227 @@
+; core-subroutines.a65
+#echo .       core-subroutines.a65      Native 6502 support routines
+
+; push TOS to the stack (DUP)
+slip
+    dex    ; slip something onto the stack
+    lda tos+1
+    sta stackh,x
+    lda tos
+    sta stackl,x
+    rts
+
+; pop the stack
+slide
+    lda stackh,x    ; slide something off of the stack
+    sta tos+1
+    lda stackl,x
+    sta tos
+    inx
+    rts
+
+;--------------------------------------------------------------
+; using ROM tape I/O drops to BASIC if there's a problem.
+; we'd like the user to be able to type RUN and pick up
+; more or less at the dropping off point if this happens.
+; this subroutine performs that BASIC/PETTIL zp switch
+; between $00-$8C inclusive.
+;
+swapzp
+    stx storex      ; preserve Forth data stack pointer
+    ldx #TIME       ; everything below the jiffy clock
+swapzp01
+    lda $ff,x
+    ldy zpbuf-1,x
+    sty $ff,x
+    sta zpbuf-1,x
+    dex
+    bne swapzp01
+    ldx storex      ; restore Forth data stack pointer
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=Aloha
+tags=nosymbol
+Flips back and forth between BASIC and PETTIL modes.
+performs swapzp, toggleirq and togglesw16
+
+#endif
+aloha
+    cld                         ; clear decimal mode
+    jsr CLRCHN                  ; restore default I/O channels
+    jsr CLALL                   ; close all open files
+aloha2
+    jsr swapzp                  ; swap bottom of zero page with zpbuf
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=IRQ toggle
+tags=nosymbol
+Toggle the IRQ vector between two targets based on an XOR constant
+#endif
+toggleirq
+    sei
+    ldy #2
+toggleirq01
+    lda tos-1,y
+    eor CINV-1,y
+    sta CINV-1,y
+    dey
+    bne toggleirq01
+    cli
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=locals
+tags=nosymbol
+Pops cells from the split stack to N area, working backwards.
+Used for setting up primitives that consume multiple arguments
+
+Input
+
+* Y = how many words to pop from the stack
+
+Returns
+
+* Y = 0
+* C = clear
+* TOS unchanged
+
+|Y|R4 TOS|R5 N0|R6 N1|R7 N2|R8 N3|R5|R6|h
+|1|TOS|2OS||||||
+|2|TOS|3OS|2OS|||||
+|3|TOS|4OS|3OS|2OS||||
+|4|TOS|5OS|4OS|3OS|2OS|||
+|5|TOS|6OS|5OS|4OS|3OS|2OS||
+|6|TOS|7OS|6OS|5OS|4OS|3OS|2OS|
+|>|>|>|>|>|>|>| stack and N area order are inverted|f
+#endif
+locals
+    tya
+    asl     ; doubled, now Y is a countdown index, also clc
+    tay
+locals01
+    lda stackh,x
+    dey
+    sta n,y
+    lda stackl,x
+    inx
+    dey
+    sta n,y
+    bne locals01
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=dnegaten
+tags=nosymbol
+negate the double at n0..n3
+#endif
+dnegaten
+    ldy #0
+    sec
+    tya
+    sbc n+2
+    sta n+2         ; low order byte
+    tya
+    sbc n+3
+    sta n+3
+    tya
+    sbc n
+    sta n
+    tya
+    sbc n+1
+    sta n+1         ; high order byte
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=invert
+tags=nosymbol
+toggle the bits in TOS
+#endif
+invert
+    lda tos
+    eor #$ff
+    sta tos
+    lda tos+1
+    eor #$ff
+    sta tos+1
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=inctos
+tags=nosymbol
+increment TOS; sets the Z flag
+#endif
+inctos
+    inc tos
+    bne inctos01
+    inc tos+1
+inctos01
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=dectos
+tags=nosymbol
+decrement TOS
+#endif
+dectos
+    lda tos
+    bne dectos01
+    dec tos+1
+dectos01
+    dec tos
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=nfalen01
+tags=nosymbol
+return the length of a name field, ignoring flag bits
+sets C flag if smudged
+#endif
+nfalen01
+    ldy #0
+    lda (tos),y
+    pha
+    asl
+    asl
+    asl
+    pla
+    and #$1f
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=strcomp
+tags=nosymbol
+compares two strings that are already known to be the same length.
+ C flag set if the strings match, otherwise clear
+
+inputs
+    TOS (R4) = current NFA in the symbol table (initially the first NFA)
+    N0 (R5) = addr of a string we are searching for
+    N3 (R8) = length of both strings
+
+returns
+   C = true iff the strings match
+
+#endif
+strcomp
+    clc             ; assume fail
+    ldy n+6         ; the length
+strcomp01
+    lda (n),y
+    eor (tos),y
+    bne strcomp02  ; different? outtie fail
+    dey
+    bne strcomp01  ; C flag is set on successful strcmp
+    sec             ; success!
+strcomp02
+    rts

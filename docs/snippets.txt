@@ -3648,8 +3648,100 @@ _cstoreplus
     .word oneplus
 #include "page.i65"
     .word exit
-cstoreplus  ( addr c -- addr+1)
+cstoreplus  ( addr c -- addr+1 )
 	lda tos
-	sta n
+	pha
 	jsr slide
-	
+	ldy #0
+	pla
+	sta (tos),y
+	jsr inctos
+	jmp next
+
+cfetchplus   ( addr -- addr+1 c )
+	ldy #0
+	lda (tos),y
+	jsr inctos
+	jmp pushya
+
+
+
+
+$D1 = length of filename; 0=no name
+($DA) = pointer to start of filename
+$D3 = secondary address
+$D4 = device number
+$96 = status = 0
+$9D = flag for load=0 or verify=1
+
+($C9) tape save start address
+
+
+F6E3 is the save money shot
+
+
+D675 S "xyzzy",01,5c00,5e00
+d4 = 1
+d1 = 0
+96 = 0
+9d = 0
+(da) = 0209
+
+d4 = drv#
+d1 = length
+(da) = name
+fb = to
+fd = from
+(c9) = to
+
+.C:f3d4  20 95 F6    JSR $F695 (d6) = 27a #1 | 33a #2
+.C:f3d7  20 57 F8    JSR $F857 press play on tape #
+.C:f3da  20 49 F4    JSR $F449 searching...
+.C:f3dd  A5 D1       LDA $D1
+.C:f3df  F0 08       BEQ $F3E9
+.C:f3e1  20 D3 F4    JSR $F4D3 search for a named tape header block
+.C:f3e4  D0 08       BNE $F3EE
+.C:f3e6  4C AD F5    JMP $F5AD file not found error? exit
+.C:f3e9  20 E5 F5    JSR $F5E5 load next tape header
+.C:f3ec  F0 F8       BEQ $F3E6
+.C:f3ee  E0 01       CPX #$01
+.C:f3f0  D0 EB       BNE $F3DD
+.C:f3f2  A5 96       LDA $96
+.C:f3f4  29 10       AND #$10
+.C:f3f6  D0 74       BNE $F46C
+.C:f3f8  20 7B F6    JSR $F67B (fb) = start (c9) = end
+.C:f3fb  20 6D F4    JSR $F46D print LOADING or VERIFYING
+.C:f3fe  4C A3 F8    JMP $F8A3 raw tape read, skips setting (fb) (c9)
+.C:f401  A9 00       LDA #$00
+.C:f403  85 9D       STA $9D
+.C:f405  20 7D F4    JSR $F47D
+.C:f408  20 CC F6    JSR $F6CC sets (fb) (c9) to start and end of basic, used in load
+.C:f40b  A9 FF       LDA #$FF
+.C:f40d  C5 9B       CMP $9B
+.C:f40f  D0 FC       BNE $F40D
+.C:f411  C5 9B       CMP $9B
+.C:f413  D0 F8       BNE $F40D
+.C:f415  20 56 F3    JSR $F356 load a basic program or other RAM image, after pointers have been set
+.C:f418  A5 9D       LDA $9D
+.C:f41a  D0 50       BNE $F46C
+.C:f41c  20 2B F9    JSR $F92B wait for IRQ to return to normal. test for stop key
+.C:f41f  A5 96       LDA $96
+.C:f421  29 10       AND #$10
+.C:f423  F0 09       BEQ $F42E
+.C:f425  A0 00       LDY #$00
+.C:f427  84 9E       STY $9E
+.C:f429  A0 60       LDY #$60
+.C:f42b  4C AF F5    JMP $F5AF SYNTAX ERROR?
+.C:f42e  A0 AE       LDY #$AE
+.C:f430  20 49 F3    JSR $F349 echo message from $FOOO table (Y=#0e = FILE OPEN)
+.C:f433  20 51 F3    JSR $F351
+.C:f436  D0 0B       BNE $F443
+.C:f438  A5 CA       LDA $CA
+.C:f43a  85 2B       STA $2B
+.C:f43c  A5 C9       LDA $C9
+.C:f43e  85 2A       STA $2A
+.C:f440  4C AD B4    JMP $B4AD
+.C:f443  20 22 B6    JSR $B622
+.C:f446  4C 0B B6    JMP $B60B
+.C:f449  20 51 F3    JSR $F351
+.C:f44c  D0 1E       BNE $F46C
