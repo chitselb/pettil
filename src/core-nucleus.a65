@@ -270,6 +270,120 @@ divmod05
 
 ;--------------------------------------------------------------
 #if 0
+name=40/MOD
+stack=( u -- u%40 u/40 )
+tags=math
+Perform a divide by 40 and a modulo 40, for
+[[Radix50|http://en.wikipedia.org/wiki/DEC_Radix-50]]
+#endif
+slmod40
+    stx storex
+    lda #0
+    ldx #7
+slmod40a
+    sta n,x
+    dex
+    bpl slmod40a                ; zero n+0..n+7
+    ldx #2
+slmod40b
+    clc
+    lda n                       ; addend = n*3
+    adc tos
+    sta n
+    lda n+1
+    adc tos+1
+    sta n+1
+    bcc slmod40c
+    inc n+2
+slmod40c
+    dex
+    bpl slmod40b
+    lda #4
+    sta n+8
+slmod40d
+    clc
+    lda n+0
+    adc n+4
+    sta n+4
+    lda n+1
+    adc n+5
+    sta n+5
+    lda n+2
+    adc n+6
+    sta n+6
+    lda n+3
+    adc n+7
+    sta n+7                     ; sum += addend
+
+    ldy #4
+slmod40e
+    asl n
+    rol n+1
+    rol n+2
+    rol n+3                     ; addend << 4
+    dey
+    bne slmod40e
+    dec n+8                     ; repeat 4x (3+48+768+12288 = 13107)
+    bne slmod40d
+
+    clc
+    lda n+4
+    adc #<13100
+    sta n+4
+    lda n+5
+    adc #>13100
+    sta n+5
+    bcc slmod40f
+    inc n+6
+    bne slmod40f
+    inc n+7                     ; sum += 13100 (fudge factor)
+slmod40f
+    lda n+7                     ; (n+6) is now u/5
+    lsr
+    ror n+6
+    lsr
+    ror n+6
+    lsr
+    ror n+6
+    sta n+7                     ; (n+6) = u/40
+
+    lda n+6
+    sta n+0
+    lda n+7
+    sta n+1
+    sty n+2
+    sty n+3
+    asl n
+    rol n+1
+    asl n
+    rol n+1                     ; n = u/40*4
+    ;clc
+    lda n
+    adc n+6
+    sta n
+    lda n+1
+    adc n+7
+    sta n+1                     ; n = u/40*5
+    asl n
+    rol n+1
+    asl n
+    rol n+1
+    asl n
+    rol n+1                     ; n = u/40*5*8
+    sec
+    lda tos
+    sbc n
+    sta tos
+    lda tos+1
+    sbc n+1
+    sta tos+1                   ; tos =  u % 40
+    lda n+6
+    ldy n+7                     ; push   u / 40
+    ldx storex
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
 name=UM/MOD
 stack=( ud u -- rem quot )
 tags=forth-83,nucleus
@@ -779,14 +893,14 @@ at addr, and addr is incremented by one
 !!!pronounced: "c-store-plus"
 #endif
 cstoreplus
-	lda tos
-	pha
-	jsr slide
-	ldy #0
-	pla
-	sta (tos),y
-	jsr inctos
-	jmp next
+    lda tos
+    pha
+    jsr slide
+    ldy #0
+    pla
+    sta (tos),y
+    jsr inctos
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -798,10 +912,10 @@ Fetches the byte at addr, increments addr
 !!!pronounced: "c-fetch-plus"
 #endif
 cfetchplus
-	ldy #0
-	lda (tos),y
-	jsr inctos
-	jmp pushya
+    ldy #0
+    lda (tos),y
+    jsr inctos
+    jmp pushya
 
 ;--------------------------------------------------------------
 #if 0
