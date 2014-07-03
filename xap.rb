@@ -286,7 +286,7 @@ _semi
     def write_core_defs(outputfile,labels)
         # these labels have an address that conflicts with a keyword,
         # e.g. addresses containing 'bc' or 'add' used by Sweet-16
-        bogus = " usersp0 userrp0 slashmod put umstar twodup type01 _emptybuffers _pdot _savebuffers _number _setnam dnegate number07 _ddotr key01 key _question unpkt02 dots03 dots04 emitvector mult max01 rlencode loadbuffers02 "
+        bogus = " _symbuf _filename _open _hpin _hpoff _hpout userrp0 _csave _cload _qdisc "
         always_use_decimal = false
         symfile = File.open("./build/"+outputfile,'w') do |file|
             labels.each do |label, addr|
