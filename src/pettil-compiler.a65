@@ -207,6 +207,53 @@ commaxt01
 
 ;--------------------------------------------------------------
 #if 0
+name=COMPILING?
+stack=( -- f )
+tags=compiler,nosymbol
+True if STATE is on
+
+```
+: compiling?   ( -- flag )
+   state @ ;
+```
+#endif
+_compilingq
+#include "enter.i65"
+    .word state
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?COMP
+stack=( -- )
+tags=compiler,nosymbol
+
+ Check the STATE variable to see if we are compiling, issue an
+ error if STATE is off (INTERPRET mode)
+
+```
+: ?comp   ( -- )
+    5  compiling?  ?: drop fail ;
+```
+#endif
+_qcomp
+#include "enter.i65"
+    .word clit
+    .byt 5                      ; "COMPILATION ONLY"
+#include "pad.i65"
+    .word _compilingq
+#include "page.i65"
+    .word pquerycolon
+    .word drop
+    .word fail
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=?:
 stack=( "name1" "name2" -- )
 tags=control,compiler
@@ -229,20 +276,20 @@ if this else that then
 #endif
 _querycolon
 #include "enter.i65"
-	.word _qcomp
+    .word _qcomp
 #include "page.i65"
-	.word _compile
-	.word pquerycolon
+    .word _compile
+    .word pquerycolon
 #include "pad.i65"
-	.word _tick
+    .word _tick
 #include "page.i65"
-	.word _comma
+    .word _comma
 #include "page.i65"
-	.word _tick
+    .word _tick
 #include "page.i65"
-	.word _comma
+    .word _comma
 #include "page.i65"
-	.word exit
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -430,7 +477,7 @@ _pcreate
 #include "pad.i65"
     .word emit
 #include "page.i65"
-    .word _pdq
+    .word pdq
     .byt (pcreate01-*-1)
     .asc    " EXISTS "
 pcreate01
@@ -794,102 +841,30 @@ _storecsp
 
 ;--------------------------------------------------------------
 #if 0
-name=?CHAR
-stack=( c -- )
-tags=compiler,nosymbol,~wut?,blazin
-
-Obsolescent, should be replaced by WORD in the one place it gets used
+name=$,
+stack=( addr -- )
+tags=string
+Enclose a quoted string in the dictionary
 #endif
-_qchar
+_stringcomma
 #include "enter.i65"
-    .word tor
-#include "page.i65"
-    .word _tickstream
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word scan
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word dup
-#include "page.i65"
     .word cfetch
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word ne
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word dup
 #include "page.i65"
     .word oneplus
 #include "page.i65"
-    .word toin
-#include "page.i65"
-    .word plusstore
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word qbranch
-    .byt <(qchar02-*+1)
-#include "pad.i65"
-    .word rfrom
-#include "page.i65"
-    .word cr
-#include "page.i65"
-    .word emit
-#include "page.i65"
-    .word clit
-    .byt 9              ; " MISSING"
-#include "pad.i65"
-    .word fail
-#include "page.i65"
-qchar02
-    .word rfrom
-#include "page.i65"
-    .word drop
+    .word _allot
 #include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name="
-stack=( text" == ) ( -- addr )
-tags=string,~wut?
-State-smart string literal.  In compile mode, encloses a string
-in the dictionary.  In interpret mode, returns the address of a
-string ([[PAD]])
-
-todo: make this state-smart
-```
-: "   ( "name" == ) ( -- addr )
-    [ ascii " ] literal  word >in 1+!
-    pad dup>r over c@ 1+ cmove> r> ;
-    
-```
-!!!pronounced: "quote"
+name=$>PAD
+stack=( addr -- )
+tags=string
+Move a string at `addr` to the [[PAD]]
 #endif
-_quote
+_stringtopad
 #include "enter.i65"
-    .word clit
-    .asc '"'
-#include "pad.i65"
-    .word _word
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word oneplusstore
-#include "page.i65"
     .word _pad
 #include "page.i65"
     .word duptor
@@ -900,7 +875,7 @@ _quote
 #include "page.i65"
     .word oneplus
 #include "page.i65"
-    .word cmovegt
+    .word _move
 #include "page.i65"
     .word rfrom
 #include "page.i65"
@@ -932,28 +907,96 @@ _lparen
 
 ;--------------------------------------------------------------
 #if 0
+name="
+stack=( text" == ) ( -- addr )
+tags=string
+flags=immediate
+State-smart string literal.  In compile mode, encloses a string
+in the dictionary.  In interpret mode, returns the address of a
+string ([[PAD]])
+
+```
+: "   ( text" == ) ( -- addr )
+    state @
+    dup if compile (") then
+    [ ascii " ] literal  word >in 1+!
+    ( state here )
+    swap ?: $, $>pad ;
+
+```
+!!!pronounced: "quote"
+#endif
+_quote
+#include "enter.i65"
+    .word _compilingq
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word qbranch
+    .byt <(quote01-*+1)
+#include "pad.i65"
+    .word _compile
+    .word pquote
+#include "pad.i65"
+quote01
+    .word clit
+    .byt '"'
+#include "pad.i65"
+    .word _word
+#include "page.i65"
+    .word toin
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word pquerycolon
+    .word _stringcomma
+    .word _stringtopad
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=."
 stack=( text" -- )
-tags=compiler,i/o,~wut?
+tags=compiler,i/o
 flags=immediate
 Output a string
 
 Scans ahead in the input stream for a close " character and
-encloses the string in the dictionary.  Compilation only
+encloses the string in the dictionary.
+
 #endif
 _dotq
 #include "enter.i65"
-    .word _compile
-    .word _pdq
-#include "pad.i65"
-    .word clit
-    .asc '"'
-#include "pad.i65"
+    .word _compilingq
+#include "page.i65"
     .word xyzzy
 #include "page.i65"
-    .word _qchar
+    .word dup
 #include "page.i65"
-    .word _commadollar
+    .word qbranch
+    .byt <(dotq01-*+1)
+#include "pad.i65"
+    .word _compile
+    .word pdq
+#include "pad.i65"
+dotq01
+    .word clit
+    .byt '"'
+#include "pad.i65"
+	.word _word
+#include "page.i65"
+    .word toin
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word pquerycolon
+    .word _stringcomma
+    .word _stringdot
 #include "page.i65"
     .word exit
 
@@ -973,35 +1016,6 @@ _abortq
     .word _compile
     .word _abort
 #include "pad.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?COMP
-stack=
-tags=compiler
-
- Check the STATE variable to see if we are compiling, issue an
- error if STATE is off (INTERPRET mode)
-
-#endif
-_qcomp
-#include "enter.i65"
-    .word state
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word qbranch
-    .byt <(qcomp01-*+1)
-#include "pad.i65"
-    .word clit
-    .byt 5
-#include "pad.i65"
-    .word fail                  ; "COMPILATION ONLY"
-#include "page.i65"
-qcomp01
     .word exit
 
 ;--------------------------------------------------------------
@@ -1451,6 +1465,8 @@ flags=immediate
 #endif
 _then
 #include "enter.i65"
+    .word _qcomp
+#include "page.i65"
     .word abs
 #include "page.i65"
     .word two
@@ -1863,7 +1879,7 @@ _dlit
 #if 0
 name=(LOAD1)
 stack=( lineaddr 39|79 -- )
-tags=vm,experimental
+tags=vm,~wut?
 Beginnings of LOAD
 #endif
 pload1
@@ -1877,7 +1893,7 @@ pload1
     sta PNTR                    ; PNTR cursor column on current line
     lda tos
     sta LNMX                    ; LNMX physical screen line length
-	jmp poptwo
+    jmp poptwo
 
 ;--------------------------------------------------------------
 #if 0
@@ -1899,27 +1915,27 @@ _load
 #include "enter.i65"
     .word _block
 #include "page.i65"
-	.word xyzzy
+    .word xyzzy
 #include "page.i65"
     .word threeplus
 #include "page.i65"
     .word clit
     .byt 39
 #include "pad.i65"
-	.word pload1
+    .word pload1
 #include "page.i65"
-	.word tib
+    .word tib
 #include "page.i65"
-	.word clit
-	.byt 80
+    .word clit
+    .byt 80
 #include "pad.i65"
-	.word expect
+    .word expect
 #include "page.i65"
-	.word _clrscr
+    .word _clrscr
 #include "page.i65"
-	.word xyzzy
+    .word xyzzy
 #include "page.i65"
-	.word exit
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1933,4 +1949,4 @@ tags=compiler,unimplemented
 #endif
 _saveforth
 #include "enter.i65"
-	.word exit
+    .word exit
