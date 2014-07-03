@@ -164,8 +164,8 @@ _semi
             if @to_code
                 if @code.nil?
                     # first line is special, the label
-					@label = line
-					@addr = labelhash[@label]
+                    @label = line
+                    @addr = labelhash[@label]
                     # start with a code quote and a slider button
                     @code =
                         "\n\n\n<$button popup=\"$:/state/codeSlider\">code</$button>"\
@@ -185,14 +185,14 @@ _semi
             @addr
         end
 
-		def size
-			@size
-		end
-		
-		def set_size(size)
-			@size = size
-		end
-		
+        def size
+            @size
+        end
+
+        def set_size(size)
+            @size = size
+        end
+
         def desc
             @desc
         end
@@ -254,9 +254,9 @@ _semi
         end
     end
 
-	def hex4out(addr)
-		return addr.to_s(16).rjust(4,'0')
-	end
+    def hex4out(addr)
+        return addr.to_s(16).rjust(4,'0')
+    end
 
     # read an assembler-generated label file in:  label, address
     def add_labels(filename)
@@ -289,7 +289,7 @@ _semi
 
 
 
-        bogus = " userrp0 dnegate _block dectos plover xyzzy cr01 branch rldecode02 domslash "
+        bogus = " userrp0 _plusmove sharps01 "
 
 
 
@@ -305,18 +305,18 @@ _semi
         end
     end
 
-	def set_sizes(forthwordhash)
-		sortedbyaddr = forthwordhash.sort_by {|wordname, stuff| stuff.addr}
-		for i in 0..(sortedbyaddr.size-2)
-			size = sortedbyaddr[i+1][1].addr-sortedbyaddr[i][1].addr
-			sortedbyaddr[i][1].set_size size
-		end
-		sortedbyaddr.last[1].set_size 6		# assembler vocabulary
+    def set_sizes(forthwordhash)
+        sortedbyaddr = forthwordhash.sort_by {|wordname, stuff| stuff.addr}
+        for i in 0..(sortedbyaddr.size-2)
+            size = sortedbyaddr[i+1][1].addr-sortedbyaddr[i][1].addr
+            sortedbyaddr[i][1].set_size size
+        end
+        sortedbyaddr.last[1].set_size 6     # assembler vocabulary
 #  # => [[:joan, 18], [:fred, 23], [:pete, 54]]
-#		forthwordhash.each do |wordname, stuff|#
-#			print stuff.addr, stuff.label
-#		end
-	end
+#       forthwordhash.each do |wordname, stuff|#
+#           print stuff.addr, stuff.label
+#       end
+    end
 
     def write_symtab_file(outputfile,forthwordhash)
         symfile = File.open("./build/"+outputfile,'w')
@@ -378,7 +378,7 @@ _semi
                 "pettil-editor.a65 "\
                 "pettil-assembler.a65 "
 
-	test_files="sweet16.a65"
+    test_files="sweet16.a65"
 
     all_words = Hash.new
     pettil = PettilSource.new core_files+transient_files
@@ -398,8 +398,8 @@ _semi
         end
     end
 
-	#calculate the @size field of each forthword
-	set_sizes all_words   unless all_words["LAUNCH"].addr.nil?
+    #calculate the @size field of each forthword
+    set_sizes all_words   unless all_words["LAUNCH"].addr.nil?
 
     # output symbol table file
     write_symtab_file "pettil.sym",all_words
