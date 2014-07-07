@@ -591,4 +591,103 @@ it's a 40
     [ ascii " ] literal  word >in 1+!
 	rot ?: $enclose $>pad ;
     
-    
+L0d40 .byt 8 | bit7
+ .asc "?LOADIN","G"|bit7
+ .word L0d28
+QLOADING
+ .word DOCOL
+ .word BLK
+ .word FETCH
+ .word ZEQ
+ .word CLIT
+ .byt 22
+ .word QERROR
+ .word SEMIS
+
+;~~~disk
+L18be .byt 3 | bit7 | bit6
+ .byt "--",">"|bit7
+ .word L1885
+DASHDASHGT
+ .word DOCOL
+ .word QLOADING
+ .word ZERO
+ .word IN
+ .word STORE
+ .word BSCR
+ .word BLK
+ .word FETCH
+ .word OVER
+ .word MOD
+ .word NEGATE
+ .word BLK
+ .word PSTORE
+ .word SEMIS
+: -->
+    ?loading
+    >in off
+    b/scr
+    blk @
+    over mod
+    negate
+    blk +! ;
+; Initialized in RAM:
+DOPRIM
+   JMP (COLDD)          ; [5]
+
+   
+NEXT
+   INY                  ; [2]
+   BMI PGFIX            ; [2]*
+NEXT1
+   LDA (IP),Y           ; [5]
+   BMI ENTER            ; [2]
+   STA DOPRIM+1         ; [3]  assume DOPRIM is in z.p.?
+   JMP DOPRIM           ; [3]
+                        ; ---
+                        ;[22]
+
+ENTER
+   STA W+1 ; lead with high byte of target      ; [3]
+   INY                                          ; [2]
+   LDA (IP),Y ; then low byte                   ; [5]
+   STA W                ; [3]
+   DEC RX               ; [5]
+   LDX RX               ; [3]
+   TYA                  ; [2]
+   SEC                  ; [2]
+   ADC IP               ; [3]
+   STA RL,X             ; [5]
+   LDA IP+1             ; [3]
+   STA RH,X             ; [5]
+   LDA W                ; [3]
+   STA IP               ; [3]
+   LDA W+1              ; [3]
+   STA IP+1             ; [3]
+   LDY #0               ; [2]
+   BEQ NEXT1            ; [3]
+
+EXIT
+   LDX RX
+   INC RX
+   LDA RL,X
+   STA IP
+   LDA RH,X
+   STA IP+1
+   LDY #0
+   BEQ NEXT1
+
+PGFIX       ; add half page to IP & subtract from Y
+   TYA      ; rare occurrence, but rather guard against
+   AND #$80 ; it here than in compiler process
+   TAY
+   LDA IP
+   BPL +
+   AND #$80
+   STA IP
+   INC IP+1
+   BNE NEXT1
+   BRK
++  ORA #$80
+   STA IP
+   BPL NEXT1 

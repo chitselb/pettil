@@ -289,7 +289,7 @@ _semi
 
 
 
-        bogus = " userrp0 _plusmove sharps01 move01 do2const domslash rldecode01 "
+        bogus = " userrp0 _numvmpktstore "
 
 
 
