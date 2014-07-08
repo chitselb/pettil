@@ -289,7 +289,7 @@ _semi
 
 
 
-        bogus = " userrp0 _numvmpktstore "
+        bogus = " userrp0 _numvmpktstore  _number "
 
 
 

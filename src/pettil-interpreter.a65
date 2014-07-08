@@ -470,7 +470,7 @@ tags=nosymbol
 Trial search within a vocabulary, used by FIND
 
 ```
-: (vocfind   ( vocid name -- )
+: (vocfind)   ( vocid name -- )
     dup>r voc+ r@ (find) r> voc- ;
 
 ```
@@ -717,7 +717,6 @@ Accept a line of input from the user
 : query   ( -- )
     tib 80 expect
     span @ #tib !
-    blk off
     >in off ;
 ```
 #endif
@@ -862,7 +861,33 @@ _usescr
     .word off                   ; line counter 0..24
 #include "page.i65"
     .word exit
-    
+
+;--------------------------------------------------------------
+#if 0
+name=DONE?.TIB
+stack=( -- flag )
+tags=interpreter
+Target of the DONE? vector when input is from the console.  Leaves
+true when the input buffer has been exhausted, triggering REFILL
+
+: done?.tib   ( -- flag )
+    >in @ #tib @ > ;
+
+#endif
+doneqtib
+#include "enter.i65"
+    .word toin
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word numtib
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word gt
+#include "page.i65"
+    .word exit
+
 ;--------------------------------------------------------------
 #if 0
 name=USETIB
@@ -894,7 +919,7 @@ and returns either
 
 ```
 : exists?
-   bl word dup c@ if find else 0 then ;
+   bl word dup c@ ?: find 0 ;
 ```
 #endif
 _existsq
@@ -907,18 +932,10 @@ _existsq
 #include "page.i65"
     .word cfetch
 #include "page.i65"
-    .word qbranch
-    .byt <(existsq01-*+1)
-#include "pad.i65"
+    .word pquerycolon
     .word _find
-#include "page.i65"
-    .word branch
-    .byt <(existsq02-*+1)
-#include "pad.i65"
-existsq01
     .word zero
-#include "page.i65"
-existsq02
+#include "pad.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -974,28 +991,42 @@ tags=fig,forth-83,interpreter
 The Forth interpreter loop
 
 ```
-: interpret   ( -- )
-    done? off
+refill, done? and source are vectors
+refill.tib performs query to tib from keyboard
+refill.scr performs query to faketib from fake screen
+refill.blk does nothing
+
+create jumptable next , dlit , drop , droplit ,
+
+: interpret
     begin
-        ?stack exists? ?dup
-        if
+        refill                  \ more from this source?
+ ( flag )
+    while
+ ( addr size )
+        begin
+            ?stack              \ make sure things are okay
+            exists?  ?dup
+            if
  ( cfa findflag )
-            state @ <>
-            ( state -1 or 0; find -1 or +1 )
-            ( only compile if state -1 and find -1, otherwise execute )
-            ?: execute ,xt
-        else
+                \               find -1    find +1
+                \             ____________________
+                \ state -1   | compile     execute
+                \ state 0    | execute     execute
+                state @ <>
+                ?: execute ,xt
+            else
  ( here )
-            number
-            [ jumptable ] literal
-            dpl @ 0< 2*  state @ + 2* -
-            @ execute
-        then
-        done? @                 ( end of input stream? )
-    until ;
-
-    create jumptable next , dlit , drop , droplit ,
-
+ \               dup c@          \ if WORD left null, don't NUMBER that
+ \               if
+                    number
+                    jumptable  dpl @ 0< 2*  state @ + 2* -
+                    @ execute
+ \               then
+            then
+            done?               \ more of this buffer?
+        until
+    repeat ;
 ```
 #endif
 _interpret
@@ -1080,17 +1111,31 @@ This is the infinite outer interpreter loop:
       - outputs a carriage return (CR)
       - waits for a line of input (QUERY)
       - interprets that line
+
+```
+: quit
+    [ rp!
+    begin
+        cr
+        usetib  blk off
+        query interpret
+        state @ 0=
+        if
+            ." OK"
+        then
+    again ;
+```
 #endif
 _quit
 #include "enter.i65"
-    .word _lbracket         ; STATE OFF
+    .word _lbracket             ; STATE OFF
 #include "page.i65"
     .word rpstore
 #include "page.i65"
-quit01                                  ; BEGIN
+quit01                          ; BEGIN
     .word cr
 #include "page.i65"
-    .word _usetib
+    .word _usetib               ; ~wut?
 #include "page.i65"
     .word blk
 #include "page.i65"
