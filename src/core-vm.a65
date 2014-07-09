@@ -38,7 +38,7 @@ temporary storage.  When [[REHASH]] rebuilds the symbol
 table, it performs [[automatic memory allocation|AUTOMEM]]
 and may move `BLKBUF` (and its contents) to a new location.
 
-!!! pronounced: "block-buff"
+!!! pronounced: "b-l-k-buff"
 #endif
 _blkbuf
 #include "enter.i65"
@@ -190,7 +190,7 @@ rldecode06
 ;--------------------------------------------------------------
 #if 0
 name=LINESIZE
-tags=vm
+tags=vm,unimplemented
 stack=( addr line -- 40|80 )
 The "addr" argument should point to 24 bits of linewrap info,
 and "line" refers to a physical screen line 0..24
@@ -201,7 +201,6 @@ of "line"
 ```
 : linesize   ( addr line -- 40|80 ):
     2dup >bloom rot + cbit@
-
 ```
 #endif
 _linesize
@@ -221,11 +220,10 @@ Return the packet address of block N
     begin
         over 0>
     while
-        dup @
-        - swap 1- swap
+        dup @ $7ff and
+        - -1 +under
     repeat
-    swap drop ;
-
+    nip ;
 ```
 #endif
 _topkt
@@ -284,7 +282,6 @@ flag = false for data packet, true for editor packet
     VIDRAM r> and or over !       \ set packet length
     #vmpkt 1+! ;                  \ increment packet counter )
     ( vmbuf )                     \ packet address
-
 ```
 #endif
 _pktplus
@@ -384,7 +381,6 @@ compressed/uncompressed and writable/read-only packets
         rldecode
     then
    rfrom nip ;
-
 ```
 #endif
 _unpkt
@@ -522,12 +518,17 @@ screens (3 bytes linewrap + 1000 spaces) if EDITMODE is set
  ( packet )
     unpkt  r> ;
  ( blkbuf new? )
-
 ```
 #endif
 _pblock
 #include "enter.i65"
     .word dup
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word prev
+#include "page.i65"
+    .word store
 #include "page.i65"
     .word oneplus
 #include "page.i65"
@@ -589,12 +590,39 @@ name=BLOCK
 stack=( n -- addr )
 tags=vm,fig,forth-79,forth-83
 In PETTIL, returns the address of the only block buffer in the system
+
+```
+: block   ( n -- addr )
+    prev 2dup  @ =
+    if
+        2drop  blkbuf
+    else
+        under ! (block)  drop
+    then ;
+```
 #endif
 _block
 #include "enter.i65"
-    .word dup
+    .word prev
 #include "page.i65"
-    .word blk
+    .word twodup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word qbranch
+    .byt <(block01-*+1)
+#include "pad.i65"
+    .word twodrop
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word branch
+    .byt <(block02-*+1)
+#include "pad.i65"
+block01
+    .word under
 #include "page.i65"
     .word store
 #include "page.i65"
@@ -602,6 +630,7 @@ _block
 #include "page.i65"
     .word drop
 #include "page.i65"
+block02
     .word exit
 
 ;--------------------------------------------------------------
@@ -944,6 +973,10 @@ _emptybuffers
     .word vmbuf
 #include "page.i65"
     .word store
+#include "page.i65"
+    .word prev
+#include "page.i65"
+    .word on
 #include "page.i65"
     .word exit
 
