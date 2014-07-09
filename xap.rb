@@ -289,7 +289,7 @@ _semi
 
 
 
-        bogus = " userrp0 _numvmpktstore  _number "
+        bogus = " userrp0 doconst01 "
 
 
 
@@ -363,11 +363,8 @@ _semi
                 "core-user.a65 "\
                 "core-inner.a65 "\
                 "core-nucleus.a65 "\
-                "core-device.a65 "\
-                "core-pet.a65 "\
-                "core-numword.a65 "\
                 "core-double.a65 "\
-                "core-string.a65 "\
+                "core-io.a65 "\
                 "core-vm.a65 "\
                 "sweet16.a65 "
 

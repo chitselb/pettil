@@ -1,24 +1,441 @@
-; core-numword.a65
-#echo .       core-numword.a65          NUMBER and WORD
+; core-device.a65
+#echo .       core-device.a65           I/O
 
 ;--------------------------------------------------------------
 #if 0
-name=SYMBUF
-stack=( -- symbuf )
-tags=numword
- Analagous to HERE, but the place where the next symbol goes,
- and temporary storage during INTERPET
+name=EMIT
+stack=( c -- )
+tags=forth-83,i/o
+#endif
+emit
+    jmp emitvector
+emitvector
+    ldy numout+3
+    clc
+    lda (up),y
+    adc #1
+    sta (up),y
+    bne emit01
+    iny
+    clc
+    lda (up),y
+    adc #1
+    sta (up),y
+emit01
+    lda tos
+    jsr CHROUT
+    jmp pops
+
+;--------------------------------------------------------------
+#if 0
+name=KEY
+stack=( -- c )
+tags=forth-83,i/o
+Wait for a keypress by the user
+#endif
+key
+    stx storex
+key01
+    jsr GETIN
+    beq key01
+    ldx storex
+    ldy #0
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=?TERMINAL
+stack=( -- flag )
+tags=forth-83,i/o
+Returns true if the stop key was pressed
+#endif
+qterminal
+    ldy #0
+    lda $9b
+    cmp #$ef            ; check STOP key
+    bne qterminal01
+    dey
+qterminal01
+    tya
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=CR
+stack=( -- )
+tags=forth-83,i/o
+Output a carriage return
+#endif
+cr
+    jmp crvector
+crvector
+    lda #$0d
+    jsr CHROUT
+    lda #0
+    ldy numout+3
+    sta (up),y
+    iny
+    sta (up),y
+    ldy numline+3
+    clc
+    lda (up),y
+    adc #1
+    sta (up),y
+    bcc cr01
+    iny
+    lda (up),y
+    adc #0
+    sta (up),y
+cr01
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=VIDRAM
+stack=( -- $8000 )
+tags=i/o,const
+Constant, address of PET video memory $8000
+#endif
+vidram
+    jsr doconst
+    .word VIDRAM
+
+;--------------------------------------------------------------
+#if 0
+name=MON
+stack=( -- )
+tags=system,ext
+Restores BASIC zero page and exits to the TIM monitor
+#endif
+mon
+    jsr aloha      ; restore BASIC zpage
+    brk
+    jsr aloha      ; restore BASIC zpage
+plover              ; if we get here, it's unimplemented
+xyzzy
+    jmp next        ; used as a breakpoint in secondaries
+
+;--------------------------------------------------------------
+#if 0
+name=JIFFY@
+stack=( -- d )
+tags=device,system,ext
+The number of jiffies since powerup or midnight as a double
+#endif
+_jiffyfetch
+#include "enter.i65"
+    .word notirq                ; don't let IRQ interrupt the copy
+#include "page.i65"
+    .word clit
+    .byt TIME
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word notirq                ; reenable
+#include "page.i65"
+    .word exit  ; [14]
+
+;--------------------------------------------------------------
+#if 0
+name=CMDOFF
+tags=i/o,kernel
+stack=( -- )
+Restore default I/O channels
+#endif
+cmdoff
+    stx storex
+    jsr CLRCHN
+    ldx storex
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=EXPECT
+stack=( addr +n -- )
+tags=forth-83,i/o
+Stores up to +n characters into memory beginning at addr.
+Receive characters and store each into memory.
+The transfer begins at addr proceeding towards
+higher addresses one byte per character until
+either "return" is received or until +n characters have been transfered.  No more than +n
+characters will be stored.  The "return" is not
+stored into memory.  No characters are received
+or transfered if +n is zero.  All characters
+actually received and stored into memory will
+be displayed, with the "return" displaying as a
+space.
+#endif
+expect
+    jmp expectvector
+expectvector
+    ldy #1
+    jsr locals
+    stx storex
+    dey
+    ;ldy #$ff
+expect01
+    iny
+    cpy tos
+    bcs expect02
+    jsr CHRIN
+    cmp #$0d
+    beq expect02
+    sta (n),y
+    bne expect01
+expect02
+    ; correct for blank line
+    lda (n),y
+    cmp #$20
+    bne expect03
+    dey
+expect03
+    tya
+    ldy span+3
+    sta (up),y
+    iny
+    lda #0
+    sta (up),y
+    ldx storex
+    jmp pops
+
+;--------------------------------------------------------------
+#if 0
+name=FILENAME
+stack=( addr n -- )
+tags=i/o,kernel
+Set the filename for file operations.  Must be used before
+OPEN or CSAVE.
+#endif
+_filename
+
+;--------------------------------------------------------------
+#if 0
+name=OPEN
+stack=( n1 n2 n3 -- f )
+tags=i/o,kernel
+Open the logical file number n1 on device n2 with secondary
+address n3.  Filename must have been set with NAME.  Returns
+an error flag f (0=none, 24=error).
+ftp://www.zimmers.net/pub/cbm/vic20/programming/VIC-Forth/Manual.txt
+#endif
+_open
+
+;--------------------------------------------------------------
+#if 0
+name=HPIN
+stack=( n -- f )
+tags=i/o,kernel
+Send the current input stream to logical file number n.
+Returns and error flag f (0=none, 24=error).  See OPEN.
+
+!!!pronounced: "h-p-in".
+#endif
+_hpin
+
+;--------------------------------------------------------------
+#if 0
+name=HPOFF
+stack=( -- )
+tags=i/o,kernel
+Restore the current input and output stream to the
+keyboard and screen respectively.  Pronounced "h-p-off".
+#endif
+_hpoff
+
+;--------------------------------------------------------------
+#if 0
+name=HPOUT
+stack=( n -- f )
+tags=i/o,kernel
+ consider CMDIN CMDOUT CMDOFF
+ Send the current output stream to logical file number n.
+ Returns an error flag f (0=none, 24=error).  See OPEN.
+ Pronounced "h-p-out".
+#endif
+_hpout
+
+;--------------------------------------------------------------
+#if 0
+name=CSAVE
+stack=( -- f )
+tags=i/o,kernel
+ Save the wordlist and USER-variables to cassette.  The
+ wordlist may be given a name (see NAME).  Returns an error
+ flag (0=none, 24=error).  See CLOAD.
+#endif
+_csave
+
+;--------------------------------------------------------------
+#if 0
+name=CLOAD
+stack=( -- f )
+tags=i/o,kernel
+ Load the saved wordlist from cassette.  Returns an error
+ flag f (0=none, 24=error).  See CSAVE.
+#endif
+_cload
+
+;--------------------------------------------------------------
+#if 0
+name=?DISC
+stack=( -- )
+tags=i/o,kernel
+          Read the disk error channel storing the message at address
+          $8C0 (C64-FORTH) or $1295 (VIC-FORTH) and the length byte
+          at $8BF (C64-FORTH) or $1294 (VIC-FORTH).  See COUNT and
+          TYPE.  Pronounced "question-disc".
+#endif
+_qdisc
+
+;--------------------------------------------------------------
+#if 0
+name=IRQ^
+stack=( eormask -- )
+tags=device
+Called by the editor (and anything else) to flip the IRQ vector
+on and off between two different values
+#endif
+irqcaret
+    jsr toggleirq
+    jmp pops
+
+;--------------------------------------------------------------
+#if 0
+name=SPACE
+stack=( -- )
+tags=forth-83,i/o
+Emits a space character
+#endif
+_space
+#include "enter.i65"
+    .word bl
+#include "page.i65"
+    .word emit
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SPACES
+stack=( n -- )
+tags=forth-83,i/o
+Emits "n" spaces
+#endif
+_spaces
+#include "enter.i65"
+    .word zero
+#include "page.i65"
+    .word _max
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word pqdo
+    .byt <(spaces02-*+1)
+#include "pad.i65"
+spaces01
+    .word _space
+#include "page.i65"
+    .word ploop
+    .byt <(spaces01-*+1)
+#include "pad.i65"
+spaces02
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=COUNT
+stack=( addr1 -- addr2 n1 )
+tags=forth-83
+Leaves the address, addr2 and the character count +n of text
+beginning at addr1.  addr2 is addr1+1 and n1 is the length of
+the counted string at addr1.  The byte at addr1 contains the
+byte count +n.  Range of +n is {0...255}.
+#endif
+count
+    ldy #0
+    lda (tos),y
+    inc tos
+    bne count01
+    inc tos+1
+count01
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=TYPE
+stack=( addr count -- )
+tags=forth-83,i/o
+#endif
+type
+    ldy #1
+    jsr locals
+    clc
+    lda tos
+    ldy numout+3
+    adc (up),y
+    sta (up),y
+    iny
+    lda tos+1
+    adc (up),y
+    sta (up),y
+    ldy #0
+type01
+    cpy tos
+    bne type02
+    dec tos+1
+    bpl type02
+    jmp pops
+type02
+    lda (n),y
+    jsr CHROUT
+    iny
+    bne type01
+    inc n+1
+    bne type01
+
+;--------------------------------------------------------------
+#if 0
+name=$.
+stack=( addr -- )
+tags=string
+Outputs a string
 
 #endif
-_symbuf
+_stringdot
 #include "enter.i65"
-    .word symtail
+	.word count
 #include "page.i65"
-    .word fetch
+	.word type
+#include "page.i65"
+	.word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(")
+stack=( -- )
+tags=nosymbol,inner,i/o
+Types the inline counted string from the dictionary and moves IP
+to just after the string, paging if necessary
+#endif
+_pq
+#include "enter.i65"
+    .word rfrom             ; ( cstring-2 )
 #include "page.i65"
     .word twoplus
 #include "page.i65"
-    .word exit
+    .word count
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word to6502
+skipinline
+    lda tos+1
+    sta ip+1
+    lda tos
+    sta ip
+    jsr slide
+    lda #0
+    jmp pad
 
 ;--------------------------------------------------------------
 #if 0
@@ -54,68 +471,6 @@ digit02
 
 ;--------------------------------------------------------------
 #if 0
-name=SKIP
-stack=( addr1 size1 char -- addr2 count2 )
-tags=numword,nosymbol
-
-
- addr1 is the starting address in the input stream where up
- to size1 bytes are skipped *WHILE* they match char.  Returns
- addr2 as the address of the first non-matching character and
- count2 as the remaining number of bytes in the buffer.
-#endif
-skip
-    brk
-    .byt bs, <(skipscan01-*-2)      ; setup
-skip01
-    .byt bs, <(skipscan02-*-2)      ; next char
-    .byt bz, <(skip01-*-2)
-    .byt br, <(skipscan04-*-2)      ; exit
-;--------------------------------------------------------------
-#if 0
-name=SCAN
-stack=( addr count char -- addr count )
-tags=numword,nosymbol
-
- addr1 is the starting address in the input stream where up
- to count1 bytes are skipped *UNTIL* they match char.  Returns
- addr2 as the address of the first non-matching character and
- count2 as the remaining number of bytes in the buffer.
-
-#endif
-scan
-    brk
-    .byt bs, <(skipscan01-*-2)      ; setup
-scan01
-    .byt bs, <(skipscan02-*-2)      ; next char
-    .byt bnz, <(scan01-*-2)
-    .byt br, <(skipscan04-*-2)
-
-skipscan01
-    .byt ld | TOS   ; char
-    .byt st | N1
-    .byt pull
-    .byt st | N0
-    .byt pull       ; addr
-    .byt rs
-skipscan02
-    .byt ldi | TOS
-    .byt dcr | N0
-    .byt bm1 , <(skipscan03-*-2)    ; leave if count < 0
-    .byt sub | N1
-    .byt rs
-skipscan03
-    .byt popd | R12 ; drop the BS return
-skipscan04
-    .byt dcr | TOS
-    .byt inr | N0
-    .byt rtn
-    lda n
-    ldy n+1
-    jmp pushya
-
-;--------------------------------------------------------------
-#if 0
 name=HOLD
 stack=( char -- )
 tags=numword
@@ -141,366 +496,6 @@ _hold
     .word cstore
 #include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name='STREAM
-stack=( -- addr size )
-tags=numword,~wut?
-
-
-```
- : 'stream   ( -- addr size )
-       blk @ ?dup
-       if      block b/buf
-       else    tib #tib @
-       then
-       >in @ over min >r swap r@ + swap r> - ;
-
-```
-#endif
-_tickstream
-#include "enter.i65"
-    .word blk
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word qdup              ; ( 0 | blk blk )
-#include "page.i65"
-    .word qbranch           ; IF
-    .byt <(tickstream01-*+1)
-#include "pad.i65"
-    ; input from block device
-    .word clit
-    .byt 9
-#include "pad.i65"
-    .word fail
-#include "page.i65"
-    ; this is where the BLOCK i/o goes
-    ; _block bperbuf        ; ( addr )
-    .word branch            ; ELSE
-    .byt <(tickstream02-*+1)    ; this code never executes
-#include "pad.i65"
-tickstream01                ; input from terminal
-    .word tib               ; ( tib )
-#include "page.i65"
-    .word numtib            ; ( tib #tib.uarea )
-#include "page.i65"
-    .word fetch             ; ( tib #tib )
-#include "page.i65"         ; THEN
-tickstream02
-    .word toin              ; ( buf size >in )
-#include "page.i65"
-    .word fetch             ; ( buf size offset )
-#include "page.i65"
-    .word over              ; ( buf size offset size )
-#include "page.i65"
-    .word _min              ; ( buf size offset )
-#include "page.i65"
-    .word tor               ; ( buf size )
-#include "page.i65"
-    .word swap              ; ( size buf )
-#include "page.i65"
-    .word rfetch            ; ( size buf offset )
-#include "page.i65"
-    .word plus              ; ( size addr )
-#include "page.i65"
-    .word swap              ; ( addr size )
-#include "page.i65"
-    .word rfrom             ; ( addr size offset )
-#include "page.i65"
-    .word minus             ; ( addr remaining )
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=WORD.TIB
-stack=( char -- addr )
-tags=numword
-
-```
-: word   ( char -- addr )
-    >r 'stream
-    under  r@ skip
-    under  r> scan
-    drop
-    2dup swap -  >r
-    rot - 1+ >in +!
-    r> here dup bl blank
-    2dup c!  1+ swap cmove
-    here ;
-```
-#endif
-_wordtib
-#include "enter.i65"
-    .word tor
-#include "page.i65"
-    .word _tickstream
-#include "page.i65"
-    .word under
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word skip
-#include "page.i65"
-    .word under
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word scan
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word plusstore
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word bl
-#include "page.i65"
-    .word _blank
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word numtib
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word gt
-#include "page.i65"
-    .word doneq
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=WORD.SCR
-stack=( char -- addr )
-tags=interpreter,vm
-
-#endif
-_wordscr
-#include "enter.i65"
-    .word xyzzy
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word currlin
-#include "page.i65"
-    .word lin
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word tobloom
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word cbitfetch
-#include "page.i65"
-    .word pquerycolon
-    .word forty
-    .word eighty
-#include "pad.i65"
-    .word to6502
-plugh
-    ldy #2
-    jsr locals
-    sty n+7
-    lda #<PNT
-    sta n+6
-    lda #3
-    sta DFLTN                   ; Screen = device 3
-    lda #0
-    sta PNTR                    ; PNTR cursor column on current line
-    lda tos
-    sta LNMX                    ; LNMX physical screen line length
-    brk
-    .byt ldd | N0
-    .byt st | N2
-    .byt std | N3               ; PNT pointer - current scren line address
-    .byt rtn 
-    ldy #0
-
-
-#include "page.i65"
-    .word plit
-    .word $0100
-#include "pad.i65"
-    .word eighty
-#include "page.i65"
-    .word expect
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-
-    .word rfetch
-#include "page.i65"
-    .word skip
-#include "page.i65"
-    .word under
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word scan
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word plusstore
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word bl
-#include "page.i65"
-    .word _blank
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=WORD
-stack=( char -- addr )
-tags=numword
-A [[vector|VECTOR]], points to [[WORD-TIB]] at [[COLD]] but will be redirected
-to [[WORD-SCR]] or [[WORD-BLK]] as required by [[INTERPRET]]
-
- Generates a counted string by non-destructively accepting
- characters from the input stream until the delimiting
- character char is encountered or the input stream is
- exhausted.  Leading delimiters are ignored.  The entire
- character string is stored in memory beginning at addr as a
- sequence of bytes.  The string is followed by a blank which
- is not included in the count.  The first byte of the string
- is the number of characters {0..255}.  If the string is
- longer than 255 characters, the count is unspecified.  If
- the input stream is already exhausted as WORD is called,
- then a zero length character string will result.
-
- If the delimiter is not found the value of >IN is the size
- of the input stream.  If the delimiter is found >IN is
- adjusted to indicate the offset to the character following
- the delimiter.  #TIB is unmodified.
-
- The counted string returned by WORD may reside in the "free"
- dictionary area at HERE or above.  Note that the text
- interpreter may also use this area.
-See: http://forth.sourceforge.net/std/fst83/fst83-5.htm#input.stream
-
-
-```
- fig high level
- : word   ( c -- addr )
-       blk @  if  blk @ block  else  tib @  then
-       >in @ + swap enclose here 34 blank >in +!
-       over - >r r@ here c! + here 1+ r> cmove ;
-
- : word   ( c -- nfa )
-      >r                              ; ( -- ) ( R; c )
-  ( ) ( R; c )
-      'stream
-  ( addr size ) ( R; c )
-      under
-  ( addr addr size ) ( R; c )
-      r@ skip
-  ( addr addr2 count2 ) ( R; c )
-      under
-  ( addr addr2 addr2 count2 ) ( R; c )
-      r> scan
-  ( addr addr2 addr3 count )
-      drop 2dup swap -
-  ( addr addr2 addr3 size )
-      >r
-  ( addr addr2 addr3 ) ( R; size )
-      rot - 1+
-  ( addr2 addr3 size2 ) ( R; size )
-      >in +!
-  ( addr2 addr3 ) ( R; size )
-      r> here
-  ( addr2 addr3 size here )
-      2dup c!
-  ( addr2 addr3 size here )
-      1+ swap cmove
-  ( addr2 )
-      here bl over
-  ( addr2 here bl here )
-      count + c! ;
-  ( addr2 here )
-
-```
-#endif
-word
-    jmp (uarea+userwordvec-userarea)
 
 ;--------------------------------------------------------------
 #if 0

@@ -687,6 +687,38 @@ qfind02
 
 ;--------------------------------------------------------------
 #if 0
+name=EXISTS?
+stack=( -- addr flag )
+tags=interpreter,ext
+parses the next token in the input stream.  Returns either the
+address of the (unfound) token at HERE and a 0, or the code
+field address of the word and -1 for normal, +1 for immediate
+words
+and returns either
+
+```
+: exists?
+   bl word dup c@ ?: find 0 ;
+```
+#endif
+_existsq
+#include "enter.i65"
+    .word bl
+#include "page.i65"
+    .word _word
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word pquerycolon
+    .word _find
+    .word zero
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name='
 stack=( -- cfa )
 tags=forth-83
@@ -708,49 +740,393 @@ _tick
 
 ;--------------------------------------------------------------
 #if 0
-name=QUERY
-stack=( -- )
-tags=forth-83,fig
-Accept a line of input from the user
+name=SOURCE.TIB
+stack=( -- addr size )
+tags=interpreter
+Target of SOURCE vector when input is from the console.  Leaves
+an address
 
 ```
-: query   ( -- )
-    tib 80 expect
-    span @ #tib !
-    >in off ;
+: source.tib   ( -- addr size )
+    tib #tib @ ;
 ```
 #endif
-_query
+_sourcetib
 #include "enter.i65"
     .word tib
 #include "page.i65"
-    .word clit
-    .byt 80
-#include "pad.i65"
-    .word expect
-#include "page.i65"
-    .word span
-#include "page.i65"
-    .word fetch
-#include "page.i65"
     .word numtib
 #include "page.i65"
-    .word store
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word off
+    .word fetch
 #include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=WORD.BLK
-stack=( char -- addr )
-tags=interpreter,vm
+name=SOURCE.BLK
+stack=( -- addr size )
+tags=interpreter
+Target of SOURCE vector when input is from the console.  Leaves
+an address and size
+
+```
+: source.blk   ( -- addr size )
+    block b/buf ;
+```
+#endif
+_sourceblk
+#include "enter.i65"
+    .word _block
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SOURCE.SCR
+stack=( -- addr size )
+tags=interpreter
+Target of SOURCE vector when input is from a screen.  Leaves
+an address pointing to the beginning of a line and line size 40|80
+#endif
+_sourcescr
+#include "enter.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SOURCE
+stack=( -- addr size )
+tags=interpret
 
 #endif
-_wordblk
+source
+    jmp (uarea+uservsource-userarea)
+
+;--------------------------------------------------------------
+#if 0
+name=TIB>
+stack=( addr -- )
+tags=interpreter,vm
+Set the input source type to "console"
+
+sets SOURCE, REFILL, and DONE?
+
+prounounced "t-i-b-from"
+#endif
+_tibfrom
+#include "enter.i65"
+    .word blk
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word plit
+    .word _sourcetib
+#include "pad.i65"
+    .word psource
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SCR>
+stack=( addr -- )
+tags=interpreter,vm
+Set the input source type to "screen"
+
+prounounced "s-c-r-from"
+#endif
+_scrfrom
+#include "enter.i65"
+    .word plit
+    .word _sourcescr
+#include "pad.i65"
+    .word psource
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BLK>
+stack=( addr -- )
+tags=interpreter,vm
+Set the input source type to "block"
+
+prounounced "b-l-k-from"
+#endif
+_blkfrom
+#include "enter.i65"
+    .word plit
+    .word _sourceblk
+#include "pad.i65"
+    .word psource
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BLKSCR>
+stack=( -- )
+tags=interpreter,vm
+
+```
+: blkscr>   ( addr -- )
+        writable? @  ?: scr> blk> ;
+```
+#endif
+_blkscrfrom
+#include "enter.i65"
+    .word writableq
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word pquerycolon
+    .word _scrfrom
+    .word _blkfrom
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SOURCE!
+stack=( -- )
+tags=vm,interpreter
+Sets the input source to TIB, BLK, or SCR
+
+```
+: source!   ( -- )
+    blk @  ?: blkscr> tib> ;
+```
+#endif
+_sourcestore
+#include "enter.i65"
+    .word blk
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word pquerycolon
+    .word _blkscrfrom
+    .word _tibfrom
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SYMBUF
+stack=( -- symbuf )
+tags=numword
+ Analagous to HERE, but the place where the next symbol goes,
+ and temporary storage during INTERPET
+
+#endif
+_symbuf
+#include "enter.i65"
+    .word symtail
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SKIP
+stack=( addr1 size1 char -- addr2 count2 )
+tags=numword,nosymbol
+
+
+ addr1 is the starting address in the input stream where up
+ to size1 bytes are skipped *WHILE* they match char.  Returns
+ addr2 as the address of the first non-matching character and
+ count2 as the remaining number of bytes in the buffer.
+#endif
+skip
+    brk
+    .byt bs, <(skipscan01-*-2)      ; setup
+skip01
+    .byt bs, <(skipscan02-*-2)      ; next char
+    .byt bz, <(skip01-*-2)
+    .byt br, <(skipscan04-*-2)      ; exit
+;--------------------------------------------------------------
+#if 0
+name=SCAN
+stack=( addr count char -- addr count )
+tags=numword,nosymbol
+
+ addr1 is the starting address in the input stream where up
+ to count1 bytes are skipped *UNTIL* they match char.  Returns
+ addr2 as the address of the first non-matching character and
+ count2 as the remaining number of bytes in the buffer.
+
+#endif
+scan
+    brk
+    .byt bs, <(skipscan01-*-2)      ; setup
+scan01
+    .byt bs, <(skipscan02-*-2)      ; next char
+    .byt bnz, <(scan01-*-2)
+    .byt br, <(skipscan04-*-2)
+
+skipscan01
+    .byt ld | TOS   ; char
+    .byt st | N1
+    .byt pull
+    .byt st | N0
+    .byt pull       ; addr
+    .byt rs
+skipscan02
+    .byt ldi | TOS
+    .byt dcr | N0
+    .byt bm1 , <(skipscan03-*-2)    ; leave if count < 0
+    .byt sub | N1
+    .byt rs
+skipscan03
+    .byt popd | R12 ; drop the BS return
+skipscan04
+    .byt dcr | TOS
+    .byt inr | N0
+    .byt rtn
+    lda n
+    ldy n+1
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name='STREAM
+stack=( -- addr size )
+tags=numword,~wut?
+Calculates SOURCE offset by >IN with respect to buffer size.
+
+```
+ : 'stream   ( -- addr size )
+       blk @ ?dup
+       if      block b/buf
+       else    tib #tib @
+       then
+       >in @ over min >r swap r@ + swap r> - ;
+
+ : 'stream   ( -- addr size )
+       source   ( baseaddr size )
+       >in @ over min
+       dup>r - r> +under ;
+
+```
+#endif
+_tickstream
+#include "enter.i65"
+    .word source
+#include "page.i65"
+    .word toin
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _min
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=WORD
+stack=( char -- addr )
+tags=interpreter
+ Generates a counted string by non-destructively accepting
+ characters from the input stream until the delimiting
+ character char is encountered or the input stream is
+ exhausted.  Leading delimiters are ignored.  The entire
+ character string is stored in memory beginning at addr as a
+ sequence of bytes.  The string is followed by a blank which
+ is not included in the count.  The first byte of the string
+ is the number of characters {0..255}.  If the string is
+ longer than 255 characters, the count is unspecified.  If
+ the input stream is already exhausted as WORD is called,
+ then a zero length character string will result.
+
+ If the delimiter is not found the value of >IN is the size
+ of the input stream.  If the delimiter is found >IN is
+ adjusted to indicate the offset to the character following
+ the delimiter.  #TIB is unmodified.
+
+ The counted string returned by WORD may reside in the "free"
+ dictionary area at HERE or above.  Note that the text
+ interpreter may also use this area.
+See: http://forth.sourceforge.net/std/fst83/fst83-5.htm#input.stream
+
+```
+ fig high level
+ : word   ( c -- addr )
+       blk @  if  blk @ block  else  tib @  then
+       >in @ + swap enclose here 34 blank >in +!
+       over - >r r@ here c! + here 1+ r> cmove ;
+
+ : word   ( c -- nfa )
+      >r                              ; ( -- ) ( R; c )
+  ( ) ( R; c )
+      'stream
+  ( addr size ) ( R; c )
+      under
+  ( addr addr size ) ( R; c )
+      r@ skip
+  ( addr addr2 count2 ) ( R; c )
+      under
+  ( addr addr2 addr2 count2 ) ( R; c )
+      r> scan
+  ( addr addr2 addr3 count )
+      drop 2dup swap -
+  ( addr addr2 addr3 size )
+      >r
+  ( addr addr2 addr3 ) ( R; size )
+      rot - 1+
+  ( addr2 addr3 size2 ) ( R; size )
+      >in +!
+  ( addr2 addr3 ) ( R; size )
+      r> here
+  ( addr2 addr3 size here )
+      2dup c!
+  ( addr2 addr3 size here )
+      1+ swap cmove
+  ( addr2 )
+      here bl over
+  ( addr2 here bl here )
+      count + c! ;
+  ( addr2 here )
+
+: word   ( char -- addr )
+    >r 'stream
+    under  r@ skip
+    under  r> scan
+    drop
+    2dup swap -  >r
+    rot - 1+ >in +!
+    r> here dup bl blank
+    2dup c!  1+ swap cmove
+    here ;
+
+: word   ( char -- addr )
+    >r source
+    under r@ skip  under r> scan  drop
+    2dup swap -  >r
+    ...
+```
+#endif
+_word
 #include "enter.i65"
     .word tor
 #include "page.i65"
@@ -814,236 +1190,63 @@ _wordblk
 
 ;--------------------------------------------------------------
 #if 0
-name=USEBLK
-stack=( addr -- )
-tags=interpreter,vm
-Interpret a block of "screen"
-#endif
-_useblk
-#include "enter.i65"
-    .word plit
-    .word _wordblk
-#include "pad.i65"
-    .word wordvec
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word currlin
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=USESCR
-stack=( addr -- )
-tags=interpreter,vm
-Interpret a block of "screen"
-#endif
-_usescr
-#include "enter.i65"
-    .word plit
-    .word _wordscr
-#include "pad.i65"
-    .word wordvec
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word threeplus
-#include "page.i65"
-    .word currlin
-#include "page.i65"
-    .word store                 ; address of screencodes
-#include "page.i65"
-    .word lin
-#include "page.i65"
-    .word off                   ; line counter 0..24
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=DONE?.TIB
-stack=( -- flag )
-tags=interpreter
-Target of the DONE? vector when input is from the console.  Leaves
-true when the input buffer has been exhausted, triggering REFILL
-
-: done?.tib   ( -- flag )
-    >in @ #tib @ > ;
-
-#endif
-doneqtib
-#include "enter.i65"
-    .word toin
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word numtib
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word gt
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=USETIB
-stack=( -- )
-tags=interpreter
-Reset ISDONE? and WORD to use PET keyboard
-#endif
-_usetib
-#include "enter.i65"
-    .word plit
-    .word _wordtib
-#include "pad.i65"
-    .word wordvec
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EXISTS?
-stack=( -- addr flag )
-tags=interpreter,ext
-parses the next token in the input stream.  Returns either the
-address of the (unfound) token at HERE and a 0, or the code
-field address of the word and -1 for normal, +1 for immediate
-words
-and returns either
-
-```
-: exists?
-   bl word dup c@ ?: find 0 ;
-```
-#endif
-_existsq
-#include "enter.i65"
-    .word bl
-#include "page.i65"
-    .word word
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word pquerycolon
-    .word _find
-    .word zero
-#include "pad.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=USESCRORBLK
-stack=( -- )
-tags=interpreter,vm
-
-```
-: usescrorblk   ( addr -- )
-        writable? @  ?: usescr useblk ;
-```
-#endif
-_usescrorblk
-#include "enter.i65"
-    .word writableq
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word pquerycolon
-    .word _usescr
-    .word _useblk
-#include "pad.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?USE
-stack=( -- )
-tags=vm,interpreter
-
-: ?use   ( -- )
-    blk @  ?: usescrorblk usetib ;
-
-#endif
-_quse
-#include "enter.i65"
-    .word blk
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word pquerycolon
-    .word _usescrorblk
-    .word _usetib
-#include "pad.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=INTERPRET
 stack=( -- )
 tags=fig,forth-83,interpreter
 The Forth interpreter loop
 
+consistent eager-loaded approach
+TIB source comes already loaded from QUIT
+BLK source comes already loaded from BLOCK
+SCR source will eager-load each line from the block buffer, already loaded by BLOCK
+
 ```
-refill, done? and source are vectors
-refill.tib performs query to tib from keyboard
-refill.scr performs query to faketib from fake screen
-refill.blk does nothing
-
-create jumptable next , dlit , drop , droplit ,
-
-: interpret
+create jumptable  next ,   dlit ,  drop ,  droplit ,
+                \ double  double,  single    single,
+: interpret   ( -- )
     begin
-        refill                  \ more from this source?
- ( flag )
+        ?stack                  \ make sure things are okay
+        bl word   ( addr )      \ eager-load for screens is done by SOURCE
+        dup c@    ( addr len )  \ WORD returns zero-length when SOURCE is exhausted
     while
- ( addr size )
-        begin
-            ?stack              \ make sure things are okay
-            exists?  ?dup
-            if
- ( cfa findflag )
-                \               find -1    find +1
-                \             ____________________
-                \ state -1   | compile     execute
-                \ state 0    | execute     execute
-                state @ <>
-                ?: execute ,xt
-            else
- ( here )
- \               dup c@          \ if WORD left null, don't NUMBER that
- \               if
-                    number
-                    jumptable  dpl @ 0< 2*  state @ + 2* -
-                    @ execute
- \               then
-            then
-            done?               \ more of this buffer?
-        until
-    repeat ;
+        find ?dup
+        if        ( cfa findflag )
+            \               find -1    find +1
+            \             ____________________
+            \ state -1   | compile     execute
+            \ state 0    | execute     execute
+            state @ <>  ?: execute ,xt
+        else      ( here )
+            number
+            jumptable  dpl @ 0< 2*  state @ + 2* -
+            @ execute
+        then
+    repeat
+    drop ;
 ```
 #endif
 _interpret
 #include "enter.i65"
-    .word doneq
-#include "page.i65"
-    .word off
-#include "page.i65"
 interpret01
     .word qstack
 #include "page.i65"
-    .word _existsq
+    .word bl
+#include "page.i65"
+    .word _word
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word qbranch
+    .byt <(interpret04-*+1)
+#include "pad.i65"
+    .word _find
 #include "page.i65"
     .word qdup
 #include "page.i65"
     .word qbranch
-    .byt <(interpret03-*+1)
+    .byt <(interpret02-*+1)
 #include "pad.i65"
     .word state
 #include "page.i65"
@@ -1056,9 +1259,9 @@ interpret01
     .word _commaxt
 #include "pad.i65"
     .word branch
-    .byt <(interpret05-*+1)
+    .byt <(interpret03-*+1)
 #include "pad.i65"
-interpret03
+interpret02
     .word _number
 #include "page.i65"
     .word plit
@@ -1086,20 +1289,57 @@ interpret03
 #include "page.i65"
     .word execute
 #include "page.i65"
-interpret05
-    .word doneq
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word qbranch
+interpret03
+    .word branch
     .byt <(interpret01-*+1)
 #include "pad.i65"
+interpret04
+    .word drop
+#include "page.i65"
     .word exit
+
 interpret06
     .word next
     .word _dlit
     .word drop
     .word _droplit
+
+;--------------------------------------------------------------
+#if 0
+name=QUERY
+stack=( -- )
+tags=forth-83,fig
+Accept a line of input from the user
+
+```
+: query   ( -- )
+    tib 80 expect
+    span @ #tib !
+    >in off ;
+```
+#endif
+_query
+#include "enter.i65"
+    .word tib
+#include "page.i65"
+    .word clit
+    .byt 80
+#include "pad.i65"
+    .word expect
+#include "page.i65"
+    .word span
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word numtib
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word toin
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1117,7 +1357,7 @@ This is the infinite outer interpreter loop:
     [ rp!
     begin
         cr
-        usetib  blk off
+        tib>
         query interpret
         state @ 0=
         if
@@ -1132,14 +1372,10 @@ _quit
 #include "page.i65"
     .word rpstore
 #include "page.i65"
+    .word _tibfrom              ; set input source
+#include "page.i65"
 quit01                          ; BEGIN
     .word cr
-#include "page.i65"
-    .word _usetib               ; ~wut?
-#include "page.i65"
-    .word blk
-#include "page.i65"
-    .word off
 #include "page.i65"
     .word _query
 #include "page.i65"
@@ -2341,3 +2577,54 @@ words02
     .word exit
 
 ;--------------------------------------------------------------
+#if 0
+name=.S
+tags=i/o,stack,ext
+Output the data stack
+#endif
+_dots
+#include "enter.i65"
+    .word depth
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(dots02-*+1)
+#include "pad.i65"
+    .word zero
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+dots01
+    .word depth
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+    .word pick
+#include "page.i65"
+    .word clit
+    .byt 7
+#include "pad.i65"
+    .word _udotr
+#include "page.i65"
+    .word _space
+#include "page.i65"
+    .word ploop
+    .byt <(dots01-*+1)
+#include "pad.i65"
+    .word branch
+    .byt <(dots03-*+1)
+#include "pad.i65"
+dots02
+    .word pdq
+    .byt dots04-*-1
+    .asc "STACK EMPTY"
+dots04
+#include "pad.i65"
+dots03
+    .word exit
+
