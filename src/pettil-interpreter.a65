@@ -787,7 +787,7 @@ _sourceblk
 name=PLUGH
 stack=( -- )
 tags=interpreter,nosymbol
-Primitive to set up a few zero page pointers just prior to [[EXPECT]], 
+Primitive to set up a few zero page pointers just prior to [[EXPECT]],
 faking out the EDITOR ROM into believing the screen is located
 somewhere other than the hardware memory-mapped video region.
 #endif
@@ -799,7 +799,7 @@ _plugh
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word tobloom
+    .word tobit
 #include "page.i65"
     .word _blkbuf
 #include "page.i65"
@@ -830,7 +830,6 @@ _plugh
     .byt rtn
     ldy #0
 
-
 ;--------------------------------------------------------------
 #if 0
 name=REFILL.SCR
@@ -839,14 +838,33 @@ tags=interpreter
 Loads the next logical line from the virtual screen buffer into another
 80-character buffer, returning a flag indicating if there was a next line
 
+increments lin
+returns false when lin = 25
+sets #lin
 ```
+: refill.scr   ( -- flag )
+    lin dup 1+! @
+    25 <
+    if
+       lin @  >bit blkbuf + cbit@
+       ?: forty eighty
+       lin @ 24 =
+       if
+           drop forty
+       then
+       @lin @ over plugh
+       cas2buf over expect
+       @lin +!
+    then
+    span @  #lin !
+
     lin dup 1+! @   25 <
-    if 
+    if
         >in off
         fakescreen cas2buf 80 expect
     then
 
-: query   ( -- )
+: refill.scr   ( -- )
     tib 80 expect
     span @ #tib !
     >in off ;
@@ -854,6 +872,68 @@ Loads the next logical line from the virtual screen buffer into another
 #endif
 _refillscr
 #include "enter.i65"
+    .word lin
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word clit
+    .byt 25
+#include "pad.i65"
+    .word qbranch
+    .byt <(refillscr01-*+1)
+#include "pad.i65"
+    .word lin
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word cbitfetch
+#include "page.i65"
+    .word pquerycolon
+    .word forty
+    .word eighty
+#include "pad.i65"
+refillscr01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=EOL?.SCR
+stack=( -- flag )
+tags=interpreter,nosymbol
+Leaves true when, while parsing a screen, the cursor is at the end of
+a line.  This test triggers a refill event.
+
+```
+: eol?.scr   ( -- flag )
+    #lin @  >in @  over min  = ;
+```
+#endif
+_eolqscr
+#include "enter.i65"
+    .word numlin
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word toin
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _min
+#include "page.i65"
+    .word eq
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -866,17 +946,29 @@ an address pointing to the beginning of a line and line size 40|80
 
 ```
 : source.scr   ( -- addr size )
+    eol?.scr
+    if
+        refill.scr
+    then
+    cas2buf  #lin @ ;
 ```
 #endif
 _sourcescr
 #include "enter.i65"
     .word xyzzy
 #include "page.i65"
-    .word lin
+    .word _eolqscr
+#include "page.i65"
+    .word qbranch
+    .byt <(sourcescr01-*+1)
+#include "pad.i65"
+    .word _refillscr
+sourcescr01
+    .word cas2buf
+#include "page.i65"
+    .word numlin
 #include "page.i65"
     .word fetch
-#include "page.i65"
-    .word zero
 #include "page.i65"
     .word exit
 
@@ -893,97 +985,6 @@ source
 
 ;--------------------------------------------------------------
 #if 0
-name=TIB>
-stack=( addr -- )
-tags=interpreter,vm
-Set the input source type to "console"
-
-sets SOURCE, REFILL, and DONE?
-
-prounounced "t-i-b-from"
-#endif
-_tibfrom
-#include "enter.i65"
-    .word blk
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word plit
-    .word _sourcetib
-#include "pad.i65"
-    .word psource
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=SCR>
-stack=( addr -- )
-tags=interpreter,vm
-Set the input source type to "screen"
-
-prounounced "s-c-r-from"
-#endif
-_scrfrom
-#include "enter.i65"
-    .word plit
-    .word _sourcescr
-#include "pad.i65"
-    .word psource
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=BLK>
-stack=( addr -- )
-tags=interpreter,vm,~wut?
-Set the input source type to "block"
-
-prounounced "b-l-k-from"
-todo: the address on the stack points to the block buffer (BLKBUF)
-#endif
-_blkfrom
-#include "enter.i65"
-    .word plit
-    .word _sourceblk
-#include "pad.i65"
-    .word psource
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=BLKSCR>
-stack=( addr -- )
-tags=interpreter,vm,~wut?
-
-```
-: blkscr>   ( addr -- )
-        writable? @  ?: scr> blk> ;
-```
-todo: the address on the stack points to the block buffer (BLKBUF)
-#endif
-_blkscrfrom
-#include "enter.i65"
-    .word writableq
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word pquerycolon
-    .word _scrfrom
-    .word _blkfrom
-#include "pad.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=SOURCE!
 stack=( -- )
 tags=vm,interpreter
@@ -991,19 +992,82 @@ Sets the input source to TIB, BLK, or SCR
 
 ```
 : source!   ( -- )
-    blk @  ?: blkscr> tib> ;
+    >in off  blk @  ?dup
+    if
+        block  writable? @
+        if
+            3+ @lin !  lin on  #lin off  ['] source.scr
+        else
+            drop  ['] source.blk
+        then
+    else
+        ['] source.tib
+    then
+    (source) ! ;
 ```
 #endif
 _sourcestore
 #include "enter.i65"
+    .word toin
+#include "page.i65"
+    .word off
+#include "page.i65"
     .word blk
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word pquerycolon
-    .word _blkscrfrom
-    .word _tibfrom
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(sourcestore02-*+1)
 #include "pad.i65"
+    .word _block
+#include "page.i65"
+    .word writableq
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qbranch
+    .byt <(sourcestore01-*+1)
+#include "pad.i65"
+    .word threeplus
+#include "page.i65"
+    .word atlin
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word lin
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word numlin
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word plit
+    .word _sourcescr
+#include "pad.i65"
+    .word branch
+    .byt <(sourcestore03-*+1)
+#include "pad.i65"
+sourcestore01
+    .word drop
+#include "page.i65"
+    .word plit
+    .word _sourceblk
+#include "pad.i65"
+    .word branch
+    .byt <(sourcestore03-*+1)
+#include "pad.i65"
+sourcestore02
+    .word plit
+    .word _sourcetib
+#include "pad.i65"
+sourcestore03
+    .word psource
+#include "page.i65"
+    .word store
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1094,16 +1158,8 @@ Calculates SOURCE offset by >IN with respect to buffer size.
 
 ```
  : 'stream   ( -- addr size )
-       blk @ ?dup
-       if      block b/buf
-       else    tib #tib @
-       then
-       >in @ over min >r swap r@ + swap r> - ;
-
- : 'stream   ( -- addr size )
        source   ( baseaddr size )
        dup >in @ min /string ;
-
 ```
 #endif
 _tickstream
@@ -1437,9 +1493,9 @@ This is the infinite outer interpreter loop:
 ```
 : quit
     [ rp!
+    blk off  source!
     begin
         cr
-        tib>
         query interpret
         state @ 0=
         if
@@ -1454,7 +1510,11 @@ _quit
 #include "page.i65"
     .word rpstore
 #include "page.i65"
-    .word _tibfrom              ; set input source
+    .word blk
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word _sourcestore          ; set input source
 #include "page.i65"
 quit01                          ; BEGIN
     .word cr
@@ -2235,7 +2295,7 @@ passfilter01
     .word qbranch
     .byt <(passfilter02-*+1)
 #include "pad.i65"
-    .word tobloom
+    .word tobit
 #include "page.i65"
     .word passbits
 #include "page.i65"
@@ -2315,7 +2375,7 @@ _prehash1
 prehash101
     .word i
 #include "page.i65"
-    .word tobloom
+    .word tobit
 #include "page.i65"
     .word passbits
 #include "page.i65"
