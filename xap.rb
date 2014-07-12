@@ -289,7 +289,7 @@ _semi
 
 
 
-        bogus = " userrp0 "
+        bogus = " userrp0 rldecode "
 
 
 
