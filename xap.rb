@@ -289,7 +289,7 @@ _semi
 
 
 
-        bogus = " userrp0 doconst01 sharps01 _hot loadbuffers01 "
+        bogus = " userrp0 doconst01 sharps01 _hot loadbuffers01 cr01 rlencode07 "
 
 
 
