@@ -784,6 +784,55 @@ _sourceblk
 
 ;--------------------------------------------------------------
 #if 0
+name=PLUGH
+stack=( -- )
+tags=interpreter,nosymbol
+Primitive to set up a few zero page pointers just prior to [[EXPECT]], 
+faking out the EDITOR ROM into believing the screen is located
+somewhere other than the hardware memory-mapped video region.
+#endif
+_plugh
+#include "enter.i65"
+    .word lin
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word tobloom
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word cbitfetch
+#include "page.i65"
+    .word pquerycolon
+    .word forty
+    .word eighty
+#include "pad.i65"
+    .word to6502
+    ldy #2
+    jsr locals
+    sty n+7
+    lda #<PNT
+    sta n+6
+    lda #3
+    sta DFLTN                   ; Screen = device 3
+    lda #0
+    sta PNTR                    ; PNTR cursor column on current line
+    lda tos
+    sta LNMX                    ; LNMX physical screen line length
+    brk
+    .byt ldd | N0
+    .byt st | N2
+    .byt std | N3               ; PNT pointer - current screen line address
+    .byt rtn
+    ldy #0
+
+
+;--------------------------------------------------------------
+#if 0
 name=REFILL.SCR
 stack=( -- flag )
 tags=interpreter
@@ -892,10 +941,11 @@ _scrfrom
 #if 0
 name=BLK>
 stack=( addr -- )
-tags=interpreter,vm
+tags=interpreter,vm,~wut?
 Set the input source type to "block"
 
 prounounced "b-l-k-from"
+todo: the address on the stack points to the block buffer (BLKBUF)
 #endif
 _blkfrom
 #include "enter.i65"
@@ -911,13 +961,14 @@ _blkfrom
 ;--------------------------------------------------------------
 #if 0
 name=BLKSCR>
-stack=( -- )
-tags=interpreter,vm
+stack=( addr -- )
+tags=interpreter,vm,~wut?
 
 ```
 : blkscr>   ( addr -- )
         writable? @  ?: scr> blk> ;
 ```
+todo: the address on the stack points to the block buffer (BLKBUF)
 #endif
 _blkscrfrom
 #include "enter.i65"
@@ -980,7 +1031,6 @@ name=SKIP
 stack=( addr1 size1 char -- addr2 count2 )
 tags=numword,nosymbol
 
-
  addr1 is the starting address in the input stream where up
  to size1 bytes are skipped *WHILE* they match char.  Returns
  addr2 as the address of the first non-matching character and
@@ -1031,10 +1081,9 @@ skipscan03
 skipscan04
     .byt dcr | TOS
     .byt inr | N0
-    .byt rtn
-    lda n
-    ldy n+1
-    jmp pushya
+    .byt ld | N0
+    .byt push
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -1053,8 +1102,7 @@ Calculates SOURCE offset by >IN with respect to buffer size.
 
  : 'stream   ( -- addr size )
        source   ( baseaddr size )
-       >in @ over min
-       dup>r - r> +under ;
+       dup >in @ min /string ;
 
 ```
 #endif
@@ -1062,21 +1110,15 @@ _tickstream
 #include "enter.i65"
     .word source
 #include "page.i65"
+    .word dup
+#include "page.i65"
     .word toin
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word over
-#include "page.i65"
     .word _min
 #include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word plusunder
+    .word _slashstring
 #include "page.i65"
     .word exit
 
