@@ -289,7 +289,7 @@ _semi
 
 
 
-        bogus = " userrp0 rldecode domslash02 _jiffyfetch "
+        bogus = " userrp0 rldecode domslash02 _jiffyfetch move01 twostore01 "
 
 
 
