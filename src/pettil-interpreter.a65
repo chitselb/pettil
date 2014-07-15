@@ -1874,6 +1874,32 @@ symbyhash01
 
 ;--------------------------------------------------------------
 #if 0
+name=SYMCOMPARE
+stack=( -- addr )
+tags=interpreter,nosymbol
+Variable holding the vector to one of two comparators when rehashing the
+symbol table
+
+#endif
+symcompare
+    jsr docreate
+    .word 0
+
+;--------------------------------------------------------------
+#if 0
+name=SYM<=>
+stack=( searchfor src -- flag )
+tags=interpreter,nosymbol
+Vector for comparison operator in SYMSORT , points to either SYMBYSIZE
+on pass1 or SYMBYHASH on pass2
+
+!!!pronounced: "sim-spaceship"
+#endif
+symspaceship
+    jmp (symcompare+3)
+
+;--------------------------------------------------------------
+#if 0
 name=SYMSORT
 stack=( 'compare searchfor src target -- target+ )
 tags=interpreter,ext,nosymbol
@@ -1908,6 +1934,23 @@ symbols to target
     ( 'compare searchfor nfa+ ) ( R; target+ )
     3drop r> ;   ( target+ )
 
+: symsort   ( searchfor src target )
+    >r 2+
+    begin
+        \ not done yet?
+        dup nfalen
+    while
+        2dup symspaceship
+        if
+            \ copy the CFA
+            r> over name> !+
+            \ copy the symbol
+            under sym+ >r
+        then
+        \ advance source pointer
+        nfa+
+    repeat
+    2drop r> ;   ( target+ )
 ```
 #endif
 _symsort
@@ -2310,8 +2353,8 @@ Scans the symbol table for ancestors of forgotten descendants to reactivate
          dup r@ ?ancestor
      then
      nfa+
-    repeat
-    r> 2drop ;
+     repeat
+     r> 2drop ;
 
 ```
 #endif
@@ -2480,6 +2523,18 @@ Phase 1 of REHASH
             over 3 erase r> reawaken
         then
 ( src targ+ )
+    loop  nip ;
+
+: (rehash1)   ( -- )
+    [ ' symbysize ] literal  symcompare !
+    >syms pad   over passfilter
+    32 1 do
+        i >bloom  passbits + cbit@
+        if
+            dup>r
+            i 2over symsort nip
+            over 3 erase r> reawaken
+        then
     loop  nip ;
 
 ```
