@@ -807,6 +807,13 @@ _loadbuffers
 #include "enter.i65"
     .word _setnam
 #include "page.i65"
+    .word zero
+#include "page.i65"
+    .word clit
+    .byt VERCK
+#include "pad.i65"
+    .word cstore
+#include "page.i65"
     .word to6502
     stx n                       ; $ff (storex) gets messed up by save!  Use N
     jsr aloha2
@@ -896,24 +903,12 @@ loadbuffers04
 
 ;--------------------------------------------------------------
 #if 0
-name=SAVE-BUFFERS
+name=(IOSETUP)
 stack=( -- )
-tags=vm,forth-83,i/o,kernel
-Writes the virtual memory area, from VMBUF to BLKBUF, out to a PRG file on cassette or disk
+tags=vm,kernel
 
-* DRV# is the device number
-* FILENAME is the filename
-
-d4 = drv#
-d1 = length
-(da) = name
-fb = to
-fd = from
-(c9) = to
-
-This is called by STOP-S in the editor
 #endif
-_savebuffers
+_piosetup
 #include "enter.i65"
     .word _setnam
 #include "page.i65"
@@ -933,6 +928,29 @@ _savebuffers
 #include "pad.i65"
     .word store
 #include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SAVE-BUFFERS
+stack=( -- )
+tags=vm,forth-83,i/o,kernel
+Writes the virtual memory area, from VMBUF to BLKBUF, out to a PRG file on cassette or disk
+
+* DRV# is the device number
+* FILENAME is the filename
+
+d4 = drv#
+d1 = length
+(da) = name
+fb = to
+fd = from
+(c9) = to
+
+This is called by STOP-S in the editor
+#endif
+_savebuffers
+#include "enter.i65"
     .word to6502
     stx n                       ; $ff (storex) gets messed up by save!  Use N
     jsr aloha2
@@ -942,6 +960,86 @@ _savebuffers
     jsr aloha2
     ldx n
     jmp exit
+
+;--------------------------------------------------------------
+#if 0
+name=VERIFY-BUFFERS
+stack=( -- )
+tags=vm,i/o,kernel
+Verifies the virtual memory area following a write, from VMBUF to BLKBUF
+
+* DRV# is the device number
+* FILENAME is the filename
+
+#endif
+_verifybuffers
+#include "enter.i65"
+    .word _piosetup
+#include "page.i65"
+    .word one
+#include "page.i65"
+    .word clit
+    .byt VERCK
+#include "pad.i65"
+    .word cstore
+#include "page.i65"
+    .word _setnam
+#include "page.i65"
+    .word to6502
+    stx n                       ; $ff (storex) gets messed up by save!  Use N
+    jsr aloha2
+    lda #2
+    sta $78                     ; mess with CHRGET, sets direct mode
+    jsr $f695                   ; (d6) = 027a | 033a
+    jsr $f857                   ; press play on tape #
+    jsr $f449                   ; searching...
+verifybuffers01
+    lda $d1
+    beq verifybuffers03
+    jsr $f4d3                   ; search for a named tape header block
+    bne verifybuffers04
+verifybuffers02
+    brk
+    ;file not found
+verifybuffers03
+    jsr $f5e5                   ; load next tape header
+    beq verifybuffers02
+verifybuffers04
+    cpx #1
+    bne verifybuffers01
+    jsr $f67b                   ; (fb)=start; (c9)=end
+
+    jsr $f46d                   ; print LOADING or VERIFYING
+    jsr $f8a3                   ; verify
+    jsr aloha2
+    ldx n
+
+    ; pad blkbuf-size size cmove
+#include "toforth.i65"
+    .word xyzzy
+#include "page.i65"
+    .word clit
+    .byt STATUS
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word qbranch
+    .byt <(verifybuffers05-*+1)
+#include "pad.i65"
+    .word pdq
+    .byt (verifybuffers06-*-1)
+    .asc "VERIFY ERROR"
+verifybuffers06
+#include "pad.i65"
+    .word exit
+#include "page.i65"
+verifybuffers05
+    .word pdq
+    .byt (verifybuffers07-*-1)
+    .asc "VERIFIED"
+verifybuffers07
+#include "pad.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
