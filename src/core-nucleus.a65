@@ -494,23 +494,6 @@ rfrom
 
 ;--------------------------------------------------------------
 #if 0
-name=R@
-stack=( -- n ) ( R; n -- n )
-tags=forth-83,nucleus,stack
-Copy the top of the return stack to the data stack
-
-!!! pronounced: "r-fetch"
-#endif
-rfetch
-    stx storex  ; [3]
-    tsx         ; [2]
-    ldy $0102,x ; [4]
-    lda $0101,x ; [4]
-    ldx storex  ; [3]
-    jmp pushya ; [14|15]
-
-;--------------------------------------------------------------
-#if 0
 name=DUP>R
 stack=( n -- n ) ( R; -- n )
 tags=nucleus,stack
@@ -578,27 +561,6 @@ zgt
     dey
 zgt01
     tya
-    jmp put
-
-;--------------------------------------------------------------
-#if 0
-name=<>
-stack=( n1 n2 -- flag )
-tags=nucleus,relational
-Leave a true flag if "n1" does not equal "n2".
-#endif
-ne
-    ldy #$ff                ; assume inequality
-    lda tos
-    eor stackl,x
-    bne ne01
-    lda tos+1
-    eor stackh,x
-    bne ne01
-    iny                     ; they're equal
-ne01
-    tya
-    inx                     ; nip 2OS
     jmp put
 
 ;--------------------------------------------------------------
@@ -1276,14 +1238,24 @@ minus
 
 ;--------------------------------------------------------------
 #if 0
+name=<>
+stack=( n1 n2 -- flag )
+tags=nucleus,relational
+Leave a true flag if "n1" does not equal "n2".
+#endif
+ne
+    ldy #$ff                    ; assume inequality
+    .byt $2c                    ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
 name==
 stack=( n1 n2 -- flag )
-tags=forth-83,nucleus
-
-
+tags=forth-83,nucleus,relational
+Leave a true flag if "n1" does is equal to "n2".
 #endif
 eq
     ldy #0
+;ne entry point
     lda tos
     eor stackl,x
     bne cmpout02
@@ -1291,10 +1263,12 @@ eq
     eor stackh,x
     bne cmpout02
 cmpout01
-    dey
-cmpout02
-    inx
     tya
+    eor #$ff
+    tay
+cmpout02
+    tya
+    inx
     jmp put
 
 ;--------------------------------------------------------------
@@ -1306,11 +1280,7 @@ tags=forth-83,nucleus
 
 #endif
 ult
-    ldy #0
-    lda stackl,x
-    cmp tos
-    lda stackh,x
-    sbc tos+1
+    jsr cmp16
     bcs cmpout02
     bcc cmpout01
 
@@ -1323,17 +1293,21 @@ tags=forth-83,nucleus
 
 #endif
 lt
-    ldy #0
-    lda stackl,x
-    cmp tos
-    lda stackh,x
-    sbc tos+1
+    jsr cmp16
 sgntst
     bvc lt01
     eor #bit7
 lt01
     bpl cmpout02
     bmi cmpout01
+
+cmp16
+    ldy #0
+    lda stackl,x
+    cmp tos
+    lda stackh,x
+    sbc tos+1
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -1361,11 +1335,14 @@ tags=nucleus
 
 #endif
 betweenq
-    ldy #0
-    lda stackl+1,x
-    cmp tos
-    lda stackh+1,x
-    sbc tos+1
+    inx
+    jsr cmp16
+    dex
+;    ldy #0
+;    lda stackl+1,x
+;    cmp tos
+;    lda stackh+1,x
+;    sbc tos+1
     bcs betweenq01
     lda stackl,x
     cmp stackl+1,x
