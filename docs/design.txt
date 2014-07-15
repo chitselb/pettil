@@ -514,63 +514,14 @@ next symbol in outer loop
 add "n" to the instruction pointer but do not continue execution there just yet
 
 : ?:   ( == ) ( flag -- )
-defining word that scans ahead in the input stream, finds two words, and
+scans ahead in the input stream, finds two words, and
 encloses their CFA into the dictionary.  At runtime, the first word is
 executed if flag is true, otherwise the second word executes
+
 <builds here 0 c, ['] , ['] , here over - swap c!   ( [offset] [trueword] [falseword] )
+
 does> c@+ >r  0= 2* + @ r> +branch execute ;
 
-LOAD
-
-: isscr?   ( -- flag )
-    blk @ writable? @ and ;
-
-lin off                     \ counts from 0..24
-
-: 40/80   ( -- 40/80 )
-    40
-    lin @  >bloom  blkbuf +
-    cbit@ 0=
-    if
-        lin 1+!
-        40 +
-    then
-    lin 1+! ;
-
- : 'stream
-       blk @ ?dup
-       if      block b/buf
-       else    tib #tib @
-       then
-       >in @ over min >r swap r@ + swap r> - ;
-
-
-
-: query   ( -- )
-    tib 80 expect
-    span @ #tib !
-(    blk off )              \ move this out to the word that calls query
-    >in off ;
-
-    fakescreen query
-
-
-okay, it's a screen
-block
-get it in the buffer
-
-
-linestartaddr= blkbuf 3+
-begin
-    put a 40 on the stack
-    Check the bit of linewrap on the next line
-size=   0 = 80, 1 = 40, use 2*
-    set up for fake screen expect
-    do the expect and use TIB ?
-
-
-do this twice for an 80
-it's a 40
 
 : "   ( text" == ) ( -- addr )
     [ ascii " ] literal  word >in 1+!
@@ -604,25 +555,6 @@ QLOADING
  .word QERROR
  .word SEMIS
 
-;~~~disk
-L18be .byt 3 | bit7 | bit6
- .byt "--",">"|bit7
- .word L1885
-DASHDASHGT
- .word DOCOL
- .word QLOADING
- .word ZERO
- .word IN
- .word STORE
- .word BSCR
- .word BLK
- .word FETCH
- .word OVER
- .word MOD
- .word NEGATE
- .word BLK
- .word PSTORE
- .word SEMIS
 : -->
     ?loading
     >in off
@@ -692,394 +624,71 @@ PGFIX       ; add half page to IP & subtract from Y
    STA IP
    BPL NEXT1
 
-input sources
-console QUERY EXPECT
-BLOCK
-screen
 
-
-: quit
-    [ rp!
-    begin
-        cr
-        usetib  blk off
-        query interpret
-        state @ 0=
-        if
-            ." OK"
-        then
-    again ;
-
-: query   ( -- )
-    tib 80 expect
-    span @ #tib !
-    blk off
-    >in off ;
-
-
-
-
-A.6.2.2125 REFILL
-
-This word is a useful generalization of QUERY. Re-defining QUERY to meet this specification would have broken existing code. REFILL is designed to behave reasonably for all possible input sources. If the input source is coming from the user, as with QUERY, REFILL could still return a false value if, for instance, a communication channel closes so that the system knows that no more input will be available.
-
-
-console
-block
-screen
-seq file
-
-
-refill
-source    ( -- addr size )
-
-
-11.8 Input Text
-<name>
-
-An arbitrary FORTH word accepted from the input stream.
-This notation refers to text from the input stream, not to
-values on the data stack.
-See:  "10.2 General Error Conditions"
-
-ccc
-
-A sequence of arbitrary characters accepted from the input
-stream until the first occurrence of the specified
-delimiting character.  The delimiter is accepted from the
-input stream, but is not one of the characters ccc and is
-therefore not otherwise processed.  This notation refers to
-text from the input stream, not to values on the data stack.
-Unless noted otherwise, the number of characters accepted
-may be from 0 to 255.
-
-input stream
-A sequence of characters available to the system, for
-processing by the text interpreter.  The input stream
-conventionally may be taken from the current input device
-(via the text input buffer) and mass storage (via a block
-buffer).  BLK , >IN , TIB and #TIB specify the input stream.
-Words using or altering BLK , >IN , TIB and #TIB are
-responsible for maintaining and restoring control of the
-input stream.
-
-The input stream extends from the offset value of >IN to the
-size of the input stream.  If BLK is zero the input stream
-is contained within the area addressed by TIB and is #TIB
-bytes long.  If BLK is non-zero the input stream is
-contained within the block buffer specified by BLK and is
-1024 bytes long.   See:  "11.8 Input Text"
-
-BLK
-
->IN
-
-TIB
-
-#TIB         -- addr                       U,83   "number-t-i-b"
-The address of a variable containing the number of bytes in
-the text input buffer.  #TIB is accessed by WORD when BLK is
-zero.  {{0..capacity of TIB}}  See:  "input stream"
-
-WORD   ( char -- addr )
-
-console
-Take QUERY out of QUIT and instead use REFILL within INTERPRET (lazy-loading console input)
-This is the inexhaustible input source.  It arrives in 80-byte chunks found at TIB
-
-TIB          -- addr                       83            "t-i-b"
-The address of the text input buffer.  This buffer is used
-to hold characters when the input stream is coming from the
-current input device.  The minimum capacity of TIB is 80
-characters.
-TIB base of the input buffer ( $0200 constant tib )
-
->IN          -- addr                       U,79          "to-in"
-The address of a variable which contains the present
-character offset within the input stream {{0..the number of
-characters in the input stream}}.  See:  WORD
-
-#TIB         -- addr                       U,83   "number-t-i-b"
-The address of a variable containing the number of bytes in
-the text input buffer.  #TIB is accessed by WORD when BLK is
-zero.  {{0..capacity of TIB}}  See:  "input stream"
-
-SPAN         -- addr                       U,83
-The address of a variable containing the count of characters
-actually received and stored by the last execution of
-EXPECT .  See:  EXPECT
-
-block
-
-What have we learned?
-INTERPRET is confusing
-Vectoring WORD, a bad idea
-reimplementing WORD using REFILL and SOURCE, a better idea
 
 Four input sources
 console
-
-pad cr 80 expect cr span ?
-
-1  ok
-pad c@ . 32  ok
-pad 1 -trailing  ok
-.s    7269       0  ok
-pad cr 80 expect cra span ?
-x
-1  ok
-pad 1 -trailing  ok
-.s    7269       0     7269      1  ok
-pad cr 80 expect cr span ?
-now is the time for all good men to come to the aid of their country.  now is th
-80  ok
-pad 80 -trailing  ok
-.s    7269       0    7269       1    7269      80  ok
-
-;--------------------------------------------------------------
-#if 0
-name=WORD.SCR
-stack=( char -- addr )
-tags=interpreter,vm
-
-#endif
-_wordscr
-#include "enter.i65"
-    .word xyzzy
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word currlin
-#include "page.i65"
-    .word lin
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word tobloom
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word cbitfetch
-#include "page.i65"
-    .word pquerycolon
-    .word forty
-    .word eighty
-#include "pad.i65"
-    .word to6502
-plugh
-    ldy #2
-    jsr locals
-    sty n+7
-    lda #<PNT
-    sta n+6
-    lda #3
-    sta DFLTN                   ; Screen = device 3
-    lda #0
-    sta PNTR                    ; PNTR cursor column on current line
-    lda tos
-    sta LNMX                    ; LNMX physical screen line length
-    brk
-    .byt ldd | N0
-    .byt st | N2
-    .byt std | N3               ; PNT pointer - current screen line address
-    .byt rtn
-    ldy #0
-
-
-#include "page.i65"
-    .word plit
-    .word $0100
-#include "pad.i65"
-    .word eighty
-#include "page.i65"
-    .word expect
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-
-    .word rfetch
-#include "page.i65"
-    .word skip
-#include "page.i65"
-    .word under
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word scan
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word plusstore
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word bl
-#include "page.i65"
-    .word _blank
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word exit
-
-
-
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word numtib
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word gt
-#include "page.i65"
-x    .word doneq
-#include "page.i65"
-    .word store
-
-;--------------------------------------------------------------
-#if 0
-name=WORDm.BLK
-stack=( char -- addr )
-tags=interpreter,vm
-
-#endif
-_wordblk
-#include "enter.i65"
-    .word tor
-#include "page.i65"
-    .word _tickstream
-#include "page.i65"
-    .word under
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word skip
-#include "page.i65"
-    .word under
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word scan
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word plusstore
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word bl
-#include "page.i65"
-    .word _blank
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=USETIB
-stack=( -- )
-tags=interpreter
-Reset ISDONE? and WORD to use PET keyboard
-#endif
-_usetib
-#include "enter.i65"
-    .word plit
-    .word _wordtib
-#include "pad.i65"
-    .word wordvec
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-
-: interpret   ( -- )
-    begin
-        ?stack
-        bl word dup c@
-    while
-        find ?dup
-        if
-            state @ <>
-            ?: execute ,xt
-        else
-            dup c@
-            if
-                number
-                jumptable  dpl @ 0< 2* state @ + 2* -
-                @ execute
-            then
-        then
-    repeat drop ;
-
-begin
+block
+screen
+seqfile
 
 info screen  maybe a bar graph between pad...vmbuf
 symtab symnew symtail tdict memsiz  dp vmbuf #vmblks scr
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;    UNSIGNED DIVIDE BY 10 (16 BIT)
+;    By Omegamatrix
+;    126 cycles (max), 79 bytes
+;
+;    Start with 16 bit value in counterHigh, counterLow
+;    End with 16 bit result in highTen, lowTen
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+TensRemaining:
+    .byte 0,25,51,76,102,128,153,179,204,230
+ModRemaing:
+    .byte 0,6,2,8,4,0,6,2,8,4
+
+.startDivideBy10:
+    ldy    #-2                   ;2  @2   skips a branch the first time through
+    lda    counterHigh           ;3  @5
+.do8bitDiv:
+    sta    temp                  ;3  @8
+    lsr                          ;2  @10
+    adc    #13                   ;2  @12
+    adc    temp                  ;3  @15
+    ror                          ;2  @17
+    lsr                          ;2  @19
+    lsr                          ;2  @21
+    adc    temp                  ;3  @24
+    ror                          ;2  @26
+    adc    temp                  ;3  @29
+    ror                          ;2  @31
+    lsr                          ;2  @33
+    and    #$7C                  ;2  @35   AND'ing here...
+    sta    temp                  ;3  @38   and saving result as highTen (times 4)
+    lsr                          ;2  @40
+    lsr                          ;2  @42
+    iny                          ;2  @44
+    bpl    .finishLowTen         ;2³ @46/47...120
+
+    sta    highTen               ;3  @49
+    adc    temp                  ;3  @52   highTen (times 5)
+    asl                          ;2  @54   highTen (times 10)
+    sbc    counterHigh           ;3  @57
+    eor    #$FF                  ;2  @59
+    tay                          ;2  @61   mod 10 result!
+
+    lda    TensRemaining,Y       ;4  @65   Fill the low byte with the tens it should
+    sta    lowTen                ;3  @68   have at this point from the high byte divide.
+    lda    counterLow            ;3  @71
+    adc    ModRemaing,Y          ;4  @75
+    bcc    .do8bitDiv            ;2³ @77/78
+
+.overflowFound:
+    cmp    #4                    ;2  @79   We have overflowed, but we can apply a shortcut.
+    lda    #25                   ;2  @81   Divide by 10 will be at least 25, and the
+                                 ;         carry is set when higher for the next addition.
+.finishLowTen:
+    adc    lowTen                ;3  @123
+    sta    lowTen                ;3  @126  routine ends at either 87 or 126 cycles
