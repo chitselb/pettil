@@ -459,16 +459,21 @@ wordlen16
     sty r11+1
     sta r11
     rts
+;--------------------------------------------------------------
+#if 0
+name=pktheader16
+stack=( -- )
+tags=nosymbol
+Sweet16 extension to mask off just the length portion of the packet header
 
-; mask off just the length portion of the packet header
-;
-;inputs
-;    ACC (R0) = packet header
-;returns
-;    N1 = packet header
-;    N2 = editable? $ffff if editable, $0000 if data
-;    N3 = uncompressed? $ffff if uncompressed, $0000 if compressed
-;    R11 = length
+* inputs
+** ACC (R0) = packet header
+* returns
+** N1 = packet header
+** N2 = editable? $ffff if editable, $0000 if data
+** N3 = uncompressed? $ffff if uncompressed, $0000 if compressed
+** R11 = length
+#endif
 pktheader16
     ;ldy #1
     dey
@@ -494,47 +499,104 @@ pktheader16b
     sta r11+1                   ; packet length (high)
     rts
 
-;inputs
-;   TOS (R4) = addr
-;   N0 (R5) = addr+size
-;   N1 (R6) = count
-;returns
-;   TOS = addr (unchanged)
-;   N0 = addr of last non-blank character (= addr if all are blank)
-    ;clc
-dashtrailing16
-    ldy #0
-    dec n+1                     ; n0 high
-    dec n+3                     ; count high
-    bpl dashtrailing16c
-    lda tos
-    sta n
-    lda tos+1                   ; set up for last page
-    sta n+1
-    ldy n+2
-    beq dashtrailing16e
-    sec
-dashtrailing16c
-    dey
-    lda (n),y
-    iny
-    eor #' '
-    bne dashtrailing16d
-    dey
-    bne dashtrailing16c
-    bcc dashtrailing16
-dashtrailing16d
-    clc
-    tya
-    adc n
-    sta n                       ; count
-    bcc dashtrailing16e
-    inc n+1
-dashtrailing16e
+;--------------------------------------------------------------
+#if 0
+name=nfalen16
+stack=( nfa -- nfa )
+tags=nosymbol
+!!!Subroutine
+Sweet16 wrapper around nfalen subroutine
+
+* inputs
+** TOS = NFA pointer
+* returns
+** R11 = length of NFA
+** C = smudge bit
+#endif
+nfalen16
+    jsr nfalen01
+    rol R14H                    ; smudge bit in C flag
+    sta r11
+    ;ldy #0                     ; thanks, nfalen01
+    sty r11+1
     rts
 
-;inputs
-;       = user variable address
-;returns
-;   R11 = contents of the user variable
-uvarfetch16
+;--------------------------------------------------------------
+#if 0
+name=nfalen01
+tags=nosymbol
+!!!Subroutine
+return the length of a name field, ignoring flag bits
+sets C flag if smudged
+#endif
+nfalen01
+    ldy #0
+    lda (tos),y
+    pha
+    asl
+    asl
+    asl                         ; set carry flag if smudge bit
+    pla
+    and #$1f
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=strcomp16
+stack=
+tags=nosymbol
+compares two strings that are already known to be the same length.
+ C flag set if the strings match, otherwise clear
+
+inputs
+    TOS (R4) = current NFA in the symbol table (initially the first NFA)
+    N0 (R5) = addr of a string we are searching for
+    N3 (R8) = length of both strings
+
+returns
+   C = true iff the strings match
+
+#endif
+strcomp16
+    clc                         ; assume fail
+    ldy n+6                     ; the length
+strcomp16a
+    lda (n),y
+    eor (tos),y
+    bne strcomp16b              ; different? outtie fail
+    dey
+    bne strcomp16a              ; C flag is set on successful strcmp
+    sec                         ; success!
+strcomp16b
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=strcopy16
+stack=
+tags=nosymbol
+Copies a string from (n) to (tos) via the Y register.  Copies the 0th byte
+
+* inputs
+** N1 (R6) source base address
+** TOS (R4) target base address
+** Y = string length
+* returns
+** Y = FF
+#endif
+strcopy16
+    lda (n),y
+    sta (tos),y
+    dey
+    bpl strcopy16
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=symplus16
+stack=
+tags=nosymbol
+
+#endif
+symplus16
+    rts

@@ -289,7 +289,7 @@ _semi
 
 
 
-        bogus = " userrp0 do2const dminus _savebuffers twofetch "
+        bogus = " userrp0 doslashmod "
 
 
 

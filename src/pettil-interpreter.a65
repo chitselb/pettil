@@ -338,7 +338,7 @@ member bit
 #endif
 vocminus
     jsr nfalen01
-    sec
+    sec                         ; ~wut? may be unnecessary if smudge is known
     sbc #1
 vocminus01
     sta (tos),y
@@ -376,7 +376,7 @@ ppfind03
     jsr nfaplus01
     bne ppfind02                ; bra
 ppfind04
-    jsr strcomp
+    jsr strcomp16
     bcc ppfind03                ; non-match? next!
 
     ; winner!
@@ -1737,12 +1737,6 @@ _symplus
 #include "enter.i65"
     .word over
 #include "page.i65"
-    .word bloomhash
-#include "page.i65"
-    .word cbitstore
-#include "page.i65"
-    .word over
-#include "page.i65"
     .word nfalen
 #include "page.i65"
     .word oneplus
@@ -1758,6 +1752,15 @@ _symplus
     .word rfrom
 #include "page.i65"
     .word exit
+
+symplus
+    lda #1
+    jsr locals
+    lda (n),y
+    and #$1f
+    tay
+    jsr strcopy16
+    jsr nfaplus01
 
 ;--------------------------------------------------------------
 #if 0
@@ -1987,6 +1990,12 @@ symsort01
 #include "page.i65"
     .word _storeplus
 #include "page.i65"
+    .word over
+#include "page.i65"
+    .word bloomhash
+#include "page.i65"
+    .word cbitstore
+#include "page.i65"
     .word under
 #include "page.i65"
     .word _symplus
@@ -2159,7 +2168,7 @@ sameasmeq
     jsr locals          ; N0 = descendant; TOS = candidate
     jsr nfalen01
     sta n+6
-    jsr strcomp
+    jsr strcomp16
     ldy #0
     bcc sameasmeq01
     dey
@@ -2539,7 +2548,6 @@ Phase 1 of REHASH
             over 3 erase r> reawaken
         then
     loop  nip ;
-
 ```
 #endif
 _prehash1
@@ -2607,13 +2615,256 @@ prehash102
 
 ;--------------------------------------------------------------
 #if 0
+name=SYMSORT2
+stack=( src target searchfor -- target+ )
+tags=interpreter,ext,nosymbol
+Make a pass through the symbol table at PAD, copying eligible
+symbols to target
+
+```
+: symsort   ( 'compare searchfor src target )
+    >r 2+
+    ( 'compare searchfor nfa ) ( R; target )
+    begin
+        \ not done yet?
+        dup nfalen
+        ( 'compare searchfor nfa currlen ) ( R; target )
+    while
+        ( 'compare searchfor nfa ) ( R; target )
+        3dup rot execute
+        ( 'compare searchfor nfa flag ) ( R; target )
+        if
+            \ copy the CFA
+            ( 'compare searchfor nfa ) ( R; target )
+            r> over name> !+
+            \ copy the symbol
+            ( 'compare searchfor nfa target+2 )
+            under sym+ >r
+            ( 'compare searchfor nfa ) ( R; target+ )
+        then
+        \ advance source pointer
+        nfa+
+        ( 'compare searchfor nfa+ ) ( R; target+ )
+    repeat
+    ( 'compare searchfor nfa+ ) ( R; target+ )
+    3drop r> ;   ( target+ )
+
+: symsort   ( searchfor src target )
+    >r 2+
+    begin
+        \ not done yet?
+        dup nfalen
+    while
+        2dup symspaceship
+        if
+            \ copy the CFA
+            r> over name> !+
+            \ copy the symbol
+            under sym+ >r
+        then
+        \ advance source pointer
+        nfa+
+    repeat
+    2drop r> ;   ( target+ )
+```
+#endif
+_symsort2
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+symsort201
+    .word dup
+#include "page.i65"
+    .word nfalen
+#include "page.i65"
+    .word qbranch
+    .byt <(symsort203-*+1)
+#include "pad.i65"
+    .word threedup
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word execute
+#include "page.i65"
+    .word qbranch
+    .byt <(symsort202-*+1)
+#include "pad.i65"
+    .word rfrom
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word namefrom
+#include "page.i65"
+    .word _storeplus
+#include "page.i65"
+    .word under
+#include "page.i65"
+    .word _symplus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+symsort202
+    .word nfaplus
+#include "page.i65"
+    .word branch
+    .byt <(symsort201-*+1)
+#include "pad.i65"
+symsort203
+    .word threedrop
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=(REHASH3)
 stack=( -- )
 tags=nosymbol,interpreter
-rewrite of (REHASH1)
+rewrite of (REHASH1), fixing REAWAKEN bug
+
+assumptions
+there are no duplicates in either dictionary below FENCE (at cold start)
+the ancestor to reawaken will be 
+* living (present in pad)
+* inactive (has the smudge bit set)
+* has the highest CFA
+* last ancestor to reawaken will be the one in TDICT
+for each size 1..32
+    for all words of that size
+        if the word is in tdict it always gets copied to pad
+        if the CFA is < NEWDP it gets copied to pad
+        if it wasn't copied to pad, it gets stacked under vmbuf
+        cfa > symtab | cfa < newdp?
+        if
+            copy to pad
+        else
+            active?
+            if
+                stack the nfa under vmbuf
+            then
+        then
+    loop
+
+now we have a stack of the forgotten words, and all words of that size are in
+one place.  how convenient
+assumptions
+forgotten words may not be unique.  
+Both active and inactive copies of a word could wind up in the scrapheap
+
+    for each forgotten word
+        set tdict-maybe and highest-so-far to zero
+        for each word of that size in pad
+            is it in tdict?             
+                replace tdict-maybe
+            does it have a higher CFA than highest-so-far?
+                replace highest-so-far
+        loop
+        highest-so-far nonzero?
+        if
+            activate it
+        else
+            no?  Well how about tdict-maybe nonzero?
+            if
+                activate it
+            then
+        then
+    loop
+loop
+
+```
+: (rehash3)   ( -- )
+    >syms pad   over passfilter
+    [ ' symbysize ] literal  symcompare !
+    32 1 do
+        i >bit  passbits + cbit@
+        if
+            vmbuf @ third
+ ( src targ vmbuf src )
+            { magic }
+        then
+ ( src targ+ )
+    loop ;
+```
 #endif
 _prehash3
 #include "enter.i65"
+    .word _tosyms
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _passfilter
+#include "page.i65"
+    .word plit
+    .word _symbysize
+#include "pad.i65"
+    .word symcompare
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word bl    ; 32
+#include "page.i65"
+    .word one
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+prehash301
+    .word i
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word passbits
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word cbitfetch
+#include "page.i65"
+    .word qbranch
+    .byt <(prehash302-*+1)
+#include "pad.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word to6502
+    ldy #2
+    jsr locals
+    brk
+prehash303
+    .byt ext
+    .word nfalen16
+    .byt ld | R11
+    .byt cpr | R2
+    .byt bnz , <(prehash304-*-1)
+    
+    .byt popd | TOS
+    .byt std | N1
+    .byt ext
+    .word symplus16   ; use strcopy
+
+prehash304
+    .byt ld | R11
+    .byt add | TOS
+    .byt inr | ACC
+    .byt st | TOS
+    .byt br , <(prehash303-*-1)
+
+
+#include "page.i65"
+prehash302
+    .word ploop
+    .byt <(prehash301-*+1)
+#include "pad.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -2794,13 +3045,11 @@ _rehash
 name=NEWF
 stack=( -- )
 tags=interpreter,dictionary
-Replacement for FORGET
+playing here with a better replacement for FORGET
 
 #endif
 _newf
 #include "enter.i65"
-    .word xyzzy
-#include "page.i65"
     .word _tick
 #include "page.i65"
     .word dup
@@ -2839,7 +3088,6 @@ newf03
     .word store
 #include "page.i65"
     .word exit
-
 
 ;--------------------------------------------------------------
 #if 0
