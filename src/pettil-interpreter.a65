@@ -120,7 +120,7 @@ symbol table entry
 #endif
 pearsonhash
     stx storex
-    jsr nfalen01            ; A=length; Y=0
+    jsr nfalen16a           ; A=length; Y=0
     sta n                   ; seed hash1 with length
     tay                     ; count backwards
 pearsonhash01
@@ -162,7 +162,7 @@ or CBIT@.
 #endif
 bloomhash
     stx storex
-    jsr nfalen01                ; A=length; Y=0
+    jsr nfalen16a               ; A=length; Y=0
     sty n
     tay
 bloomhash01
@@ -208,7 +208,7 @@ tags=nosymbol
 Return the length of the name
 #endif
 nfalen
-    jsr nfalen01
+    jsr nfalen16a
     jmp put
 
 ;--------------------------------------------------------------
@@ -317,7 +317,7 @@ Append the vocabulary id to the string at NFA, and set the
 vocabulary member bit on the name field
 #endif
 vocplus
-    jsr nfalen01
+    jsr nfalen16a
     tay
     iny
     lda stackl,x
@@ -337,7 +337,7 @@ Strip the vocabulary byte from the string and clear the vocabulary
 member bit
 #endif
 vocminus
-    jsr nfalen01
+    jsr nfalen16a
     sec                         ; ~wut? may be unnecessary if smudge is known
     sbc #1
 vocminus01
@@ -363,7 +363,7 @@ ppfind
     and #$1f
     sta n+6                     ; N3 = length we seek
 ppfind02
-    jsr nfalen01
+    jsr nfalen16a
     beq ppfind07                ; end of list? return ( NAME 0 )
     bcs ppfind03                ; smudged? not findable. next!
     cmp n+6                     ; compare lengths
@@ -376,7 +376,7 @@ ppfind03
     jsr nfaplus01
     bne ppfind02                ; bra
 ppfind04
-    jsr strcomp16
+    jsr strcomp16a
     bcc ppfind03                ; non-match? next!
 
     ; winner!
@@ -789,54 +789,6 @@ _sourceblk
 
 ;--------------------------------------------------------------
 #if 0
-name=PLUGH
-stack=( -- )
-tags=interpreter,nosymbol
-Primitive to set up a few zero page pointers just prior to [[EXPECT]],
-faking out the EDITOR ROM into believing the screen is located
-somewhere other than the hardware memory-mapped video region.
-#endif
-_plugh
-#include "enter.i65"
-    .word lin
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word tobit
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word cbitfetch
-#include "page.i65"
-    .word pquerycolon
-    .word forty
-    .word eighty
-#include "pad.i65"
-    .word to6502
-    ldy #2
-    jsr locals
-    sty n+7
-    lda #<PNT
-    sta n+6
-    lda #3
-    sta DFLTN                   ; Screen = device 3
-    lda #0
-    sta PNTR                    ; PNTR cursor column on current line
-    lda tos
-    sta LNMX                    ; LNMX physical screen line length
-    brk
-    .byt ldd | N0
-    .byt st | N2
-    .byt std | N3               ; PNT pointer - current screen line address
-    .byt rtn
-    ldy #0
-
-;--------------------------------------------------------------
-#if 0
 name=REFILL.SCR
 stack=( -- flag )
 tags=interpreter
@@ -1023,7 +975,7 @@ a line.  This test triggers a refill event.
 
 ```
 : eol?.scr   ( -- flag )
-    #lin @  >in @  over min  =  
+    #lin @  >in @  over min  =
     lin @ 25 < and ;
 ```
 #endif
@@ -1773,7 +1725,7 @@ nfaplus
     jsr nfaplus01
     jmp next
 nfaplus01               ; this should *never* return Z=true
-    jsr nfalen01
+    jsr nfalen16a
     clc
     adc #3
     adc tos
@@ -1787,12 +1739,14 @@ nfaplus02
 #if 0
 name=SYMBYSIZE
 stack=( searchlen nfa -- flag )
-tags=interpreter,ext,nosymbol
+tags=interpreter,ext,nosymbol,~wut?
 returns true iff
 
 searchleng matches the current length? (I)
 
 and (CFA < DP or CFA > TDICT?)
+
+obsolescent, replaced by new rehash
 
 ```
 : symbysize   ( searchlen nfa -- flag )
@@ -1877,32 +1831,6 @@ symbyhash01
     .word nip
 #include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=SYMCOMPARE
-stack=( -- addr )
-tags=interpreter,nosymbol
-Variable holding the vector to one of two comparators when rehashing the
-symbol table
-
-#endif
-symcompare
-    jsr docreate
-    .word 0
-
-;--------------------------------------------------------------
-#if 0
-name=SYM<=>
-stack=( searchfor src -- flag )
-tags=interpreter,nosymbol
-Vector for comparison operator in SYMSORT , points to either SYMBYSIZE
-on pass1 or SYMBYHASH on pass2
-
-!!!pronounced: "sim-spaceship"
-#endif
-symspaceship
-    jmp (symcompare+3)
 
 ;--------------------------------------------------------------
 #if 0
@@ -2166,9 +2094,9 @@ tags=nosymbol,interpreter,ext
 sameasmeq
     ldy #1
     jsr locals          ; N0 = descendant; TOS = candidate
-    jsr nfalen01
+    jsr nfalen16a
     sta n+6
-    jsr strcomp16
+    jsr strcomp16a
     ldy #0
     bcc sameasmeq01
     dey
@@ -2350,6 +2278,7 @@ name=REAWAKEN
 stack=( nfa -- )
 tags=nosymbol
 Scans the symbol table for ancestors of forgotten descendants to reactivate
+
 ```
  ( start )
  2+ dup>r
@@ -2720,6 +2649,255 @@ symsort203
 
 ;--------------------------------------------------------------
 #if 0
+name=descendant16
+stack=( -- )
+tags=nosymbol
+Used only by FORGET / REHASH to stack up descendants for postponed processing
+of their ancestors at the end of each copy-by-size loop.  This is where the
+smarts of FORGET is buried.
+
+If the word is still in the dictionary, it will be copied to
+
+
+* inputs
+** ACC (R0) cfa
+** TOS (R4) nfa address
+** R10 name length
+* returns
+** N1 (R6) pointer to last element on descendant list
+** R14  Carry status
+*** clear Word is still in dictionary, should be copied to PAD
+*** set Word was forgotten and, if active, was added to descendants list
+#endif
+descendant16
+    lda r0
+    cmp uarea+usertdict-userarea
+    lda r0+1
+    sbc uarea+usertdict-userarea+1
+    bcs descendant16a           ; word in TDICT?
+    lda r0
+    cmp uarea+usernewdp-userarea
+    lda r0+1
+    sbc uarea+usernewdp-userarea+1
+    bcc descendant16a           ; word still in dictionary?
+    ; if we get here, this word will soon be forgotten.
+    ; check to see if it's active
+    ;ldy #1                     ; by EXT
+    dey
+    lda (tos),y
+    and #bit5                   ; check smudge bit
+    ;sec
+    bne descendant16b           ; inactive descendant
+    ; Add this to the list of descendants so we can check for ancestors
+    lda r6
+    sbc #2
+    sta r6
+    bcs descendant16c
+    dec r6+1
+descendant16c
+    lda tos
+    sta (r6),y
+    iny
+    lda tos+1
+    sta (r6),y
+descendant16b                   ; forget this word
+    sec
+    .byt $24                    ; BIT z.p. instruction
+descendant16a
+    clc                         ; copy this word
+    rol R14H
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=reawaken16
+tags=nosymbol
+Used only by FORGET / REHASH to wake up an ancestor of a forgotten word
+by toggling the smudge bit
+
+* inputs
+** ACC (R0) ancestor NFA
+
+#endif
+reawaken16
+    dey
+    lda (r0),y
+    eor #bit5
+    sta (r0),y
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=(REHASH4)
+stack=( -- )
+tags=nosymbol
+
+somewhere in the middle of (REHASH3)
+
+#endif
+prehash4
+    brk
+    .byt ld | TOS                       ; vmbuf
+    .byt st | N1
+    .byt st | N2                        ; make two copies
+    .byt pull                           ; targ
+    .byt st | N0
+    .byt st | N4                        ; make an extra copy of targ too
+    .byt pull                           ; src
+    .byt push
+prehash4c
+    .byt ext
+    .word nfalen16
+    .byt st | N3                        ; N3 = length
+    .byt bz , <(prehash4e-*-2)         ; done with this pass through symtab?
+    .byt cpr | R2
+    .byt bnz , <(prehash4d-*-2)
+    .byt ext
+    .word tos2minus                     ; point TOS to CFA
+    .byt ldd | TOS                      ; get CFA in ACC, TOS now points to NFA
+    .byt ext
+    .word descendant16                  ; maybe bookmark this as a descendant?
+    .byt bc , <(prehash4d-*-2)         ; word has been forgotten if carry set
+    .byt std | N0                       ; ACC still contains CFA. copy it
+    .byt ext
+    .word strcopy16                     ; uses N3 as length
+    .byt inr | N0
+    .byt ld | N0
+    .byt add | N3
+    .byt st | N0
+prehash4d
+    .byt bs , <(prehash4j-*-2)
+    .byt br , <(prehash4c-*-2)
+prehash4e
+    .byt ld | R2
+    .byt st | N3                        ; reset to current length
+    .byt ld | N0                        ; replace src at TOS with targ+
+    .byt st | TOS                       ; this is what we're returning
+    .byt ld | N4                        ; remember that extra copy of targ0?
+    .byt push                           ; targ+ is safe, ok to poop on TOS, N0
+    .byt ld | N0
+    .byt push                           ; ok to poop on N4 also
+    ; first, flag the end of this-size with a 0-size NFA
+    .byt sub | ACC
+    .byt std | TOS                      ; fake CFA
+    .byt sti | TOS                      ; zero-length marks the tail
+
+    ;  for each descendant, loop through PAD at this-size
+prehash4f
+    .byt ld | N1
+    .byt cpr | N2
+    .byt bz , <(prehash4h-*-2)         ; all out of descendants?
+    .byt pull
+    .byt push                           ; rewind to start of list at targ0
+    .byt ext
+    .word tos2plus                      ; point to the NFA
+    .byt sub | ACC
+    .byt st | N4                        ; zero tdict-maybe
+    .byt st | N5                        ; zero highest-so-far
+
+    ; scan through this-size at PAD for ancestors
+    .byt ldd | N1                       ; pop the descendant's NFA
+    .byt st | N0
+prehash4g
+    ; scan through PAD for matches
+    .byt ext
+    .word nfalen16
+    .byt bz , <(prehash4k-*-2)          ; done with this word?
+    .byt ext
+    .word strcomp16                     ; same word?
+    .byt bnc , <(prehash4i-*-2)         ; nope. next!
+    ; we have located an ancestor!  which dictionary is it in?
+
+    .byt ext
+    .word plugh
+    .byt ld | TOS
+    .byt st | R11
+    .byt popd | R11
+    .byt push                           ; get the CFA, push it
+
+    .byt bs , <(prehash4o-*-2)          ; R11 = tdict
+    .byt cpr | TOS
+    .byt bc , <(prehash4m-*-2)          ; in tdict?
+    .byt ext
+    .word plugh
+    .byt pull
+    .byt st | N4
+    .byt br , <(prehash4i-*-2)          ; next
+
+prehash4m
+    .byt bs , <(prehash4p-*-2)          ; R11 = newdp
+    .byt ld | TOS
+    .byt cpr | R11
+    .byt bc , <(prehash4n-*-2)          ; above newdp?
+    .byt cpr | N5
+    .byt bnc , <(prehash4n-*-2)         ; highest-so-far?
+    .byt st | N5                        ; store the CFA
+prehash4n
+    .byt pull
+
+prehash4i                               ; next word
+    .byt bs , <(prehash4j-*-2)
+    .byt br , <(prehash4g-*-2)
+
+prehash4o
+    .byt set | R11
+    .word uarea+usertdict-userarea
+    .byt br , <(prehash4q-*-2)
+prehash4p
+    .byt set | R11
+    .word uarea+usernewdp-userarea
+prehash4q
+    .byt ldd | R11
+    .byt st | R11
+    .byt rs
+
+prehash4j
+    .byt inr | TOS                      ; skip over length byte
+    .byt ld | TOS
+    .byt add | N3
+    .byt st | TOS                       ; skip past name string
+    .byt ext
+    .word tos2plus                      ; skip over CFA
+    .byt rs
+
+    ; we have scanned this thread for ancestors.  Did we find one?
+prehash4k
+    .byt ld | N5                        ; highest-so-far
+    .byt bnz , <(prehash4l-*-2)
+    .byt ld | N4                        ; tdict-maybe?
+    .byt bz , <(prehash4f-*-2)          ; no ancestor found.
+prehash4l
+    .byt ext
+    .word reawaken16
+    .byt br , <(prehash4f-*-2)
+
+;    for each forgotten word
+;        find its match in pad
+;        set tdict-maybe and highest-so-far to zero
+;        for each word of that size in pad
+;            is it in tdict?
+;                replace tdict-maybe
+;            does it have a higher CFA than highest-so-far?
+;                replace highest-so-far
+;        loop
+;        highest-so-far nonzero?
+;        if
+;            activate it
+;        else
+;            no?  Well how about tdict-maybe nonzero?
+;            if
+;                activate it
+;            then
+;        then
+;    loop
+
+prehash4h
+    .byt pull
+    .byt pull
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
 name=(REHASH3)
 stack=( -- )
 tags=nosymbol,interpreter
@@ -2727,7 +2905,7 @@ rewrite of (REHASH1), fixing REAWAKEN bug
 
 assumptions
 there are no duplicates in either dictionary below FENCE (at cold start)
-the ancestor to reawaken will be 
+the ancestor to reawaken will be
 * living (present in pad)
 * inactive (has the smudge bit set)
 * has the highest CFA
@@ -2736,7 +2914,7 @@ for each size 1..32
     for all words of that size
         if the word is in tdict it always gets copied to pad
         if the CFA is < NEWDP it gets copied to pad
-        if it wasn't copied to pad, it gets stacked under vmbuf
+        if it wasn't copied to pad, and also active, it gets stacked under vmbuf
         cfa > symtab | cfa < newdp?
         if
             copy to pad
@@ -2751,13 +2929,13 @@ for each size 1..32
 now we have a stack of the forgotten words, and all words of that size are in
 one place.  how convenient
 assumptions
-forgotten words may not be unique.  
+forgotten words may not be unique.
 Both active and inactive copies of a word could wind up in the scrapheap
 
     for each forgotten word
         set tdict-maybe and highest-so-far to zero
         for each word of that size in pad
-            is it in tdict?             
+            is it in tdict?
                 replace tdict-maybe
             does it have a higher CFA than highest-so-far?
                 replace highest-so-far
@@ -2776,24 +2954,22 @@ loop
 
 ```
 : (rehash3)   ( -- )
-    >syms pad   over passfilter
-    [ ' symbysize ] literal  symcompare !
+    >syms pad   over passfilter 2 +under
     32 1 do
+ ( src targ )
         i >bit  passbits + cbit@
         if
-            vmbuf @ third
- ( src targ vmbuf src )
+            vmbuf @
+ ( src targ vmbuf )
             { magic }
         then
  ( src targ+ )
-    loop ;
+    loop 2drop ;
 ```
 #endif
 _prehash3
 #include "enter.i65"
     .word _tosyms
-#include "page.i65"
-    .word twoplus
 #include "page.i65"
     .word _pad
 #include "page.i65"
@@ -2801,12 +2977,9 @@ _prehash3
 #include "page.i65"
     .word _passfilter
 #include "page.i65"
-    .word plit
-    .word _symbysize
-#include "pad.i65"
-    .word symcompare
+    .word two
 #include "page.i65"
-    .word store
+    .word plusunder
 #include "page.i65"
     .word bl    ; 32
 #include "page.i65"
@@ -2814,7 +2987,7 @@ _prehash3
 #include "page.i65"
     .word pdo
 #include "page.i65"
-prehash301
+prehash3a
     .word i
 #include "page.i65"
     .word tobit
@@ -2826,44 +2999,18 @@ prehash301
     .word cbitfetch
 #include "page.i65"
     .word qbranch
-    .byt <(prehash302-*+1)
+    .byt <(prehash3b-*+1)
 #include "pad.i65"
     .word vmbuf
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word third
-#include "page.i65"
     .word xyzzy
 #include "page.i65"
-    .word to6502
-    ldy #2
-    jsr locals
-    brk
-prehash303
-    .byt ext
-    .word nfalen16
-    .byt ld | R11
-    .byt cpr | R2
-    .byt bnz , <(prehash304-*-1)
-    
-    .byt popd | TOS
-    .byt std | N1
-    .byt ext
-    .word symplus16   ; use strcopy
-
-prehash304
-    .byt ld | R11
-    .byt add | TOS
-    .byt inr | ACC
-    .byt st | TOS
-    .byt br , <(prehash303-*-1)
-
-
-#include "page.i65"
-prehash302
+    .word prehash4
+prehash3b
     .word ploop
-    .byt <(prehash301-*+1)
+    .byt <(prehash3a-*+1)
 #include "pad.i65"
     .word exit
 

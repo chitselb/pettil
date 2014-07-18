@@ -27,6 +27,22 @@ sweet16
 ;
 
 #include "inc/sweet16.def"
+r0 = 2*R0           ; ACC
+r1 = 2*R1           ; UP
+r2 = 2*R2           ; I
+r3 = 2*R3           ; ILIMIT
+r4 = 2*R4           ; TOS
+r5 = 2*R5           ; N0
+r6 = 2*R6           ; N1
+r7 = 2*R7           ; N2
+r8 = 2*R8           ; N3
+r9 = 2*R9
+r10 = 2*R10
+r11 = 2*R11
+r12 = 2*R12         ; BS/RS stack pointer
+r13 = 2*R13         ; CPR result
+r14 = 2*R14         ; prior result register(l) and carry flag(h)
+r15 = 2*R15         ; Sweet16 PC
 
 BRTBL
     .BYT <RTN-1   ;0
@@ -395,74 +411,57 @@ SW16B
 
 ;--------------------------------------------------------------
 #if 0
-name=Sweet-16 extensions
-tags=nosymbol,concepts
-!!!Sweet-16 extensions
-These are some of the
-[[native 6502 extensions|http://pettil.tumblr.com/post/81057827224/flexible-native-6502-extensions-for-sweet16]]
-Available in PETTIL.  They work like Sweet-16 instructions, and should 
-probably have a register contract between the caller and the extension.  
-R11 is used for transferring control to the extension, and R11 is a good 
-candidate for a return argument register.
-
-Here's how adding an extension might look in the Forth assembler...
+name=plugh
+tags=nosymbol
+Sweet-16 breakpoint extension, used for debugging in VICE
 
 ```
-CODE DIGITFLIP
-    .N0  STA,
-    .A   LSR,  .A   LSR,
-    .A   LSR,  .A   LSR,
-    .N0  ASL,  .N0  ASL,      
-    .N0  ASL,  .N0  ASL,      
-    .N0  ORA,  ( REVERSE HEXDIGITS )
-         RTS,
-END-CODE
-
-CODE BACKWARD
-    .R11 LDA,
-         PHA,
-    .R11 1+ LDA,
-    DIGITFLIP JSR,
-    .R11 STA,
-         PLA,
-    DIGITFLIP JSR,
-    .R11 1+ STA,
-         RTS,
-END-CODE
-
-CODE TRIVIAL
-         BRK,
-         PULL,
-    .ACC SET,
-    6502 ,
-    .TOS ADD,
-    BACKWARD EXT,
-    .R11 LD,
-         PUSH,
-         NXT,
-END-CODE
+  'plugh ext,    \ set a breakpoint in sweet16 code
 ```
-The new Sweet-16 instructions PUSH, PULL, EXT, and NXT, are all in this
-example.  Native code extensions typically end with an RTS instruction, to
-return control to the Sweet-16 opcode dispatcher.
 #endif
-wordlen16
-; returns the low 5 bits of a length byte (length only)
-;
-;inputs
-;    TOS (R4) = address of a counted string, which might have NFA flag bits
-;returns
-;    R11 = length only of the string
-;    C is set if the word is smudged
-    jsr nfalen01
-    rol R14H
-    sty r11+1
-    sta r11
+plugh
     rts
+
+;--------------------------------------------------------------
+#if 0
+name=nfalen16
+tags=nosymbol
+!!!Subroutine
+Sweet16 wrapper around nfalen16a subroutine
+Get name field length, ignoring flag bits
+
+sets C flag if smudged
+
+* inputs
+** TOS = NFA pointer
+* returns
+** ACC = length of NFA
+** C = smudge bit
+** Y = 0
+
+#endif
+nfalen16
+    jsr nfalen16a
+    rol R14H
+    sty R0H
+    sta R0L
+    rts
+
+nfalen16a                       ; used by several Forth primitives
+    ldy #0
+    lda (tos),y
+nfalen16b
+    pha
+    asl
+    asl
+    asl                         ; set carry flag if smudge bit
+    pla
+    and #$1f
+    rts
+
 ;--------------------------------------------------------------
 #if 0
 name=pktheader16
-stack=( -- )
 tags=nosymbol
 Sweet16 extension to mask off just the length portion of the packet header
 
@@ -501,49 +500,7 @@ pktheader16b
 
 ;--------------------------------------------------------------
 #if 0
-name=nfalen16
-stack=( nfa -- nfa )
-tags=nosymbol
-!!!Subroutine
-Sweet16 wrapper around nfalen subroutine
-
-* inputs
-** TOS = NFA pointer
-* returns
-** R11 = length of NFA
-** C = smudge bit
-#endif
-nfalen16
-    jsr nfalen01
-    rol R14H                    ; smudge bit in C flag
-    sta r11
-    ;ldy #0                     ; thanks, nfalen01
-    sty r11+1
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=nfalen01
-tags=nosymbol
-!!!Subroutine
-return the length of a name field, ignoring flag bits
-sets C flag if smudged
-#endif
-nfalen01
-    ldy #0
-    lda (tos),y
-    pha
-    asl
-    asl
-    asl                         ; set carry flag if smudge bit
-    pla
-    and #$1f
-    rts
-
-;--------------------------------------------------------------
-#if 0
 name=strcomp16
-stack=
 tags=nosymbol
 compares two strings that are already known to be the same length.
  C flag set if the strings match, otherwise clear
@@ -558,45 +515,41 @@ returns
 
 #endif
 strcomp16
+    jsr strcomp16a
+    rol R14H
+    rts
+
+strcomp16a
     clc                         ; assume fail
     ldy n+6                     ; the length
-strcomp16a
+strcomp16b
     lda (n),y
     eor (tos),y
-    bne strcomp16b              ; different? outtie fail
+    bne strcomp16c              ; different? outtie fail
     dey
-    bne strcomp16a              ; C flag is set on successful strcmp
+    bne strcomp16b              ; C flag is set on successful strcmp
     sec                         ; success!
-strcomp16b
+strcomp16c
     rts
 
 ;--------------------------------------------------------------
 #if 0
 name=strcopy16
-stack=
 tags=nosymbol
 Copies a string from (n) to (tos) via the Y register.  Copies the 0th byte
 
 * inputs
-** N1 (R6) source base address
-** TOS (R4) target base address
-** Y = string length
+** N3 (R8) string length
+** TOS (R4) source base address
+** N0 (R5) target base address
 * returns
 ** Y = FF
 #endif
 strcopy16
-    lda (n),y
-    sta (tos),y
+    ldy n+6                     ; string length
+strcopy16a
+    lda (tos),y
+    sta (n),y
     dey
-    bpl strcopy16
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=symplus16
-stack=
-tags=nosymbol
-
-#endif
-symplus16
+    bpl strcopy16a
     rts

@@ -193,6 +193,22 @@ _semi
             @size = size
         end
 
+        def prevword
+            @prevword
+        end
+        
+        def set_prevword(prevword)
+            @prevword = prevword
+        end
+
+        def nextword
+            @nextword
+        end
+        
+        def set_nextword(nextword)
+            @nextword = nextword
+        end
+
         def desc
             @desc
         end
@@ -228,8 +244,10 @@ _semi
         def tiddler
             text = "!!!#{@name}"
             text += ((@stack.nil?) ? "\n\n" : "&nbsp;&nbsp;&nbsp;#{@stack}\n\n")
-            text += ((@addr.nil?) ? 'wut?' : "address: $#{hex4out @addr}  ")
-            text += ((@size.nil?) ? 'wut?' : "size: #{@size}\n\n")
+            text += ((@prevword.nil?) ? '' : "[[<<|#{@prevword}]]&nbsp;")
+            text += ((@addr.nil?) ? 'wut?' : "address:&nbsp;$#{hex4out @addr}&nbsp;&nbsp;")
+            text += ((@size.nil?) ? 'wut?' : "size:&nbsp;#{@size}&nbsp;")
+            text += ((@nextword.nil?) ? "\n\n" : "[[>>|#{@nextword}]]\n\n")
             text += ((@desc.nil?) ? '' : @desc)
             text += ((@code.nil?) ? '' : @code)
             return "\{ \"title\":#{wikiname.to_json},"\
@@ -289,8 +307,7 @@ _semi
 
 
 
-        bogus = " userrp0 doslashmod "
-
+        bogus = " userrp0 doslashmod userdrvnum block02 plit usermemsiz slide number01 userwarm userfence pabortq01 "
 
 
         always_use_decimal = false
@@ -308,8 +325,12 @@ _semi
     def set_sizes(forthwordhash)
         sortedbyaddr = forthwordhash.sort_by {|wordname, stuff| stuff.addr}
         for i in 0..(sortedbyaddr.size-2)
+            prevword = (i>0) ? sortedbyaddr[i-1][1].wikiname : nil
+            nextword = sortedbyaddr[i+1][1].wikiname
             size = sortedbyaddr[i+1][1].addr-sortedbyaddr[i][1].addr
             sortedbyaddr[i][1].set_size size
+            sortedbyaddr[i][1].set_prevword prevword
+            sortedbyaddr[i][1].set_nextword nextword
         end
         sortedbyaddr.last[1].set_size 6     # assembler vocabulary
 #  # => [[:joan, 18], [:fred, 23], [:pete, 54]]
