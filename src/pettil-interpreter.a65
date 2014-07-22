@@ -1880,8 +1880,8 @@ forgotten16a
     sta r11+1
     sbc uarea+usertdict-userarea+1
     bcs forgotten16c            ; word is in TDICT
-forgotten16b
     dey
+forgotten16b
     lda uarea+usernewdp-userarea
     cmp (tos),y
     iny
@@ -1892,8 +1892,52 @@ forgotten16c
 
 ;--------------------------------------------------------------
 #if 0
+name=intdictq16
+tags=nosymbol
+Checks if the current CFA is in the transient dictionary.  Sets N5
+to the NFA
+
+#endif
+intdictq16
+    jsr tos2minus
+    ldy #0
+    lda (tos),y
+    cmp uarea+usertdict-userarea
+    iny
+    lda (tos),y
+    sbc uarea+usertdict-userarea+1
+    jsr tos2plus
+    bcc intdictq16b
+    lda tos
+    sta n+10
+    lda tos+1
+    sta n+11                    ; N5
+intdictq16b
+    rol R14H
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=wakeup16
+tags=nosymbol
+Wakes up an ancestor when a descendant is forgotten
+
+* inputs
+** ACC (R0) NFA of ancestor
+
+* returns
+
+#endif
+wakeup16
+    ldy #0
+    lda (r0),y
+    eor #bit5
+    sta (r0),y
+    rts
+
+;--------------------------------------------------------------
+#if 0
 name=descendant16
-stack=( -- )
 tags=nosymbol
 
 * inputs
@@ -1902,10 +1946,11 @@ tags=nosymbol
 ** N2 (R4) adds NFA to descendant list if it's active
 #endif
 descendant16
-    ldy #0
+    ldy #2
     lda (tos),y
     and #bit5                   ; check smudge bit
     bne descendant16b
+    dey
     sec
     lda n+4
     sbc #2
@@ -1913,11 +1958,10 @@ descendant16
     bcs descendant16a
     dec n+5
 descendant16a
-    lda (tos),y
+    lda tos,y
     sta (n+4),y
-    iny
-    lda (tos),y
-    sta (n+4),y
+    dey
+    bpl descendant16a
 descendant16b
     rts
 
@@ -1980,8 +2024,6 @@ qmigrate1a
     .word forgotten16
     .byt bc , <(qmigrate1b-*-2)     ; not forgotten, migrate it
     .byt ext
-    .word plugh
-    .byt ext
     .word descendant16
     .byt br , <(qmigrate1c-*-2)     ; next
 
@@ -2003,8 +2045,53 @@ qmigrate1e
     .byt ld | N2
     .byt cpr | N8                   ; any descendants?
     .byt bz , <(qmigrate1i-*-2)     ; nope
+    .byt ld | N1
+    .byt st | N3
+    .byt sub | ACC
+    .byt st | N1                    ; no ancestor
+    .byt st | N4                    ; zero highest-so-far
+    .byt st | N5                    ; zero tdict-maybe
+    
+    .byt ldd | N2                   ; get the address of the CFA, which is pretty worthless.
+    .byt st | N0
+    .byt inr | N0
+    .byt inr | N0                   ; this is the descendant NFA
+    .byt ld | N7                    ; rewind the list for this size
+    .byt push
+    .byt ldd | TOS                  ; get the CFA
+    .byt st | N6
+qmigrate1h
     .byt ext
-    .word plugh                     ; better write some code to handle them, then
+    .word nfalen16
+    .byt cpr | N3
+    .byt bnz , <(qmigrate1g-*-2)    ; done with this size list, check out
+    .byt ext
+    .word strcomp16
+    .byt bnc , <(qmigrate1f-*-2)    ; that's not it
+    .byt ext
+    .word intdictq16
+    .byt bc , <(qmigrate1f-*-2)
+    .byt ld | N6
+    .byt cpr | N4
+    .byt bnc , <(qmigrate1f-*-2)
+    .byt st | N4                    ; highest-so-far
+    .byt ld | TOS
+    .byt st | N1                    ; keep a copy of NFA to go with the highest-so-far
+qmigrate1f
+    .byt ext
+    .word nfaplus01
+    .byt br , <(qmigrate1h-*-2)
+
+qmigrate1g
+    .byt pull
+    .byt ld | N1
+    .byt bnz , <(qmigrate1j-*-2)
+    .byt ld | N5
+    .byt bz , <(qmigrate1e-*-2)
+qmigrate1j
+    .byt ext                        ; activate the highest-so-far or maybe-tdict word
+    .word wakeup16
+    .byt br , <(qmigrate1e-*-2)
 
 qmigrate1i
     .byt nxt
@@ -2295,16 +2382,18 @@ anything.
 
 ```
 : (rehash)   ( cfa -- )
-    newdp !
+    1- newdp !
     (rehash1)
     automem
     (rehash2)
-    newdp @ dp ! ;
+    newdp @ 1+ dp ! ;
 
 ```
 #endif
 _prehash
 #include "enter.i65"
+    .word oneminus
+#include "page.i65"
     .word newdp
 #include "page.i65"
     .word store
@@ -2318,6 +2407,8 @@ _prehash
     .word newdp
 #include "page.i65"
     .word fetch
+#include "page.i65"
+    .word oneplus
 #include "page.i65"
     .word dp
 #include "page.i65"
