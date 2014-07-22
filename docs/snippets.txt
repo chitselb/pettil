@@ -4013,3 +4013,816 @@ dotq01
 #include "pad.i65"
     .word exit
 
+;--------------------------------------------------------------
+#if 0
+name=SYMSORT2
+stack=( src target searchfor -- target+ )
+tags=interpreter,ext,nosymbol
+Make a pass through the symbol table at PAD, copying eligible
+symbols to target
+
+```
+: symsort   ( 'compare searchfor src target )
+    >r 2+
+    ( 'compare searchfor nfa ) ( R; target )
+    begin
+        \ not done yet?
+        dup nfalen
+        ( 'compare searchfor nfa currlen ) ( R; target )
+    while
+        ( 'compare searchfor nfa ) ( R; target )
+        3dup rot execute
+        ( 'compare searchfor nfa flag ) ( R; target )
+        if
+            \ copy the CFA
+            ( 'compare searchfor nfa ) ( R; target )
+            r> over name> !+
+            \ copy the symbol
+            ( 'compare searchfor nfa target+2 )
+            under sym+ >r
+            ( 'compare searchfor nfa ) ( R; target+ )
+        then
+        \ advance source pointer
+        nfa+
+        ( 'compare searchfor nfa+ ) ( R; target+ )
+    repeat
+    ( 'compare searchfor nfa+ ) ( R; target+ )
+    3drop r> ;   ( target+ )
+
+: symsort   ( searchfor src target )
+    >r 2+
+    begin
+        \ not done yet?
+        dup nfalen
+    while
+        2dup symspaceship
+        if
+            \ copy the CFA
+            r> over name> !+
+            \ copy the symbol
+            under sym+ >r
+        then
+        \ advance source pointer
+        nfa+
+    repeat
+    2drop r> ;   ( target+ )
+```
+#endif
+_symsort2
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+symsort201
+    .word dup
+#include "page.i65"
+    .word nfalen
+#include "page.i65"
+    .word qbranch
+    .byt <(symsort203-*+1)
+#include "pad.i65"
+    .word threedup
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word execute
+#include "page.i65"
+    .word qbranch
+    .byt <(symsort202-*+1)
+#include "pad.i65"
+    .word rfrom
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word namefrom
+#include "page.i65"
+    .word _storeplus
+#include "page.i65"
+    .word under
+#include "page.i65"
+    .word _symplus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+symsort202
+    .word nfaplus
+#include "page.i65"
+    .word branch
+    .byt <(symsort201-*+1)
+#include "pad.i65"
+symsort203
+    .word threedrop
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=descendant16
+stack=( -- )
+tags=nosymbol
+Used only by FORGET / REHASH to stack up descendants for postponed processing
+of their ancestors at the end of each copy-by-size loop.  This is where the
+smarts of FORGET is buried.
+
+If the word is still in the dictionary, it will be copied to
+
+
+* inputs
+** ACC (R0) cfa
+** TOS (R4) nfa address
+** R10 name length
+* returns
+** N1 (R6) pointer to last element on descendant list
+** R14  Carry status
+*** clear Word is still in dictionary, should be copied to PAD
+*** set Word was forgotten and, if active, was added to descendants list
+#endif
+descendant16
+    lda r0
+    cmp uarea+usertdict-userarea
+    lda r0+1
+    sbc uarea+usertdict-userarea+1
+    bcs descendant16a           ; word in TDICT?
+    lda r0
+    cmp uarea+usernewdp-userarea
+    lda r0+1
+    sbc uarea+usernewdp-userarea+1
+    bcc descendant16a           ; word still in dictionary?
+    ; if we get here, this word will soon be forgotten.
+    ; check to see if it's active
+    ;ldy #1                     ; by EXT
+    dey
+    lda (tos),y
+    and #bit5                   ; check smudge bit
+    ;sec
+    bne descendant16b           ; inactive descendant
+    ; Add this to the list of descendants so we can check for ancestors
+    lda r6
+    sbc #2
+    sta r6
+    bcs descendant16c
+    dec r6+1
+descendant16c
+    lda tos
+    sta (r6),y
+    iny
+    lda tos+1
+    sta (r6),y
+descendant16b                   ; forget this word
+    sec
+    .byt $24                    ; BIT z.p. instruction
+descendant16a
+    clc                         ; copy this word
+    rol R14H
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=reawaken16
+tags=nosymbol
+Used only by FORGET / REHASH to wake up an ancestor of a forgotten word
+by toggling the smudge bit
+
+* inputs
+** ACC (R0) ancestor NFA
+
+#endif
+reawaken16
+    dey
+    lda (r0),y
+    eor #bit5
+    sta (r0),y
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=(REHASH4)
+stack=( -- )
+tags=nosymbol
+
+somewhere in the middle of (REHASH3)...
+
+#endif
+prehash4
+    brk
+    .byt ld | TOS                       ; vmbuf
+    .byt st | N1
+    .byt st | N2                        ; make two copies
+    .byt pull                           ; targ
+    .byt st | N0
+    .byt st | N4                        ; make an extra copy of targ too
+    .byt pull                           ; src
+    .byt push
+prehash4c
+    .byt ext
+    .word nfalen16
+    .byt st | N3                        ; N3 = length
+    .byt bz , <(prehash4e-*-2)         ; done with this pass through symtab?
+    .byt cpr | R2
+    .byt bnz , <(prehash4d-*-2)
+    .byt ext
+    .word tos2minus                     ; point TOS to CFA
+    .byt ldd | TOS                      ; get CFA in ACC, TOS now points to NFA
+    .byt ext
+    .word descendant16                  ; maybe bookmark this as a descendant?
+    .byt bc , <(prehash4d-*-2)         ; word has been forgotten if carry set
+    .byt std | N0                       ; ACC still contains CFA. copy it
+    .byt ext
+    .word strcopy16                     ; uses N3 as length
+    .byt inr | N0
+    .byt ld | N0
+    .byt add | N3
+    .byt st | N0
+prehash4d
+    .byt bs , <(prehash4j-*-2)
+    .byt br , <(prehash4c-*-2)
+prehash4e
+    .byt ld | R2
+    .byt st | N3                        ; reset to current length
+    .byt ld | N0                        ; replace src at TOS with targ+
+    .byt st | TOS                       ; this is what we're returning
+    .byt ld | N4                        ; remember that extra copy of targ0?
+    .byt push                           ; targ+ is safe, ok to poop on TOS, N0
+    .byt ld | N0
+    .byt push                           ; ok to poop on N4 also
+    ; first, flag the end of this-size with a 0-size NFA
+    .byt sub | ACC
+    .byt std | TOS                      ; fake CFA
+    .byt sti | TOS                      ; zero-length marks the tail
+
+    ;  for each descendant, loop through PAD at this-size
+prehash4f
+    .byt ld | N1
+    .byt cpr | N2
+    .byt bz , <(prehash4h-*-2)         ; all out of descendants?
+    .byt pull
+    .byt push                           ; rewind to start of list at targ0
+    .byt ext
+    .word tos2plus                      ; point to the NFA
+    .byt sub | ACC
+    .byt st | N4                        ; zero tdict-maybe
+    .byt st | N5                        ; zero highest-so-far
+
+    ; scan through this-size at PAD for ancestors
+    .byt ldd | N1                       ; pop the descendant's NFA
+    .byt st | N0
+prehash4g
+    ; scan through PAD for matches
+    .byt ext
+    .word nfalen16
+    .byt bz , <(prehash4k-*-2)          ; done with this word?
+    .byt ext
+    .word strcomp16                     ; same word?
+    .byt bnc , <(prehash4i-*-2)         ; nope. next!
+    ; we have located an ancestor!  which dictionary is it in?
+
+    .byt ext
+    .word plugh
+    .byt ld | TOS
+    .byt st | R11
+    .byt popd | R11
+    .byt push                           ; get the CFA, push it
+
+    .byt bs , <(prehash4o-*-2)          ; R11 = tdict
+    .byt cpr | TOS
+    .byt bc , <(prehash4m-*-2)          ; in tdict?
+    .byt ext
+    .word plugh
+    .byt pull
+    .byt st | N4
+    .byt br , <(prehash4i-*-2)          ; next
+
+prehash4m
+    .byt bs , <(prehash4p-*-2)          ; R11 = newdp
+    .byt ld | TOS
+    .byt cpr | R11
+    .byt bc , <(prehash4n-*-2)          ; above newdp?
+    .byt cpr | N5
+    .byt bnc , <(prehash4n-*-2)         ; highest-so-far?
+    .byt st | N5                        ; store the CFA
+prehash4n
+    .byt pull
+
+prehash4i                               ; next word
+    .byt bs , <(prehash4j-*-2)
+    .byt br , <(prehash4g-*-2)
+
+prehash4o
+    .byt set | R11
+    .word uarea+usertdict-userarea
+    .byt br , <(prehash4q-*-2)
+prehash4p
+    .byt set | R11
+    .word uarea+usernewdp-userarea
+prehash4q
+    .byt ldd | R11
+    .byt st | R11
+    .byt rs
+
+prehash4j
+    .byt inr | TOS                      ; skip over length byte
+    .byt ld | TOS
+    .byt add | N3
+    .byt st | TOS                       ; skip past name string
+    .byt ext
+    .word tos2plus                      ; skip over CFA
+    .byt rs
+
+    ; we have scanned this thread for ancestors.  Did we find one?
+prehash4k
+    .byt ld | N5                        ; highest-so-far
+    .byt bnz , <(prehash4l-*-2)
+    .byt ld | N4                        ; tdict-maybe?
+    .byt bz , <(prehash4f-*-2)          ; no ancestor found.
+prehash4l
+    .byt ext
+    .word reawaken16
+    .byt br , <(prehash4f-*-2)
+
+;    for each forgotten word
+;        find its match in pad
+;        set tdict-maybe and highest-so-far to zero
+;        for each word of that size in pad
+;            is it in tdict?
+;                replace tdict-maybe
+;            does it have a higher CFA than highest-so-far?
+;                replace highest-so-far
+;        loop
+;        highest-so-far nonzero?
+;        if
+;            activate it
+;        else
+;            no?  Well how about tdict-maybe nonzero?
+;            if
+;                activate it
+;            then
+;        then
+;    loop
+
+prehash4h
+    .byt pull
+    .byt pull
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=(REHASH3)
+stack=( -- )
+tags=nosymbol,interpreter
+rewrite of (REHASH1), fixing REAWAKEN bug
+
+assumptions
+there are no duplicates in either dictionary below FENCE (at cold start)
+the ancestor to reawaken will be
+* living (present in pad)
+* inactive (has the smudge bit set)
+* has the highest CFA
+* last ancestor to reawaken will be the one in TDICT
+for each size 1..32
+    for all words of that size
+        if the word is in tdict it always gets copied to pad
+        if the CFA is < NEWDP it gets copied to pad
+        if it wasn't copied to pad, and also active, it gets stacked under vmbuf
+        cfa > symtab | cfa < newdp?
+        if
+            copy to pad
+        else
+            active?
+            if
+                stack the nfa under vmbuf
+            then
+        then
+    loop
+
+now we have a stack of the forgotten words, and all words of that size are in
+one place.  how convenient
+assumptions
+forgotten words may not be unique.
+Both active and inactive copies of a word could wind up in the scrapheap
+
+    for each forgotten word
+        set tdict-maybe and highest-so-far to zero
+        for each word of that size in pad
+            is it in tdict?
+                replace tdict-maybe
+            does it have a higher CFA than highest-so-far?
+                replace highest-so-far
+        loop
+        highest-so-far nonzero?
+        if
+            activate it
+        else
+            no?  Well how about tdict-maybe nonzero?
+            if
+                activate it
+            then
+        then
+    loop
+loop
+
+```
+: (rehash3)   ( -- )
+    >syms pad   over passfilter 2 +under
+    32 1 do
+ ( src targ )
+        i >bit  passbits + cbit@
+        if
+            vmbuf @
+ ( src targ vmbuf )
+            { magic }
+        then
+ ( src targ+ )
+    loop 2drop ;
+```
+#endif
+_prehash3
+#include "enter.i65"
+    .word _tosyms
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _passfilter
+#include "page.i65"
+    .word two
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
+    .word bl    ; 32
+#include "page.i65"
+    .word one
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+prehash3a
+    .word i
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word passbits
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word cbitfetch
+#include "page.i65"
+    .word qbranch
+    .byt <(prehash3b-*+1)
+#include "pad.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word prehash4
+prehash3b
+    .word ploop
+    .byt <(prehash3a-*+1)
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NEWF
+stack=( -- )
+tags=interpreter,dictionary
+playing here with a better replacement for FORGET
+
+```
+: newf   ( -- )
+    ' dup  fence @  u<
+    7 ?error
+    newdp !  (rehash3)  automem  (rehash2)
+    newdp @  dp ! ;
+```
+#endif
+_newf
+#include "enter.i65"
+    .word _tick
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fence
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word ult
+#include "page.i65"
+    .word clit
+    .byt 7
+#include "pad.i65"
+    .word _qerror                  ; CAN'T FORGET BELOW FENCE
+#include "page.i65"
+    .word newdp
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word _prehash3
+#include "page.i65"
+    .word _automem
+#include "page.i65"
+    .word _prehash2
+#include "page.i65"
+    .word newdp
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?ANCESTOR
+stack=( descendant nfa -- )
+tags=interpreter,nosymbol
+Searches for a qualifying ancestor and exchanges the smudge bit
+
+```
+: ?ancestor   ( descendant startnfa -- )
+  ( descendant startnfa )
+    ancestor off
+  ( descendant startnfa )
+    begin
+  ( descendant nfa )
+        dup nfalen
+  ( descendant nfa length )
+    while
+  ( descendant nfa )
+        2dup ?candidate
+        nfa+
+    repeat
+    ancestor @ ?dup
+    if
+        smudge
+    then
+    2drop ;
+
+```
+#endif
+_qancestor
+#include "enter.i65"
+    .word ancestor
+#include "page.i65"
+    .word off
+#include "page.i65"
+qancestor01
+    .word dup
+#include "page.i65"
+    .word nfalen
+#include "page.i65"
+    .word qbranch
+    .byt <(qancestor02-*+1)
+#include "pad.i65"
+    .word twodup
+#include "page.i65"
+    .word _qcandidate
+#include "page.i65"
+    .word nfaplus
+#include "page.i65"
+    .word branch
+    .byt <(qancestor01-*+1)
+#include "pad.i65"
+qancestor02
+    .word ancestor
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(qancestor03-*+1)
+#include "pad.i65"
+    .word smudge
+#include "page.i65"
+qancestor03
+    .word twodrop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=REAWAKEN
+stack=( nfa -- )
+tags=nosymbol
+Scans the symbol table for ancestors of forgotten descendants to reactivate
+
+```
+ ( start )
+ 2+ dup>r
+ ( startnfa ) ( R; startnfa )
+ begin
+     dup
+     nfalen
+ while
+ ( nfa )
+     dup c@ $20 and 0=
+     over name>  newdp @ dp @ between? and
+     if
+         dup r@ ?ancestor
+     then
+     nfa+
+     repeat
+     r> 2drop ;
+
+```
+#endif
+_reawaken
+#include "enter.i65"
+    .word twoplus
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+reawaken01
+    .word dup
+#include "page.i65"
+    .word nfalen
+#include "page.i65"
+    .word qbranch
+    .byt <(reawaken02-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word namefrom
+#include "page.i65"
+    .word newdp
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word betweenq
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word qbranch
+    .byt <(reawaken03-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word _qancestor
+#include "page.i65"
+reawaken03
+    .word nfaplus
+#include "page.i65"
+    .word branch
+    .byt <(reawaken01-*+1)
+#include "pad.i65"
+reawaken02
+    .word rfrom
+#include "page.i65"
+    .word twodrop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?CANDIDATE
+stack=( descendant candidate -- )
+tags=nosymbol,interpreter,ext
+
+```
+: ?candidate   ( descendant candidate -- )
+  ( descendant candidate )
+    \ candidate is inactive?
+    dup c@ $20 and
+  ( descendant candidate flag )
+    if
+  ( descendant candidate )
+      \ candidate remains in dictionary?
+      \ and is more recent than prior candidates?
+        dup name>  ancestor @  dup
+        if
+            nip name>
+        then
+        newdp @  between?
+  ( descendant candidate flag )
+        if
+  ( descendant candidate )
+            2dup sameasme?
+  ( descendant candidate flag )
+            if
+                dup ancestor !
+                32 third cbit!
+            then
+        then
+    then
+    2drop ;
+```
+#endif
+_qcandidate
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word qbranch
+    .byt <(qcandidate01-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word namefrom
+#include "page.i65"
+    .word ancestor
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word qbranch
+    .byt <(qcandidate02-*+1)
+#include "pad.i65"
+    .word nip
+#include "page.i65"
+    .word namefrom
+#include "page.i65"
+qcandidate02
+    .word newdp
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word betweenq
+#include "page.i65"
+    .word qbranch
+    .byt <(qcandidate01-*+1)
+#include "pad.i65"
+    .word twodup
+#include "page.i65"
+    .word sameasmeq
+#include "page.i65"
+    .word qbranch
+    .byt <(qcandidate01-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word ancestor
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word cbitstore
+#include "page.i65"
+qcandidate01
+    .word twodrop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ANCESTOR
+stack=( -- addr )
+tags=nosymbol,interpreter,ext
+variable that holds the youngest ancestor for REHASH
+#endif
+ancestor
+    jsr docreate
+    .word 0
+
+;--------------------------------------------------------------
+#if 0
+name=SAMEASME?
+stack=( descendant candidate -- flag )
+tags=nosymbol,interpreter,ext
+#endif
+sameasmeq
+    ldy #1
+    jsr locals          ; N0 = descendant; TOS = candidate
+    jsr nfalen16a
+    sta n+6
+    jsr strcomp16a
+    ldy #0
+    bcc sameasmeq01
+    dey
+sameasmeq01
+    tya
+    jmp put
+

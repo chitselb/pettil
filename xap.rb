@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userrp0 doslashmod userdrvnum block02 plit usermemsiz slide number01 userwarm userfence pabortq01 expect "
+        bogus = " userdrvnum cmdoff "
 
 
         always_use_decimal = false
