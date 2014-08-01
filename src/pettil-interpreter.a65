@@ -223,35 +223,16 @@ nfalen
 
 ;--------------------------------------------------------------
 #if 0
-name=VOCABS$
+name=VSTACK
 stack=( -- addr )
 tags=vocabulary,interpreter,nosymbol
-String variable holds up to 9 vocabularies to search, not
-including core.
+Vocabulary stack establishes search order.  Core (0) is the last
+vocabulary searched.  Invoking a vocabulary pushes it to the head
+of the stack.
 #endif
-vocabsd
+vstack
     jsr docreate
     .dsb 10,0
-
-;--------------------------------------------------------------
-#if 0
-name=VOCABS>
-stack=( -- vocabid )
-tags=nosymbol,interpreter,vocabulary,ext
-Presents the next one-byte vocabulary id from VOCABS$, slides
-the rest of the vocab string buffer to the left by one
-#endif
-vocabsfrom
-    lda vocabsd+3
-    pha
-    ldy #(256-9)                ; an INY loop was tighter.  I checked the pointers
-vocabsfrom01
-    lda vocabsd-(256-13),y      ; slide everything down one.  +3 for jsr docreate
-    sta vocabsd-(256-12),y
-    iny
-    bne vocabsfrom01
-    pla
-    jmp pushya
 
 ;--------------------------------------------------------------
 #if 0
@@ -267,54 +248,6 @@ _vocid
     .word twoplus
 #include "page.i65"
     .word cfetch
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(VOCABLIST)
-stack=( -- )
-tags=nosymbol
-Sets the VOCABS$ string to the chain of vocabularies between
-context and core
-
-```
-: (vocablist)
-    vocabs$ context
-    begin
-        dup @ -rot
-        vocid tuck c!+ -rot
-        0=
-    until 2drop ;
-```
-#endif
-_pvocablist
-#include "enter.i65"
-    .word vocabsd
-#include "page.i65"
-    .word context
-#include "page.i65"
-pvocablist01
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word dashrot
-#include "page.i65"
-    .word _vocid
-#include "page.i65"
-    .word tuck
-#include "page.i65"
-    .word cstoreplus
-#include "page.i65"
-    .word dashrot
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word qbranch
-    .byt <(pvocablist01-*+1)
-#include "pad.i65"
-    .word twodrop
 #include "page.i65"
     .word exit
 
@@ -574,7 +507,7 @@ DEPTH .  0 ok             \ search for "DEPTH" + $04, not found in PIGLATIN(4)
     0 over bloom# >bit bloom + cbit@
  ( addr1 0 bloomflag )
     if
- ( addr1 )
+ ( addr1 0 )
         0 rot >r  (vocablist)
  ( 0 0 ) ( R; name )
         begin
@@ -602,13 +535,29 @@ DEPTH .  0 ok             \ search for "DEPTH" + $04, not found in PIGLATIN(4)
   ( xfa flag ) ( R; name )
       ;
 
+: find ( addr1 -- addr2 flag )
+    dup bloom# >bit bloom + cbit@
+    if
+        >r  vstack
+ ( vstack ) ( R; name )
+        begin
+            c@+ r@ over
+            ?: (vocfind) (find)
+ ( vptr voc nfa cfa found? ) ( R; name )
+            ?dup
+            if
+                rdrop 2>r 3drop 2r> exit
+            then
+            2drop 0=
+        until
+        drop r>
+    then 
+    false ;
 ```
 #endif
 _find
 #include "enter.i65"
-    .word zero
-#include "page.i65"
-    .word over
+    .word dup
 #include "page.i65"
     .word bloomhash
 #include "page.i65"
@@ -621,57 +570,54 @@ _find
     .word cbitfetch
 #include "page.i65"
     .word qbranch
-    .byt <(find04-*+1)
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word rot
+    .byt <(find03-*+1)
 #include "page.i65"
     .word tor
 #include "page.i65"
-    .word _pvocablist
+    .word vstack
 #include "page.i65"
 find01
-    .word twodrop
-#include "page.i65"
-    .word vocabsfrom
+    .word cfetchplus
 #include "page.i65"
     .word rfetch
 #include "page.i65"
     .word over
 #include "page.i65"
+    .word pquerycolon
+    .word _pvocfind
+    .word _pfind
+#include "pad.i65"
+    .word xyzzy
+#include "page.i65"
+    .word qdup
+#include "page.i65"
     .word qbranch
     .byt <(find02-*+1)
 #include "pad.i65"
-    .word under
+    .word rdrop
 #include "page.i65"
-    .word _pvocfind
+    .word twotor
 #include "page.i65"
-    .word branch
-    .byt <(find03-*+1)
-#include "pad.i65"
+    .word threedrop
+#include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word exit
+#include "page.i65"
 find02
-    .word _pfind
-#include "page.i65"
-find03
-    .word rot
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word rot
+    .word twodrop
 #include "page.i65"
     .word zeq
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word orx
 #include "page.i65"
     .word qbranch
     .byt <(find01-*+1)
 #include "pad.i65"
+    .word drop
+#include "page.i65"
     .word rfrom
 #include "page.i65"
-    .word drop
+find03
+    .word false
 #include "page.i65"
 find04
     .word exit
@@ -1054,7 +1000,7 @@ source
 #if 0
 name=SOURCE!
 stack=( -- )
-tags=vm,interpreter
+tags=vm,interpreter,~wut?
 Sets the input source to TIB, BLK, or SCR
 
 ```
@@ -1072,6 +1018,7 @@ Sets the input source to TIB, BLK, or SCR
     then
     (source) ! ;
 ```
+todo: something here so that LOAD can restore position on a screen #41
 #endif
 _sourcestore
 #include "enter.i65"
@@ -2291,7 +2238,6 @@ Phase 2 of REHASH
 ( target )
     dup symnew ! dup symtail !
     3 erase ;
-
 ```
 #endif
 _prehash2
@@ -2500,6 +2446,16 @@ sorted by descending CFA.
      until
      drop ;
 
+: words   ( -- )
+    cr >syms 2+
+    begin
+        dup nfalen ?terminal 0= and
+    while
+        dup
+        name> >name.l10
+        nfa+
+    repeat
+    drop ;
 ```
 #endif
 _words
@@ -2526,9 +2482,23 @@ words01
 #include "pad.i65"
     .word dup
 #include "page.i65"
-    .word namefrom
+    .word _iddot
 #include "page.i65"
-    .word _tonamedotl10
+    .word clit
+    .byt 8
+#include "pad.i65"
+    .word numout
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word clit
+    .byt 7
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _spaces
 #include "page.i65"
     .word nfaplus
 #include "page.i65"
