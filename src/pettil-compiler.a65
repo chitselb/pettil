@@ -333,74 +333,34 @@ _iddot
 
 ;--------------------------------------------------------------
 #if 0
-name=?VOCAB
-stack=( name -- name )
-tags=compiler,nosymbol
-
-```
-\ if current vocabulary isn't root, append the vocid to name and set V bit
-: ?vocab   ( name -- name )
-    current vocid ?dup
-    if
-        over voc+
-    then ;
-
-```
-#endif
-_qvocab
-#include "enter.i65"
-    .word current
-#include "page.i65"
-    .word _vocid
-#include "page.i65"
-    .word qdup
-#include "page.i65"
-    .word qbranch
-    .byt <(qvocab01-*+1)
-#include "pad.i65"
-    .word over
-#include "page.i65"
-    .word vocplus
-#include "page.i65"
-qvocab01
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=(CREATE)
-stack=( addr -- )
+stack=( cfa -- )
 tags=compiler,nosymbol
 
- Creates a new symbol table entry with a CFA linking back to HERE,
- where (CREATE) will compile "jsr addr", with consideration for page
- alignment
-
+* for duplicate names
+** issues "EXISTS" warning message
+** sets REDEFINED user variable
+* new symbol table entry
+** symbol cfa links back to HERE
+** compiles page-aligned `JSR cfa` at HERE
 ```
-: (create)   ( addr -- )
-\ parse input stream to here, and search context and its parents for name
+: (create)   ( cfa -- )
+\ parse input stream to here, and search for name
      exists? nip
   ( addr flag )
-     here ?vocab swap          \ append vocabid if current != core
+     here ?vocab swap          \ append vocid if current != core
   ( addr here flag )
      if
   ( addr here )
 \ is potential duplicate word in the current (not a parent) vocabulary?
 \ otherwise it's not a redefinition, treat it as a new word
-         (find) nip
+         (vfind) nip
   ( addr nfa flag )
          if
   ( addr nfa )
              [ RVSON ] cliteral emit
              dup id. 
-             
-             smudge    \ smudge the previously existing word
-
-             ... er no not yet.  Postpone smudging the existing word until
-             we unsmudge the new definition.  : DUP DUP ; should be okay then,
-             because FIND won't find the new DUP, and will be able to find the
-             preexisting DUP until the definition is closed and the switcheroo
-             of the active bit on duplicates takes effect.
-             
+                          
              redefined !       \ does the trick
 
              [ RVSOFF ] cliteral emit
@@ -426,24 +386,34 @@ tags=compiler,nosymbol
    ( addr )
      cfa, ; \ enclose "JSR DOCREATE" in the dictionary
 
+: (create)   ( addr -- )
+    bl word dup c@
+    if
+        currvoc c@  dup ?: (vocfind) (find)
+ ( currvoc nfa cfa found? ) ( R; name )
+        
+    exists? nip                 \ search for word.  Discard CFA, keep NFA
+    
 ```
 #endif
 _pcreate
 #include "enter.i65"
     .word _existsq
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
     .word nip
 #include "page.i65"
     .word here
 #include "page.i65"
-    .word _qvocab
-#include "page.i65"
+;    .word _qvocab
+;#include "page.i65"
     .word swap
 #include "page.i65"
     .word qbranch
     .byt <(pcreate02-*+1)
 #include "pad.i65"
-    .word _pfind
+    .word _pvfind
 #include "page.i65"
     .word nip
 #include "page.i65"
@@ -582,21 +552,12 @@ tags=compiler,defining,fig
 
 ```
 : :   ( -- )
-      current @ context !
       [ 'enter ]  (create)
       !csp   latest smudge  redefined off  ] ;
 ```
 #endif
 _colon
 #include "enter.i65"
-    .word current
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word context
-#include "page.i65"
-    .word store
-#include "page.i65"
     .word redefined
 #include "page.i65"
     .word off                   ; turn REDEFINED off before (CREATE)
@@ -1432,7 +1393,7 @@ _vocabulary
 #if 0
 name=(VOCAB)
 stack=( -- )
-tags=compiler,primitive
+tags=compiler,primitive,unimplemented
 The business end of a word defined by VOCABULARY.  Gets the PFA
 of the vocabulary and stores it in CONTEXT
 #endif
@@ -1447,11 +1408,11 @@ dovocab
     iny
     tya
 dovocab01
-    ldy #usercontext-userarea+1
-    sta (up),y
-    lda n
-    dey
-    sta (up),y
+;    ldy #usercontext-userarea+1
+;    sta (up),y
+;    lda n
+;    dey
+;    sta (up),y
     jmp next
 
 ;--------------------------------------------------------------

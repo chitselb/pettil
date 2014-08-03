@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userdrvnum cmdoff "
+        bogus = " userdrvnum cmdoff userdp dplus "
 
 
         always_use_decimal = false

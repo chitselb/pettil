@@ -69,19 +69,30 @@ forth
 name=DEFINITIONS
 stack=( -- )
 tags=forth-83
-Makes the context vocabulary current
+New definitions will be created in the top vocabulary in vstack
 #endif
 _definitions
 #include "enter.i65"
-    .word context
+    .word vstack
 #include "page.i65"
-    .word fetch
+    .word cfetch
 #include "page.i65"
-    .word current
+    .word currvoc
 #include "page.i65"
     .word store
 #include "page.i65"
     .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NFALEN
+stack=( nfa -- length )
+tags=nosymbol
+Return the length of the name
+#endif
+nfalen
+    jsr nfalen16a
+    jmp put
 
 ;--------------------------------------------------------------
 #if 0
@@ -212,17 +223,6 @@ bloomhash03
 
 ;--------------------------------------------------------------
 #if 0
-name=NFALEN
-stack=( nfa -- length )
-tags=nosymbol
-Return the length of the name
-#endif
-nfalen
-    jsr nfalen16a
-    jmp put
-
-;--------------------------------------------------------------
-#if 0
 name=VSTACK
 stack=( -- addr )
 tags=vocabulary,interpreter,nosymbol
@@ -236,139 +236,126 @@ vstack
 
 ;--------------------------------------------------------------
 #if 0
-name=VOCID
-stack=( vocabulary -- vocabid )
-tags=nosymbol
-Retrieves the vocabulary identifier from the given vocabulary
+name=NFA+
+stack=( nfa -- nfa+ )
+tags=interpreter,ext,primitive
+Chain to the next NFA on the list
 #endif
-_vocid
-#include "enter.i65"
-    .word fetch
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=VOC+
-stack=( vocabid nfa -- )
-tags=nosymbol
-Append the vocabulary id to the string at NFA, and set the
-vocabulary member bit on the name field
-#endif
-vocplus
+nfaplus
+    jsr nfaplus01
+    jmp next
+nfaplus01                       ; should *never* return Z=true
     jsr nfalen16a
-    tay
-    iny
-    lda stackl,x
-    inx                         ; poor man's pop -- voc+ discards two arguments
-    sta (tos),y                 ; concatenate vocab ident
-    tya
-    ora #$40                    ; turn on vocab bit
-    ldy #0
-    beq vocminus01              ; bra
+    clc
+    bvc nfaplus02
+    sec
+nfaplus02
+    adc #3                      ; +cfa +length/flags +vocid
+    adc tos
+    sta tos
+    bcc nfaplus03
+    inc tos+1
+nfaplus03
+    rts
 
 ;--------------------------------------------------------------
 #if 0
-name=VOC-
-stack=( nfa -- )
-tags=nosymbol
-Strip the vocabulary byte from the string and clear the vocabulary
-member bit
-#endif
-vocminus
-    jsr nfalen16a
-    sec                         ; ~wut? may be unnecessary if smudge is known
-    sbc #1
-vocminus01
-    sta (tos),y
-    jmp pops
-
-;--------------------------------------------------------------
-#if 0
-name=((FIND))
-stack=( searchname fflag startnfa -- nfa xfa flag )
+name=(SEEK)
+stack=( searchname vocid modeflag startnfa -- nfa xfa flag )
 tags=interpreter,nosymbol,primitive
-Search for `searchname` in the namelist at `startnfa` in either of two modes:
 
-* `fflag` = -1 search the entire list
-* `fflag` = 0 abandon the search when a name of greater length is encountered
+!!!mode flag
+
+* TRUE -- list is unsorted (SYMNEW)
+* FALSE -- list is sorted (SYMTAB)
 #endif
-ppfind
-    ldy #2
-    jsr locals                  ; TOS = nfa; N0 = name; N1 = find flag (0=core; true=new)
+pseek
+    ldy #3
+    jsr locals                  ; TOS = startnfa; N0 = searchname; N1 = vocid; N2 = modeflag
+    ;ldy #0
     sty n+8                     ; N4 = result flag
     sty n+9
     lda (n),y
     and #$1f
     sta n+6                     ; N3 = length we seek
-ppfind02
+pseek01
     jsr nfalen16a
-    beq ppfind07                ; end of list? return ( NAME 0 )
-    bcs ppfind03                ; smudged? not findable. next!
+    ;ldy #0
+    beq pseek07                 ; end of list? exit with NFA FALSE
+    bcs pseek03                 ; smudged? not findable. next!
+    lda n+2
+    beq pseek02                 ; searching root?
+    bvc pseek03                 ; is this word within a vocabulary?
+    ldy r11
+    iny
+    eor (tos),y                 ; get vocabulary byte
+    bne pseek03                 ; not the right vocabulary? next!
+pseek02
+    lda r11
     cmp n+6                     ; compare lengths
-    beq ppfind04                ; same length, compare strings too
-    bcc ppfind03                ; shorter length?  next!
-    bit n+2                     ; check unsorted mode (N) vs. core mode (P)
-    bmi ppfind03                ; look at all names on this list
-    bpl ppfind07                ; core mode, and we've gone past it
-ppfind03
-    jsr nfaplus01
-    bne ppfind02                ; bra
-ppfind04
+    bne pseek04                 ; same length, compare strings too
     jsr strcomp16a
-    bcc ppfind03                ; non-match? next!
-
-    ; winner!
-    inc n+8                     ; assume immediate (returns +1)
     ;ldy #0                     ; thank you, strcomp
+    bcc pseek03
+    ; winner!
+    inc n+8                     ; assume immediate, set N4 = +1
     lda (tos),y                 ; length and flags
-    bmi ppfind06                ; immediate?
+    bmi pseek06                 ; immediate?
     dey
     sty n+8
-    sty n+9                    ; set N4 = -1
-ppfind06
+    sty n+9                     ; normal, set N4 = -1
+pseek06
     brk
     .byt ld | TOS
     .byt push                   ; push the NFA
     .byt popd | TOS             ; get the CFA
-    .byt br , <(ppfind08-*-2)
-ppfind07
+    .byt br , <(pseek08-*-2)
+
+pseek04
+    bcc pseek03                 ; shorter length? next!
+    lda n+4                     ; check modeflag
+    beq pseek07                 ; core mode, and we've gone past it
+pseek03
+    jsr nfaplus01
+    bne pseek01                 ; bra
+
+pseek07
     ; loser...
     brk
     .byt ld | N0                ; get the original name
     .byt st | TOS
     .byt push                   ; push the name address twice
-ppfind08
+pseek08
     .byt st | TOS               ; CFA or original NAME
     .byt ld | N4                ; status flag
     .byt push
     .byt nxt
-#endif
 
 ;--------------------------------------------------------------
 #if 0
-name=(FIND)
-stack=( name -- nfa xfa flag )
-tags=nosymbol
+name=(VFIND)
+stack=( name vocid -- nfa xfa flag )
+tags=nosymbol,primitive
+Trial search within a vocabulary, used by FIND and (CREATE)
 
 ```
-: (find)   ( name -- nfa cfa flag | name name 0 )
-    true symnew @ 2+ ((find))
+: (vfind)   ( name vocid -- nfa xfa flag )
+    2dup 2>r  true symnew @ 2+ (seek)
     ?dup 0=
     if
- ( name name )
-        drop false over pearsonhash 2* symtab @ + @ 2+ ((find))
-    then ;
- ( nfa xfa flag | name name 0 )
+( name name )
+        2drop 2r@ false third pearson# 2* symtab @ + @ 2+ (seek)
+    then
+    rdrop rdrop ;
 ```
 #endif
-_pfind
+_pvfind
 #include "enter.i65"
-    .word true                  ; search unsorted list
+    .word twodup
+#include "page.i65"
+    .word twotor
+#include "page.i65"
+    .word true
 #include "page.i65"
     .word symnew
 #include "page.i65"
@@ -376,20 +363,24 @@ _pfind
 #include "page.i65"
     .word twoplus
 #include "page.i65"
-    .word ppfind
+    .word xyzzy
+#include "page.i65"
+    .word pseek
 #include "page.i65"
     .word qdup
 #include "page.i65"
     .word zeq
 #include "page.i65"
     .word qbranch
-    .byt <(pfind01-*+1)
+    .byt <(pvfind01-*+1)
 #include "pad.i65"
-    .word drop
+    .word twodrop
 #include "page.i65"
-    .word false                 ; lists are sorted by size
+    .word tworfetch
 #include "page.i65"
-    .word over
+    .word false
+#include "page.i65"
+    .word third
 #include "page.i65"
     .word pearsonhash
 #include "page.i65"
@@ -405,37 +396,12 @@ _pfind
 #include "page.i65"
     .word twoplus
 #include "page.i65"
-    .word ppfind
+    .word pseek
 #include "page.i65"
-pfind01
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(VOCFIND)
-stack=( vocid name -- nfa xfa flag )
-tags=nosymbol
-Trial search within a vocabulary, used by FIND
-
-```
-: (vocfind)   ( vocid name -- )
-    dup>r voc+ r@ (find) r> voc- ;
-
-```
-#endif
-_pvocfind
-#include "enter.i65"
-    .word duptor
+pvfind01
+    .word rdrop
 #include "page.i65"
-    .word vocplus
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word _pfind
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word vocminus
+    .word rdrop
 #include "page.i65"
     .word exit
 
@@ -468,82 +434,31 @@ The final vocabulary searched will be core, and (FIND) will exit afterward.
 
   2+ = vocabularies added by the user
 
-(FIND) first searches the unsorted names beginning at SYMTAIL, and keeps
-going without regard to name length.  If it fails to find the word there,
-it tries the hash list, which is expected to be sorted in ascending size
+(FIND) first searches all unsorted names beginning at SYMTAIL, without regard 
+to name length.  If it fails to find the word there,
+it tries the hash list, which is sorted in ascending size
 order.  Vocabularies are searched first, beginning with CONTEXT and chaining
 up until core (0) is reached.  The vocid is appended to the word when
 searching that vocabulary.  Only one symbol within a vocabulary may be
 active (unsmudged) at a time.  Smudged words are ignored.  The same symbol
-may exist within more than one vocabulary.
-
-For example, at cold start the user types in,
-
-```
-VOCABULARY LATIN          \ creates a new user vocabulary with vocid = 3
-LATIN DEFINITIONS         \ sets CURRENT to LATIN, definitions added there
-: EPLURIBUSUNUM ;         \ adds a new word to the LATIN vocabulary
-VOCABULARY PIGLATIN       \ creates a new user vocabulary with vocid = 4
-                          \ PIGLATIN is a member of the LATIN vocabulary
-PIGLATIN DEFINITIONS      \ sets CURRENT to PIGLATIN, new definitions there
-: IXNAY ;                 \ adds a new word to the PIGLATIN vocabulary
-FORTH                     \ set CONTEXT to core
-IXNAY  not found          \ IXNAY is a member of PIGLATIN, out of context
-PIGLATIN  not found       \ PIGLATIN is a member of LATIN vocabulary
-LATIN PIGLATIN            \ set context to LATIN; set context to PIGLATIN
-IXNAY  ok                 \ search for "IXNAY" + $04, found in PIGLATIN(4)
-EPLURIBUSUNUM  ok         \ search for "EPLURIBUSUNUM" + $04, not found.
-                          \ search for "EPLURIBUSUNUM" + $03, in LATIN(3)
-DEPTH .  0 ok             \ search for "DEPTH" + $04, not found in PIGLATIN(4)
-                          \ search for "DEPTH" + $03, not found in LATIN(3)
-                          \ search for "DEPTH", found in core(0)
+may be active within more than one vocabulary.
 
  returns
-       ( cfa -1 ) if found normal word
-       ( cfa 1 ) if found immediate word
-       ( name 0 ) if not in dictionary
+       ( cfa -1 ) found normal word
+       ( cfa 1 ) found immediate word
+       ( name 0 ) not in dictionary
 
-: find   ( addr1 -- addr2 flag )
-    0 over bloom# >bit bloom + cbit@
- ( addr1 0 bloomflag )
-    if
- ( addr1 0 )
-        0 rot >r  (vocablist)
- ( 0 0 ) ( R; name )
-        begin
-            2drop vocabs> r@ over
- ( vocid name vocid ) ( R; name )
-            if
- ( vocid name ) ( R; name )
-                under (vocfind)
- ( vocid ( nfa cfa flag | name name 0 ) ) ( R; name )
-            else
- ( 0 name ) ( R; name )
-                (find)
- ( 0 ( nfa cfa flag | name name 0 ) ) ( R; name )
-            then
- ( vocid nfa xfa flag ) ( R; name )
-            rot drop
- ( vocid xfa flag ) ( R; name )
-            rot 0= over or
-        until
-        r> drop
- ( xfa flag ) ( R; name )
-    else
-        false
-    then
-  ( xfa flag ) ( R; name )
-      ;
-
-: find ( addr1 -- addr2 flag )
+```
+: find ( name -- xfa flag )
     dup bloom# >bit bloom + cbit@
     if
         >r  vstack
  ( vstack ) ( R; name )
         begin
-            c@+ r@ over
-            ?: (vocfind) (find)
- ( vptr voc nfa cfa found? ) ( R; name )
+            c@+ r@ over 
+ ( vptr vocid name vocid ) ( R; name )
+            (vfind)
+ ( vptr vocid nfa xfa found? ) ( R; name )
             ?dup
             if
                 rdrop 2>r 3drop 2r> exit
@@ -570,8 +485,8 @@ _find
     .word cbitfetch
 #include "page.i65"
     .word qbranch
-    .byt <(find03-*+1)
-#include "page.i65"
+    .byt <(find04-*+1)
+#include "pad.i65"
     .word tor
 #include "page.i65"
     .word vstack
@@ -583,16 +498,12 @@ find01
 #include "page.i65"
     .word over
 #include "page.i65"
-    .word pquerycolon
-    .word _pvocfind
-    .word _pfind
-#include "pad.i65"
-    .word xyzzy
+    .word _pvfind
 #include "page.i65"
     .word qdup
 #include "page.i65"
     .word qbranch
-    .byt <(find02-*+1)
+    .byt <(find03-*+1)
 #include "pad.i65"
     .word rdrop
 #include "page.i65"
@@ -604,7 +515,7 @@ find01
 #include "page.i65"
     .word exit
 #include "page.i65"
-find02
+find03
     .word twodrop
 #include "page.i65"
     .word zeq
@@ -616,10 +527,9 @@ find02
 #include "page.i65"
     .word rfrom
 #include "page.i65"
-find03
+find04
     .word false
 #include "page.i65"
-find04
     .word exit
 
 ;--------------------------------------------------------------
@@ -631,7 +541,6 @@ parses the next token in the input stream.  Returns either the
 address of the (unfound) token at HERE and a 0, or the code
 field address of the word and -1 for normal, +1 for immediate
 words
-and returns either
 
 ```
 : exists?
@@ -1588,27 +1497,6 @@ _tosyms
     .word plus
 #include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=NFA+
-stack=( nfa -- nfa+ )
-tags=interpreter,ext,primitive
-Chain to the next NFA on the list
-#endif
-nfaplus
-    jsr nfaplus01
-    jmp next
-nfaplus01               ; this should *never* return Z=true
-    jsr nfalen16a
-    clc
-    adc #3
-    adc tos
-    sta tos
-    bcc nfaplus02
-    inc tos+1
-nfaplus02
-    rts
 
 ;--------------------------------------------------------------
 #if 0
