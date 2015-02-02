@@ -69,6 +69,8 @@ echo . . . . Building docs/tiddlypettil.html
 mkdir -p ./build/tiddlypettil/tiddlers
 cp ./docs/statictiddlers/tiddlywiki.info ./build/tiddlypettil/
 cp ./docs/statictiddlers/*.tid ./build/tiddlypettil/tiddlers/
+export MMDDYY=`date +"documentation generated %Y-%m-%d"`
+sed "s/datetimestamp/${MMDDYY}/" <./docs/statictiddlers/AboutPETTIL.tid >./build/tiddlypettil/tiddlers/AboutPETTIL.tid
 cd ./build/tiddlypettil/
 tiddlywiki --load ../pettil.json >/dev/null
 tiddlywiki --rendertiddler $:/core/save/all tiddlypettil.html text/plain >/dev/null
