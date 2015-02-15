@@ -77,7 +77,7 @@ tiddlywiki --rendertiddler $:/core/save/all tiddlypettil.html text/plain >/dev/n
 cd ../..
 mv -v ./build/tiddlypettil/output/tiddlypettil.html ./docs/tiddlypettil.html
 # copy a fresh tiddly up to http://chitselb.com/files because github doesn't like hosting single files
-scp ./docs/tiddlypettil.html www-puri:chitselb.com/current/public/files/
+#scp ./docs/tiddlypettil.html www-puri:chitselb.com/current/public/files/
 #
 # run it
 if [ "$1" != "--norun" ]; then
