@@ -273,115 +273,63 @@ divmod05
 name=40/MOD
 stack=( u -- u%40 u/40 )
 tags=math
-Perform a divide by 40 and a modulo 40, for
+[[Routine courtesy of Mike B.|http://forum.6502.org/viewtopic.php?f=2&t=3051#p34802]]  Thank you sir!
+
+Perform a divide by 40 and a modulo 40, useful for screen positioning and 
 [[Radix50|http://en.wikipedia.org/wiki/DEC_Radix-50]]
 #endif
 slmod40
-    stx storex
-    lda #0
-    ldx #7
-slmod40a
-    sta n,x
-    dex
-    bpl slmod40a                ; zero n+0..n+7
-    ldx #2
+        jsr slip
+        lda  #0         ; remainder
+        ldy  #16        ; loop counter
 slmod40b
-    clc
-    lda n                       ; addend = n*3
-    adc tos
-    sta n
-    lda n+1
-    adc tos+1
-    sta n+1
-    bcc slmod40c
-    inc n+2
+        asl  tos        ; tos is gradually replaced
+        rol  tos+1      ;   with the quotient
+        rol             ; A is gradually replaced
+                        ;   with the remainder
+        cmp  #40        ; partial remainder >= 40?
+        bcc  slmod40c
+        sbc  #40        ;   yes: update partial
+                        ;     remainder, set low bit
+        inc  tos        ;     in partial quotient
 slmod40c
-    dex
-    bpl slmod40b
-    lda #4
-    sta n+8
-slmod40d
-    clc
-    lda n+0
-    adc n+4
-    sta n+4
-    lda n+1
-    adc n+5
-    sta n+5
-    lda n+2
-    adc n+6
-    sta n+6
-    lda n+3
-    adc n+7
-    sta n+7                     ; sum += addend
+        dey 
+        bne  slmod40b     ; loop 16 times
+        sta stackl,x
+        sty stackh,x
+        jmp next
 
-    ldy #4
-slmod40e
-    asl n
-    rol n+1
-    rol n+2
-    rol n+3                     ; addend << 4
-    dey
-    bne slmod40e
-    dec n+8                     ; repeat 4x (3+48+768+12288 = 13107)
-    bne slmod40d
+;--------------------------------------------------------------
+#if 0
+name=40/MOB
+stack=( u -- u%40 u/40 )
+tags=forth-83,nucleus
+Perform an unsigned division of the 16-bit "u" into the double
+"ud", leaving the 16-bit unsigned remainder and quotient on
+the stack
 
-    clc
-    lda n+4
-    adc #<13100
-    sta n+4
-    lda n+5
-    adc #>13100
-    sta n+5
-    bcc slmod40f
-    inc n+6
-    bne slmod40f
-    inc n+7                     ; sum += 13100 (fudge factor)
-slmod40f
-    lda n+7                     ; (n+6) is now u/5
-    lsr
-    ror n+6
-    lsr
-    ror n+6
-    lsr
-    ror n+6
-    sta n+7                     ; (n+6) = u/40
+      http://6502.org/source/integers/ummodfix/ummodfix.htm
 
-    lda n+6
-    sta n+0
-    lda n+7
-    sta n+1
-    sty n+2
-    sty n+3
-    asl n
-    rol n+1
-    asl n
-    rol n+1                     ; n = u/40*4
-    ;clc
-    lda n
-    adc n+6
-    sta n
-    lda n+1
-    adc n+7
-    sta n+1                     ; n = u/40*5
-    asl n
-    rol n+1
-    asl n
-    rol n+1
-    asl n
-    rol n+1                     ; n = u/40*5*8
-    sec
-    lda tos
-    sbc n
-    sta tos
-    lda tos+1
-    sbc n+1
-    sta tos+1                   ; tos =  u % 40
-    lda n+6
-    ldy n+7                     ; push   u / 40
-    ldx storex
-    jmp pushya
-
+!!! pronounced: "u-m slash mod"
+#endif
+xlmod40
+        jsr slip
+        lda #0
+        ldy #16
+xlmod40b
+        cmp #20
+        bcc xlmod40c
+        sbc #20
+xlmod40c
+        rol tos
+        rol tos+1
+        rol
+        dey
+        bne xlmod40b
+        sta stackl,x
+        sty stackh,x
+        jmp next
+        
 ;--------------------------------------------------------------
 #if 0
 name=UM/MOD
@@ -395,13 +343,50 @@ the stack
 
 !!! pronounced: "u-m slash mod"
 #endif
-_umslashmod
-#include "enter.i65"
-    .word udslashmod
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word exit
+umslashmod
+    lda stackl,x
+    cmp tos
+    lda stackh,x
+    sbc tos+1
+    bcs umslashmodx
+umslashmoda
+    lda #17
+    sta n       ; counter
+umslashmodb
+    rol stackl+1,x
+    rol stackh+1,x
+    dec n
+    beq umslashmodz
+    rol stackl,x
+    rol stackh,x
+    lda #$80
+    rol
+    sta n+1         ; carry
+    ;sec
+    lda stackl,x
+    sbc tos
+    sta n+2
+    lda stackh,x
+    sbc tos+1
+    tay
+    lda n+1
+    sbc #0
+    bcc umslashmodb
+
+    lda n+2
+    sta stackl,x
+    sty stackh,x
+    bcs umslashmodb
+    
+umslashmodx
+    lda #$ff
+    sta stackl,x
+    sta stackh,x
+    sta stackh+1,x
+    sta stackl+1,x
+umslashmodz
+    jsr slide
+    jmp swap
 
 ;--------------------------------------------------------------
 #if 0
@@ -2076,86 +2061,6 @@ mult03
 
 ;--------------------------------------------------------------
 #if 0
-name=M/
-stack=( d n -- rem quotient )
-tags=nucleus
-
-#endif
-mslash
-    jsr domslash
-    jmp next
-domslash
-    cpx #$6f
-    bcc domslash02
-domslash01
-    ldx #bos
-    ;       sty stack,x
-    ;       sty stack+1,x
-    tya
-    rts
-domslash02
-    ;      lda stack,x
-    ;       ora stack+1,x
-    beq domslash01
-    ;       lda stack+1,x
-    pha
-    ;       lda stack,x
-    pha
-    ;       lda stack+1,x
-    ;       eor stack+3,x
-    pha
-    ;       lda stack+1,x
-    pha
-    bpl domslash03
-    jsr donegate
-domslash03
-    ;       lda stack+3,x
-    bpl domslash04
-    inx
-    inx
-    jsr dnegate
-    dex
-    dex
-domslash04
-    jsr divmod
-    pla
-    bpl domslash05
-    jsr remult
-domslash05
-    pla
-    bpl domslash07
-    jsr donegate
-    ;       lda stack+2,x
-    ;       ora stack+3,x
-    beq domslash07
-    ;       lda stack,x
-    bne domslash06
-    ;       dec stack+1,x
-domslash06
-    ;       dec stack,x
-    jsr remult
-    clc
-    pla
-    ;       adc stack+2,x
-    ;       sta stack+2,x
-    pla
-    ;       adc stack+3,x
-    ;       sta stack+3,x
-    rts
-domslash07
-    pla
-    pla
-    rts
-remult
-    inx
-    inx
-    jsr donegate
-    dex
-    dex
-    rts
-
-;--------------------------------------------------------------
-#if 0
 name=M*/
 stack=( n1 n2 n3 -- d )
 tags=nucleus
@@ -2215,7 +2120,7 @@ doslashmod01
     pla
     ;       sta stack+1,x
     ldy #0
-    jmp domslash
+;    jmp domslash
 
 ;--------------------------------------------------------------
 #if 0
@@ -2287,7 +2192,7 @@ dostarslashmod
     ;       sta stack,x
     pla
     ;       sta stack+1,x
-    jmp domslash
+;    jmp domslash
 
 ;--------------------------------------------------------------
 #if 0
@@ -2314,52 +2219,6 @@ starslash
     ;       lda stack+1,x
     ;       sta stack+3,x
     jmp pops
-
-;--------------------------------------------------------------
-#if 0
-name=M/MOD
-stack=( d n1 -- n2 n3 )
-tags=nucleus
-
-
- n2 is the remainder and n3 is the floor of the
- quotient after dividing d by the divisor n1.
- All values and arithmetic are unsigned.  An er-
- ror condition results if the divisor is zero or
- if the quotient lies outside the range
- {-32,768...32,767}.
-
-#endif
-mslashmod
-    ldy #2
-    jsr locals       ; udhi -> N0; udlo -> N1
-    lda tos+1
-    pha
-    bpl mslashmod01
-    jsr donegate
-mslashmod01
-    pla
-    eor n+1         ; xor the sign bits
-    sta n+7
-    lda n+1
-    sta n+6         ; original sign of divisor
-    bpl mslashmod02
-    jsr dnegaten    ; negate the double at n..n+3
-mslashmod02
-    jsr divmod
-    sty n+1
-    sta n           ; stash the quotient
-    lda n+6
-    bpl mslashmod03
-    jsr donegate
-mslashmod03
-    lda n+7
-    bpl mslashmod04
-    jsr dnegaten
-mslashmod04
-    ldy n+1
-    lda n
-    jmp pushya
 
 ;--------------------------------------------------------------
 #if 0
