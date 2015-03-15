@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userdp expect cold topkt01 unpkt03 warm rlencode04 loadbuffers02 "
+        bogus = " userdp expect cold topkt01 unpkt03 warm rlencode04 loadbuffers02 _loadbuffers _numvmpktstore "
 
 
         always_use_decimal = false

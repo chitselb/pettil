@@ -782,28 +782,74 @@ sign01
 ;--------------------------------------------------------------
 #if 0
 name=(#)
-stack=( +d1 base -- +d2 asciidigit )
+stack=( +d1 -- +d2 )
 tags=numword
 base is the current system number base, which must be between 2 and 36.
 This helper primitive divides d1 by BASE, returning the quotient d2 
 and the remainder (as an ascii digit).  Called by '#'
 #endif
-psharp
-    lda tos
-    clc
-    ;tay
-    ;ror
-    ;beq fail        check for BASE = 0|1
-    ;tya
-    ldy #0
-psharpa
-    iny
-    rol
-    bpl psharpa
-    sta n
-					; base is now left-aligned, carry is clear
-					; Y is the number of left-shifts it took
-    
+sharp
+        lda  #0         ;partial remainder
+        ldy  #32        ;loop counter
+sharp2
+        asl  stackl,x   ;Dividend
+        rol  stackh,x   ;  is gradually replaced
+        rol  tos        ;  with the quotient
+        rol  tos+1      ;a is gradually replaced
+        rol             ;  with the remainder
+        cmp  uarea+userbase-userarea       ;partial remainder < BASE?
+        bcc  sharp3     ;  no: update the partial
+        sbc  uarea+userbase-userarea       ;    remainder and partial
+        inc  stackl,x   ;    quotient
+sharp3
+        dey
+        bne  sharp2     ;loop 32 times
+        cmp  #10
+        sed
+        adc  #'0'       ;adjust remainder to ASCII
+        cld
+        jmp  pushya     ; actually need to do a HOLD
+
+;--------------------------------------------------------------
+#if 0
+name=UD/MOB
+stack=( ud1 u2 -- ud3 d4 )
+tags=numword
+
+experimental 32/16 -- r16 q32
+#endif
+udslashmob
+        lda #33
+        sta n+2
+        ldy #0
+        sty n+1
+        clc
+udsla
+        tya
+        rol stackl+1,x
+        rol stackh+1,x
+        rol stackl,x
+        rol stackh,x
+        dec n+2
+        beq udslb
+        rol
+        rol n+1
+        tay
+        sec
+        sbc tos
+        sta n
+        lda n+1
+        sbc tos+1
+        bcc udsla
+        sta n+1
+        ldy n
+        bcs udsla
+udslb
+        sta tos
+        lda n+1
+        sta tos+1
+        jmp dashrot
+
 ;--------------------------------------------------------------
 #if 0
 name=#
@@ -858,7 +904,8 @@ tags=numword
 #endif
 _sharps
 #include "enter.i65"
-sharps01        .word _sharp            ; ( d )
+sharps01
+    .word _sharp            ; ( d )
 #include "page.i65"
     .word twodup           ; ( d d )
 #include "page.i65"
