@@ -147,10 +147,8 @@ umstar
     lda n+1
     sta stackh,x
     lda n+2
-    sta tos
-    lda n+3
-    sta tos+1
-    jmp next
+    ldy n+3
+    jmp put
 
 multiply
     lda #0                  ; unsigned multiply tos*N2 destroys tos
@@ -208,93 +206,55 @@ xlmod40c
 ;--------------------------------------------------------------
 #if 0
 name=UD/MOD
-stack=( d1 n1 -- n2 d2 )
-tags=nucleus
- d2 is the double quotient of d1/n1.  n2 is the remainder.  All
- values are unsigned.
- ~ make this 32-bit divisor?
- ~ fix for /0
+stack=( ud1 u2 -- u3 ud4 )
+tags=numword
+
+http://www.bradrodriguez.com/papers/camel09.txt
+\   High level: numeric output                   (c) 31mar95 bjr
+: UD/MOD      \ ud1 u2 -- u3 ud4     32/16->32 divide
+    >R 0 R@ UM/MOD  ROT ROT R> UM/MOD ROT ;
+
+experimental 32/16 -- r16 q32
 #endif
 udslashmod
-    ldy #2
-    jsr locals               ; udlo -> N0; udhi -> N1
-    jsr divmod              ; (unsigned) u31/u16 -> quo31 rem16
-    dex
-    lda n+1
-    sta stackh,x
-    lda n
-    sta stackl,x            ; remainder
-    lda n+9
-    sta tos+1
-    lda n+8
-    sta tos
-    ldy n+11
-    lda n+10
-    jmp pushya
-
-divmod
-    stx storex
-    ldx #7
-divmod00
-    sty n+4,x               ; zero the divisor & quotient
-    dex
-    bpl divmod00
-    ldx storex
-    lda tos+1
-    ora tos
-    beq divmod05            ; error division by zero
-    ldy #33
-divmod01
-    lsr tos+1
-    ror tos                 ; divisor = divisor/2
-    ror n+7
-    ror n+6                 ; shift it in until we hit zero
-    ror n+5
-    ror n+4
-    dey
-    lda tos+1
-    ora tos
-    bne divmod01
-divmod02
-    asl n+8
-    rol n+9                 ; quotient low
-    rol n+10
-    rol n+11                ; double the quotient here
-    sec
-    lda n
-    sbc n+4
-    pha
-    lda n+1
-    sbc n+5
-    pha
-    lda n+2
-    sbc n+6
-    pha
-    lda n+3
-    sbc n+7
-    bcc divmod03
-    sta n+3
-    pla
-    sta n+2
-    pla
-    sta n+1
-    pla
-    sta n
-    inc n+8                 ; add 1 to quotient
-    bcs divmod04            ; bra
-divmod03
-    pla
-    pla
-    pla                     ; discard result of subtraction
-divmod04
-    lsr n+7
-    ror n+6
-    ror n+5
-    ror n+4                 ; divisor /2
-    dey
-    bne divmod02
-divmod05
-    rts
+        ldy #2
+        jsr locals
+        sty n+4
+        sty n+5
+        lda #33
+        sta n+6
+        stx storex
+udslashmoda
+        rol n+4
+        rol n+5
+        sec
+        lda n+4
+        sbc tos
+        tax
+        lda n+5
+        sbc tos+1
+        tay
+        bcc udslashmodb
+        stx n+4
+        sty n+5
+udslashmodb
+        rol n+0
+        rol n+1
+        rol n+2
+        rol n+3
+        dec n+6
+        bne udslashmoda
+        ldx storex
+        ldy n+5
+        sty tos+1
+        lda n+4
+        sta tos
+        ldy n+1
+        lda n+0
+        jsr push6502
+        ldy n+3
+        lda n+2
+        jmp pushya
 
 ;--------------------------------------------------------------
 #if 0
@@ -2201,10 +2161,10 @@ pick
     clc
     adc tos
     tay
-    lda stackl,y
-    sta tos
     lda stackh,y
     sta tos+1
+    lda stackl,y
+    sta tos
     jmp next
 
 ;--------------------------------------------------------------
