@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userdp digit02 warm "
+        bogus = " userdp digit02 warm dlt _hold "
 
 
         always_use_decimal = false
