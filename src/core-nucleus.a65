@@ -214,47 +214,59 @@ http://www.bradrodriguez.com/papers/camel09.txt
 : UD/MOD      \ ud1 u2 -- u3 ud4     32/16->32 divide
     >R 0 R@ UM/MOD  ROT ROT R> UM/MOD ROT ;
 
-experimental 32/16 -- r16 q32
 #endif
 udslashmod
         ldy #2
-        jsr locals
-        sty n+4
-        sty n+5
-        lda #33
-        sta n+6
+        jsr locals        ; dividend to n0..n3
+        ;clc
+        ;ldy #0           ; locals does this for us
         stx storex
+        ldx #33
+        tya
+        beq udslashmodb   ; bra to initialization code
 udslashmoda
-        rol n+4
-        rol n+5
-        sec
-        lda n+4
-        sbc tos
-        tax
-        lda n+5
-        sbc tos+1
-        tay
-        bcc udslashmodb
-        stx n+4
-        sty n+5
+        rol n+4           ; [5] I don't know what this 2-bytes is called
+        rol n+5           ; [5] trial minuend or something like that
+        sec               ; [2]
+        lda n+4           ; [3]
+        sbc tos           ; [3]
+        tay               ; [2]
+        lda n+5           ; [3]
+        sbc tos+1         ; [3]
+        bcc udslashmodc   ; save or abandon the trial subtraction
 udslashmodb
-        rol n+0
-        rol n+1
-        rol n+2
-        rol n+3
-        dec n+6
-        bne udslashmoda
+        sty n+4           ; [2+3+3] or [3]?
+        sta n+5           ; treating this as [~6] clocks on average
+udslashmodc
+        rol n+0           ; [5]
+        rol n+1           ; [5]
+        rol n+2           ; [5]
+        rol n+3           ; [5]
+        dex               ; [2]
+        bne udslashmoda   ; [3] 
+                ; [54] or [59] clocks for 33x main loop = [1839]
         ldx storex
+; this is the end [22-bytes]
         ldy n+5
         sty tos+1
         lda n+4
-        sta tos
+        sta tos           ; put remainder on stack
         ldy n+1
         lda n+0
-        jsr push6502
+        jsr push6502      ; push quotient(lo) on stack
         ldy n+3
         lda n+2
-        jmp pushya
+        jmp pushya        ; push quotient(hi) on stack
+
+; alternate ending [8-bytes]
+        brk
+        .byt ld | N2
+        .byt st | TOS
+        .byt ld | N0
+        .byt push
+        .byt ld | N1
+        .byt push
+        .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
