@@ -279,8 +279,8 @@ _semi
     # read an assembler-generated label file in:  label, address
     def add_labels(filename)
         labels = Hash.new
-        if File.exist? "./build/"+filename
-            result = File.open("./build/"+filename,'r') do |f|
+        if File.exist? "./tmp/"+filename
+            result = File.open("./tmp/"+filename,'r') do |f|
                 while (line = f.gets) do
                     line.chomp!
                     a = line.split(",")
@@ -293,7 +293,7 @@ _semi
 
     # outputs a label file for the xpet monitor
     def write_xpet_monfile(outputfile,labels)
-        monfile = File.open("./build/"+outputfile,'w') do |file|
+        monfile = File.open("./tmp/"+outputfile,'w') do |file|
             labels.each do |label, addr|
                 file.write("al C:#{hex4out addr} .#{label}\n")
             end
@@ -307,11 +307,11 @@ _semi
 
 
 
-        bogus = " userdp digit02 warm dlt _hold unpkt03 cr01 "
+        bogus = " userdp digit02 warm dlt _hold unpkt03 cr01 mon "
 
 
         always_use_decimal = false
-        symfile = File.open("./build/"+outputfile,'w') do |file|
+        symfile = File.open("./tmp/"+outputfile,'w') do |file|
             labels.each do |label, addr|
                 addr_out = "$"+addr.to_s(16).rjust(4,'0')
                 # use decimal if the hex address is known to conflict
@@ -343,7 +343,7 @@ _semi
     end
 
     def write_symtab_file(outputfile,forthwordhash)
-        symfile = File.open("./build/"+outputfile,'w')
+        symfile = File.open("./tmp/"+outputfile,'w')
         forthwordhash.each do |wordname, stuff|
             symfile.write stuff.symbol_table_entry   unless stuff.tags.index "nosymbol"
         end
@@ -351,7 +351,7 @@ _semi
     end
 
     def write_json_file(outputfile,forthwordhash)
-        jsonfile = File.open("./build/"+outputfile,'w')
+        jsonfile = File.open("./tmp/"+outputfile,'w')
         jsonfile.write "[\n"
         glossary = ""
         forthwordhash.each do |wordname, stuff|
@@ -363,7 +363,7 @@ _semi
 
     # write a simple list of names for the pearson cruncher
     def write_pearson_file(outputfile,forthwordhash)
-        pearsonfile = File.open("./build/"+outputfile,'w')
+        pearsonfile = File.open("./tmp/"+outputfile,'w')
         forthwordhash.each do |wordname, stuff|
             pearsonfile.write "#{wordname}\n"   unless stuff.tags.index "nosymbol"
         end

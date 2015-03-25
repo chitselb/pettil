@@ -7,7 +7,7 @@
 minimum_size=17
 
 
-all = File.binread("build/pettil.obj")
+all = File.binread("tmp/pettil.obj")
 
 i = 0
 (all.size-minimum_size).times do

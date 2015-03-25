@@ -13,7 +13,7 @@ pearson = Array.new(psize+1,0)
 # 128 153 126 204 94 193 211 4
 # 118 208 124 83 15 168 74 126
 wordlist = Array.new
-    file=File.new("build/pearson.txt", "r")
+    file=File.new("tmp/pearson.txt", "r")
     while line=(file.gets) do
         wordlist += [line.chomp]
         puts line
