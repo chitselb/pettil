@@ -439,7 +439,7 @@ tags=editor,nosymbol
     third 3+ swap rlencode    \ rlencode it
 ( blkbuf targend uncompressed? )
     prev on
-    vidram or 2 +under  >6502
+    >r 2dup swap - dup r> or vidram or 2+ rot ! ;
 ( blkbuf size )
 ```
 #endif
@@ -482,8 +482,6 @@ _mkpkt
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word twoplus
-#include "page.i65"
     .word dup
 #include "page.i65"
     .word rfrom
@@ -493,6 +491,8 @@ _mkpkt
     .word vidram
 #include "page.i65"
     .word orx
+#include "page.i65"
+    .word twoplus
 #include "page.i65"
     .word rot
 #include "page.i65"
@@ -516,28 +516,30 @@ pronounced: "s-c-r-to-packet"
  ( scr flag )
     if
  ( scr )
-        dup>r prev !  mkpkt
- ( blkbuf newsize ) ( R; scr )
-        r@ >pkt pktlen
- ( blkbuf newsize packet oldsize )
-        vmbuf @
- ( blkbuf newsize packet oldsize vmbuf )
-        true
- ( blkbuf newsize packet oldsize vmbuf true )
+        >pkt pktlen  mkpkt  vmbuf @  rot 
+ ( packet oldsize blkbuf newsize packet oldsize vmbuf true )
         >6502
-  ldy #5
-  jsr locals
-    ...   \ TOS=-1; N0=blkbuf; N1=newsize; N2=oldsize; N3=vmbuf R9=packet
-    jsr toforth
- ( scr blkbuf newtail newsize vmbuf oldtail delta newvmbuf ) ( R; scr )
-        vmbuf !
- ( scr blkbuf newtail newsize vmbuf oldtail delta ) ( R; scr )
-        +move
- ( scr blkbuf newtail newsize ) ( R; scr )
-        cmove r>
-    then
- ( scr )
-    drop ;
+        ldy #4
+        jsr locals
+        brk
+        ld N0
+        sub N2
+        push
+        ld N2
+        push
+        ld N3
+        push
+        add N1
+        sub N2
+        push
+        ld N0
+        sub N1
+        sub N3
+        push
+        rtn
+        jsr toforth
+        vmbuf !  +move  cmove  0
+    then  drop ;
 ```
 #endif
 _scrtopkt
@@ -549,63 +551,59 @@ _scrtopkt
     .word qbranch               ; IF
     .byt <(scrtopkt01-*+1)
 #include "pad.i65"
-    .word duptor
-#include "page.i65"
-    .word prev
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word _mkpkt
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
     .word _topkt
 #include "page.i65"
     .word _pktlen
+#include "page.i65"
+    .word _mkpkt
 #include "page.i65"
     .word vmbuf
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word true          ; TOS=junk, Sweet-16 restacks the stack
+    .word rot
 #include "page.i65"
-;  ( blkbuf newsize packet oldsize vmbuf true )
+;  ( packet oldsize newsize vmbuf blkbuf )
     .word to6502
-    ldy #5
-    jsr locals
-;     ...   \ TOS=true; N0=blkbuf; N1=newsize; N2=packet; N3=oldsize N4=vmbuf
+    ldy #4
+    jsr locals  ; TOS=blkbuf N0=packet N1=oldsize N2=newsize N3=vmbuf
     brk
     .byt ld | N0
-    .byt st | TOS               ; blkbuf
+    .byt sub | N2
+    .byt push
     .byt ld | N2
-    .byt sub | N1
-    .byt push                   ; newtail
-    .byt ldd | TOS              ; 2+
-    .byt ld | N1
-    .byt push                   ; newsize
-    .byt ld | N4
-    .byt push                   ; vmbuf
-    .byt ld | N2
-    .byt sub | N3
-    .byt push                   ; oldtail
-    .byt ldi | TOS              ; 1+
+    .byt push
     .byt ld | N3
+    .byt push
+    .byt add | N1
+    .byt sub | N2
+    .byt dcr | ACC
+    .byt dcr | ACC
+    .byt push
+    .byt ld | N0
     .byt sub | N1
-    .byt push                   ; delta
-    .byt add | N4
-    .byt push                   ; newvmbuf
+    .byt sub | N3
+    .byt push
     .byt rtn
 #include "toforth.i65"
-;  ( blkbuf newtail newsize vmbuf oldtail delta newvmbuf ) ( R; scr )
+;  ( blkbuf pkttail newsize vmbuf newtail tailsize )
+    .word xyzzy
+#include "page.i65"
+    .word over
+#include "page.i65"
     .word vmbuf
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word _plusmove
+    .word twoplus
+#include "page.i65"
+    .word _move
+#include "page.i65"
+    .word twoplus
 #include "page.i65"
     .word cmove
 #include "page.i65"
-    .word rfrom
+    .word zero
 #include "page.i65"
 scrtopkt01                      ; THEN
     .word drop
