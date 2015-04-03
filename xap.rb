@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userdp mon "
+        bogus = " userdp mon tworfetch number05 randuc number02 _block "
 
 
         always_use_decimal = false
