@@ -379,6 +379,184 @@ wlmodnb
     bne wlmodnb
     rts
 
+
+
+
+;--------------------------------------------------------------
+#if 0
+name=UM/MODB
+stack=( ud1 u2 -- u3 ud4 )
+tags=numword
+; - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; UM/MOD  ( ud u1 -- u2 u3 )
+; Dividend ud is 32-bits unsigned.  Divisor u1,
+; Remainder u2 and Quotient u3 are 16-bits unsigned
+; Invalid inputs and/or outputs are silently ignored
+; 1823 cycles (+ NEXT) best case (zero quotient)
+; 2239 cycles (+ NEXT) worst case (zero divisor)
+;
+#endif
+umdivmod
+    jsr xudivmod   ; (do the dirty work)
+    inx            ; NIP
+    jmp swap       ; SWAP
+
+;--------------------------------------------------------------
+#if 0
+name=UD/MODB
+stack=( ud1 u2 -- u3 ud4 )
+tags=numword
+
+http://www.bradrodriguez.com/papers/camel09.txt
+\   High level: numeric output                   (c) 31mar95 bjr
+: UD/MOD      \ ud1 u2 -- u3 ud4     32/16->32 divide
+    >R 0 R@ UM/MOD  ROT ROT R> UM/MOD ROT ;
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; UD/MOD  ( ud1 u1 -- u2 ud2 )
+; Dividend ud1 and Quotient ud2 are 32-bits unsigned
+; Divisor u1 and Remainder u2 are 16-bits unsigned
+; Invalid inputs and/or outputs are silently ignored
+; 1856 cycles (+ NEXT) best case (zero quotient)
+; 2272 cycles (+ NEXT) worst case (zero divisor)
+;
+#endif
+uddivmod
+    jsr xudivmod   ; (do the dirty work)
+    jmp dashrot    ; -ROT
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Internal divmod routine used by UM/MOD and UD/MOD
+; ( ud1 u1 -- ud2 u2 )
+; ud1 is dividend, u1 is divisor
+; ud2 is quotient, u2 is remainder
+xudivmod
+    ldy #32        ;[2] init loop counter
+    lda #0         ;[2] init partial remainder
+    sta n          ;[3]   in N-A (h-l)
+xudm2
+    asl stackl+1,x ;[6] dividend in NOS-3OS (h-l)
+    rol stackh+1,x ;[6]   is gradually replaced
+    rol stackl,x   ;[6]   with the quotient
+    rol stackh,x   ;[6]
+    rol            ;[2] N-A is gradually replaced
+    rol n          ;[5]   with the remainder
+    pha            ;[3]
+    cmp tos        ;[3] TOS holds divisor
+    lda n          ;[3] partial remainder >= TOS?
+    sbc tos+1      ;[3]
+    bcc xudm3      ;[3]*
+    sta n          ;[3]   yes--update the partial
+    pla            ;[4]     remainder and set the
+    sbc tos        ;[3]     low bit in the partial
+    inc stackl+1,x ;[6]     quotient
+    .byt $c9       ;[2]*  cmp# naked opcode
+xudm3
+    pla            ;[4]*
+    dey            ;[2] loop 32 times
+    bne xudm2      ;[3]*
+    sta tos        ;[3]
+    ldy n          ;[3]
+    sty tos+1      ;[3]
+    rts            ;[6]
+
+
+
+;--------------------------------------------------------------
+#if 0
+name=UD/MODC
+stack=( ud1 u2 -- u3 ud4 )
+tags=numword
+
+[[Mike's take 2|http://forum.6502.org/viewtopic.php?f=9&t=1652&start=30#p36933]]
+; - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; UD/MOD  ( ud1 u1 -- u2 ud2 )
+; Dividend ud1 and Quotient ud2 are 32-bits unsigned
+; Divisor u1 and Remainder u2 are 16-bits unsigned
+; Invalid inputs and/or outputs are silently ignored
+;
+#endif
+udsm
+    ldy #32        ; init loop counter
+    lda #0         ; init partial remainder
+    sta n          ;   in N-A (h-l)
+udsm2
+    asl stackl+1,x ; dividend in NOS-3OS (h-l)
+    rol stackh+1,x ;   is gradually replaced
+    rol stackl,x   ;   with the quotient
+    rol stackh,x
+    rol            ; N-A is gradually replaced
+    rol n          ;   with the remainder
+    pha
+    cmp tos        ; TOS holds the divisor
+    lda n          ; partial remainder >= TOS?
+    sbc tos+1
+    bcc udsm3
+    sta n          ;   yes--update the partial
+    pla            ;     remainder and set the
+    sbc tos        ;     low bit in the partial
+    pha            ;     quotient
+    inc stackl+1,x
+udsm3
+    pla
+    dey
+    bne udsm2      ; loop 32 times
+    ldy n
+    jmp pushya
+    ;needs a -rot here
+
+
+
+
+;--------------------------------------------------------------
+#if 0
+name=UD/MODD
+stack=( ud1 u2 -- u3 ud4 )
+tags=numword
+
+[[Mike's take 3|http://forum.6502.org/viewtopic.php?f=9&t=1652&start=30#p36941]]
+; - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; UD/MOD  ( ud1 u1 -- u2 ud2 )
+; Dividend ud1 and Quotient ud2 are 32-bits unsigned
+; Divisor u1 and Remainder u2 are 16-bits unsigned
+; Invalid inputs and/or outputs are silently ignored
+;
+#endif
+udsmd
+    ldy #32        ; init loop counter
+    lda #0         ; init partial remainder
+    sta n          ;   in N-A (h-l)
+udsmd2
+    asl stackl+1,x ; dividend in NOS-3OS (h-l)
+    rol stackh+1,x ;   is gradually replaced
+    rol stackl,x   ;   with the quotient
+    rol stackh,x
+    rol            ; N-A is gradually replaced
+    rol n          ;   with the remainder
+    pha
+    cmp tos        ; TOS holds the divisor
+    lda n          ; partial remainder >= TOS?
+    sbc tos+1
+    bcc udsmd3
+    sta n          ;   yes--update the partial
+    pla            ;     remainder and set the
+    sbc tos        ;     low bit in the partial
+    inc stackl+1,x ;     quotient
+    .byt $24       ;   BIT zp naked opcode
+udsmd3
+    pla
+    dey
+    bne udsmd2     ; loop 32 times
+    ldy n
+    jmp pushya
+    ; needs stack -rot here
+
+
+
+
+
+
+
 ;--------------------------------------------------------------
 #if 0
 name=UD/MOD
