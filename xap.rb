@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userdp emit "
+        bogus = " userdp emit _setnam verifybuffers01 "
 
 
         always_use_decimal = false
