@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userdp emit _setnam verifybuffers01 "
+        bogus = " userdp emit _setnam verifybuffers01 dashtrailing randu rnd tworot sgn _space "
 
 
         always_use_decimal = false
