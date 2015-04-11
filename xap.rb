@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userdp twofetch threedup twodup01 count twotor fill01 _puddot rldecode01 xyzzy "
+        bogus = " userdp twofetch threedup twodup01 count twotor fill01 _puddot rldecode01 xyzzy randu2 "
 
 
         always_use_decimal = false
