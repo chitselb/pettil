@@ -335,14 +335,14 @@ topkt02
 ;--------------------------------------------------------------
 #if 0
 name=PKT+
-stack=( writable? -- packet )
+stack=( screen? -- packet )
 tags=vm,ext
 Append a new packet to the bottom of [[VMBUF]], return its address
 flag = false for data packet, true for editor packet
 
 ```
-: pkt+   ( writable? -- packet )
-                                ( writable? )
+: pkt+   ( screen? -- packet )
+                                ( screen? )
     >r vmbuf @ 14 r@ 9 and -      \ packet length editor=5 data=14
  ( vmtail size )
     2dup - dup third erase        \ clear packet and new tail
@@ -417,13 +417,13 @@ _pktplus
 
 ;--------------------------------------------------------------
 #if 0
-name=UNPKT
+name=PKT
 stack=( packet -- blkbuf )
 tags=vm,ext
 Given the address of a packet (its size/flags word, at the top)
 this will unpack the packet to the block buffer and return
 the address of the unpacked block. Distinguishes among
-compressed/uncompressed and writable/read-only packets
+compressed/uncompressed and screen/data packets
 
 ```
 : unpkt   ( packet -- blkbuf )
@@ -436,7 +436,46 @@ compressed/uncompressed and writable/read-only packets
     blkbuf dup>r rswap dup b/buf blank
  ( packet size data blkbuf ) ( R; blkbuf uncompressed? )
     editblk @
- ( packet size data blkbuf writable? ) ( R; blkbuf uncompressed? )
+ ( packet size data blkbuf screen? ) ( R; blkbuf uncompressed? )
+    if
+ ( packet size data blkbuf ) ( R; blkbuf uncompressed? )
+        over 3c@ third 3c!
+        3+ rot 3- rot 3+ rot
+    then
+    rot 2- r>
+ ( packet data blkbuf size uncompressed? ) ( R; blkbuf )
+    if
+        cmove
+    else
+        rldecode
+    then
+   rfrom nip  lin on ;
+```
+#endif
+_unpkta
+
+;--------------------------------------------------------------
+#if 0
+name=UNPKT
+stack=( packet -- blkbuf )
+tags=vm,ext
+Given the address of a packet (its size/flags word, at the top)
+this will unpack the packet to the block buffer and return
+the address of the unpacked block. Distinguishes among
+compressed/uncompressed and screen/data packets
+
+```
+: unpkt   ( packet -- blkbuf )
+    dup @ dup 0< editblk !
+ ( packet header )
+    dup 2* 0< >r
+ ( packet header ) ( R; uncompressed? )
+    $7ff and 2dup - 2+
+ ( packet size data ) ( R; uncompressed? )
+    blkbuf dup>r rswap dup b/buf blank
+ ( packet size data blkbuf ) ( R; blkbuf uncompressed? )
+    editblk @
+ ( packet size data blkbuf screen? ) ( R; blkbuf uncompressed? )
     if
  ( packet size data blkbuf ) ( R; blkbuf uncompressed? )
         over 3c@ third 3c!
@@ -462,7 +501,7 @@ _unpkt
 #include "page.i65"
     .word zlt
 #include "page.i65"
-    .word writableq
+    .word screenq
 #include "page.i65"
     .word store
 #include "page.i65"
@@ -497,7 +536,7 @@ _unpkt
 #include "page.i65"
     .word _blank
 #include "page.i65"
-    .word writableq
+    .word screenq
 #include "page.i65"
     .word fetch
 #include "page.i65"
@@ -561,12 +600,13 @@ tags=vm,ext,nosymbol
 Retrieves or creates the VM block "blk" and returns the block
 buffer address.  If the block was created, "new?" is true
 flag is true if the block is new, false if it already exists
-New packets are created as data blocks (1024 zeroes) or as editor
-screens (3 bytes linewrap + 1000 spaces) if EDITMODE is set
+New packets are created as either empty data blocks (1024 nulls) or 
+blank editor screens (3 bytes linewrap + 1000 spaces) based on
+the EDITING? user variable
 
 ```
 : (block)   ( blk -- blkbuf new? )
-    dup 1+ #vmpkt @  >  dup>r
+    dup dup prev ! 1+ #vmpkt @  >  dup>r
  ( blk new? )
     if
  ( blk )
@@ -576,7 +616,7 @@ screens (3 bytes linewrap + 1000 spaces) if EDITMODE is set
  ( howmany junk )
             drop 1-
  ( howmany )
-            editmode @ pkt+
+            editing? @ pkt+
  ( howmany packet )
             over 0<
         until
@@ -1092,14 +1132,48 @@ saved to tape at the next SAVE-BUFFERS
 
 ```
 : update   ( -- )
-    blkbuf  vmbuf @ b/buf - dup>r  b/buf  rlencode
-    ( targend )
-    r@ -
+    screen? @
+    if
+        vidram dup b/scr -trailing
+    else
+        0 blkbuf b/buf
+    then
+    rlebuf swap rlencode ;
 ```
 #endif
 _update
 #include "enter.i65"
-    .word xyzzy
+    .word screenq
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word editingq
+#include "page.i65"
+    .word qbranch
+    .byt <(update01-*+1)
+#include "pad.i65"
+    .word vidram
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word bperscr
+#include "page.i65"
+    .word dashtrailing
+    .byt <(update02-*+1)
+#include "pad.i65"
+update01
+    .word zero
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+update02
+    .word _rlebuf
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word rlencode
 #include "page.i65"
     .word exit
 
