@@ -55,7 +55,7 @@ cas2buf
 #if 0
 name=>BBUF
 stack=( var -- addr )
-tags=vm
+tags=vm,nosymbol
 Returns the address of a buffer located [[B/BUF]] bytes below
 the contents of the variable `var`
 
@@ -258,7 +258,38 @@ rldecode06
 
 ;--------------------------------------------------------------
 #if 0
-name=PKTLEN
+name=PKT.HEAD
+stack=( packet -- packet flags len )
+tags=vm
+Returns the packet length and flags from a packet header
+
+pronounced: "packet-head"
+
+```
+: pkthead   ( packet -- packet flags len )
+    dup @ dup $c000 and swap $7ff and ;
+```
+#endif
+pkthead
+    jsr slip
+    dex
+    dex
+    ldy #1
+    lda (tos),y
+    and #$7
+    sta stackh,x
+    lda (tos),y
+    and #$c0
+    sta stackh+1,x
+    dey
+    sty stackl+1,x
+    lda (tos),y
+    sta stackl,x
+    jmp pops
+
+;--------------------------------------------------------------
+#if 0
+name=PKT.LEN
 stack=( packet -- packet len )
 tags=vm
 Returns the packet length from a packet header
@@ -266,20 +297,15 @@ Returns the packet length from a packet header
 pronounced: "packet-len"
 
 ```
-: pktlen   ( packet -- packet len )
-    dup @ $7ff and ;
+: pkt.len   ( packet -- packet len )
+    pkt.head nip ;
 ```
 #endif
 _pktlen
 #include "enter.i65"
-    .word dup
+    .word pkthead
 #include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word plit
-    .word $7ff
-#include "pad.i65"
-    .word andx
+    .word nip
 #include "page.i65"
     .word exit
 
@@ -330,6 +356,293 @@ topkt01
 topkt02
     .word nip
 #include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ISSCREEN
+stack=( -- vidram b/scr $8000 )
+tags=vm,ext,nosymbol
+Append a new packet to the bottom of [[VMBUF]], return its address
+flag = false for data packet, true for editor packet
+
+```
+: isscreen
+    vidram b/scr vidram ;
+```
+#endif
+_isscreen
+#include "enter.i65"
+    .word vidram
+#include "page.i65"
+    .word bperscr
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ISDATA
+stack=( -- blkbuf b/buf 0 )
+tags=vm,ext,nosymbol
+Append a new packet to the bottom of [[VMBUF]], return its address
+flag = false for data packet, true for editor packet
+
+```
+: isdata
+    blkbuf b/buf 0 ;
+```
+#endif
+_isdata
+#include "enter.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SRCTARG
+stack=( -- buffer size flags )
+tags=vm,ext,nosymbol
+BLOCK packs from or unpacks to VIDRAM or BLKBUF, based on whether
+or ot we are editing.
+
+```
+: srctarg
+    editing? @ ?: isscreen isdata ;
+```
+#endif
+_srctarg
+#include "enter.i65"
+    .word editingq
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word pquerycolon
+    .word _isscreen
+    .word _isdata
+#include "pad.i65"
+    .word exit
+    
+;--------------------------------------------------------------
+#if 0
+name=ISPREV?
+stack=( blk -- flag )
+tags=vm,ext,nosymbol
+Sets PREV to `blk`, and returns TRUE if `blk` is already loaded.
+
+```
+: isprev?
+    prev  2dup @  <>  -rot ! ;
+```
+#endif
+_isprevq
+#include "enter.i65"
+    .word prev
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word ne
+#include "page.i65"
+    .word dashrot
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+    
+;--------------------------------------------------------------
+#if 0
+name=MKPKTS
+stack=( blk -- flag )
+tags=vm,ext,nosymbol
+creates `n+1` new packets in the `VMBUF` area
+
+```
+: ?mkpkts   ( n -- )
+    -1 do
+        vmbuf @  editing? @
+        if
+            -1 -1 third 3- 3c!
+            $8005 over !
+            5 -
+        else
+            2 over !
+            2-
+        then
+        dup off vmbuf !
+    loop ;
+```
+#endif
+_mkpkts
+#include "enter.i65"
+    .word minusone
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+mkpkts01
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word editingq
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qbranch
+    .byt <(mkpkts02-*+1)
+#include "pad.i65"
+    .word minusone
+#include "page.i65"
+    .word minusone
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word threeminus
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word plit
+    .word $8005
+#include "pad.i65"
+    .word over
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word clit
+    .byt 5
+#include "pad.i65"
+    .word minus
+#include "page.i65"
+    .word branch
+    .byt <(mkpkts03-*+1)
+#include "pad.i65"
+mkpkts02
+    .word two
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+mkpkts03
+    .word dup
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word ploop
+    .byt <(mkpkts01-*+1)
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?MKPKTS
+stack=( blk -- flag )
+tags=vm,ext,nosymbol
+Sets PREV to `blk`, and returns TRUE if `blk` is already loaded.
+
+```
+: ?mkpkts   ( blk -- )
+    dup #vmpkt @ - dup 0<
+    ?: drop mkpkts ;
+```
+#endif
+_qmkpkts
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word numvmpkt
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word pquerycolon
+    .word drop
+    .word _mkpkts
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ORONGE
+stack=( n -- addr )
+tags=vm,fig,forth-79,forth-83
+`ORONGE` is the new `BLOCK`
+
+In PETTIL, returns the address of the only block buffer in the system.  
+If [[EDITING?]] , `BLOCK` returns [[VIDRAM]]
+if not [[EDITING?]] , `BLOCK` returns [[BLKBUF]]
+if this block is already in the buffer (same as [[PREV]]), `BLOCK` does not unpack it again.
+
+```
+: block   ( n -- addr )
+    prev 2dup  @ =
+    if
+        2drop  blkbuf
+    else
+        under ! (block)  drop
+    then ;
+
+: block   ( blk -- buffer )
+    dup isprev?
+    if
+        drop srctarg 2drop
+    else
+        dup ?mkpkts  >pkt pktlen  srctarg 2drop
+        pkt@
+    then ;
+
+```
+#endif
+_newblock
+#include "enter.i65"
+    .word dup
+#include "page.i65"
+    .word _isprevq
+#include "page.i65"
+    .word qbranch
+    .byt <(newblock01-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+    .word _srctarg
+#include "page.i65"
+    .word twodrop
+#include "page.i65"
+    .word branch
+    .byt <(newblock02-*+1)
+#include "pad.i65"
+newblock01
+    .word dup
+#include "page.i65"
+    .word _qmkpkts
+#include "page.i65"
+    .word _topkt
+#include "page.i65"
+    .word _pktlen
+#include "page.i65"
+    .word _srctarg
+#include "page.i65"
+    .word twodrop
+#include "page.i65"
+newblock02
     .word exit
 
 ;--------------------------------------------------------------
@@ -417,48 +730,9 @@ _pktplus
 
 ;--------------------------------------------------------------
 #if 0
-name=PKT
-stack=( packet -- blkbuf )
-tags=vm,ext
-Given the address of a packet (its size/flags word, at the top)
-this will unpack the packet to the block buffer and return
-the address of the unpacked block. Distinguishes among
-compressed/uncompressed and screen/data packets
-
-```
-: unpkt   ( packet -- blkbuf )
-    dup @ dup 0< editblk !
- ( packet header )
-    dup 2* 0< >r
- ( packet header ) ( R; uncompressed? )
-    $7ff and 2dup - 2+
- ( packet size data ) ( R; uncompressed? )
-    blkbuf dup>r rswap dup b/buf blank
- ( packet size data blkbuf ) ( R; blkbuf uncompressed? )
-    editblk @
- ( packet size data blkbuf screen? ) ( R; blkbuf uncompressed? )
-    if
- ( packet size data blkbuf ) ( R; blkbuf uncompressed? )
-        over 3c@ third 3c!
-        3+ rot 3- rot 3+ rot
-    then
-    rot 2- r>
- ( packet data blkbuf size uncompressed? ) ( R; blkbuf )
-    if
-        cmove
-    else
-        rldecode
-    then
-   rfrom nip  lin on ;
-```
-#endif
-_unpkta
-
-;--------------------------------------------------------------
-#if 0
 name=UNPKT
 stack=( packet -- blkbuf )
-tags=vm,ext
+tags=vm,ext,nosymbol
 Given the address of a packet (its size/flags word, at the top)
 this will unpack the packet to the block buffer and return
 the address of the unpacked block. Distinguishes among
@@ -749,17 +1023,6 @@ block02
 
 ;--------------------------------------------------------------
 #if 0
-name=DISC
-stack=( -- )
-tags=vm,unimplemented
-To start a disk session, insert a blank formatted disk and type
-#endif
-_disc
-#include "enter.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=CURRNAME
 stack=( -- addr )
 tags=vm,i/o,~wut?
@@ -825,12 +1088,12 @@ setnam01
 #if 0
 name=#VMPKT!
 stack=( -- )
-tags=vm
-Update the #VMPKT user variable after a LOAD-BUFFERS
+tags=vm,nosymbol
+Reset virtual memory user variables for LOAD-BUFFERS or EMPTY-BUFFERS
 
 ```
 : #vmpkt!   ( -- )
-    blkbuf 2-
+    scr off  blk off  prev on  #vmpkt off  blkbuf 2-
     begin
         pktlen ?dup
     while
@@ -843,6 +1106,18 @@ Update the #VMPKT user variable after a LOAD-BUFFERS
 #endif
 _numvmpktstore
 #include "enter.i65"
+    .word scr
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word prev
+#include "page.i65"
+    .word on
+#include "page.i65"
     .word numvmpkt
 #include "page.i65"
     .word off
@@ -870,6 +1145,32 @@ numvmpktstore01
 #include "pad.i65"
 numvmpktstore02
     .word drop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=EMPTY-BUFFERS
+stack=( -- )
+tags=i/o,forth-83
+Unassign all virtual memory.  UPDATEed blocks are not written
+to mass storage.
+
+```
+: empty-buffers   ( -- )
+    blkbuf 2- off  #vmpkt! ;
+
+```
+#endif
+_emptybuffers
+#include "enter.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word _numvmpktstore
 #include "page.i65"
     .word exit
 
@@ -1176,48 +1477,3 @@ update02
     .word rlencode
 #include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EMPTY-BUFFERS
-stack=( -- )
-tags=i/o,forth-83
-Unassign all virtual memory.  UPDATEed blocks are not written
-to mass storage.
-
-```
-: empty-buffers   ( -- )
-    #vmpkt off  scr off  
-    blkbuf 2- dup off  vmbuf !  
-    prev on ;
-
-```
-#endif
-_emptybuffers
-#include "enter.i65"
-    .word numvmpkt
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word scr
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word prev
-#include "page.i65"
-    .word on
-#include "page.i65"
-    .word exit
-
