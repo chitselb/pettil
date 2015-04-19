@@ -551,8 +551,6 @@ mkpkts03
     .word ploop
     .byt <(mkpkts01-*+1)
 #include "pad.i65"
-    .word twodrop
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -587,6 +585,29 @@ _qmkpkts
 
 ;--------------------------------------------------------------
 #if 0
+name=PKT@
+stack=( screen? -- packet )
+tags=vm,ext,nosymbol
+Append a new packet to the bottom of [[VMBUF]], return its address
+flag = false for data packet, true for editor packet
+
+```
+: pkt+   ( screen? -- packet )
+                                ( screen? )
+    >r vmbuf @ 14 r@ 9 and -      \ packet length editor=5 data=14
+ ( vmtail size )
+    2dup - dup third erase        \ clear packet and new tail
+    dup 2+ 3 r@ fill              \ first 3 bytes of packet = flag
+    vmbuf !                       \ update vmbuf to new tail
+    VIDRAM r> and or over !       \ set packet length
+    #vmpkt 1+! ;                  \ increment packet counter )
+    ( vmbuf )                     \ packet address
+```
+#endif
+_pktfetch
+
+;--------------------------------------------------------------
+#if 0
 name=ORONGE
 stack=( n -- addr )
 tags=vm,fig,forth-79,forth-83
@@ -601,12 +622,13 @@ if this block is already in the buffer (same as [[PREV]]), `BLOCK` does not unpa
 : block   ( blk -- buffer )
     dup isprev?
     if
-        drop srctarg 2drop
+        drop
     else
         dup ?mkpkts  
-        >pkt pkt.len  srctarg 2drop
+        >pkt pkt.head  
         pkt@
-    then ;
+    then 
+    srctarg 2drop ;
 
 ```
 #endif
@@ -621,10 +643,6 @@ _newblock
 #include "pad.i65"
     .word drop
 #include "page.i65"
-    .word _srctarg
-#include "page.i65"
-    .word twodrop
-#include "page.i65"
     .word branch
     .byt <(newblock02-*+1)
 #include "pad.i65"
@@ -635,13 +653,15 @@ newblock01
 #include "page.i65"
     .word _topkt
 #include "page.i65"
-    .word _pktlen
+    .word pkthead
 #include "page.i65"
+    .word _pktfetch
+#include "page.i65"
+newblock02
     .word _srctarg
 #include "page.i65"
     .word twodrop
 #include "page.i65"
-newblock02
     .word exit
 
 ;--------------------------------------------------------------
