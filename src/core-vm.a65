@@ -130,86 +130,78 @@ encode length {srclen} bytes from source address {srcaddr} to
 target address {targaddr}.  Return target end address {targend}
 #endif
 rlencode
-    ldy #2
-    jsr locals      ; TOS = srclen; N0 = srcaddr; N1 = targaddr
     brk
     .byt ld | TOS
-    .byt st | N5   ; input counter - when this hits zero, we're done
-    .byt st | N6   ; out counter - when this goes negative, we're in negative compression
-
-    .byt ld | N1
-    .byt push       ; original targaddr
-    .byt ld | N0
-    .byt push       ; original srcaddr
-                    ; ( srclen targaddr srcaddr )
-
-    .byt set | N4   ; constant used to initialize (max repeat counter)
+    .byt st | N0            ; howmany (input) when this hits zero, we're done
+    .byt st | N1            ; howmany (output) when this goes negative, we're in negative compression
+    .byt st | N8            ; howmany (pristine)
+    .byt pull
+    .byt st | N2            ; targ
+    .byt st | N7            ; targ (pristine)
+    .byt pull               ; src is at TOS
+    .byt st | N6            ; src (pristine)
+    .byt set | N3   ; constant used to initialize (max repeat counter)
     .word $100
-rlencode00
-    .byt ld | N4    ; also the unfindable prev character
 rlencode01
-    .byt st | N2    ; set prev char
-    .byt ld | N5   ; are we done?
-    .byt bz , <(rlencode06-*-2)
-    .byt ld | N6   ; are we in the red?
-    .byt bm , <(rlencode07-*-2)
-    .byt ldi | N0   ; read input stream
-    .byt dcr | N5
-    .byt sti | N1   ; write output stream
-    .byt dcr | N6
-    .byt cpr | N2   ; compare to prev
-    .byt bnz , <(rlencode01-*-2) ; different? go get more
-
-    .byt ld | N4
-    .byt st | N3    ; count backwards from 256
-    .byt dcr | N3   ; count the one already in output stream
+    .byt ld | N3    ; also unfindable character
 rlencode02
-    .byt dcr | N3
-    .byt bz , <(rlencode04-*-2)  ; overflow?
-    .byt ld | N5
-    .byt bz , <(rlencode04-*-2)  ; end of input?
-    .byt ldi | N0                ; get from input stream
-    .byt dcr | N5
-    .byt cpr | N2
-    .byt bz , <(rlencode02-*-2)
-;different char
-    .byt inr | N5              ; un-get from input stream
+    .byt st | N4    ; prev character
+    .byt ld | N0    ; done?
+    .byt bz, <(rlencode06-*-2)
+    .byt ld | N1   ; are we in the red?
+    .byt bm , <(rlencode07-*-2)
+    .byt ldi | TOS  ; read input stream
     .byt dcr | N0
-;overflow/end of input
-rlencode04
-    .byt ld | N4
-    .byt sub | N3
-    .byt sti | N1               ; write count to output stream
-    .byt dcr | N6
-    .byt br , <(rlencode00-*-2)
+    .byt sti | N2   ; write output stream
+    .byt dcr | N1
+    .byt cpr | N4   ; compare to prev
+    .byt bnz , <(rlencode02-*-2) ; different? go get more
+
+    .byt ld | N3
+    .byt st | N5    ; count backwards from 256
+    .byt dcr | N5   ; count the one already in output stream
+rlencode03
+    .byt dcr | N5
+    .byt bz , <(rlencode04-*-2)  ; overflow?
+    .byt ld | N0
+    .byt bz , <(rlencode04-*-2)  ; end of input?
+    .byt ldi | TOS               ; get from input stream
+    .byt dcr | N0
+    .byt cpr | N4
+    .byt bz , <(rlencode03-*-2)
+;different char
+    .byt inr | N0              ; un-get from input stream
+    .byt dcr | TOS
+rlencode04                      ;overflow/end of input
+    .byt ld | N3
+    .byt sub | N5
+    .byt sti | N2               ; write count to output stream
+    .byt dcr | N1
+    .byt br , <(rlencode01-*-2)
 
 rlencode06                      ; win
-    .byt pull
-    .byt pull
-    .byt ld | N1
+    .byt ld | N2                ; return ( targend 0 )
     .byt st | TOS
     .byt sub | ACC
     .byt push
     .byt nxt
 
 rlencode07                      ; lose - copy
-    .byt ld | TOS               ; ~ should probably use CMOVE instead?
-    .byt st | N0
-    .byt pull
-    .byt st | N1
-    .byt pull
-rlencode08
-    .byt ldi | N0
-    .byt sti | N1
-    .byt dcr | TOS
-    .byt bnz , <(rlencode08-*-2)
-    .byt ld | N1
+    .byt ld | N7
+    .byt add | N8
     .byt st | TOS
-    .byt set | ACC
+    .byt set | R0
     .word $4000
+    .byt push 
+    .byt ld | N6
     .byt push
-    .byt nxt
-
+    .byt ld | N7
+    .byt push
+    .byt ld | N8
+    .byt push
+    .byt rtn
+    jmp cmove
+    
 ;--------------------------------------------------------------
 #if 0
 name=RLDECODE
@@ -360,6 +352,21 @@ topkt02
 
 ;--------------------------------------------------------------
 #if 0
+name=EDITING?
+stack=( -- flag )
+tags=vm,ext,nosymbol
+Retrieves the EDITING user variable
+#endif
+_editingq
+#include "enter.i65"
+    .word editing
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=ISSCREEN
 stack=( -- vidram b/scr $8000 )
 tags=vm,ext,nosymbol
@@ -419,9 +426,7 @@ or ot we are editing.
 #endif
 _srctarg
 #include "enter.i65"
-    .word editingq
-#include "page.i65"
-    .word fetch
+    .word _editingq
 #include "page.i65"
     .word pquerycolon
     .word _isscreen
@@ -494,9 +499,7 @@ mkpkts01
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word editingq
-#include "page.i65"
-    .word fetch
+    .word _editingq
 #include "page.i65"
     .word qbranch
     .byt <(mkpkts02-*+1)
@@ -605,6 +608,8 @@ flag = false for data packet, true for editor packet
 ```
 #endif
 _pktfetch
+#include "enter.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -962,9 +967,7 @@ pblock01                        ; BEGIN
 #include "page.i65"
     .word oneminus
 #include "page.i65"
-    .word editingq
-#include "page.i65"
-    .word fetch
+    .word _editingq
 #include "page.i65"
     .word _pktplus
 #include "page.i65"
@@ -1467,7 +1470,7 @@ _update
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word editingq
+    .word _editingq
 #include "page.i65"
     .word qbranch
     .byt <(update01-*+1)

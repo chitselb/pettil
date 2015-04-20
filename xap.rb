@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userdp _erase _setnam userscreenq depth topkt02 sgn rpl "
+        bogus = " userscreenq "
 
 
         always_use_decimal = false
