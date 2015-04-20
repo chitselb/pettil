@@ -124,83 +124,87 @@ _rlebuf
 ;--------------------------------------------------------------
 #if 0
 name=RLENCODE
-stack=( srcaddr targaddr srclen -- targend flag )
+stack=( from to size -- to size flag )
 tags=vm,sweet16
 encode length {srclen} bytes from source address {srcaddr} to
 target address {targaddr}.  Return target end address {targend}
 #endif
 rlencode
+		; tos	src (pristine)
+		; n0	src (in)
+		; n1	size (in)
+		; n2	targ (out)
+		; n3	size (out)
+		; n4	repeat
+		; n5	prev
+		; n6	$100 
+		; n7	targ (pristine)
+		; n8	size (pristine)
     brk
-    .byt ld | TOS
-    .byt st | N0            ; howmany (input) when this hits zero, we're done
-    .byt st | N1            ; howmany (output) when this goes negative, we're in negative compression
-    .byt st | N8            ; howmany (pristine)
-    .byt pull
-    .byt st | N2            ; targ
-    .byt st | N7            ; targ (pristine)
-    .byt pull               ; src is at TOS
-    .byt st | N6            ; src (pristine)
-    .byt set | N3   ; constant used to initialize (max repeat counter)
+    .byt ld | TOS		; size
+    .byt st | N1		; size (in)
+    .byt st | N3		; size (out)
+    .byt st | N8		; size (pristine)
+    .byt pull			; to
+    .byt st | N2		; targ (out)
+    .byt st | N7		; targ (pristine)
+    .byt pull			; from -- TOS = src (pristine)
+    .byt st | N0            	; src (pristine)
+    .byt set | N6   ; constant used to initialize (max repeat counter)
     .word $100
 rlencode01
-    .byt ld | N3    ; also unfindable character
+    .byt ld | N6    ; also unfindable character
 rlencode02
-    .byt st | N4    ; prev character
-    .byt ld | N0    ; done?
+    .byt st | N5    ; prev character
+    .byt ld | N1    ; done with input?
     .byt bz, <(rlencode06-*-2)
-    .byt ld | N1   ; are we in the red?
+    .byt ld | N3    ; are we in the red?
     .byt bm , <(rlencode07-*-2)
-    .byt ldi | TOS  ; read input stream
-    .byt dcr | N0
-    .byt sti | N2   ; write output stream
+    .byt ldi | N0   ; read input stream
     .byt dcr | N1
-    .byt cpr | N4   ; compare to prev
+    .byt sti | N2   ; write output stream
+    .byt dcr | N3
+    .byt cpr | N5   ; compare to prev
     .byt bnz , <(rlencode02-*-2) ; different? go get more
 
-    .byt ld | N3
-    .byt st | N5    ; count backwards from 256
-    .byt dcr | N5   ; count the one already in output stream
+    .byt ld | N6
+    .byt st | N4    ; count backwards from 256
+    .byt dcr | N4   ; count the one already in output stream
 rlencode03
-    .byt dcr | N5
+    .byt dcr | N4
     .byt bz , <(rlencode04-*-2)  ; overflow?
-    .byt ld | N0
+    .byt ld | N1
     .byt bz , <(rlencode04-*-2)  ; end of input?
-    .byt ldi | TOS               ; get from input stream
-    .byt dcr | N0
-    .byt cpr | N4
-    .byt bz , <(rlencode03-*-2)
-;different char
-    .byt inr | N0              ; un-get from input stream
-    .byt dcr | TOS
-rlencode04                      ;overflow/end of input
-    .byt ld | N3
-    .byt sub | N5
-    .byt sti | N2               ; write count to output stream
+    .byt ldi | N0                ; get from input stream
     .byt dcr | N1
+    .byt cpr | N5
+    .byt bz , <(rlencode03-*-2)	 ; same char? loop
+
+    .byt dcr | N0		 ; different char? 
+    .byt inr | N1                ; un-get from input stream
+rlencode04                       ;overflow/end of input
+    .byt ld | N6
+    .byt sub | N4
+    .byt sti | N2                ; write count to output stream
+    .byt dcr | N3
     .byt br , <(rlencode01-*-2)
 
-rlencode06                      ; win
-    .byt ld | N2                ; return ( targend 0 )
+rlencode06                       ; win
+    .byt ld | N7                 ; return ( to size 0 )
     .byt st | TOS
+    .byt ld | N3	 	 ; size (out)
+    .byt push
     .byt sub | ACC
     .byt push
     .byt nxt
 
-rlencode07                      ; lose - copy
-    .byt ld | N7
-    .byt add | N8
-    .byt st | TOS
+rlencode07                       ; lose - copy
+    .byt ld | N8		 ; return ( from size $4000 )
+    .byt push
     .byt set | ACC
     .word $4000
-    .byt push 
-    .byt ld | N6
     .byt push
-    .byt ld | N7
-    .byt push
-    .byt ld | N8
-    .byt push
-    .byt rtn
-    jmp cmove
+    .byt nxt
     
 ;--------------------------------------------------------------
 #if 0
