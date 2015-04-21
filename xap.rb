@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userscreenq "
+        bogus = " userscrpkt "
 
 
         always_use_decimal = false
