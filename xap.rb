@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userscrpkt "
+        bogus = " userscrpkt twofetch rldecode01 pblock03 twodup dmin01 rldecode02 "
 
 
         always_use_decimal = false
@@ -382,6 +382,7 @@ _semi
     # build an xpet monitor file with both core and transient labels
     write_xpet_monfile "pettil.mon",all_labels
 
+    # Adding new files here?  Also add them to src/pettil-core.a65
     core_files = "pettil-core.a65 "\
                 "core-subroutines.a65 "\
                 "core-user.a65 "\
@@ -390,8 +391,10 @@ _semi
                 "core-double.a65 "\
                 "core-io.a65 "\
                 "core-vm.a65 "\
+#                "core-test.a65 "\
                 "sweet16.a65 "
 
+    # Adding new files here?  Also add them to src/pettil-tdict.a65
     transient_files = " pettil-tdict.a65 "\
                 "pettil-user.a65 "\
                 "pettil-interpreter.a65 "\
