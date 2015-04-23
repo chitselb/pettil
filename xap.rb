@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userscrpkt twofetch rldecode01 pblock03 twodup dmin01 rldecode02 "
+        bogus = " userscrpkt "
 
 
         always_use_decimal = false
