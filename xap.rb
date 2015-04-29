@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userscrpkt _block "
+        bogus = " userscrpkt _block mkpkts02 "
 
 
         always_use_decimal = false
