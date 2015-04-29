@@ -581,27 +581,12 @@ _qmkpkts
 ;--------------------------------------------------------------
 #if 0
 name=PKT@
-stack=( screen? -- packet )
+stack=( blk packet len flags prev blkbuf -- blkbuf )
 tags=vm,ext,nosymbol
-Append a new packet to the bottom of [[VMBUF]], return its address
-flag = false for data packet, true for editor packet
-
-```
-: pkt+   ( screen? -- packet )
-                                ( screen? )
-    >r vmbuf @ 14 r@ 9 and -      \ packet length editor=5 data=14
- ( vmtail size )
-    2dup - dup third erase        \ clear packet and new tail
-    dup 2+ 3 r@ fill              \ first 3 bytes of packet = flag
-    vmbuf !                       \ update vmbuf to new tail
-    VIDRAM r> and or over !       \ set packet length
-    #vmpkt 1+! ;                  \ increment packet counter )
-    ( vmbuf )                     \ packet address
-```
+Retrieve a packet from [[VMBUF]] to either [[VIDRAM]] or [[BLKBUF]]
 #endif
-_pktfetch
-#include "enter.i65"
-    .word exit
+pktfetch
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -626,15 +611,26 @@ user is in the editor or not, and whether the packet is screen or data.
 |>|^ not [[SCRPKT?]]|[[BLKBUF]] initialized to nulls<br>1024 bytes of data expanded to [[BLKBUF]]|
 ```
 : block   ( blk -- buffer )
-    dup >pkt dup b/buf - swap pkt.head 
-    0< scrpkt !
+    dup ?mkpkts  >pkt pkt.head 
+    dup 0< scrpkt ! 2*
     srctarg
-    ( blk newfloor packet len flags scr vidram b/scr bl )
-    ( blk newfloor packet len flags scr vidram b/buf 0 )
-    ( blk newfloor packet len flags prev blkbuf b/scr bl )
-    ( blk newfloor packet len flags prev blkbuf b/buf 0 )
-    3dup fill drop
-    ( blk packet flags len prev blkbuf b/buf )    
+    ( packet len uncompressed? scr vidram b/scr bl )
+    ( packet len uncompressed? scr vidram b/buf 0 )
+    ( packet len uncompressed? prev blkbuf b/scr bl )
+    ( packet len uncompressed? prev blkbuf b/buf 0 )
+    third >r fill r> ( blk packet len flags prev blkbuf )  pkt@ 
+    ( pkt dest dwrap )
+    scrpkt? if
+        3c@
+        editing?
+        if
+            wrap! drop
+        else
+            third 3c! 3+ 
+        then
+    else
+        
+    then ;
 ```
 #endif
 _newblock
@@ -649,15 +645,9 @@ _newblock
 #include "page.i65"
     .word _topkt
 #include "page.i65"
-    .word dup
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word swap
-#include "page.i65"
     .word pkthead
+#include "page.i65"
+    .word dup
 #include "page.i65"
     .word zlt
 #include "page.i65"
@@ -665,13 +655,19 @@ _newblock
 #include "page.i65"
     .word store
 #include "page.i65"
+    .word twostar
+#include "page.i65"
     .word _srctarg
 #include "page.i65"
-    .word threedup
+    .word third
+#include "page.i65"
+    .word tor
 #include "page.i65"
     .word fill
 #include "page.i65"
-    .word drop
+    .word rfrom
+#include "page.i65"
+    .word pktfetch
 #include "page.i65"
     .word exit
 
