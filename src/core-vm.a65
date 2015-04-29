@@ -459,14 +459,86 @@ _isprevq
     
 ;--------------------------------------------------------------
 #if 0
+name=PKT+
+stack=( addr size -- floor )
+tags=vm,ext
+inserts a new packet at address.  
+
+```
+: pkt+   ( addr size -- floor )
+    >r vmbuf @ over 1+
+    r@ negate  dup vmbuf +!  +move
+    r@ over !
+    r> 2- - ;
+```
+#endif
+_pktplus
+#include "enter.i65"
+    .word tor
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word negate
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+    .word _plusmove
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=MKPKTS
 stack=( n -- )
-tags=vm,ext,nosymbol
+tags=vm,ext
 creates `n+1` new packets in the `VMBUF` area
 
 ```
-: ?mkpkts   ( n -- )
-    -1 do
+: mkpkts   ( n -- )
+    begin
+        vmbuf @  editing?
+        if
+            dup 5 pkt+ dup on 1+ on vidram swap +!
+        else
+            2 pkt+ drop
+        then
+        1- 0<
+    until drop ;
+    
+: mkpkts   ( n -- )
+    begin
+        vmbuf @  editing?
+        if
+            5 pkt+ dup on 1+ on
+        else
+            2 pkt+ drop
+        then
+        
+        editing? -1 do
         vmbuf @  editing? @
         if
             -1 -1 third 3- 3c!
@@ -482,10 +554,6 @@ creates `n+1` new packets in the `VMBUF` area
 #endif
 _mkpkts
 #include "enter.i65"
-    .word minusone
-#include "page.i65"
-    .word pdo
-#include "page.i65"
 mkpkts01
     .word vmbuf
 #include "page.i65"
@@ -496,27 +564,26 @@ mkpkts01
     .word qbranch
     .byt <(mkpkts02-*+1)
 #include "pad.i65"
-    .word minusone
-#include "page.i65"
-    .word minusone
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word threeminus
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word plit
-    .word $8005
-#include "pad.i65"
-    .word over
-#include "page.i65"
-    .word store
+    .word dup
 #include "page.i65"
     .word clit
     .byt 5
 #include "pad.i65"
-    .word minus
+    .word _pktplus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word plusstore
 #include "page.i65"
     .word branch
     .byt <(mkpkts03-*+1)
@@ -524,28 +591,22 @@ mkpkts01
 mkpkts02
     .word two
 #include "page.i65"
-    .word over
+    .word _pktplus
 #include "page.i65"
-    .word store
-#include "page.i65"
-    .word twominus
+    .word drop
 #include "page.i65"
 mkpkts03
+    .word oneminus
+#include "page.i65"
     .word dup
 #include "page.i65"
-    .word off
+    .word zlt
 #include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word numvmpkt
-#include "page.i65"
-    .word oneplusstore
-#include "page.i65"
-    .word ploop
+    .word qbranch
     .byt <(mkpkts01-*+1)
 #include "pad.i65"
+    .word drop
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -621,15 +682,15 @@ user is in the editor or not, and whether the packet is screen or data.
     third >r fill r> ( blk packet len flags prev blkbuf )  pkt@ 
     ( pkt dest dwrap )
     scrpkt? if
-        3c@
-        editing?
-        if
-            wrap! drop
+        dup 3c@
+        editing? if
+            wrap!
         else
             third 3c! 3+ 
         then
     else
-        
+        editing? if
+            
     then ;
 ```
 #endif
@@ -668,89 +729,6 @@ _newblock
     .word rfrom
 #include "page.i65"
     .word pktfetch
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=PKT+
-stack=( screen? -- packet )
-tags=vm,ext
-Append a new packet to the bottom of [[VMBUF]], return its address
-flag = false for data packet, true for editor packet
-
-```
-: pkt+   ( screen? -- packet )
-                                ( screen? )
-    >r vmbuf @ 14 r@ 9 and -      \ packet length editor=5 data=14
- ( vmtail size )
-    2dup - dup third erase        \ clear packet and new tail
-    dup 2+ 3 r@ fill              \ first 3 bytes of packet = flag
-    vmbuf !                       \ update vmbuf to new tail
-    VIDRAM r> and or over !       \ set packet length
-    #vmpkt 1+! ;                  \ increment packet counter )
-    ( vmbuf )                     \ packet address
-```
-#endif
-_pktplus
-#include "enter.i65"
-    .word tor
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word clit
-    .byt 14
-#include "pad.i65"
-    .word rfetch
-#include "page.i65"
-    .word clit
-    .byt 9
-#include "pad.i65"
-    .word andx
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word _erase
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word fill
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word numvmpkt
-#include "page.i65"
-    .word oneplusstore
 #include "page.i65"
     .word exit
 
@@ -969,7 +947,7 @@ pblock01                        ; BEGIN
 #include "page.i65"
     .word _editingq
 #include "page.i65"
-    .word _pktplus
+    ;.word _pktplus
 #include "page.i65"
     .word over
 #include "page.i65"
