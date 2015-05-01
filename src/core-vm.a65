@@ -100,29 +100,6 @@ _blkbuf
 
 ;--------------------------------------------------------------
 #if 0
-name=RLEBUF
-stack=( -- addr )
-tags=vm
-Returns the address of the 1K Run Length Encoding buffer
-
-This buffer is used to run-length encode a data packet in the
-block buffer [[BLKBUF]] or a screen packet at [[VIDRAM]].  It
-floats [[B/BUF]] (1024) bytes below the virtual memory packet 
-buffer [[VMBUF]]
-
-
-!!! pronounced: "r-l-e-buff"
-#endif
-_rlebuf
-#include "enter.i65"
-    .word vmbuf
-#include "page.i65"
-    .word _tobbuf
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=RLENCODE
 stack=( from to size -- to size flag )
 tags=vm,sweet16
@@ -536,21 +513,22 @@ _pktplus
 
 ;--------------------------------------------------------------
 #if 0
-name=PKT+.RLE
+name=RLE+
 stack=( pkt -- floor )
 tags=vm,ext,nosymbol
-Opens up a 1026-byte region where the packet at `addr` used to be, 
-so it can be replaced
+Converts the given packet into a maximum-sized packet so it may be used
+as a temporary buffer by [[RLENCODE]]. This is a design-around to avoid
+adding a second [[BLKBUF]] block buffer to the system.  Returns the
+address of the beginning of the 1K temporary buffer.
 
 ```
-: pkt+.rle   ( pkt -- floor )
+: rle+   ( pkt -- floor )
     dup>r  b/buf dup 2+ r@ pkt.len 
-( pkt 1024 1026 pkt len ; pkt )
     >r 2- over r> - pkt+ drop
     r> ! - ;
 ```
 #endif
-_pktplusrle
+_rleplus
 #include "enter.i65"
     .word duptor
 #include "page.i65"
@@ -585,105 +563,6 @@ _pktplusrle
     .word minus
 #include "page.i65"
     .word exit
-
-
-;#include "enter.i65"
-;    .word duptor
-;#include "page.i65"
-;    .word twominus
-;#include "page.i65"
-;    .word bperbuf
-;#include "page.i65"
-;    .word twoplus
-;#include "page.i65"
-;    .word rfetch
-;#include "page.i65"
-;    .word twodup
-;#include "page.i65"
-;    .word _pktlen
-;#include "page.i65"
-;    .word nip
-;#include "page.i65"
-;    .word minus
-;#include "page.i65"
-;    .word xyzzy
-;#include "page.i65"
-;    .word _pktplus
-;#include "page.i65"
-;    .word xyzzy
-;#include "page.i65"
-;    .word drop
-;#include "page.i65"
-;    .word rfrom
-;#include "page.i65"
-;    .word bperbuf
-;#include "page.i65"
-;    .word minus
-;#include "page.i65"
-;    .word exit
-
-
-;    .word duptor
-;#include "page.i65"
-;    .word twominus
-;#include "page.i65"
-;    .word bperbuf
-;#include "page.i65"
-;    .word rfetch
-;#include "page.i65"
-;    .word _pktlen
-;#include "page.i65"
-;    .word nip
-;#include "page.i65"
-;    .word minus
-;#include "page.i65"
-;    .word twoplus
-;#include "page.i65"
-;    .word xyzzy
-;#include "page.i65"
-;    .word _pktplus
-;#include "page.i65"
-;    .word drop
-;#include "page.i65"
-;    .word bperbuf
-;#include "page.i65"
-;    .word twoplus
-;#include "page.i65"
-;    .word rfetch
-;#include "page.i65"
-;    .word store
-;#include "page.i65"
-;    .word rfrom
-;#include "page.i65"
-;    .word bperbuf
-;#include "page.i65"
-;    .word minus
-;#include "page.i65"
-;    .word exit
-
-;    .word duptor
-;#include "page.i65"
-;    .word twominus
-;#include "page.i65"
-;    .word duptor
-;#include "page.i65"
-;    .word bperbuf
-;#include "page.i65"
-;    .word _pktplus
-;#include "page.i65"
-;    .word twoplus
-;#include "page.i65"
-;    .word rfrom
-;#include "page.i65"
-;    .word fetch
-;#include "page.i65"
-;    .word twoplus
-;#include "page.i65"
-;    .word rfrom
-;#include "page.i65"
-;    .word store
-;#include "page.i65"
-;    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1616,18 +1495,20 @@ verifybuffers05
 name=UPDATE
 stack=( -- )
 tags=forth-83,vm
-Copies and compresses the current block buffer to the [[virtual memory packet buffer|PETTIL system memory map]].  
-Analogous to [[BLOCK]] which reads packets, this is PETTIL's top of the 
-food chain for writing packets.  
+Copies and compresses the current block buffer to the [[virtual memory
+packet buffer|PETTIL system memory map]].  Analogous to [[BLOCK]] which
+reads packets, this is PETTIL's top of the food chain for writing
+packets.  
 
-The table below summarizes how UPDATE functions based on whether the 
+The table below summarizes how `UPDATE` functions based on whether the
 user is in the editor or not, and whether the packet is screen or data.
-`UPDATE` first opens a 1024-byte hole in the [[VMBUF]] area where the output
-packet is written, then moves everything between [[VMBUF]] and the updated
-packet back up, to recover unused space.
+`UPDATE` first opens a 1024-byte hole in the [[VMBUF]] area where the 
+output packet is written, stashes the current [[BLK]] or [[SCR]], then 
+moves everything between [[VMBUF]] and the updated packet back up, to 
+recover unused space.
 
 Copies the block buffer to the packet buffer at BLK where it will be
-saved to tape at the next SAVE-BUFFERS
+saved to tape at the next [[SAVE-BUFFERS]]
 
 |[[EDITING?]] |<|packet# uses [[SCR]]|
 |>|^ [[SCRPKT?]]|linewrap from zero page<br>write 1000-byte packet from [[VIDRAM]]|
@@ -1673,7 +1554,7 @@ update01
     .word bperbuf
 #include "page.i65"
 update02
-    .word _rlebuf
+    .word _rleplus
 #include "page.i65"
     .word swap
 #include "page.i65"
