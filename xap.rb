@@ -307,7 +307,8 @@ _semi
 
 
 
-        bogus = " userscrpkt _block mkpkts02 _piosetup pblock01 "
+        bogus = " userscrpkt expect "
+
 
 
         always_use_decimal = false
@@ -353,12 +354,21 @@ _semi
     def write_json_file(outputfile,forthwordhash)
         jsonfile = File.open("./tmp/"+outputfile,'w')
         jsonfile.write "[\n"
-        glossary = ""
+        glossary = headless = ""
         forthwordhash.each do |wordname, stuff|
-            glossary += ("\[\["+ stuff.wikiname + "\]\] ")   unless stuff.tags.index "nosymbol"
+            entry = "\[\["+ stuff.wikiname + "\]\] &nbsp;&nbsp;&nbsp;&nbsp; "
+            if stuff.tags.index "nosymbol"
+                headless += entry
+            else
+                glossary += entry
+            end
+#puts stuff.tiddler
             jsonfile.write stuff.tiddler
         end
-        jsonfile.write "{ \"title\":\"Glossary\",\"tags\":\"default\",\"text\":#{glossary.to_json}}]"
+#puts glossary.to_json
+        jsonfile.write "{ \"title\":\"Glossary\",\"tags\":\"default\",\"text\":#{glossary.to_json}},"
+#puts headless.to_json
+        jsonfile.write "{ \"title\":\"Headless\",\"tags\":\"\",\"text\":#{headless.to_json}}]"
     end
 
     # write a simple list of names for the pearson cruncher

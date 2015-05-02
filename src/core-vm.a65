@@ -287,16 +287,16 @@ pronounced: "packet-floor"
 
 ```
 : pkt.floor   ( packet -- floor )
-    pkt.len 2-  - ;
+    pkt.len - 2+ ;
 ```
 #endif
 _pktfloor
 #include "enter.i65"
     .word _pktlen
 #include "page.i65"
-    .word twominus
-#include "page.i65"
     .word minus
+#include "page.i65"
+    .word twoplus
 #include "page.i65"
     .word exit
 
@@ -382,53 +382,6 @@ _scrpktq
 
 ;--------------------------------------------------------------
 #if 0
-name=SRCTARG
-stack=( -- buffer size flags )
-tags=vm,ext,nosymbol
-BLOCK packs from or unpacks to VIDRAM or BLKBUF, based on [[EDITING?]]
-
-```
-: srctarg   ( -- scr|prev vidram|blkbuf b/scr|b/buf bl|0 )
-    editing?
-    if
-        scr vidram b/scr bl
-    else
-        prev blkbuf b/buf 0
-    then ;
-```
-#endif
-_srctarg
-#include "enter.i65"
-    .word _editingq
-#include "page.i65"
-    .word qbranch
-    .byt <(srctarg01-*+1)
-#include "pad.i65"
-    .word scr
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word bl
-#include "page.i65"
-    .word branch
-    .byt <(srctarg02-*+1)
-#include "pad.i65"
-srctarg01
-    .word blk
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word zero
-#include "page.i65"
-srctarg02
-    .word exit
-    
-;--------------------------------------------------------------
-#if 0
 name=ISPREV?
 stack=( blk -- flag )
 tags=vm,ext,nosymbol
@@ -439,7 +392,7 @@ Sets PREV to `blk`, and returns a flag
 
 ```
 : isprev?
-    prev  2dup @  <>  -rot ! ;
+    prev  2dup @  =  -rot ! ;
 ```
 #endif
 _isprevq
@@ -566,6 +519,25 @@ _rleplus
 
 ;--------------------------------------------------------------
 #if 0
+name=RLE-
+stack=( last -- )
+tags=vm,ext
+Reclaims the available space between `last` and the packet header at
+`pkt` in the [[VMBUF]] region.  Used by [[UPDATE]] after compressing a
+packet with [[RLENCODE]]
+
+```
+: rle-   ( pkt last -- )
+
+    ;
+```
+#endif
+_rleminus
+#include "enter.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=MKPKTS
 stack=( n -- )
 tags=vm,ext
@@ -582,28 +554,6 @@ concatenates `n+1` new packets at the tail of the `VMBUF` area
         then
         1- 0<
     until drop ;
-    
-: mkpkts   ( n -- )
-    begin
-        vmbuf @  editing?
-        if
-            5 pkt+ dup on 1+ on
-        else
-            2 pkt+ drop
-        then
-        
-        editing? -1 do
-        vmbuf @  editing? @
-        if
-            -1 -1 third 3- 3c!
-            $8005 over !
-            5 -
-        else
-            2 over !
-            2-
-        then
-        dup off vmbuf !  #vmpkt 1+!
-    loop 2drop ;
 ```
 #endif
 _mkpkts
@@ -672,11 +622,14 @@ mkpkts03
 name=?MKPKTS
 stack=( blk -- )
 tags=vm,ext,nosymbol
+Used by [[BLOCK]] to create empty packets.  If `blk` references a packet
+higher than  [[#VMPKT]], generates new packets at the tail of the buffer
+(screen or data, based on [[EDITING]])
 
 ```
 : ?mkpkts   ( blk -- )
-    #vmpkt @ over - dup 0<
-    ?: mkpkts drop ;
+    #vmpkt @ - dup 0<
+    ?: drop mkpkts ;
 ```
 #endif
 _qmkpkts
@@ -702,11 +655,61 @@ _qmkpkts
 name=PKT@
 stack=( blk packet len flags prev blkbuf -- blkbuf )
 tags=vm,ext,nosymbol
-Retrieve a packet from [[VMBUF]] to either [[VIDRAM]] or [[BLKBUF]]
+Retrieve a packet from [[VMBUF]] to either [[VIDRAM]] or [[BLKBUF]],
+(depends on [[EDITING]])
 #endif
 pktfetch
     jmp next
 
+;--------------------------------------------------------------
+#if 0
+name=SRCTARG
+stack=( -- var buffer size char  )
+tags=vm,ext
+BLOCK packs from or unpacks to VIDRAM or BLKBUF, based on [[EDITING?]]
+
+```
+: srctarg   ( -- scr|prev vidram|blkbuf b/scr|b/buf bl|0 )
+    editing?
+    dup ?: scr prev
+    swap ?: vidram blkbuf
+    scrpkt? dup
+    dup ?: b/scr b/buf
+    swap ?: bl 0 ;
+```
+#endif
+_srctarg
+#include "enter.i65"
+    .word _editingq
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word pquerycolon
+    .word scr
+    .word prev
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+    .word pquerycolon
+    .word vidram
+    .word _blkbuf
+#include "pad.i65"
+    .word _scrpktq
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word pquerycolon
+    .word bperscr
+    .word bperbuf
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+    .word pquerycolon
+    .word bl
+    .word zero
+#include "pad.i65"
+    .word exit
+    
 ;--------------------------------------------------------------
 #if 0
 name=ORONGE
@@ -731,25 +734,21 @@ user is in the editor or not, and whether the packet is screen or data.
 ```
 : block   ( blk -- buffer )
     dup ?mkpkts  >pkt pkt.head 
+    ( pkt len flags )
     dup 0< scrpkt ! 2*
+    ( pkt len uncompressed? )
     srctarg
-    ( packet len uncompressed? scr vidram b/scr bl )
-    ( packet len uncompressed? scr vidram b/buf 0 )
-    ( packet len uncompressed? prev blkbuf b/scr bl )
-    ( packet len uncompressed? prev blkbuf b/buf 0 )
-    third >r fill r> ( blk packet len flags prev blkbuf )  pkt@ 
-    ( pkt dest dwrap )
-    scrpkt? if
-        dup 3c@
-        editing? if
-            wrap!
-        else
-            third 3c! 3+ 
-        then
-    else
-        editing? if
-            
-    then ;
+    \ editing? scrpkt?
+    ( pkt len uncompressed? scr vidram b/scr bl )
+    \ editing? not scrpkt?
+    ( pkt len uncompressed? scr vidram b/buf 0 )
+    \ not editing? scrpkt?
+    ( pkt len uncompressed? prev blkbuf b/scr bl )
+    \ not editing? not scrpkt?
+    ( pkt len uncompressed? prev blkbuf b/buf 0 )
+    \ pre-fill buffer or screen
+    third >r fill r> ( blk packet len flags prev blkbuf )  
+    pkt@ ;
 ```
 #endif
 _newblock
@@ -1525,7 +1524,9 @@ saved to tape at the next [[SAVE-BUFFERS]]
     else
         0 blkbuf b/buf
     then
-    rlebuf swap rlencode ;
+    rle+
+    rlencode
+    rle-
 ```
 #endif
 _update
@@ -1559,5 +1560,7 @@ update02
     .word swap
 #include "page.i65"
     .word rlencode
+#include "page.i65"
+    .word _rleminus
 #include "page.i65"
     .word exit
