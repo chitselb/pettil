@@ -53,27 +53,6 @@ cas2buf
 
 ;--------------------------------------------------------------
 #if 0
-name=>BBUF
-stack=( var -- addr )
-tags=vm,nosymbol
-Returns the address of a buffer located [[B/BUF]] bytes below
-the contents of the variable `var`
-
-
-!!! pronounced: "to-b-buff"
-#endif
-_tobbuf
-#include "enter.i65"
-    .word fetch
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=BLKBUF
 stack=( -- addr )
 tags=vm
@@ -94,7 +73,11 @@ _blkbuf
 #include "enter.i65"
     .word symtab
 #include "page.i65"
-    .word _tobbuf
+    .word fetch
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word minus
 #include "page.i65"
     .word exit
 
@@ -521,7 +504,7 @@ _rleplus
 #if 0
 name=RLE-
 stack=( last -- )
-tags=vm,ext
+tags=vm,ext,unimplemented
 Reclaims the available space between `last` and the packet header at
 `pkt` in the [[VMBUF]] region.  Used by [[UPDATE]] after compressing a
 packet with [[RLENCODE]]
@@ -712,6 +695,37 @@ _srctarg
     
 ;--------------------------------------------------------------
 #if 0
+name=WRAP!
+stack=( wrapd -- )
+tags=nosymbol
+
+ Updates the linewrap table at $E1-F8 to reflect the low 24 bits
+ in double `wrapd`.  Since line 0 ($E0) is never a continuation
+ line, (always $80) it is not written to.  Only 24 bits are
+ written to $E1-$F8, not 25.  Although unused, the most
+ significant (2^24) bit may be set, as a framing bit, used 
+ to detect when the wrap double is full.
+
+#endif
+wrapstore
+    ldy #1
+    jsr locals
+    stx storex
+    ldx #24
+wrapstore01
+    asl $e0,x
+    lsr tos+1
+    ror tos
+    ror n+1
+    ror n
+    ror $e0,x
+    dex
+    bne wrapstore01
+    ldx storex
+    jmp pops
+
+;--------------------------------------------------------------
+#if 0
 name=ORONGE
 stack=( blk -- buf )
 tags=vm,fig,forth-79,forth-83
@@ -747,8 +761,27 @@ user is in the editor or not, and whether the packet is screen or data.
     \ not editing? not scrpkt?
     ( pkt len uncompressed? prev blkbuf b/buf 0 )
     \ pre-fill buffer or screen
-    third >r fill r> ( blk packet len flags prev blkbuf )  
-    pkt@ ;
+    third >r fill r> 
+    ( blk packet len uncompressed? prev blkbuf )
+    pkt@
+    ( floor buf scrpkt? )
+    dup scrpkt !
+    if
+        >r dup>r 3c@ r> 3+ -rot
+    ( floor wrapd ; buf )
+        editing?
+        if
+        scrpkt?
+        if
+    ( wrapd buffer )
+    >r scrpkt? 
+    if 
+        wrap! r>
+    else 
+        r@ 3c! r> 3+
+    then
+    ( blkbuf|vidram from howmany uncompressed? to )
+    -rot  ?: cmove rldecode ;
 ```
 #endif
 _newblock
@@ -756,8 +789,6 @@ _newblock
     .word dup
 #include "page.i65"
     .word _qmkpkts
-#include "page.i65"
-    .word xyzzy
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -785,8 +816,40 @@ _newblock
 #include "page.i65"
     .word rfrom
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
     .word pktfetch
 #include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _scrpktq
+#include "page.i65"
+    .word qbranch
+    .byt <(newblock01-*+1)
+#include "pad.i65"
+    .word wrapstore
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word branch
+    .byt <(newblock02-*+1)
+#include "page.i65"
+newblock01
+    .word rfetch
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word threeplus
+#include "page.i65"
+newblock02
+    .word dashrot
+#include "page.i65"
+    .word pquerycolon
+    .word cmove
+    .word rldecode
+#include "pad.i65"
     .word exit
 
 ;--------------------------------------------------------------
