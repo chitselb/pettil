@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userscrpkt expect unpkt03 "
+        bogus = " userscrpkt expect unpkt03 mkpkts03 unpkt02 "
 
 
 

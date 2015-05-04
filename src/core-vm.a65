@@ -215,26 +215,33 @@ rldecode06
 ;--------------------------------------------------------------
 #if 0
 name=PKT.HEAD
-stack=( packet -- packet len flags )
+stack=( packet -- packet len uncompressed? scrpkt? )
 tags=vm
-Returns the packet length and flags from a packet header
+Returns the packet length and flags from a packet header.  [[SCRPKT]] is
+$8000 for screen packets, 0 for data packets.  the `uncompressed?` flag is set to $4000 for uncompressed packets, 0 for [[RLENCODE]]d packets.
 
 pronounced: "packet-head"
 #endif
 pkthead
     jsr slip
     dex
-    dex             ; ( packet x x packet )
+    dex
+    dex
     ldy #0
     sty stackl,x
+    sty stackl+1,x
     lda (tos),y
-    sta stackl+1,x
+    sta stackl+2,x
+    sty stackh,x
     iny
     lda (tos),y
     and #$c0
-    sta stackh,x
-    eor (tos),y
     sta stackh+1,x
+    eor (tos),y
+    sta stackh+2,x
+    asl stackh+1,x
+    ror stackh,x
+    lsr stackh+1,x
     jmp pops
 
 ;--------------------------------------------------------------
@@ -248,14 +255,14 @@ pronounced: "packet-len"
 
 ```
 : pkt.len   ( packet -- packet len )
-    pkt.head drop ;
+    pkt.head 2drop ;
 ```
 #endif
 _pktlen
 #include "enter.i65"
     .word pkthead
 #include "page.i65"
-    .word drop
+    .word twodrop
 #include "page.i65"
     .word exit
 
@@ -747,25 +754,73 @@ user is in the editor or not, and whether the packet is screen or data.
 |>|^ not [[SCRPKT?]]|[[BLKBUF]] initialized to nulls<br>1024 bytes of data expanded to [[BLKBUF]]|
 ```
 : block   ( blk -- buffer )
-    dup ?mkpkts  >pkt pkt.head 
-    ( pkt len flags )
-    dup 0< scrpkt ! 2*
+    \ create empty packets if there aren't enough
+    dup>r ?mkpkts
+    ( blk ; blk )
+
+    \ locate the packet
+    r@ >pkt 
+    ( blk pkt ; blk )
+
+    \ extract details
+    dup pkt.floor swap pkt.head
+    ( blk floor pkt len uncompressed? scrpkt? ; blk )
+
+    \ set scrpkt to data (0) or screen ($8000)
+    scrpkt !
+    ( blk floor pkt len uncompressed? ; blk )
+
+    \ find out more about the output (based on editing? scrpkt?)
+    srctarg      \ horrible word name
+    ( blk floor pkt len uncompressed? 
+     scr|prev vidram|blkbuf b/scr|b/buf bl|0 ; blk )
+
+    \ pre-fill buffer or screen
+    third >r fill r> 
+    ( blk floor pkt len uncompressed? scr|prev vidram|blkbuf ; blk )
+
+    \ set prev or blk
+    r> rot !
+    ( blk floor pkt len uncompressed? vidram|blkbuf )
+
+    \ calculate and rearrange stack with a little Sweet16 magic
+    pkt@
+    ( floor buf )
+
+    \ handle linewrap
+    scrpkt?
+    if
+        over 3c@
+    ( floor buf wrapd )
+        editing?
+        if
+            
+    
+    \ rldecode or cmove the data
+    
+
+    ( pkt len uncompressed? prev blkbuf ; blk )
+
+
+    dup>r ?mkpkts  r@ >pkt pkt.head third floor >r
+    ( pkt len uncompressed? scrpkt? ; blk )
     ( pkt len uncompressed? )
     srctarg
     \ editing? scrpkt?
-    ( pkt len uncompressed? scr vidram b/scr bl )
+    ( pkt len uncompressed? scr vidram b/scr bl ; floor blk )
     \ editing? not scrpkt?
-    ( pkt len uncompressed? scr vidram b/buf 0 )
+    ( pkt len uncompressed? scr vidram b/buf 0 ; floor blk )
     \ not editing? scrpkt?
-    ( pkt len uncompressed? prev blkbuf b/scr bl )
+    ( pkt len uncompressed? prev blkbuf b/scr bl ; floor blk )
     \ not editing? not scrpkt?
-    ( pkt len uncompressed? prev blkbuf b/buf 0 )
-    \ pre-fill buffer or screen
-    third >r fill r> 
-    ( blk packet len uncompressed? prev blkbuf )
-    pkt@
-    ( floor buf scrpkt? )
-    dup scrpkt !
+    ( pkt len uncompressed? prev blkbuf b/buf 0 ; floor blk )
+
+    ( pkt len uncompressed? blkbuf )
+
+    
+    pkt@  scrpkt?
+    ( ... floor buf scrpkt? )
+
     if
         >r dup>r 3c@ r> 3+ -rot
     ( floor wrapd ; buf )
@@ -796,15 +851,9 @@ _newblock
 #include "page.i65"
     .word pkthead
 #include "page.i65"
-    .word dup
-#include "page.i65"
-    .word zlt
-#include "page.i65"
     .word scrpkt
 #include "page.i65"
     .word store
-#include "page.i65"
-    .word twostar
 #include "page.i65"
     .word _srctarg
 #include "page.i65"
