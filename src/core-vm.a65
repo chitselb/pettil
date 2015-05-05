@@ -214,57 +214,81 @@ rldecode06
 
 ;--------------------------------------------------------------
 #if 0
-name=PKT.HEAD
-stack=( packet -- packet len uncompressed? scrpkt? )
+name=PKT.INFO
+stack=( packet -- floor length uncompressed? scrpkt? )
 tags=vm
-Returns the packet length and flags from a packet header.  [[SCRPKT]] is
-$8000 for screen packets, 0 for data packets.  the `uncompressed?` flag is set to $4000 for uncompressed packets, 0 for [[RLENCODE]]d packets.
+Returns the floor, length and flags from a packet header.  [[SCRPKT]] 
+is $8000 for screen packets, 0 for data packets.  the `uncompressed?` 
+value is $4000 for uncompressed packets, 0 for [[RLENCODE]]d packets. 
+The term `size` also includes the 2 byte packet header, while a 
+packet's `length` is just the contents (`size-2`)
 
-pronounced: "packet-head"
+pronounced: "packet-info"
 #endif
-pkthead
-    jsr slip
+pktinfo
+    ;jsr slip
+    jsr fetchya
     dex
     dex
     dex
-    ldy #0
-    sty stackl,x
-    sty stackl+1,x
-    lda (tos),y
-    sta stackl+2,x
-    sty stackh,x
-    iny
-    lda (tos),y
-    and #$c0
     sta stackh+1,x
-    eor (tos),y
-    sta stackh+2,x
-    asl stackh+1,x
-    ror stackh,x
-    lsr stackh+1,x
-    jmp pops
+    lda #0
+    sta stackh,x
+    sta tos
+    sta tos+1
+    tya
+    and #$07
+    sta stackh+1,x
+    tya
+    eor stackh+1,x
+    asl
+    ror tos+1
+    lsr
+    sta stackh,x
+    jmp next
+    
+;pkthead
+;    jsr slip
+;    dex
+;    dex
+;    dex
+;    ldy #0
+;    sty stackl,x
+;    sty stackl+1,x
+;    lda (tos),y
+;    sta stackl+2,x
+;    sty stackh,x
+;    iny
+;    lda (tos),y
+;    and #$c0
+;    sta stackh+1,x
+;    eor (tos),y
+;    sta stackh+2,x
+;    asl stackh+1,x
+;    ror stackh,x
+;    lsr stackh+1,x
+;    jmp pops
 
+    
 ;--------------------------------------------------------------
 #if 0
-name=PKT.LEN
-stack=( packet -- packet len )
+name=PKT.SIZE
+stack=( packet -- packet size )
 tags=vm
-Returns the packet length from a packet header
+Returns the packet length from a packet header.  The term `size` includes the 2
+byte packet header, where a packet's `length` is just the contents (`size-2`)
 
-pronounced: "packet-len"
+pronounced: "packet-size"
 
-```
-: pkt.len   ( packet -- packet len )
-    pkt.head 2drop ;
-```
 #endif
-_pktlen
-#include "enter.i65"
-    .word pkthead
-#include "page.i65"
-    .word twodrop
-#include "page.i65"
-    .word exit
+pktsize
+    jsr fetchya
+    pha
+    tya
+    and #$07
+    tay
+    pla
+    jmp pushya             ; 12 bytes
 
 ;--------------------------------------------------------------
 #if 0
@@ -277,16 +301,18 @@ pronounced: "packet-floor"
 
 ```
 : pkt.floor   ( packet -- floor )
-    pkt.len - 2+ ;
+    pkt.size 2- - ;
 ```
 #endif
 _pktfloor
 #include "enter.i65"
-    .word _pktlen
+    .word pktsize
+#include "page.i65"
+    .word twominus
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word twoplus
+    .word nip
 #include "page.i65"
     .word exit
 
@@ -303,7 +329,7 @@ Return the packet address of block N
     begin
         over 0>
     while
-        pktlen
+        pktsize
         - -1 +under
     repeat
     nip ;
@@ -323,7 +349,7 @@ topkt01
     .word qbranch
     .byt <(topkt02-*+1)
 #include "pad.i65"
-    .word _pktlen
+    .word pktsize
 #include "page.i65"
     .word minus
 #include "page.i65"
@@ -483,7 +509,7 @@ _rleplus
 #include "page.i65"
     .word rfetch
 #include "page.i65"
-    .word _pktlen
+    .word pktsize
 #include "page.i65"
     .word tor
 #include "page.i65"
@@ -755,88 +781,55 @@ user is in the editor or not, and whether the packet is screen or data.
 ```
 : block   ( blk -- buffer )
     \ create empty packets if there aren't enough
-    dup>r ?mkpkts
-    ( blk ; blk )
+    dup ?mkpkts
+    ( blk )
 
     \ locate the packet
-    r@ >pkt 
-    ( blk pkt ; blk )
+    dup >pkt 
+    ( blk pkt )
 
     \ extract details
-    dup pkt.floor swap pkt.head
-    ( blk floor pkt len uncompressed? scrpkt? ; blk )
+    dup pkt.floor swap pkt.info
+    ( blk floor len uncompressed? scrpkt? )
 
     \ set scrpkt to data (0) or screen ($8000)
     scrpkt !
-    ( blk floor pkt len uncompressed? ; blk )
+    ( blk floor len uncompressed? )
 
     \ find out more about the output (based on editing? scrpkt?)
     srctarg      \ horrible word name
-    ( blk floor pkt len uncompressed? 
-     scr|prev vidram|blkbuf b/scr|b/buf bl|0 ; blk )
+    ( blk floor len uncompressed? 
+     scr|prev vidram|blkbuf b/scr|b/buf bl|0 )
 
     \ pre-fill buffer or screen
     third >r fill r> 
-    ( blk floor pkt len uncompressed? scr|prev vidram|blkbuf ; blk )
+    ( blk floor len uncompressed? scr|prev vidram|blkbuf )
 
     \ set prev or blk
     r> rot !
-    ( blk floor pkt len uncompressed? vidram|blkbuf )
+    ( blk floor len uncompressed? vidram|blkbuf )
 
     \ calculate and rearrange stack with a little Sweet16 magic
     pkt@
-    ( floor buf )
+    ( blk floor len uncompressed? floor buf )
 
     \ handle linewrap
+    ( size uncompressed? floor buf )
     scrpkt?
     if
         over 3c@
-    ( floor buf wrapd )
         editing?
         if
-            
-    
-    \ rldecode or cmove the data
-    
-
-    ( pkt len uncompressed? prev blkbuf ; blk )
-
-
-    dup>r ?mkpkts  r@ >pkt pkt.head third floor >r
-    ( pkt len uncompressed? scrpkt? ; blk )
-    ( pkt len uncompressed? )
-    srctarg
-    \ editing? scrpkt?
-    ( pkt len uncompressed? scr vidram b/scr bl ; floor blk )
-    \ editing? not scrpkt?
-    ( pkt len uncompressed? scr vidram b/buf 0 ; floor blk )
-    \ not editing? scrpkt?
-    ( pkt len uncompressed? prev blkbuf b/scr bl ; floor blk )
-    \ not editing? not scrpkt?
-    ( pkt len uncompressed? prev blkbuf b/buf 0 ; floor blk )
-
-    ( pkt len uncompressed? blkbuf )
-
-    
-    pkt@  scrpkt?
-    ( ... floor buf scrpkt? )
-
-    if
-        >r dup>r 3c@ r> 3+ -rot
-    ( floor wrapd ; buf )
-        editing?
-        if
-        scrpkt?
-        if
-    ( wrapd buffer )
-    >r scrpkt? 
-    if 
-        wrap! r>
-    else 
-        r@ 3c! r> 3+
+            wrap!
+        else
+            third 3c! 3+
+        then
+        3 +under
     then
-    ( blkbuf|vidram from howmany uncompressed? to )
-    -rot  ?: cmove rldecode ;
+    ( size uncompressed? floor buf )
+
+    \ rldecode or cmove the data
+    2swap ?: cmove rldecode ;
 ```
 #endif
 _newblock
@@ -845,11 +838,19 @@ _newblock
 #include "page.i65"
     .word _qmkpkts
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
     .word dup
 #include "page.i65"
     .word _topkt
 #include "page.i65"
-    .word pkthead
+    .word dup
+#include "page.i65"
+    .word _pktfloor
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word pktinfo
 #include "page.i65"
     .word scrpkt
 #include "page.i65"
@@ -865,35 +866,47 @@ _newblock
 #include "page.i65"
     .word rfrom
 #include "page.i65"
-    .word xyzzy
+    .word rfrom
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word store
 #include "page.i65"
     .word pktfetch
 #include "page.i65"
-    .word tor
-#include "page.i65"
     .word _scrpktq
+#include "page.i65"
+    .word qbranch
+    .byt <(newblock03-*+1)
+#include "pad.i65"
+    .word over
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word _editingq
 #include "page.i65"
     .word qbranch
     .byt <(newblock01-*+1)
 #include "pad.i65"
     .word wrapstore
 #include "page.i65"
-    .word rfrom
-#include "page.i65"
     .word branch
     .byt <(newblock02-*+1)
-#include "page.i65"
+#include "pad.i65"
 newblock01
-    .word rfetch
+    .word third
 #include "page.i65"
     .word threecstore
-#include "page.i65"
-    .word rfrom
 #include "page.i65"
     .word threeplus
 #include "page.i65"
 newblock02
-    .word dashrot
+    .word three
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
+newblock03
+    .word twoswap
 #include "page.i65"
     .word pquerycolon
     .word cmove
@@ -1267,7 +1280,7 @@ Reset virtual memory user variables for LOAD-BUFFERS or EMPTY-BUFFERS
 : #vmpkt!   ( -- )
     scr off  blk off  prev on  #vmpkt off  blkbuf 2-
     begin
-        pkt.len ?dup
+        @ ?dup
     while
         #vmpkt 1+!
         -
@@ -1299,7 +1312,7 @@ _numvmpktstore
     .word twominus
 #include "page.i65"
 numvmpktstore01
-    .word _pktlen
+    .word pktsize
 #include "page.i65"
     .word qdup
 #include "page.i65"
