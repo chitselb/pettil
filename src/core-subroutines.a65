@@ -54,19 +54,42 @@ push6502
 name=padjust
 stack=( -- )
 tags=nosymbol
-Add value `A` to `IP`
+!!!User variable
+Called by primitives to adjust `IP` and properly cross a
+page boundary.  This routine exists so words like [[."]] and [[?:]] 
+can function outside the normal [[pad|DOPAGE]]/[[page|DOPAGE]] routines.
+
+|IP+A lo|IP lo|IP hi|
+| C set| IP+A| +1|
+||||
+| < FD| IP+A| IP+A|
+| FD| FE| +1|
+| FE| FE| +1|
+| FF| FE| +1|
+
+It is possible to cross two page boundaries, e.g. in a worst-case 
+scenario with [[(.")]] printing a 255-byte string, where the [[(.")]] 
+was compiled at the very top of the page.
+
+|$42FC-$42FD| [[(.")]] cfa |
+|$42FE| $FF(length) |
+|$42FF-$43FE| the string |
+|$43FF| `NOP` |
+
+`IP` would be set after `padjust` to $44FE and the next execution of
+[[NEXT|Zero page buffer and NEXT routine]] would use $4400 as the address of the following instruction.
 #endif
 padjust
     clc                     ; pass A = offset to be added to IP
     adc ip
-    bcs padjust02
-    tay
-    iny
-    bne padjust03
-    tya
-padjust02
+    bcc padjust01
     inc ip+1                ; cross the page
-padjust03
+padjust01
+    cmp #$fd
+    bcc padjust02
+    inc ip+1                ; cross the page
+    lda #$fe
+padjust02
     sta ip
     rts
 

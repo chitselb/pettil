@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userscrpkt pado depth dabs01 dtwostar _pdot pad expect "
+        bogus = " userscrpkt pado depth dabs01 dtwostar _pdot pad expect dult "
 
 
 
