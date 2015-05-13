@@ -264,6 +264,13 @@ The term `size` also includes the 2 byte packet header, while a
 packet's `length` is just the contents (`size-2`)
 
 pronounced: "packet-info"
+
+```
+: pkt.info   ( packet -- floor length uncompressed? scrpkt? )
+    dup>r pkt.size 2- dup>r - 
+    r> r> @ dup>r  $4000 and
+    r>  vidram and ;
+```
 #endif
 pktinfo
 #include "enter.i65"
@@ -297,7 +304,6 @@ pktinfo
     .word andx
 #include "page.i65"
     .word exit
-
 
 ;    brk
 ;    .byt ldd | TOS
@@ -553,7 +559,7 @@ packet with [[RLENCODE]]
 #endif
 _rleminus
 #include "enter.i65"
-    .word exit
+    .word xyzzy
 
 ;--------------------------------------------------------------
 #if 0
@@ -672,12 +678,23 @@ _qmkpkts
 ;--------------------------------------------------------------
 #if 0
 name=PKT@
-stack=( blk packet len flags prev blkbuf -- blkbuf )
+stack=( -- )
 tags=vm,ext,nosymbol
-Retrieve a packet from [[VMBUF]] to either [[VIDRAM]] or [[BLKBUF]],
-(depends on [[EDITING]])
+Restack the stack in the middle of [[BLOCK]] to prepare for [[FILL]], 
+[[RLDECODE]] etc...
+
+>C:0000  ff ff 00 80  02 00 f4 5b  f1 5b 03 00  00 00 e8 03   .......[.[......
+>C:0010  20 00 c4 06  fe 57 06 06  00 01 f9 ff  0c ff 86 00    ....W..........
+
 #endif
 pktfetch
+    ldy #8
+    jsr locals
+    brk
+    .byt ld | N5        ; scr|prev
+    .byt push
+    
+    
     jmp next
 
 ;--------------------------------------------------------------
@@ -687,13 +704,15 @@ stack=( -- var buffer size char  )
 tags=vm,ext
 BLOCK packs from or unpacks to VIDRAM or BLKBUF, based on [[EDITING?]]
 
+~ horrible name
+
 ```
-: srctarg   ( -- scr|prev vidram|blkbuf b/scr|b/buf bl|0 )
+: srctarg   ( -- vidram|blkbuf scr|prev  b/scr|b/buf bl|0 )
     editing?
-    dup ?: scr prev
-    swap ?: vidram blkbuf
-    scrpkt? dup
-    dup ?: b/scr b/buf
+    dup  ?: vidram blkbuf
+    swap ?: scr prev
+    scrpkt?
+    dup  ?: b/scr b/buf
     swap ?: bl 0 ;
 ```
 #endif
@@ -704,14 +723,14 @@ _srctarg
     .word dup
 #include "page.i65"
     .word pquerycolon
-    .word scr
-    .word prev
+    .word vidram
+    .word _blkbuf
 #include "pad.i65"
     .word swap
 #include "page.i65"
     .word pquerycolon
-    .word vidram
-    .word _blkbuf
+    .word scr
+    .word prev
 #include "pad.i65"
     .word _scrpktq
 #include "page.i65"
@@ -789,61 +808,30 @@ user is in the editor or not, and whether the packet is screen or data.
     dup ?mkpkts
     ( blk )
 
-    \ locate the packet
-    dup >pkt 
-    ( blk pkt )
-
-    \ extract details
-    dup>r pkt.floor r> pkt.info
+    dup >pkt pkt.info           \ locate and unpack the header
     ( blk floor len uncompressed? scrpkt? )
-
     \ set scrpkt to data (0) or screen ($8000)
-    scrpkt !
-    ( blk floor len uncompressed? )
-
-    \ find out more about the output (based on editing? scrpkt?)
-    srctarg      \ horrible word name
-    ( blk floor len uncompressed? 
-     scr|prev vidram|blkbuf b/scr|b/buf bl|0 )
-
-    \ pre-fill buffer or screen
-    third >r fill r> 
-    ( blk floor len uncompressed? scr|prev vidram|blkbuf )
-
-    \ set prev or blk
-    r> rot !
-    ( blk floor len uncompressed? vidram|blkbuf )
-
-    \ calculate and rearrange stack with a little Sweet16 magic
-    pkt@
-    ( blk floor len uncompressed? floor buf )
-
-    \ handle linewrap
+    scrpkt ! rot
+    ( blk len uncompressed?  floor )
+    srctarg    \ find out more about the output
+    ( blk len uncompressed?  floor vidram|blkbuf scr|prev  b/scr|b/buf bl|0 )
+    rot >r third >r fill r>
+    ( blk len uncompressed?  floor vidram|blkbuf ; scr|prev )
     scrpkt?
-    ( blk floor len uncompressed? floor buf scrpkt? )
     if
-    ( blk floor len uncompressed? floor buf )
         over 3c@
-    ( blk floor len uncompressed? floor buf wraplo wraphi )
         editing?
-    ( blk floor len uncompressed? floor buf wraplo wraphi editing? )
         if
-    ( blk floor len uncompressed? floor buf wraplo wraphi )
             wrap!
-    ( blk floor len uncompressed? floor buf )
         else
-    ( blk floor len uncompressed? floor buf wraplo wraphi buf )
             third 3c! 3+
-    ( blk floor len uncompressed? floor buf+3 )
         then
         3 +under
-    ( blk floor len uncompressed? floor+3 buf+3 )
     then
-    ( blk len uncompressed? floor buf )
-
-    \ rldecode or cmove the data
-    2swap ?: cmove rldecode ;
-    ( blk )
+    ( blk len uncompressed? floor vidram|blkbuf ; scr|prev ) 
+    2swap ?:  cmove rldecode            \ rldecode or cmove
+    ( blk scr|prev )                    \ set prev or scr
+    r> ! ;
 ```
 #endif
 _newblock
@@ -856,6 +844,8 @@ _newblock
 #include "page.i65"
     .word _topkt
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
     .word dup
 #include "page.i65"
     .word pktinfo
@@ -865,6 +855,8 @@ _newblock
     .word store
 #include "page.i65"
     .word _srctarg
+#include "page.i65"
+    .word pktfetch
 #include "page.i65"
     .word third
 #include "page.i65"
@@ -879,10 +871,6 @@ _newblock
     .word rot
 #include "page.i65"
     .word store
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word pktfetch
 #include "page.i65"
     .word _scrpktq
 #include "page.i65"
