@@ -1,7 +1,11 @@
 RUBY = /home/chitselb/.rbenv/shims/ruby
 SHELL = /bin/bash
 
-all: clean pettil launch tiddlypettil publish
+all:  clean pettil launch tiddlypettil publish
+
+compile: clean pettil tiddlypettil
+
+doc: tiddlypettil publish
 
 clean:
 	rm -rf ./tmp/
@@ -40,7 +44,7 @@ tiddlypettil:
 	mkdir -p ./tmp/tiddlypettil/tiddlers
 	cp ./docs/statictiddlers/tiddlywiki.info ./tmp/tiddlypettil/
 	cp ./docs/statictiddlers/*.tid ./tmp/tiddlypettil/tiddlers/
-	export MMDDYY=`date +"documentation generated %Y-%m-%d"`;sed "s/datetimestamp/${MMDDYY}/" <./docs/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
+	export MMDDYY=`date +"documentation generated %Y-%m-%d"`;sed "s/datetimestamp/$${MMDDYY}/" <./docs/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
 	cd ./tmp/tiddlypettil/ && tiddlywiki --load ../pettil.json --rendertiddler $$:/core/save/all tiddlypettil.html text/plain
 	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./docs/tiddlypettil.html
 
