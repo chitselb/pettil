@@ -2,7 +2,7 @@ RUBY = /home/chitselb/.rvm/rubies/ruby-2.1.2/bin/ruby
 # /home/chitselb/.rbenv/shims/ruby
 SHELL = /bin/bash
 
-all:  clean pettil launch tiddlypettil publish
+all:  clean pettil launch tiddlypettil 
 
 compile: clean pettil tiddlypettil
 
@@ -12,14 +12,12 @@ clean:
 	rm -rf ./tmp/
 	mkdir ./tmp/
 
-launch:
+launch: clean pettil
 	xpet -moncommand ./tmp/pettil.mon ./tmp/pettil.obj >/dev/null &
 
 pettil:
 	echo . Phase I
 	echo . . . . Building PETTIL core = PETTIL-CORE.OBJ
-	rm -rvf ./tmp/
-	mkdir ./tmp/
 	cd ./src/ && xa ./pettil-core.a65 -o ../tmp/pettil-core.obj -e ../tmp/pettil-core.err -l ../tmp/pettil-core.lab
 	echo . . . . Generating core labels = PETTIL-CORE.DEF
 	$(RUBY) xap.rb

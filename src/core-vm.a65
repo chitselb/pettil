@@ -83,6 +83,48 @@ _blkbuf
 
 ;--------------------------------------------------------------
 #if 0
+name=WRAP^
+stack=( logline -- d )
+tags=editor,primitive,nosymbol
+
+ Reads a portion of the linewrap table above the requested
+ `logline`, up to but not including `logline`.
+
+ Returns a right-aligned double with a copy of those high bit values
+
+!!!pronounced: "wrap-above"
+#endif
+wrapabove
+    stx storex      ; preserve Forth data stack pointer
+    ldx #0
+    stx n+1
+    stx n
+    stx tos+1
+    ldy tos         ; first physical line of this logical line
+    stx tos
+    tya
+    beq wrapabove03
+    sty n+2
+    dex
+wrapabove02
+    inx
+    cpx n+2         ; are we there yet?
+    beq wrapabove03 ; leave if done
+    lda $e0,x
+    asl             ; nondestructively
+    rol tos
+    rol tos+1
+    rol n
+    rol n+1         ; append the next high bit to the double
+    beq wrapabove02 ; this should always take the branch
+wrapabove03
+    lda n
+    ldy n+1         ; high half of the double is going on the stack
+    ldx storex      ; restore Forth data stack pointer
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
 name=RLENCODE
 stack=( from to size -- to size flag )
 tags=vm,sweet16
@@ -234,26 +276,6 @@ pktsize
 
 ;--------------------------------------------------------------
 #if 0
-name=PKT.FLOOR
-stack=( packet -- floor )
-tags=vm
-Returns the floor address of a packet (start of data)
-
-pronounced: "packet-floor"
-
-```
-: pkt.floor   ( packet -- floor )
-    pkt.size 2- - ;
-```
-#endif
-_pktfloorxxx
-#include "enter.i65"
-    .word minus
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=PKT.INFO
 stack=( packet -- floor length uncompressed? scrpkt? )
 tags=vm
@@ -380,37 +402,6 @@ _scrpktq
     .word scrpkt
 #include "page.i65"
     .word fetch
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=ISPREV?
-stack=( blk -- flag )
-tags=vm,ext,nosymbol
-Sets PREV to `blk`, and returns a flag
-
-* TRUE if `blk` is loaded.
-* FALSE if `blk` is not loaded
-
-```
-: isprev?
-    prev  2dup @  =  -rot ! ;
-```
-#endif
-_isprevq
-#include "enter.i65"
-    .word prev
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word eq
-#include "page.i65"
-    .word dashrot
-#include "page.i65"
-    .word store
 #include "page.i65"
     .word exit
 
@@ -924,79 +915,6 @@ block02
 #include "page.i65"
     .word exit
 
-;#include "page.i65"
-;    .word rot
-;#include "page.i65"
-;    .word tor
-;#include "page.i65"
-;    .word third
-;#include "page.i65"
-;    .word tor
-;#include "page.i65"
-;    .word fill
-;#include "page.i65"
-;    .word rfrom
-;#include "page.i65"
-;    .word _scrpktq
-;#include "page.i65"
-;    .word qbranch
-;    .byt <(block03-*+1)
-;#include "pad.i65"
-;    .word over
-;#include "page.i65"
-;    .word threecfetch
-;#include "page.i65"
-;    .word _editingq
-;#include "page.i65"
-;    .word qbranch
-;    .byt <(block01-*+1)
-;#include "pad.i65"
-;    .word wrapstore
-;#include "page.i65"
-;    .word branch
-;    .byt <(block02-*+1)
-;#include "pad.i65"
-;block01
-;    .word third
-;#include "page.i65"
-;    .word threecstore
-;#include "page.i65"
-;    .word threeplus
-;#include "page.i65"
-;block02
-;    .word three
-;#include "page.i65"
-;    .word plusunder
-;#include "page.i65"
-;    .word twoswap
-;#include "page.i65"
-;    .word minusthree
-;#include "page.i65"
-;    .word plusunder
-;#include "page.i65"
-;    .word twoswap
-;#include "page.i65"
-;block03
-;    .word duptor
-;#include "page.i65"
-;    .word twoswap
-;#include "page.i65"
-;    .word pquerycolon
-;    .word cmove
-;    .word rldecode
-;#include "pad.i65"
-;    .word rfrom
-;#include "page.i65"
-;    .word rfrom
-;#include "page.i65"
-;    .word rot
-;#include "page.i65"
-;    .word swap
-;#include "page.i65"
-;    .word store
-;#include "page.i65"
-;    .word exit
-
 ;--------------------------------------------------------------
 #if 0
 name=CURRNAME
@@ -1410,6 +1328,26 @@ verifybuffers05
 
 ;--------------------------------------------------------------
 #if 0
+name=?EXIT
+stack=( flag -- )
+tags=forth-83,vm
+Exits the calling word if the flag is true
+
+```
+: ?exit   ( flag -- )
+    ?: rdrop next ;
+```
+#endif
+_qexit
+#include "enter.i65"
+    .word pquerycolon
+    .word rdrop
+    .word next
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=UPDATE
 stack=( -- )
 tags=forth-83,vm
@@ -1437,6 +1375,7 @@ saved to tape at the next [[SAVE-BUFFERS]]
 |>|^ not [[SCRPKT?]]|no linewrap<br>write 1024-byte packet from [[BLKBUF]]|
 ```
 : update   ( -- )
+    prev @ 0< ?exit
     srctarg  drop swap @ >pkt dup>r rle+ dup>r
 ( vidram|blkbuf b/scr|b/buf floor ; floor  pkt )
     editing?  rot >r  scrpkt?  
@@ -1458,100 +1397,127 @@ saved to tape at the next [[SAVE-BUFFERS]]
 ( vidram|blkbuf+ floor+ ; b/scr|b/buf floor  pkt )
     over r>  scrpkt?  ?: -trailing -nulls nip
 ( vidram|blkbuf+ floor+ b/scr|b/buf- ; floor  pkt )
-    3dup rlencode
-( vidram|blkbuf+ floor+ b/scr|b/buf- targend uncompressed? ; floor  pkt )
-    2r> vmbuf @ rle-  cmove> ;
-
-
-: update   ( -- )
-    editing?
-    if
-        scrpkt?
-        if
-            25 wrapabove
-        else
-            blkbuf 3c@
-        then
-        scr @
-    else
-        0 0
-        prev @
-    then
-
-    scrpkt?
-    if
-        editing?
-        if
-            25 wrapabove
-            scr @
-        else
-            0 0
-            prev @
-        then
-    else
-        editing?
-        if
-            blkbuf 3c@
-            scr @
-        else
-            0 0
-            prev @
-        then
-    then
-
-    scrpkt?
-    if
-        vidram
-        editing? dup>r
-        ?: vidram blkbuf
-        r> b/scr -trailing
-        if
-            25 wrap^
-        else
-            over 3c@
-        then
-    else
-        0 blkbuf b/buf -nulls 0 0 ( fake wrap )
-    then
-    rle+
-    ?dup  ?: 3c! 2drop
     rlencode
-    rle-
+( targend uncompressed? ; floor  pkt )
+
+    \ set packet length
+( targend targend-floor+2 uncompressed? scrpkt? )
+    + + swap !
+
+    \ move vmbuf up
+( vmbuf targend pkt-targend )
+    +move ;
+
 
 ```
 #endif
 _update
 #include "enter.i65"
-    .word _scrpktq
+    .word xyzzy
+#include "page.i65"
+    .word prev
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word _srctarg
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _topkt
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word _rleplus
+#include "page.i65"
+    .word duptor
 #include "page.i65"
     .word _editingq
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _scrpktq
 #include "page.i65"
     .word qbranch
     .byt <(update01-*+1)
 #include "pad.i65"
-    .word vidram
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word dashtrailing
-    .byt <(update02-*+1)
+    .word clit
+    .byt 25
 #include "pad.i65"
+    .word wrapabove
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word branch
+    .byt <(update01-*+1)
+#include "pad.i65"
+    .word over
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
 update01
-    .word zero
+    .word threeplus
 #include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
+    .word branch
+    .byt <(update01-*+1)
+#include "pad.i65"
 update02
-    .word _rleplus
+    .word qbranch
+    .byt <(update01-*+1)
+#include "pad.i65"
+    .word twodrop
 #include "page.i65"
-    .word swap
+    .word tworfrom
+#include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word fourdrop
+#include "page.i65"
+    .word exit
+#include "page.i65"
+update03
+    .word over
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word _scrpktq
+#include "page.i65"
+    .word pquerycolon
+    .word dashtrailing
+    .word dashnulls
+#include "pad.i65"
+    .word nip
 #include "page.i65"
     .word rlencode
 #include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
     .word _rleminus
 #include "page.i65"
+    .word cmovegt
+#include "page.i65"
     .word exit
+
