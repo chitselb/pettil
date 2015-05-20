@@ -1,5 +1,5 @@
-RUBY = /home/chitselb/.rvm/rubies/ruby-2.1.2/bin/ruby
-# /home/chitselb/.rbenv/shims/ruby
+# RUBY = /home/chitselb/.rvm/rubies/ruby-2.1.2/bin/ruby
+RUBY = /home/chitselb/.rbenv/shims/ruby
 SHELL = /bin/bash
 
 all:  clean pettil launch tiddlypettil 
@@ -13,7 +13,7 @@ clean:
 	mkdir ./tmp/
 
 launch: clean pettil
-	xpet -moncommand ./tmp/pettil.mon ./tmp/pettil.obj >/dev/null &
+	xpet -1 tapes/x.tap -moncommand ./tmp/pettil.mon ./tmp/pettil.obj >/dev/null &
 
 pettil:
 	echo . Phase I
