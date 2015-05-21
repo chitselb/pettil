@@ -13,7 +13,7 @@ clean:
 	mkdir ./tmp/
 
 launch: clean pettil
-	xpet -1 tapes/x.tap -moncommand ./tmp/pettil.mon ./tmp/pettil.obj >/dev/null &
+	xpet -verbose -Crtcpalette /home/chitselb/.vice/PET/chitselb.vpl -1 tapes/x.tap -Crtcfilter 0 -warp -moncommand ./tmp/pettil.mon ./tmp/pettil.obj >/dev/null &
 
 pettil:
 	echo . Phase I
