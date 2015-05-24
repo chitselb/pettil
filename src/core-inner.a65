@@ -333,12 +333,11 @@ branch01
 name=(+LOOP)
 stack=( n -- )
 tags=inner,nosymbol,control
-Add "n" to inner loop index.  If loop index exceeds loop limit,
-then iterate to the (do), otherwise skip past the branch and
-proceed
+Add `n` to inner loop index.  If loop index exceeds loop limit,
+then iterate back to (do), otherwise exit the loop.  PETTIL uses
+four bytes of zero page for the inner loop index/limit, for speed
 
-~ fails at exit. fencepost condition at pploop01 where it executes 
-one too many iterations?
+[[Posted question on comp.lang.forth|https://groups.google.com/d/msg/comp.lang.forth/V9evPkLwRoM/Khwons3O4QwJ]]
 #endif
 pploop
     clc
@@ -346,51 +345,53 @@ pploop
     adc zi
     sta zi
     lda tos+1
+    tay                 ; save N flag
     adc zi+1
     sta zi+1
-    lda zi+2
-    cmp zi
-    lda zi+3
-    sbc zi+1
-                        ldy tos+1
-    lda stackh,x
-    sta tos+1
-    lda stackl,x
-    sta tos
-    inx
-    tay
-    bcc pploop01
-    eor #$80
+    lda zi
+    cmp zlim
+    lda zi+1
+    sbc zlim+1
+    jsr slide
+    tya                 ; set N flag
+
+;    rts
+
+    bcs pploop01
+    eor #$80            ; toggle N flag
 pploop01
-    bmi branch
-pploop02
-    bpl bump
+    bmi branch          ; iterate
+    bpl ploop02         ; exit loop
 
 ;--------------------------------------------------------------
 #if 0
 name=(LOOP)
 stack=( -- )
 tags=inner,nosymbol,control
+Increment inner loop index.  If loop index exceeds loop limit,
+then iterate back to (do), otherwise exit the loop.  PETTIL uses
+four bytes of zero page for the inner loop index/limit, for speed
 #endif
 ploop
     inc zi
     bne ploop01
     inc zi+1
 ploop01
-    lda zi+2
+    lda zlim
     eor zi
-    bne branch
-    lda zi+3
+    bne branch          ; iterate
+    lda zlim+1
     eor zi+1
-    bne branch
-    pla
+    bne branch          ; iterate
+ploop02
+    pla                 ; unnest outer loop from return stack
     sta zi
     pla
     sta zi+1
     pla
-    sta zi+2
+    sta zlim
     pla
-    sta zi+3
+    sta zlim+1
     jmp bump
 
 ;--------------------------------------------------------------
@@ -524,6 +525,122 @@ fetchya
     ldy n       ; [3]
     bcs put     ; [3] [36 = 27+9]
     rts
+
+;--------------------------------------------------------------
+#if 0
+name=BURP
+stack=( n -- )
+tags=inner,control
+test pploop
+#endif
+burp
+    lda #2
+    ldy #0
+    jsr push6502
+
+    lda #$ff
+    sta zi+1
+    lda #<(-2)
+    sta zi
+    lda #0
+    sta zlim+1
+    lda #2
+    sta zlim
+    jsr pploop
+    
+    nop
+    nop
+    nop
+
+    lda #3
+    ldy #0
+    jsr push6502
+
+    lda #$ff
+    sta zi+1
+    lda #<(-2)
+    sta zi
+    lda #0
+    sta zlim+1
+    lda #2
+    sta zlim
+    jsr pploop
+
+    nop
+    nop
+    nop
+
+    lda #4
+    ldy #0
+    jsr push6502
+
+    lda #$ff
+    sta zi+1
+    lda #<(-2)
+    sta zi
+    lda #0
+    sta zlim+1
+    lda #2
+    sta zlim
+    jsr pploop
+
+    nop
+    nop
+    nop
+
+    lda #<(-2)
+    ldy #$ff
+    jsr push6502
+
+    lda #0
+    sta zi+1
+    lda #2
+    sta zi
+    lda #$ff
+    sta zlim+1
+    lda #<(-2)
+    sta zlim
+    jsr pploop
+    
+    nop
+    nop
+    nop
+
+    lda #<(-3)
+    ldy #$ff
+    jsr push6502
+
+    lda #0
+    sta zi+1
+    lda #2
+    sta zi
+    lda #$ff
+    sta zlim+1
+    lda #<(-2)
+    sta zlim
+    jsr pploop
+
+    nop
+    nop
+    nop
+
+    lda #<(-4)
+    ldy #$ff
+    jsr push6502
+
+    lda #0
+    sta zi+1
+    lda #2
+    sta zi
+    lda #$ff
+    sta zlim+1
+    lda #<(-2)
+    sta zlim
+    jsr pploop
+    
+    nop
+    nop
+    nop
 
 ;--------------------------------------------------------------
 #if 0
