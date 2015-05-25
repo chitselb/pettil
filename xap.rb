@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userscrpkt pdo01 enter loadbuffers02 _rleminus type02 "
+        bogus = " userscrpkt pdo01 enter loadbuffers02 _rleminus type02 push0a number07 _question mstar dzeq01 _piosetup dtwoslash "
 
 
 
