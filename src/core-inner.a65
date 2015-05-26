@@ -330,6 +330,29 @@ branch01
 
 ;--------------------------------------------------------------
 #if 0
+name=(LOOP)
+stack=( -- )
+tags=inner,nosymbol,control
+Increment inner loop index.  If loop index exceeds loop limit,
+then iterate back to (do), otherwise exit the loop.  PETTIL uses
+four bytes of zero page for the inner loop index/limit, for speed
+#endif
+ploop
+    lsr n               ; sign of step is positive
+    inc zi
+    bne ploop01
+    inc zi+1
+ploop01
+    lda zi
+    eor zlim
+    bne branch
+    lda zi+1
+    eor zlim+1
+    bne branch
+    beq ploop02
+    nop
+;--------------------------------------------------------------
+#if 0
 name=(+LOOP)
 stack=( n -- )
 tags=inner,nosymbol,control
@@ -342,20 +365,20 @@ four bytes of zero page for the inner loop index/limit, for speed
 pploop
     clc
     lda tos
-    sta n
+    sta n               ; sign of step
     adc zi
     sta zi
     lda tos+1
     adc zi+1
     sta zi+1
-    jsr slide
-
+    jsr slide           ; DROP
+pploop01
     clc
     lda zlim
     sbc zi
     lda zlim+1
     sbc zi+1
-    eor n
+    eor n               ; xor with sign of step
     and #$80
     beq branch
 ploop02
@@ -367,22 +390,7 @@ ploop02
     sta zlim
     pla
     sta zlim+1
-    jmp bump
-
-;--------------------------------------------------------------
-#if 0
-name=(LOOP)
-stack=( -- )
-tags=inner,nosymbol,control
-Increment inner loop index.  If loop index exceeds loop limit,
-then iterate back to (do), otherwise exit the loop.  PETTIL uses
-four bytes of zero page for the inner loop index/limit, for speed
-#endif
-ploop
-    lda #1
-    ldy #0
-    jsr push6502
-    jmp pploop
+    jmp bump            ; skip branch offset byte, NEXT
 
 ;--------------------------------------------------------------
 #if 0
@@ -416,18 +424,47 @@ tags=inner,nosymbol,control
 Loops from "begin" to "end"
 #endif
 pdo
-    lda stackh,x
-    sta n+1
-    lda stackl,x
-    sta n                      
+    ldy #1
+    jsr locals
     ldy #3
 pdo01
-    lda zi,y                    ; set up for a loop
+    lda zi,y
     pha
-    lda tos,y                   ; takes advantage of tos being
-    sta zi,y                    ; adjacent to zi area
+    lda tos,y
+    sta zi,y
     dey
-    bpl pdo01                   ; fall through
+    bpl pdo01
+    dex
+    ; fall through
+
+;pdo
+;    ldy #3
+;pdo01
+;    lda zi,y
+;    pha
+;    dey
+;    bpl pdo01
+;    lda stackh,x
+;    sta zi+3
+;    lda stackl,x
+;    sta zi+2
+;    lda tos+1
+;    sta zi+1
+;    lda tos
+;    sta zi
+    
+;    lda stackh,x
+;    sta n+1
+;    lda stackl,x
+;    sta n                      
+;    ldy #3
+;pdo01
+;    lda zi,y                    ; set up for a loop
+;    pha
+;    lda tos,y                   ; takes advantage of tos being
+;    sta zi,y                    ; adjacent to zi area
+;    dey
+;    bpl pdo01                   ; fall through
 ;--------------------------------------------------------------
 #if 0
 name=2DROP

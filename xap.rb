@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userscrpkt _pdot "
+        bogus = " userscrpkt dmin01 _numvmpktstore fail01 rldecode04 twoover01 "
 
 
 
