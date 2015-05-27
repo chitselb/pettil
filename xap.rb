@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userscrpkt pdo01 burp01 expect "
+        bogus = " userscrpkt pdo01 burp01 expect dodnegate pagen rlencode04 _piosetup "
 
 
 

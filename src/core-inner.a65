@@ -353,7 +353,6 @@ PETTIL uses four bytes of [[zero page|PETTIL Zero page memory map]] for the inne
 index/limit (`zi` `zlim`), for speed
 #endif
 ploop
-    lsr n               ; sign of step is positive
     inc zi
     bne ploop01
     inc zi+1
@@ -378,35 +377,31 @@ four bytes of zero page for the inner loop index/limit, for speed
 [[Posted question on comp.lang.forth|https://groups.google.com/d/msg/comp.lang.forth/V9evPkLwRoM/Khwons3O4QwJ]]
 #endif
 pploop
+    sec
+    lda zi
+    sbc zlim
+    sta n
+    lda zi+1
+    sbc zlim+1
+    eor #$80
+    sta n+1
     clc
     lda tos
-    sta n               ; sign of step
+    adc n
+    lda tos+1
+    adc n+1
+    php
+    clc
+    lda tos
     adc zi
     sta zi
     lda tos+1
     adc zi+1
     sta zi+1
-    jsr slide           ; DROP
-pploop01
-    clc
-    lda zlim
-    sbc zi
-    lda zlim+1
-        eor #$80            ; + $8000 (no carry)
-    sbc zi+1
-        php
-        pla
-        rol                 ; C
-        rol                 ; N
-        rol                 ; V
-        asl n
-        rol                 ; N
-        and #$0f
-        ldy #0
-        jmp pushya
+    jsr slide
+    plp
+    bvc branch
 
-    eor n               ; xor with sign of step
-    bpl branch
 ploop02
     pla                 ; unnest outer loop from return stack
     sta zi
@@ -416,7 +411,7 @@ ploop02
     sta zlim
     pla
     sta zlim+1
-    jmp bump            ; skip branch offset byte, NEXT
+    jmp bump
 
 ;--------------------------------------------------------------
 #if 0
