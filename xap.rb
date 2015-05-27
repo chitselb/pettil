@@ -307,7 +307,7 @@ _semi
 
 
 
-        bogus = " userscrpkt dmin01 _numvmpktstore fail01 rldecode04 twoover01 "
+        bogus = " userscrpkt pdo01 burp01 expect "
 
 
 
