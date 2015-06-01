@@ -275,202 +275,6 @@ loglineplus02
 
 ;--------------------------------------------------------------
 #if 0
-name=MKPKT
-stack=( -- blkbuf size )
-tags=editor,nosymbol,nosymbol
-
- Builds an editable packet at `BLKBUF` from the current screen.
- The first three bytes of the packet are the linewrap bits for
- lines 1..24.  This is followed by 1000 screen code bytes,
- RLE-encoded unless storing them occupies less room.  The last
- two bytes of the packet are the packet header, containing the
- 11-bit total packet length, in the range 5..1026, and the
- packet flags
-
- * $8000 = editable?  //true for editor screens, false for data blocks//
-
- * $4000 = uncompressed?
-
-!!! pronounced: "make-packet"
-
-```
-: mkpkt   ( -- blkbuf size )
-    blkbuf 25 wrap^ third 3c! \ retrieve linewrap from screen
-( blkbuf ) 
-    vidram b/scr -trailing    \ squeeze trailing spaces from screen
-( blkbuf vidram vidsize )
-    third 3+ swap rlencode    \ rlencode it
-( blkbuf targend uncompressed? )
-    prev on
-    >r 2dup swap - dup r> or vidram or 2+ rot ! ;
-( blkbuf size )
-```
-#endif
-_mkpkt
-#include "enter.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word clit
-    .byt 25
-#include "pad.i65"
-    .word wrapabove
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word dashtrailing
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word threeplus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rlencode
-#include "page.i65"
-    .word prev
-#include "page.i65"
-    .word on
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=SCR>PKT
-stack=( scr -- )
-tags=editor,nosymbol
-Stores the current screen into the packet buffer as screen `scr`.
-If screen `scr` is read-only, nothing is written to the buffer
-
-pronounced: "s-c-r-to-packet"
-
-```
-: scr>pkt   ( scr -- )
-    screen? @
- ( scr flag )
-    if
- ( scr )
-        >pkt pktsize  mkpkt  vmbuf @  rot 
- ( packet oldsize blkbuf newsize packet oldsize vmbuf true )
-        >6502
-        ldy #4
-        jsr locals
-        brk
-        ld N0
-        sub N2
-        push
-        ld N2
-        push
-        ld N3
-        push
-        add N1
-        sub N2
-        push
-        ld N0
-        sub N1
-        sub N3
-        push
-        rtn
-        jsr toforth
-        vmbuf !  +move  cmove  0
-    then  drop ;
-```
-#endif
-_scrtopkt
-#include "enter.i65"
-    .word _scrpktq
-#include "page.i65"
-    .word qbranch               ; IF
-    .byt <(scrtopkt01-*+1)
-#include "pad.i65"
-    .word _topkt
-#include "page.i65"
-    .word pktsize
-#include "page.i65"
-    .word _mkpkt
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word rot
-#include "page.i65"
-;  ( packet oldsize newsize vmbuf blkbuf )
-    .word to6502
-    ldy #4
-    jsr locals  ; TOS=blkbuf N0=packet N1=oldsize N2=newsize N3=vmbuf
-    brk
-    .byt ld | N0
-    .byt sub | N2
-    .byt push
-    .byt ld | N2
-    .byt push
-    .byt ld | N3
-    .byt push
-    .byt add | N1
-    .byt sub | N2
-    .byt dcr | ACC
-    .byt dcr | ACC
-    .byt push
-    .byt ld | N0
-    .byt sub | N1
-    .byt sub | N3
-    .byt push
-    .byt rtn
-#include "toforth.i65"
-;  ( blkbuf pkttail newsize vmbuf newtail tailsize )
-    .word over
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word _move
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word zero
-#include "page.i65"
-scrtopkt01                      ; THEN
-    .word drop
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=SCRDEL
 stack=( scr -- packet )
 tags=editor,nosymbol
@@ -827,7 +631,7 @@ editnowrap01
     bpl editnowrap01
     inx
     stx uarea+userscrpkt-userarea
-    ldx #$40
+    ldx #$80
     stx uarea+userscrpkt-userarea+1
     ldx storex
     jmp exit
@@ -843,18 +647,16 @@ tags=editor,nosymbol
 
 ```
 : >edit
-     scr @ scr!
-     0 max scr@ ;
+    update 0 max block ;
 
+: >edit
+    scr @ scr!
+    0 max scr@ ;
 ```
 #endif
 _toedit
 #include "enter.i65"
-    .word scr
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _scrtopkt
+    .word _update
 #include "page.i65"
     .word zero
 #include "page.i65"
@@ -862,9 +664,23 @@ _toedit
 #include "page.i65"
     .word _block
 #include "page.i65"
-    .word drop
-#include "page.i65"
     .word exit
+    
+;    .word scr
+;#include "page.i65"
+;    .word fetch
+;#include "page.i65"
+;    .word _scrtopkt
+;#include "page.i65"
+;    .word zero
+;#include "page.i65"
+;    .word _max
+;#include "page.i65"
+;    .word _block
+;#include "page.i65"
+;    .word drop
+;#include "page.i65"
+;    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -873,6 +689,8 @@ stack=( -- )
 tags=editor
 A shortcut to get back into the editor. On the PET keyboard, there is no
 underscore, it's the left-arrow character.
+
+~ turn this into a screen capture
 
 ```
 : _   ( -- )
@@ -960,22 +778,6 @@ _editprevscr
 
 ;--------------------------------------------------------------
 #if 0
-name=EDITUPDATE
-tags=editor,nosymbol
-Copy the current screen to the packet buffer
-#endif
-_editupdate
-#include "enter.i65"
-    .word scr
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _scrtopkt
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=EDITQUIT
 stack=( -- )
 tags=editor,nosymbol
@@ -983,7 +785,7 @@ STOP-Q   Quit the editor
 #endif
 _editquit
 #include "enter.i65"
-    .word _editupdate
+    .word _update
 #include "page.i65"
     .word editing
 #include "page.i65"
@@ -1025,7 +827,7 @@ tags=editor,nosymbol
 #endif
 _editsave
 #include "enter.i65"
-    .word _editupdate
+    .word _update
 #include "page.i65"
     .word _clrscr
 #include "page.i65"
@@ -1273,10 +1075,11 @@ info05
 #if 0
 name=EDITDELSCR
 stack=( -- )
-tags=editor,nosymbol
+tags=editor,nosymbol,unimplemented
 
  delete the current screen.  restore from next, then prev, then blank
 
+~ write this
 #endif
 editdelscr
 #include "enter.i65"
@@ -1291,7 +1094,7 @@ Show the user an info screen
 #endif
 _editinfo
 #include "enter.i65"
-    .word _editupdate
+    .word _update
 #include "page.i65"
     .word _clrscr
 #include "page.i65"
@@ -1309,10 +1112,11 @@ _editinfo
 #if 0
 name=EDITINSSCR
 stack=( -- )
-tags=editor,nosymbol
+tags=editor,nosymbol,unimplemented
 
  insert a new, blank screen
 
+~ write this
 #endif
 editinsscr
 #include "enter.i65"
