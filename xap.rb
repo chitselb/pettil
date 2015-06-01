@@ -401,6 +401,7 @@ _semi
                 "core-double.a65 "\
                 "core-io.a65 "\
                 "core-vm.a65 "\
+                "core-extra.a65 "\
 #                "core-test.a65 "\
                 "sweet16.a65 "
 
