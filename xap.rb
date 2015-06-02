@@ -161,7 +161,7 @@ _semi
         #  at `#endif`, set the code trigger and cancel desc trigger
         # capture code += line if code trigger is set
         def is_code?(line,labelhash)
-            if @to_code
+            if @to_code && line !~ /^#include.*$/
                 if @code.nil?
                     # first line is special, the label
                     @label = line
