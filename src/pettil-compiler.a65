@@ -378,73 +378,28 @@ tags=compiler,nosymbol
 ** compiles page-aligned `JSR cfa` at HERE
 ```
 : (create)   ( cfa -- )
-\ parse input stream to here, and search for name
-     exists? nip
-  ( addr flag )
-     here ?vocab swap          \ append vocid if current != core
-  ( addr here flag )
-     if
-  ( addr here )
-\ is potential duplicate word in the current (not a parent) vocabulary?
-\ otherwise it's not a redefinition, treat it as a new word
-         (vfind) nip
-  ( addr nfa flag )
-         if
-  ( addr nfa )
-             [ RVSON ] cliteral emit
-             dup id. 
-                          
-             redefined !       \ does the trick
-
-             [ RVSOFF ] cliteral emit
-             ."  EXISTS"
-             here              \ leave the address of the name
-        then
-  ( addr here )
-    then
-   ( addr here )
-     symtail @                 \ add the symbol to the symbol table
-   ( addr here symtail )
-     2dup !                    \ new CFA
-   ( addr here symtail )
-     2+ dup newest !           \ set NEWEST
-   ( addr here symtail+2 )
-     over nfalen 1+ 2dup +     \ this phrase also found in SYM+ ~wut?
-   ( addr here symtail+2 len+1 symtail+len+3 )
-     dup symtail ! 3 erase     \ mark new symtail
-   ( addr here symtail+2 len+1 )
-     third bloom# >bit bloom + cbit!     \ add symbol to the bloom filter
-   ( addr here symtail+2 len+1 )
-     cmove
-   ( addr )
-     cfa, ; \ enclose "JSR DOCREATE" in the dictionary
-
-: (create)   ( cfa -- )
-    bl word dup c@
- ( cfa name len )
+    bl word dup c@ 0=
+    if 2drop exit then
+    currvoc c@ (vfind) nip
     if
-        currvoc c@  (vfind) nip
-        if
-            [ RVSON ] cliteral emit
-            dup id. 
-                         
-            redefined !       \ does the trick
-
-            [ RVSOFF ] cliteral emit
-            ."  EXISTS"
-            here              \ leave the address of the name
-        then
-        symtail @  2dup !  2+ dup newest !
-        over nfalen 1+ 2dup +
-        dup symtail !  3 erase
-        third  bloom# >bit bloom + cbit!
-        third under currvoc @  2dup
-        0= $40 and swap cbit!
-        -rot + 1+ c!
-        cmove  cfa,
-    else
-        2drop 
-    then ;
+        [ RVSON ] cliteral emit
+        dup id.
+        redefined !
+        ." [RVSOFF] EXISTS"
+        here
+    then
+    ( cfa here )
+    dup bloom# >bit bloom + cbit!       \ add to bloom filter
+    ( cfa here )
+    symtail @  dup>r  2+ dup newest !   \ set NEWEST
+    ( cfa here symtail+2 ; symtail )
+    over nfalen 1+ 2dup +
+    ( cfa here symtail+2 len+1 len+symtail+3 ; symtail )
+    dup symtail ! 3 erase              \ mark new symtail
+    ( cfa here symtail+2 len+1 ; symtail )
+    cmove cfa,
+    ( cfa ; symtail )
+    here 3- r> ! ;
 ```
 #endif
 #include "align.i65"
@@ -493,26 +448,32 @@ pcreate03
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word clit
-    .byt RVSOFF
-#include "pad.i65"
-    .word emit
-#include "page.i65"
     .word pdq
     .byt pcreate01-*-1
+    .byt RVSOFF
     .asc    " EXISTS "
 pcreate01
 #include "pad.i65"
     .word here
 #include "page.i65"
 pcreate02
+    .word dup
+#include "page.i65"
+    .word bloomhash
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word cbitstore
+#include "page.i65"
     .word symtail
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word store
+    .word duptor
 #include "page.i65"
     .word twoplus
 #include "page.i65"
@@ -542,50 +503,17 @@ pcreate02
 #include "page.i65"
     .word _erase
 #include "page.i65"
-    .word third
-#include "page.i65"
-    .word bloomhash
-#include "page.i65"
-    .word tobit
-#include "page.i65"
-    .word bloom
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word cbitstore
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word under
-#include "page.i65"
-    .word currvoc
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word zne
-#include "page.i65"
-    .word clit
-    .byt $40
-#include "pad.i65"
-    .word andx
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word cbitstore
-#include "page.i65"
-    .word dashrot
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word cstore
-#include "page.i65"
     .word cmove
 #include "page.i65"
     .word _cfacomma
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word threeminus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word store
 #include "page.i65"
     .word exit
 
