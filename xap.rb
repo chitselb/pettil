@@ -103,6 +103,7 @@ _semi
             is_flags? line
             is_tags? line
             is_stack? line
+            is_vocab? line
             is_code? line,labelhash
 
             # this goes last
@@ -153,6 +154,13 @@ _semi
             end
         end
 
+        def is_vocab?(line)
+            if t = line.split(/^vocab=/)[1]
+                @vocab = t
+                @skip = true
+            end
+        end
+        
         # captures desc += line unless code trigger is set or skip is true
         def is_desc?(line)
             @desc += "\n"+line   unless @skip or @to_code
@@ -242,6 +250,7 @@ _semi
         end
 
         def tiddler
+            # ~ add @vocab here
             text = "!!!#{@name}"
             text += ((@stack.nil?) ? "\n\n" : "&nbsp;&nbsp;&nbsp;#{@stack}\n\n")
             text += ((@prevword.nil?) ? '' : "[[<<|#{@prevword}]]&nbsp;")
@@ -260,6 +269,11 @@ _semi
                 return nil
             else
                 length = @name.length
+                if !@vocab.nil?
+                    @name += [@vocab.to_i].pack("C")
+                    length += 1
+                    length |= 0x40
+                end
                 length |= 0x80   if @flags.index("immediate")  unless @flags.nil?
                 # length |= 0x40   if ....  add vocabulary support ~
 
@@ -267,6 +281,7 @@ _semi
                 # - 2 byte address
                 # - 1 byte length|flags
                 # - n byte name
+                # - 1 byte vocid (optional)
                 return [@addr].pack("S<")+[length].pack("C")+@name.bytes.pack("C*")
             end
         end
