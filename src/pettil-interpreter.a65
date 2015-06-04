@@ -145,6 +145,7 @@ tags=nosymbol
 Return the length of the name
 #endif
 nfalen
+    ; ~ just the word length, not including vocabulary byte
     jsr nfalen16a
     jmp put
 
@@ -178,9 +179,9 @@ symbol table entry
 |   name[1]     |  +3      Name field
 |           ... |
 |   name[len]   |
-+~~~~~~~~~~~~~~~+
++---------------+
 ?  vocab ident  ?  +len+3  Vocabulary token (if V bit set)
-+~~~~~~~~~~~~~~~+
++---------------+
 ```
 #endif
 pearsonhash
@@ -190,6 +191,7 @@ pearsonhash
     jmp put
 
 pearsonhash01
+    ; ~ just the word length, not the vocabulary
     jsr nfalen16a           ; A=length; Y=0
     sta r0                  ; seed hash1 with length
     tay                     ; count backwards
@@ -248,6 +250,7 @@ Calculate the bloom filter hash between 0..63.  Use >BIT
 and CBIT! or CBIT@ to do something useful with the result.
 #endif
 bloomhash
+    ; ~ just the word length, not the vocabulary
     jsr nfalen16a               ; A=length; Y=0
     tay
     jsr bloomhash01             ; A=bloom#; Y=0
@@ -286,10 +289,9 @@ nfaplus
     jsr nfaplus01
     jmp next
 nfaplus01                       ; should *never* return Z=true
-    jsr nfalen16a
+    jsr nfalen16a               ; A = word length
     clc
-    bvc nfaplus02
-foo
+    bvc nfaplus02               ; C = 1 if vocid byte present
     sec
 nfaplus02
     adc #3                      ; +cfa +length/flags +vocid
@@ -358,7 +360,7 @@ pseek04
     lda n+4                     ; check modeflag
     beq pseek07                 ; core mode, and we've gone past it
 pseek03
-    jsr nfaplus01
+    jsr nfaplus01               ; ~ check this
     bne pseek01                 ; bra
 
 pseek07
@@ -967,7 +969,7 @@ source
 #if 0
 name=SOURCE!
 stack=( -- )
-tags=vm,interpreter,~wut?,nosymbol
+tags=vm,interpreter,nosymbol
 Sets the input source to TIB, BLK, or SCR
 
 ```
@@ -985,7 +987,7 @@ Sets the input source to TIB, BLK, or SCR
     then
     (source) ! ;
 ```
-todo: something here so that LOAD can restore position on a screen #41
+~ something here so that LOAD can restore position on a screen #41
 #endif
 #include "align.i65"
 _sourcestore
@@ -1118,7 +1120,7 @@ skipscan04
 #if 0
 name='STREAM
 stack=( -- addr size )
-tags=numword,~wut?,nosymbol
+tags=numword,nosymbol
 Calculates SOURCE offset by >IN with respect to buffer size.
 
 ```
@@ -1575,7 +1577,7 @@ _tosyms
 name=PASSBITS
 stack=( -- addr )
 tags=nosymbol,ext,interpreter
-32-bit wide Bloom filter for skipping REHASH passes if there
+32-bit wide Bloom filter for skipping [[REHASH]] passes if there
 are no words of a particular length
 #endif
 passbits
@@ -1588,9 +1590,9 @@ name=AUTOMEM
 stack=( lastpad -- )
 tags=nosymbol,ext
 Automatically move symbol table and vmbuf to someplace that leaves
-~512 bytes for symbol table growth
+at least 512 bytes for symbol table growth
 
-The "lastpad" address points to the null byte at the end of the
+The `lastpad` address points to the null byte at the end of the
 sorted-by-size symbol table copy at pad
 
 ```
@@ -1703,8 +1705,8 @@ automem02
 #if 0
 name=PASSFILTER
 stack=( symbols -- )
-tags=nosymbol
-During the first half of rehash, it is unnecessary to make a
+tags=interpreter
+During the first half of [[REHASH]], it is unnecessary to make a
 pass through the entire symbol table searching for words of a
 given length, if none of that length exist.  This is a
 bloom filter to eliminate those symbol table passes.
@@ -1719,7 +1721,6 @@ bloom filter to eliminate those symbol table passes.
         >bit passbits + cbit!
         nfa+
     repeat drop ;
-
 ```
 #endif
 #include "align.i65"
@@ -1885,9 +1886,16 @@ and moves N0 beyond the copied string
 ** N1 (R3) string length
 * returns
 ** Y = FF
+
+~ fix this to account for (V flag) inside a vocabulary
 #endif
 symcopy16
-    ldy n+2                     ; string length
+foo
+    jsr nfalen16a
+    tay
+    bvc symcopy16a
+    iny                      ; string length
+    inc n+2
 symcopy16a
     lda (tos),y
     sta (n),y
@@ -2012,12 +2020,12 @@ Phase 1 of REHASH
 
 * Make a pass through SYMTAB + SYMNEW, create Bloom filter of sizes
 * For each size 1..31
-* - If it has members, merge SYMTAB + SYMNEW to PAD, ordered by length
-* - tack on three zeroes at the end
-* - Make a pass through PAD at that size
-* - - If active and between CFA..HERE
-* - - - Make a pass through PAD at current size
-* - - - Reawaken youngest ancestor less than CFA (or in TDICT)
+** If it has members, merge SYMTAB + SYMNEW to PAD, ordered by length
+** tack on three zeroes at the end
+** Make a pass through PAD at that size
+*** If active and between CFA..HERE
+**** Make a pass through PAD at current size
+**** Reawaken youngest ancestor less than CFA (or in TDICT)
 * set DP = cfa
 * Return the last symbol at PAD for automatic memory allocation
 
@@ -2090,6 +2098,8 @@ prehash102
     .word ploop
     .byt <(prehash101-*+1)
 #include "pad.i65"
+    .word xyzzy
+#include "page.i65"
     .word nip
 #include "page.i65"
     .word exit
@@ -2186,12 +2196,11 @@ Phase 2 of REHASH
 * bloom 8 erase
 * target = symtab+32
 * For each hashcode 0..15
-* - set symtab+i*2 = target
-* - run all the symbols
-* - - if hashcode matches, and it's alive, append it to target
+** set symtab+i*2 = target
+** run all the symbols
+*** if hashcode matches, and it's alive, append it to target
 * set symnew = symtail = target
 * symnew 3 erase
-
 ```
 : (rehash2)   ( -- )
     symtab @ 32 erase

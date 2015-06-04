@@ -271,7 +271,6 @@ _semi
                 length = @name.length
                 if !@vocab.nil?
                     @name += [@vocab.to_i].pack("C")
-                    length += 1
                     length |= 0x40
                 end
                 length |= 0x80   if @flags.index("immediate")  unless @flags.nil?
