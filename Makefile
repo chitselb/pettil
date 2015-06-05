@@ -1,5 +1,5 @@
-# RUBY = /home/chitselb/.rvm/rubies/ruby-2.1.2/bin/ruby
-RUBY = /home/chitselb/.rbenv/shims/ruby
+RUBY = /home/chitselb/.rvm/rubies/ruby-2.1.2/bin/ruby
+# RUBY = /home/chitselb/.rbenv/shims/ruby
 SHELL = /bin/bash
 
 all:  clean pettil launch tiddlypettil 

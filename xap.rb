@@ -321,7 +321,7 @@ _semi
 
 
 
-        bogus = " userscrpkt mkpkts03 rldecode01 twoover expect02 cold2warm "
+        bogus = " userscrpkt mkpkts03 rldecode01 twoover expect02 cold2warm rldecode02 twodrop fail03 fail02 "
 
 
 
