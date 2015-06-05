@@ -65,6 +65,14 @@ name=PETSCII
 stack=( -- c )
 tags=string,ext
 Converts a quoted character to its numeric value
+
+usage: `PETSCII "X" .` responds `88  OK`
+
+~ doesn't work for quote character ($22)
+~ uses `WORD` so parsing rules are lax.
+word following close-quote is parsed, e.g.
+`PETSCII "X"." FOO" .` result is `FOO88  OK`
+`PETSCII """""""" .
 #endif
 #include "align.i65"
 _petscii
@@ -145,8 +153,7 @@ tags=nosymbol
 Return the length of the name
 #endif
 nfalen
-    ; ~ just the word length, not including vocabulary byte
-    jsr nfalen16a
+    jsr nfalen16a           ; A=length; Y=0
     jmp put
 
 ;--------------------------------------------------------------
@@ -191,7 +198,6 @@ pearsonhash
     jmp put
 
 pearsonhash01
-    ; ~ just the word length, not the vocabulary
     jsr nfalen16a           ; A=length; Y=0
     sta r0                  ; seed hash1 with length
     tay                     ; count backwards
@@ -250,7 +256,6 @@ Calculate the bloom filter hash between 0..63.  Use >BIT
 and CBIT! or CBIT@ to do something useful with the result.
 #endif
 bloomhash
-    ; ~ just the word length, not the vocabulary
     jsr nfalen16a               ; A=length; Y=0
     tay
     jsr bloomhash01             ; A=bloom#; Y=0
@@ -330,17 +335,20 @@ pseek01
     lda n+2
     beq pseek02                 ; searching root?
     bvc pseek03                 ; is this word within a vocabulary?
+    clv                         ; allow this word to be found
     ldy r11
     iny
     eor (tos),y                 ; get vocabulary byte
     bne pseek03                 ; not the right vocabulary? next!
 pseek02
+    bvs pseek03                 ; root search may not find vocabulary member
     lda r11
     cmp n+6                     ; compare lengths
     bne pseek04                 ; same length, compare strings too
     jsr strcomp16a
     ;ldy #0                     ; thank you, strcomp
     bcc pseek03
+
     ; winner!
     inc n+8                     ; assume immediate, set N4 = +1
     lda (tos),y                 ; length and flags
@@ -381,6 +389,8 @@ name=(VFIND)
 stack=( name vocid -- nfa xfa flag )
 tags=nosymbol,primitive
 Trial search within a vocabulary, used by FIND and (CREATE)
+
+~ this code could stand some tightening up, better commenting
 
 ```
 : (vfind)   ( name vocid -- nfa xfa flag )
@@ -497,12 +507,12 @@ may be active within more than one vocabulary.
     dup bloom# >bit bloom + cbit@
     if
         >r  vstack
- ( vstack ) ( R; name )
+ ( vstack ; name )
         begin
             c@+ r@ over 
- ( vptr vocid name vocid ) ( R; name )
+ ( vptr vocid name vocid ; name )
             (vfind)
- ( vptr vocid nfa xfa found? ) ( R; name )
+ ( vptr vocid nfa xfa found? ; name )
             ?dup
             if
                 rdrop 2>r 3drop 2r> exit
@@ -1175,62 +1185,12 @@ tags=interpreter
 See: http://forth.sourceforge.net/std/fst83/fst83-5.htm#input.stream
 
 ```
- fig high level
- : word   ( c -- addr )
-       blk @  if  blk @ block  else  tib @  then
-       >in @ + swap enclose here 34 blank >in +!
-       over - >r r@ here c! + here 1+ r> cmove ;
-
- : word   ( c -- nfa )
-      >r                              ; ( -- ) ( R; c )
-  ( ) ( R; c )
-      'stream
-  ( addr size ) ( R; c )
-      under
-  ( addr addr size ) ( R; c )
-      r@ skip
-  ( addr addr2 count2 ) ( R; c )
-      under
-  ( addr addr2 addr2 count2 ) ( R; c )
-      r> scan
-  ( addr addr2 addr3 count )
-      drop 2dup swap -
-  ( addr addr2 addr3 size )
-      >r
-  ( addr addr2 addr3 ) ( R; size )
-      rot - 1+
-  ( addr2 addr3 size2 ) ( R; size )
-      >in +!
-  ( addr2 addr3 ) ( R; size )
-      r> here
-  ( addr2 addr3 size here )
-      2dup c!
-  ( addr2 addr3 size here )
-      1+ swap cmove
-  ( addr2 )
-      here bl over
-  ( addr2 here bl here )
-      count + c! ;
-  ( addr2 here )
-
-: word   ( char -- addr )
-    >r 'stream
-    under  r@ skip
-    under  r> scan
-    drop
-    2dup swap -  >r
-    rot - 1+ >in +!
-    r> here dup bl blank
-    2dup c!  1+ swap cmove
-    here ;
-
 : word   ( char -- addr )
     >r 'stream
     under r@ skip  under r> scan  drop
     2dup swap -  >r
     rot - 1+ >in +!
-    r> here dup bl blank
-    2dup c!  1+ swap cmove
+    r> here dup bl blank $!
     here ;
 ```
 #endif
