@@ -5,7 +5,7 @@
 #if 0
 name=PASSBITS
 stack=( -- addr )
-tags=nosymbol,ext,interpreter
+tags=ext,interpreter,nosymbol
 32-bit wide Bloom filter for skipping [[REHASH]] passes if there
 are no words of a particular length
 #endif
@@ -17,11 +17,11 @@ passbits
 #if 0
 name=PASSFILTER
 stack=( symbols -- )
-tags=interpreter
-During the first half of [[REHASH]], it is unnecessary to make a
-pass through the entire symbol table searching for words of a
-given length, if none of that length exist.  This is a
-bloom filter to eliminate those symbol table passes.
+tags=interpreter,nosymbol
+During the first half of [[REHASH]], it is unnecessary to make 
+a pass through the entire symbol table searching for names of a
+given length, if none of that length exist.  This is a bloom 
+filter to eliminate extra symbol table passes.
 
 ```
 : passfilter   ( symbols -- )
@@ -189,8 +189,8 @@ descendant16b
 #if 0
 name=symcopy16
 tags=nosymbol
-Copies a string from (n) to (tos) via the Y register.  Copies the 0th byte,
-and moves N0 beyond the copied string
+Copies a string from (tos) to (n0) via the Y register.  
+Copies the 0th byte, and moves N0 beyond the copied string
 
 * inputs
 ** TOS (R1) source base address
@@ -344,7 +344,7 @@ Phase 1 of REHASH
 : (rehash1)   ( -- )
     >syms 2+ pad   over passfilter
     32 1 do
-        i >bit  passbits + cbit@
+        i >bit passbits + cbit@
         if
             under  vmbuf @  i
  ( src src targ vmbuf i )
@@ -880,5 +880,384 @@ _forget
     .word _qerror               ; CAN'T FORGET BELOW FENCE
 #include "page.i65"
     .word _prehash
+#include "page.i65"
+    .word exit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;--------------------------------------------------------------
+#if 0
+name=?SYMCOPY
+tags=forget
+stack=( nfa targ flag -- nfa+ targ+ )
+If the flag is true, copy the symbol to `targ` and move `targ` 
+past the copy. Always does NFA+
+#endif
+qsymcopy
+	brk
+	.byt ld | TOS
+	.byt st | N2			; flag
+	.byt pull
+	.byt st | N0			; targ
+	.byt pull
+	.byt ld | N2			; test flag
+	.byt bz , <qsymcopy01
+	.byt popd | TOS
+	.byt inr | TOS
+	.byt inr | TOS
+	.byt std | N0
+qsymcopy01
+	.byt rtn
+	jsr nfalen16a
+	tay
+	bvc qsymcopy02
+	iny					; vocab byte
+qsymcopy02
+	lda n+4
+	ora n+5
+	sta n+7				; add to targ
+	sty n+6				; length+vocid
+	beq qsymcopy04			; test flag
+	sty n+7
+	inc n+7
+	inc n+7
+qsymcopy03
+	lda (tos),y
+	sta (n),y
+	dey
+	bpl qsymcopy03
+qsymcopy04
+	jsr nfaplus01
+	clc
+	lda n+7
+	adc n
+	ldy n+1
+	bcc qsymcopy05
+	iny
+qsymcopy05
+	jmp pushya
+
+;qsymcopy
+;	ldy #2
+;	jsr locals				; tos = flag; n0 = targ; n1 = nfa
+;	lda tos
+;	ora tos+1
+;	php
+;	lda n+2
+;	sta tos
+;	lda n+3
+;	sta tos+1				; tos <- nfa
+;	jsr nfalen16a
+;	tay
+;	bvc qsymcopy01
+;	iny						; vocab byte
+;qsymcopy01
+;	sty n+2
+;	plp
+;	beq qsymcopy03
+;
+;	jsr tos2minus
+;	iny
+;	iny						; also copy cfa
+;qsymcopy02
+;	lda (tos),y
+;	sta (n),y
+;	dey
+;	bpl qsymcopy02
+;	jsr tos2plus
+;
+;	clc
+;	lda #2
+;	adc n+2
+;	;clc					; A is never > 33
+;	adc n
+;	sta n
+;	bcc qsymcopy03
+;	inc n+1
+;
+;qsymcopy03
+;	clc
+;	lda n+2
+;	adc tos
+;	sta tos
+;	bcc qsymcopy04
+;	inc tos+1
+;qsymcopy04
+;	ldy n+1
+;	lda n
+;	jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=PASS1
+stack=( cfa -- )
+tags=nosymbol,interpreter,ext
+
+```
+: pass1   ( nfa targ nfa targ -- nfa targ+ )
+	begin
+		over nfalen ?dup
+	while
+		i =
+( nfa targ nfa+ targ+ flag )
+		?symcopy
+( nfa targ nfa+ targ+ )
+	repeat
+	nip nip ;
+```
+#endif
+#include "align.i65"
+_pass1
+	jsr enter
+#include "page.i65"
+pass1a
+	.word over
+#include "page.i65"
+	.word nfalen
+#include "page.i65"
+	.word qdup
+#include "page.i65"
+	.word qbranch
+    .byt <(pass1b-*+1)
+#include "pad.i65"
+	.word i
+#include "page.i65"
+	.word eq
+#include "page.i65"
+	.word rot
+#include "page.i65"
+	.word qsymcopy
+#include "page.i65"
+	.word branch
+    .byt <(pass1a-*+1)
+#include "pad.i65"
+pass1b
+	.word nip
+#include "page.i65"
+	.word nip
+#include "page.i65"
+	.word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(FORGET)
+stack=( cfa -- )
+tags=nosymbol,interpreter,ext
+Rebuilds the symbol table at [[SYMTAB]]
+
+!!!Symbol table entry
+|field| size| offset|h
+|cfa| 2| -2|
+|flags+length| 1| `NFA`|
+|name| length| +1|
+|vocid| 1| +length+1|
+* Symbols with identical names are called `twins`
+** CFA is always different
+** `vocid` may be different
+** flags may be different
+* copy all names from [[SYMTAB]] down to [[PAD]]
+** discarding names that have higher address than `cfa` passed to `(REHASH)`
+* at halftime, run [[AUTOMEM]] to resize [[SYMTAB]]
+* [[AUTOMEM]] also moves [[VMBUF]]
+* copy everything from [[PAD]] back up to [[SYMTAB]]
+* At [[COLD]] start
+** there are no twins, so no names are discarded
+** [[SYMTAB]] is completely unsorted
+* When [[REHASH]] is invoked
+** there may be twins, but [[DP]] doesn't move so none are discarded
+* [[COLD]] kicks off a [[REHASH]] (effectively a `FORGET` to `HERE`) to sort everything
+* [[REHASH]] empties [[SYMNEW]]
+* [[SYMTAB]]...[[SYMNEW]]...[[SYMTAIL]] may be treated as a single chain
+* duplicate names are permitted
+* Pearson hash disregards flag bits and vocid byte
+* all duplicate names have same Pearson hash value
+* within a hashed list, twins are to be ordered by descending CFA
+** But any CFA in [[TDICT]] comes last (dups are found last)
+** [[TDICT]] contains code for at most one twin
+* within an unhashed list, only the most recent is unsmudged
+* [[SYMNEW]] (unhashed) is searched first by [[FIND]], then [[FORTH]] (hashed)
+
+```
+: (forget)   ( cfa -- )
+    1- newdp !
+    passbits 4 erase
+	>syms 2+ pad  over
+    begin
+        dup nfalen ?dup
+    while
+        >bit passbits + cbit!
+        nfa+
+    repeat drop
+( nfa targ )
+	32 1 do
+		2dup
+		i >bit passbits + cbit@  
+		?:  pass1 2drop
+	loop  3 erase drop 
+	automem
+    newdp @ 1+ dp ! ;
+```
+#endif
+#include "align.i65"
+_pforget
+	jsr enter
+#include "page.i65"
+	.word oneminus
+#include "page.i65"
+	.word newdp
+#include "page.i65"
+	.word store
+#include "page.i65"
+	.word passbits
+#include "page.i65"
+	.word four
+#include "page.i65"
+	.word _erase
+#include "page.i65"
+	.word _tosyms
+#include "page.i65"
+	.word twoplus
+#include "page.i65"
+	.word _pad
+#include "page.i65"
+	.word over
+#include "page.i65"
+pforget01
+	.word dup
+#include "page.i65"
+	.word nfalen
+#include "page.i65"
+	.word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(pforget02-*+1)
+#include "pad.i65"
+	.word tobit
+#include "page.i65"
+	.word passbits
+#include "page.i65"
+	.word plus
+#include "page.i65"
+	.word cbitstore
+#include "page.i65"
+	.word nfaplus
+#include "page.i65"
+    .word branch
+    .byt <(pforget01-*+1)
+#include "pad.i65"
+pforget02
+	.word drop
+#include "page.i65"
+	.word bl
+#include "page.i65"
+	.word one
+#include "page.i65"
+	.word pdo
+#include "page.i65"
+pforget03
+	.word twodup
+#include "page.i65"
+	.word i
+#include "page.i65"
+	.word tobit
+#include "page.i65"
+	.word passbits
+#include "page.i65"
+	.word plus
+#include "page.i65"
+	.word cbitfetch
+#include "page.i65"
+	.word pquerycolon
+	.word _pass1
+	.word twodrop
+#include "pad.i65"
+    .word ploop
+    .byt <(pforget03-*+1)
+#include "pad.i65"
+	.word xyzzy
+#include "page.i65"
+	.word three
+#include "page.i65"
+	.word _erase
+#include "page.i65"
+	.word drop
+#include "page.i65"
+	.word xyzzy
+#include "page.i65"
+
+
+
+	.word newdp
+#include "page.i65"
+	.word fetch
+#include "page.i65"
+	.word oneplus
+#include "page.i65"
+	.word dp
+#include "page.i65"
+	.word store
+#include "page.i65"
+	.word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NEWF
+stack=( -- )
+tags=interpreter,dictionary,forth-83,forth-79,fig
+checks FENCE, moves DP, sorts symbol table
+
+```
+: forget   ( "name" -- )
+    '  dup  fence @  u<  7 ?error
+    (rehash) ;
+    
+no FORGET
+
+-rw-r--r-- 1 chitselb chitselb 6189 Jun  5 22:07 ./tmp/pettil-core.obj
+-rw-r--r-- 1 chitselb chitselb 4027 Jun  5 22:07 ./tmp/pettil-tdict.obj
+-rw-r--r-- 1 chitselb chitselb 2286 Jun  5 22:07 ./tmp/pettil.sym
+-rw-r--r-- 1 chitselb chitselb 12502 Jun  5 22:07 ./tmp/pettil.obj
+
+
+old FORGET
+
+-rw-r--r-- 1 chitselb chitselb 6189 Jun  5 22:09 ./tmp/pettil-core.obj
+-rw-r--r-- 1 chitselb chitselb 4650 Jun  5 22:09 ./tmp/pettil-tdict.obj
+-rw-r--r-- 1 chitselb chitselb 2407 Jun  5 22:09 ./tmp/pettil.sym
+-rw-r--r-- 1 chitselb chitselb 13246 Jun  5 22:09 ./tmp/pettil.obj
+
+```
+#endif
+#include "align.i65"
+_newf
+    jsr enter
+#include "page.i65"
+    .word _tick
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fence
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word ult
+#include "page.i65"
+    .word clit
+    .byt 7
+#include "pad.i65"
+    .word _qerror               ; CAN'T FORGET BELOW FENCE
+#include "page.i65"
+    .word _pforget
 #include "page.i65"
     .word exit
