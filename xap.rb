@@ -424,6 +424,7 @@ _semi
                 "pettil-user.a65 "\
                 "pettil-interpreter.a65 "\
                 "pettil-compiler.a65 "\
+                "pettil-forget.a65 "\
                 "pettil-editor.a65 "\
                 "pettil-assembler.a65 "
 
