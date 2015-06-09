@@ -418,8 +418,8 @@ _semi
                 "core-io.a65 "\
                 "core-vm.a65 "\
                 "core-extra.a65 "\
-#                "core-test.a65 "\
                 "sweet16.a65 "
+#                "core-test.a65 "\
 
     # Adding new files here?  Also add them to src/pettil-tdict.a65
     transient_files = " pettil-tdict.a65 "\
@@ -430,7 +430,6 @@ _semi
                 "pettil-editor.a65 "\
                 "pettil-assembler.a65 "
 
-    test_files="sweet16.a65"
 
     all_words = Hash.new
     pettil = PettilSource.new core_files+transient_files
