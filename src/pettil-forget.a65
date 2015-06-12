@@ -1023,8 +1023,8 @@ Does all the Sweet16 register setup for a [[PASS1]] symbol
 |nfa+|^R1|^TOS||
 |^targ+|^R2|^N0|pile up output here|
 |^nfa|^R3|^N1|^temp storage used<br>for twin search<br>symcomp16 compares TOS vs N1|
-|name length|^R4|^N2|just the name|
-|^symbol length|^R5|^N3|entire symbol<br>name+vocid|
+|name length|^R4|^N2|length of fraternal twins|
+|^symbol length|^R5|^N3|^length of identical twins<br>name+vocid|
 ||^R6|^N4||
 ||^R7|^N5||
 ||^R8|^N6||
@@ -1094,6 +1094,13 @@ pass1
 pass1a                      ; for each name in symtab...symtail
     .byt sub | ACC
     .byt st | N0            ; turn off twin search
+    .byt ext
+    .word nfalen16
+    .byt bnz , <(pass1b-*-2) ; end of the chain
+    .byt rtn
+    inx
+    inx
+    jmp next
 pass1b
     .byt ext
     .word yin16
@@ -1105,6 +1112,12 @@ pass1b
     .byt ld | N1
     .byt push
 pass1twinfinder
+    .byt ext
+    .word strcomp16             ; is TOS a twin of N1?
+    .byt bc , <(pass1next-*-2)     ; yes, further investigation
+pass1c
+    .byt popd | TOS             ; get CFA
+    
 								; find/copy all identical twins that are
 								; in range
 								; if a twin is active, mark it inactive
@@ -1136,7 +1149,7 @@ pass1twinfinder
     .byt bp , <(pass1b-*-2) ; don't forget things above TDICT
     .byt cpr | N4       ; compare CFA to NEWDP
     .byt bp , <(pass1e-*-2) ; don't forget things below NEWDP
-pass1c
+
 ;    are we done?
     
 pass1d
@@ -1159,6 +1172,20 @@ pass1d
 pass1e
 pass1z
                             ; next!
+pass1next
+    .byt ext
+    .word nfaplus01             ; no, next symbol at TOS
+    .byt ext
+    .word nfalen16
+    .byt bnz , <(pass1twinfinder-*-2)
+    .byt pull
+    .byt st | N1
+    .byt pull
+    .byt ld | N1
+    .byt st | TOS
+    .byt rs
+
+
 	.word over
 #include "page.i65"
 	.word nfalen
