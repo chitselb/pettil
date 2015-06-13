@@ -424,6 +424,7 @@ _semi
     # Adding new files here?  Also add them to src/pettil-tdict.a65
     transient_files = " pettil-tdict.a65 "\
                 "pettil-user.a65 "\
+                "pettil-dictionary.a65 "\
                 "pettil-interpreter.a65 "\
                 "pettil-compiler.a65 "\
                 "pettil-forget.a65 "\

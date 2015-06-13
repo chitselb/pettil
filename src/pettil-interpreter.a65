@@ -44,6 +44,39 @@ msg11
 
 ;--------------------------------------------------------------
 #if 0
+name=strcomp16
+tags=nosymbol
+compares two strings that are already known to be the same length.
+ C flag set if the strings match, otherwise clear
+
+* inputs
+** TOS (R1) = current NFA in the symbol table (initially the first NFA)
+** N0 (R2) = addr of a string we are comparing to
+** N3 (R4) = length of both strings
+* returns
+** C = true iff the strings match
+
+#endif
+strcomp16
+    jsr strcomp16a
+    rol R14H
+    rts
+
+strcomp16a
+    clc                         ; assume fail
+    ldy 2*N3                    ; the length
+strcomp16b
+    lda (2*N0),y
+    eor (2*TOS),y
+    bne strcomp16c              ; different? outtie fail
+    dey
+    bne strcomp16b              ; C flag is set on successful strcmp
+    sec                         ; success!
+strcomp16c
+    rts
+
+;--------------------------------------------------------------
+#if 0
 name=BLOOM
 stack=( -- addr )
 tags=nosymbol,ext
@@ -145,6 +178,21 @@ _definitions
 #include "page.i65"
     .word exit
 
+
+nfalen16a                       ; used by several Forth primitives
+    ldy #0
+    lda (tos),y
+nfalen16b
+    sta r11
+    asl
+    asl
+    asl                         ; set carry flag if smudge bit
+    lda r11
+    and #$1f                    ; return length in A
+    bit r11                   ; set V flag = Vocabulary bit
+    sta r11
+    rts
+
 ;--------------------------------------------------------------
 #if 0
 name=NFALEN
@@ -153,7 +201,8 @@ tags=nosymbol
 Return the length of the name
 #endif
 nfalen
-    jsr nfalen16a           ; A=length; Y=0
+    jsr nfalen01           ; A=length; Y=0
+    ldy #0
     jmp put
 
 ;--------------------------------------------------------------
@@ -164,7 +213,7 @@ tags=nosymbol,ext
 input is NFA or address of a counted string
 pearsonhash is the thread index (0..f)
 
-the pearson hash should return an evenly distributed
+the Pearson hash should return an evenly distributed
 value between $00-$0f based on the wordset in the
 core dictionary.  In other words, all 16 threads
 are initially balanced with the same number of words,
@@ -198,7 +247,7 @@ pearsonhash
     jmp put
 
 pearsonhash01
-    jsr nfalen16a           ; A=length; Y=0
+    jsr nfalen01            ; A=length
     sta r0                  ; seed hash1 with length
     tay                     ; count backwards
 pearsonhash02
@@ -218,25 +267,6 @@ pearsonhash02
     and #$0f                ; - - - - [4bit hash]
     rts
 
-;--------------------------------------------------------------
-#if 0
-name=pearsonhash16
-tags=interpreter,nosymbol
-Sweet16 wrapper around Pearson hash function
-
-* inputs
-** ACC (R0) length
-** TOS (R1) NFA
-* returns
-** ACC (R0) Pearson hash hexdigit
-#endif
-pearsonhash16
-    ldy r0
-    jsr pearsonhash02
-    sty r0+1
-    sta r0
-    rts
-    
 ;--------------------------------------------------------------
 #if 0
 name=BLOOM#
