@@ -1,0 +1,507 @@
+;pettil-newdict.a65
+
+
+nfalen16a
+    ldy #0
+    lda (tos),y
+    tay
+    asl
+    asl
+    tya
+    and #$1f
+    rts
+
+
+
+;--------------------------------------------------------------
+unsmudge
+    clc
+    .byt $29    ; AND #
+;--------------------------------------------------------------
+smudge
+    sec
+    php
+    ldy #0
+    lda (tos),y
+    asl
+    plp
+    ror
+    sta (tos),y
+    jmp drop
+
+
+
+```
+symbol table entry
++---------------+
+|    CFA[low]   |  -2      Code field address
+|    CFA[high]  |
++-+-+-+-+-+-+-+-+
+[S]             |  NFA     Smudge bit
+| [V]           |          Vocabulary bit
+|   [I]         |          Immediate bit
+|     [   len   ]          Length field
++-+-+-+-+-+-+-+-+
+|   name[1]     |  +1      Name field
+|           ... |
+|   name[len]   |  +len
++---------------+
+?  vocab ident  ?  +len+1  Vocabulary token (if V bit set)
++---------------+
+```
+
+: find ( name -- xfa flag )
+    dup bloom# >bit bloom + cbit@
+    if
+        >r  vstack
+ ( vstack ; name )
+        begin
+            c@+ r@ over 
+ ( vptr vocid name vocid ; name )
+            (vfind)
+ ( vptr vocid nfa xfa found? ; name )
+            ?dup
+            if
+                rdrop 2>r 3drop 2r> exit
+            then
+            2drop 0=
+        until
+        drop r>
+    then 
+    false ;
+
+;--------------------------------------------------------------
+#if 0
+name=nfalen16
+tags=nosymbol
+!!!Subroutine
+Sweet16 wrapper around nfalen16a subroutine
+Get name field length, ignoring flag bits
+
+;--------------------------------------------------------------
+Smudge
+ Vocabulary
+  Immediate
+  
+nfalen16a
+    ldy #0
+    lda (tos),y
+    tay
+    asl
+    asl
+    tya
+    and #$1f
+    rts
+
+
+
+;--------------------------------------------------------------
+unsmudge
+    clc
+    .byt $29    ; AND #
+;--------------------------------------------------------------
+smudge
+    sec
+    php
+    ldy #0
+    lda (tos),y
+    asl
+    plp
+    ror
+    sta (tos),y
+    jmp drop
+
+
+;--------------------------------------------------------------
+|TOS|Pointer to $|
+|N0|Pointer to $|
+|A|length of $|
+|C|Vocabulary bit|
+|outputs:|<|
+|Z|match?|
+|C|0|
+|Y|Offset where match failed; 0 if success|
+
+strcmp16z
+    jsr nfalen16a
+    adc #0
+strcmp16y
+    tay
+    lda (tos),y
+    eor (n),y
+    bne strcomp16c
+    dey
+    bne strcomp16b
+strcomp16c
+    rts
+
+    
+sets C flag if smudged
+
+* inputs
+** TOS = NFA pointer
+* returns
+** ACC = length of NFA
+** C = smudge bit
+** V = vocabulary bit
+** R11L = length (copy of A)
+** Y = 0
+
+#endif
+nfalen16
+    jsr nfalen16a
+    rol R14H
+    sty R0H
+    sta R0L
+    sty R14L                    ; should be able to test length=0 without touching ACC first
+    rts
+
+nfalen16a                       ; used by several Forth primitives
+    ldy #0
+    lda (2*TOS),y
+    sta 2*R11
+    asl
+    asl
+    asl                         ; set carry flag if smudge bit
+    lda 2*R11
+    and #$1f                    ; return length in A
+    bit 2*R11                   ; set V flag = Vocabulary bit
+    sta 2*R11
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=strcomp16
+tags=nosymbol
+compares two strings that are already known to be the same length.
+ C flag set if the strings match, otherwise clear
+
+* inputs
+** TOS (R1) = current NFA in the symbol table (initially the first NFA)
+** N0 (R2) = addr of a string we are comparing to
+** N3 (R4) = length of both strings
+* returns
+** C = true iff the strings match
+
+#endif
+strcomp16
+    jsr strcomp16a
+    rol R14H
+    rts
+
+strcomp16a
+    clc                         ; assume fail
+    ldy 2*N3                    ; the length
+strcomp16b
+    lda (2*N0),y
+    eor (2*TOS),y
+    bne strcomp16c              ; different? outtie fail
+    dey
+    bne strcomp16b              ; C flag is set on successful strcmp
+    sec                         ; success!
+strcomp16c
+    rts
+
+
+;--------------------------------------------------------------
+#if 0
+name=NFA+
+stack=( nfa -- nfa+ )
+tags=interpreter,ext,primitive,nosymbol
+Chain to the next NFA on the list
+#endif
+nfaplus
+    jsr nfaplus01
+    jmp next
+nfaplus01                       ; should *never* return Z=true
+    jsr nfalen16a               ; A = word length
+    adc #3                      ; +cfa +length/flags +vocid
+    ;clc                        ; A never exceeds 34
+    adc tos
+    sta tos
+    bcc nfaplus03
+    inc tos+1
+nfaplus03
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=(SEEK)
+stack=( searchname vocid modeflag startnfa -- nfa xfa flag )
+tags=interpreter,nosymbol,primitive
+
+!!!mode flag
+
+* TRUE -- list is unsorted (SYMNEW)
+* FALSE -- list is sorted (SYMTAB)
+#endif
+pseek
+    ldy #3
+    jsr locals                  ; TOS = startnfa; N0 = searchname; N1 = vocid; N2 = modeflag
+    ;ldy #0
+    sty n+8                     ; N4 = result flag
+    sty n+9
+    lda (n),y
+    and #$1f
+    sta n+6                     ; N3 = length we seek
+pseek01
+    jsr nfalen16a
+    ;ldy #0
+    beq pseek07                 ; end of list? exit with NFA FALSE
+    bcs pseek03                 ; smudged? not findable. next!
+    lda n+2
+    beq pseek02                 ; searching root?
+    bvc pseek03                 ; is this word within a vocabulary?
+    clv                         ; allow this word to be found
+    ldy r11
+    iny
+    eor (tos),y                 ; get vocabulary byte
+    bne pseek03                 ; not the right vocabulary? next!
+pseek02
+    bvs pseek03                 ; root search may not find vocabulary member
+    lda r11
+    cmp n+6                     ; compare lengths
+    bne pseek04                 ; same length, compare strings too
+    jsr strcomp16a
+    ;ldy #0                     ; thank you, strcomp
+    bcc pseek03
+
+    ; winner!
+    inc n+8                     ; assume immediate, set N4 = +1
+    lda (tos),y                 ; length and flags
+    bmi pseek06                 ; immediate?
+    dey
+    sty n+8
+    sty n+9                     ; normal, set N4 = -1
+pseek06
+    brk
+    .byt ld | TOS
+    .byt push                   ; push the NFA
+    .byt popd | TOS             ; get the CFA
+    .byt br , <(pseek08-*-2)
+
+pseek04
+    bcc pseek03                 ; shorter length? next!
+    lda n+4                     ; check modeflag
+    beq pseek07                 ; core mode, and we've gone past it
+pseek03
+    jsr nfaplus01               ; ~ check this
+    bne pseek01                 ; bra
+
+pseek07
+    ; loser...
+    brk
+    .byt ld | N0                ; get the original name
+    .byt st | TOS
+    .byt push                   ; push the name address twice
+pseek08
+    .byt st | TOS               ; CFA or original NAME
+    .byt ld | N4                ; status flag
+    .byt push
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=(VFIND)
+stack=( name vocid -- nfa xfa flag )
+tags=nosymbol,primitive
+Trial search within a vocabulary, used by FIND and (CREATE)
+
+~ this code could stand some tightening up, better commenting
+
+```
+: (vfind)   ( name vocid -- nfa xfa flag )
+    2dup 2>r  true symnew @ 2+ (seek)
+    ?dup 0=
+    if
+( name name )
+        2drop 2r@ false third pearson# 2* symtab @ + @ 2+ (seek)
+    then
+    rdrop rdrop ;
+```
+#endif
+#include "align.i65"
+_pvfind
+    jsr enter
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word twotor
+#include "page.i65"
+    .word true
+#include "page.i65"
+    .word symnew
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word pseek
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word qbranch
+    .byt <(pvfind01-*+1)
+#include "pad.i65"
+    .word twodrop
+#include "page.i65"
+    .word tworfetch
+#include "page.i65"
+    .word false
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word pearsonhash
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word pseek
+#include "page.i65"
+pvfind01
+    .word rdrop
+#include "page.i65"
+    .word rdrop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=FIND
+stack=( addr1 -- addr2 flag )
+tags=interpreter,forth-83,nosymbol
+addr1 is the address of a counted string, which is the word to look
+up in the dictionary.
+
+if not found, addr2 is the original addr1, and flag = 0
+if found, addr2 is the code field address of the word,
+and flag = -1 for normal words, +1 for immediate words
+
+! outer interpreter
+
+name is the address of a counted string we are searching for.
+fflag is the find mode.  False means NFAs are sorted, True means check them all
+nfa is the first nfa in the hash list
+
+vocid identifies which vocabulary to search.  Vocabularies may be
+nested.  FIND walks up the CONTEXT tree and leaves a set of hashed
+NFAs (with the vocid appended to the name before hashing) on the stack.
+The final vocabulary searched will be core, and (FIND) will exit afterward.
+
+  0 = corelist
+
+  1 = assembler
+
+  2+ = vocabularies added by the user
+
+(FIND) first searches all unsorted names beginning at SYMTAIL, without regard 
+to name length.  If it fails to find the word there,
+it tries the hash list, which is sorted in ascending size
+order.  Vocabularies are searched first, beginning with CONTEXT and chaining
+up until core (0) is reached.  The vocid is appended to the word when
+searching that vocabulary.  Only one symbol within a vocabulary may be
+active (unsmudged) at a time.  Smudged words are ignored.  The same symbol
+may be active within more than one vocabulary.
+
+ returns
+       ( cfa -1 ) found normal word
+       ( cfa 1 ) found immediate word
+       ( name 0 ) not in dictionary
+
+```
+: find ( name -- xfa flag )
+    dup bloom# >bit bloom + cbit@
+    if
+        >r  vstack
+ ( vstack ; name )
+        begin
+            c@+ r@ over 
+ ( vptr vocid name vocid ; name )
+            (vfind)
+ ( vptr vocid nfa xfa found? ; name )
+            ?dup
+            if
+                rdrop 2>r 3drop 2r> exit
+            then
+            2drop 0=
+        until
+        drop r>
+    then 
+    false ;
+```
+#endif
+#include "align.i65"
+_find
+    jsr enter
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word bloomhash
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word cbitfetch
+#include "page.i65"
+    .word qbranch
+    .byt <(find04-*+1)
+#include "pad.i65"
+    .word tor
+#include "page.i65"
+    .word vstack
+#include "page.i65"
+find01
+    .word cfetchplus
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _pvfind
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(find03-*+1)
+#include "pad.i65"
+    .word rdrop
+#include "page.i65"
+    .word twotor
+#include "page.i65"
+    .word threedrop
+#include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word exit
+#include "page.i65"
+find03
+    .word twodrop
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word qbranch
+    .byt <(find01-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+find04
+    .word false
+#include "page.i65"
+    .word exit
+
