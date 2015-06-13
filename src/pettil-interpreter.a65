@@ -44,39 +44,6 @@ msg11
 
 ;--------------------------------------------------------------
 #if 0
-name=strcomp16
-tags=nosymbol
-compares two strings that are already known to be the same length.
- C flag set if the strings match, otherwise clear
-
-* inputs
-** TOS (R1) = current NFA in the symbol table (initially the first NFA)
-** N0 (R2) = addr of a string we are comparing to
-** N3 (R4) = length of both strings
-* returns
-** C = true iff the strings match
-
-#endif
-strcomp16
-    jsr strcomp16a
-    rol R14H
-    rts
-
-strcomp16a
-    clc                         ; assume fail
-    ldy 2*N3                    ; the length
-strcomp16b
-    lda (2*N0),y
-    eor (2*TOS),y
-    bne strcomp16c              ; different? outtie fail
-    dey
-    bne strcomp16b              ; C flag is set on successful strcmp
-    sec                         ; success!
-strcomp16c
-    rts
-
-;--------------------------------------------------------------
-#if 0
 name=BLOOM
 stack=( -- addr )
 tags=nosymbol,ext
@@ -195,18 +162,6 @@ nfalen16b
 
 ;--------------------------------------------------------------
 #if 0
-name=NFALEN
-stack=( nfa -- length )
-tags=nosymbol
-Return the length of the name
-#endif
-nfalen
-    jsr nfalen01           ; A=length; Y=0
-    ldy #0
-    jmp put
-
-;--------------------------------------------------------------
-#if 0
 name=PEARSON#
 stack=( nfa -- pearsonhash )
 tags=nosymbol,ext
@@ -312,106 +267,6 @@ bloomhash03
     bne bloomhash02
     lda r0
     rts
-
-;--------------------------------------------------------------
-#if 0
-name=NFA+
-stack=( nfa -- nfa+ )
-tags=interpreter,ext,primitive,nosymbol
-Chain to the next NFA on the list
-#endif
-nfaplus
-    jsr nfaplus01
-    jmp next
-nfaplus01                       ; should *never* return Z=true
-    jsr nfalen16a               ; A = word length
-    clc
-    bvc nfaplus02               ; C = 1 if vocid byte present
-    sec
-nfaplus02
-    adc #3                      ; +cfa +length/flags +vocid
-    adc tos
-    sta tos
-    bcc nfaplus03
-    inc tos+1
-nfaplus03
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=(SEEK)
-stack=( searchname vocid modeflag startnfa -- nfa xfa flag )
-tags=interpreter,nosymbol,primitive
-
-!!!mode flag
-
-* TRUE -- list is unsorted (SYMNEW)
-* FALSE -- list is sorted (SYMTAB)
-#endif
-pseek
-    ldy #3
-    jsr locals                  ; TOS = startnfa; N0 = searchname; N1 = vocid; N2 = modeflag
-    ;ldy #0
-    sty n+8                     ; N4 = result flag
-    sty n+9
-    lda (n),y
-    and #$1f
-    sta n+6                     ; N3 = length we seek
-pseek01
-    jsr nfalen16a
-    ;ldy #0
-    beq pseek07                 ; end of list? exit with NFA FALSE
-    bcs pseek03                 ; smudged? not findable. next!
-    lda n+2
-    beq pseek02                 ; searching root?
-    bvc pseek03                 ; is this word within a vocabulary?
-    clv                         ; allow this word to be found
-    ldy r11
-    iny
-    eor (tos),y                 ; get vocabulary byte
-    bne pseek03                 ; not the right vocabulary? next!
-pseek02
-    bvs pseek03                 ; root search may not find vocabulary member
-    lda r11
-    cmp n+6                     ; compare lengths
-    bne pseek04                 ; same length, compare strings too
-    jsr strcomp16a
-    ;ldy #0                     ; thank you, strcomp
-    bcc pseek03
-
-    ; winner!
-    inc n+8                     ; assume immediate, set N4 = +1
-    lda (tos),y                 ; length and flags
-    bmi pseek06                 ; immediate?
-    dey
-    sty n+8
-    sty n+9                     ; normal, set N4 = -1
-pseek06
-    brk
-    .byt ld | TOS
-    .byt push                   ; push the NFA
-    .byt popd | TOS             ; get the CFA
-    .byt br , <(pseek08-*-2)
-
-pseek04
-    bcc pseek03                 ; shorter length? next!
-    lda n+4                     ; check modeflag
-    beq pseek07                 ; core mode, and we've gone past it
-pseek03
-    jsr nfaplus01               ; ~ check this
-    bne pseek01                 ; bra
-
-pseek07
-    ; loser...
-    brk
-    .byt ld | N0                ; get the original name
-    .byt st | TOS
-    .byt push                   ; push the name address twice
-pseek08
-    .byt st | TOS               ; CFA or original NAME
-    .byt ld | N4                ; status flag
-    .byt push
-    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0

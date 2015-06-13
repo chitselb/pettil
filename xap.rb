@@ -264,6 +264,9 @@ _semi
                     "\"tags\":#{@tags.to_json}\},\n"
         end
 
+		# 0x80 = Smudge bit
+		# 0x40 = Vocabulary bit
+		# 0x20 = Immediate bit
         def symbol_table_entry
             if @addr.nil?
                 return nil
@@ -273,7 +276,7 @@ _semi
                     @name += [@vocab.to_i].pack("C")
                     length |= 0x40
                 end
-                length |= 0x80   if @flags.index("immediate")  unless @flags.nil?
+                length |= 0x20   if @flags.index("immediate")  unless @flags.nil?
                 # length |= 0x40   if ....  add vocabulary support ~
 
                 # a String,

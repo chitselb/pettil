@@ -3,20 +3,105 @@
 
 ;--------------------------------------------------------------
 #if 0
+name=NFALEN
+stack=( nfa -- length )
+tags=nosymbol
+Return the length of the name
+#endif
+nfalen
+    jsr nfalen01           ; A=length; Y=0
+    ldy #0
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
 name=nfalen01
+stack=( nfa -- nfa )
 tags=dictionary,nosymbol
 !!! Subroutine
+Get the length of the symbol at TOS
 
+|<b>inputs</b>|<|
+|<b>TOS</b>|NFA|
+|<b>returns</b>|<|
+|<b>TOS</b>|unchanged|
+|<b>A</b>|name length (without vocabid)|
+|<b>Y</b>|symbol flag/length byte|
+|^<b>Z</b>|<b>0</b> not last<br/><b>1</b> last|
+|^<b>C</b>|<b>0</b> Forth<br/><b>1</b> Vocabulary|
 #endif
 nfalen01
     ldy #0
     lda (tos),y
     tay
     asl
-    asl
+    asl					; C = Vocab bit
     tya
     and #$1f
     rts
+
+;--------------------------------------------------------------
+#if 0
+name=NFA+
+stack=( nfa -- nfa+ )
+tags=interpreter,ext,primitive,nosymbol
+Chain to the next NFA on the list
+#endif
+nfaplus
+    jsr nfaplus01
+    jmp next
+    
+;--------------------------------------------------------------
+#if 0
+name=nfaplus01
+stack=( nfa -- nfa+ )
+tags=dictionary,nosymbol
+!!! Subroutine
+Chain to the next NFA on the list
+
+|<b>inputs</b>|<|
+|<b>TOS</b>|NFA|
+|<b>returns</b>|<|
+|<b>TOS</b>|next NFA|
+|<b>Z</b>|<b>always 0</b>
+#endif
+nfaplus01
+    jsr nfalen01
+    adc #3		                ; +cfa +length/flags +vocid
+	;clc
+    adc tos
+    sta tos
+    bcc nfaplus02
+    inc tos+1
+nfaplus02
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=strcomp
+tags=nosymbol
+Compares two strings known to be the same length pointed to by
+`TOS` and `N0`.
+
+|<b>inputs</b>|<|
+|<b>TOS</b>|NFA in chain|
+|<b>N0</b>|NFA being sought|
+|<b>Y</b>|length|
+|<b>returns</b>|<|
+|<b>TOS</b>|unchanged|
+|<b>N0</b>|unchanged|
+|^<b>Y</b>|index of mismatch<br>0=success|
+|<b>Z</b>|strings match?|
+|<b>C</b>|unchanged|
+#endif
+strcomp
+	lda (tos),y
+	eor (n),y
+	bne strcomp02
+	dey
+	bne strcomp
+strcomp02
+	rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -30,6 +115,186 @@ Copies the 0th byte, and moves N0 beyond the copied string
 #endif
 symcopy
 	rts
+
+;--------------------------------------------------------------
+#if 0
+name=UNSMUDGE
+stack=( nfa -- )
+tags=compiler
+Turn off the smudge bit so it won't be found by [[FIND]].  In
+PETTIL, the smudge bit does double duty, also deactivating any
+words that have been [[REDEFINED]].
+
+```
+symbol table entry
++---------------+
+|   CFA[low]    |  -2      Code field address
+|   CFA[high]   |
++-+-+-+-+-+-+-+-+
+[S]             |  NFA     Smudge bit
+| [V]           |          Vocabulary bit
+|   [I]         |          Immediate bit
+|     [   len   ]          Length field
++-+-+-+-+-+-+-+-+
+|   name[1]     |  +1      Name field
+|           ... |
+|   name[len]   |  +len
++---------------+
+?   vocabid     ?  +len+1  Vocabulary token (if Vocab bit set)
++---------------+
+```
+#endif
+unsmudge
+    clc
+    .byt $29            ; AND #
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=SMUDGE
+stack=( nfa -- )
+tags=compiler
+
+ Turn on the smudge bit.  Smudged names won't be found by FIND.
+ In PETTIL, the smudge bit does double duty, also marking as
+ inactive any names that have been [[REDEFINED]].
+
+#endif
+smudge
+    sec
+    php
+    ldy #0
+    lda (tos),y
+    asl
+    plp
+    ror
+    sta (tos),y
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=(SEEK)
+stack=( searchname vocid modeflag startnfa -- nfa xfa flag )
+tags=interpreter,nosymbol,primitive
+
+!!!mode flag
+
+* TRUE -- list is unsorted (SYMNEW)
+* FALSE -- list is sorted (SYMTAB)
+#endif
+pseek
+    ldy #3
+    jsr locals                  ; TOS = startnfa; N0 = searchname; N1 = vocid; N2 = modeflag
+    ;ldy #0						; thanks, locals
+    sty n+8                     ; N4 = result flag
+    sty n+9
+    lda (n),y
+    sta n+6						; N3 = length of sought name
+pseek01
+    jsr nfalen01
+    beq pseek07                 ; end of list? exit with NFA FALSE
+    eor n+6						; check lengths, preserving C flag
+	bne pseek03					; different length? next!
+    tya							; check smudge bit
+    bmi pseek04					; smudged? next!
+	and #bit5					; mask off immediate bit
+    sta n+3						; save it for later
+	lda n+2						; check vocabulary
+    beq pseek02					; are we looking in Forth?
+								; we are seeking in this vocabulary
+    bcc pseek04					; this word is in Forth? next!
+    ldy n+6
+	iny
+	eor (tos),y					; compare vocabid
+	bne	pseek04					; vocabid doesn't match?  next!
+pseek02
+	ldy n+6
+	jsr strcomp					; compare names
+	bne pseek04					; names don't match? next!
+    ; winner!
+	;ldy #0						; thanks, strcomp
+
+;pseek02    
+	dey
+	tya							; YA = -1
+	bit n+3
+	beq out
+	iny
+	lda #1
+out
+	jsr put6502
+
+	dey			; Y=-1
+	and #bit5					; check immediate bit
+	beq pseek06
+	tay
+	iny
+
+pseek03
+    bit n+4						; sorted or unsorted?
+    bne pseek04					; unsorted. next!
+    eor n+6
+    cmp n+6
+pseek04
+    jsr nfaplus01               ; ~ check this
+    bne pseek01                 ; bra
+    
+pseek06
+	tya
+    brk
+    .byt ld | TOS
+    .byt push                   ; push the NFA
+    .byt popd | TOS             ; get the CFA
+    .byt br , <(pseek08-*-2)
+
+ 
+    lda n+2						; which vocabulary are we looking in?
+    beq pseek02                 ; searching root?
+    bvc pseek03                 ; is this word within a vocabulary?
+    clv                         ; allow this word to be found
+    ldy r11
+    iny
+    eor (tos),y                 ; get vocabulary byte
+    bne pseek03                 ; not the right vocabulary? next!
+
+;pseek02
+    bvs pseek03                 ; root search may not find vocabulary member
+    lda r11
+    cmp n+6                     ; compare lengths
+    bne pseek04                 ; same length, compare strings too
+    jsr strcomp
+    bne pseek03
+    ;ldy #0                     ; thank you, strcomp
+
+    ; winner!
+    inc n+8                     ; assume immediate, set N4 = +1
+    lda (tos),y                 ; length and flags
+    bmi pseek06                 ; immediate?
+    dey
+    sty n+8
+    sty n+9                     ; normal, set N4 = -1
+pseek06b
+    brk
+    .byt ld | TOS
+    .byt push                   ; push the NFA
+    .byt popd | TOS             ; get the CFA
+    .byt br , <(pseek08-*-2)
+
+pseek04b
+    bcc pseek03                 ; shorter length? next!
+    lda n+4                     ; check modeflag
+    beq pseek07                 ; core mode, and we've gone past it
+
+pseek07
+    ; loser...
+    brk
+    .byt ld | N0                ; get the original name
+    .byt st | TOS
+    .byt push                   ; push the name address twice
+pseek08
+    .byt st | TOS               ; CFA or original NAME
+    .byt ld | N4                ; status flag
+    .byt push
+    .byt nxt
 
 ;                  --------------------------------------------
 ;                  --------------------------------------------
