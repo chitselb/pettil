@@ -35,7 +35,7 @@ nfalen01
     lda (tos),y
     tay
     asl
-    asl					; C = Vocab bit
+    asl                 ; C = Vocab bit
     tya
     and #$1f
     rts
@@ -63,12 +63,12 @@ Chain to the next NFA on the list
 |<b>TOS</b>|NFA|
 |<b>returns</b>|<|
 |<b>TOS</b>|next NFA|
-|<b>Z</b>|<b>always 0</b>
+|<b>Z</b>|always <b>0</b>|
 #endif
 nfaplus01
     jsr nfalen01
-    adc #3		                ; +cfa +length/flags +vocid
-	;clc
+    adc #3              ; +cfa +length/flags +vocid
+    ;clc
     adc tos
     sta tos
     bcc nfaplus02
@@ -95,13 +95,13 @@ Compares two strings known to be the same length pointed to by
 |<b>C</b>|unchanged|
 #endif
 strcomp
-	lda (tos),y
-	eor (n),y
-	bne strcomp02
-	dey
-	bne strcomp
+    lda (tos),y
+    eor (n),y
+    bne strcomp02
+    dey
+    bne strcomp
 strcomp02
-	rts
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -114,7 +114,7 @@ Copies the 0th byte, and moves N0 beyond the copied string
 
 #endif
 symcopy
-	rts
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -183,71 +183,94 @@ tags=interpreter,nosymbol,primitive
 #endif
 pseek
     ldy #3
-    jsr locals                  ; TOS = startnfa; N0 = searchname; N1 = vocid; N2 = modeflag
-    ;ldy #0						; thanks, locals
-    sty n+8                     ; N4 = result flag
-    sty n+9
-    lda (n),y
-    sta n+6						; N3 = length of sought name
+    jsr locals                  ; TOS = startnfa; N0 = searchname; 
+                                ; N1 = vocid; N2 = modeflag
+    brk
+    .byt ldi | N0               ; R0 = length of searchname
+    .byt dcr | N0
+    .byt rtn
 pseek01
     jsr nfalen01
-    beq pseek07                 ; end of list? exit with NFA FALSE
-    eor n+6						; check lengths, preserving C flag
-	bne pseek03					; different length? next!
-    tya							; check smudge bit
-    bmi pseek04					; smudged? next!
-	and #bit5					; mask off immediate bit
-    sta n+3						; save it for later
-	lda n+2						; check vocabulary
-    beq pseek02					; are we looking in Forth?
-								; we are seeking in this vocabulary
-    bcc pseek04					; this word is in Forth? next!
-    ldy n+6
-	iny
-	eor (tos),y					; compare vocabid
-	bne	pseek04					; vocabid doesn't match?  next!
+    beq pseek07                 ; end of list? exit with searchname/false
+    eor r0                      ; check lengths, preserving C flag
+    beq pseek20                 ; same length? proceed
+    bit n+4                     ; sorted or unsorted?
+    bmi pseek04                 ; unsorted. next!
+    eor r0                      ; restore length
+    cmp r0                      ; end of sorted list?
+    bcc pseek07                 ; went past it? exit with searchname/false
+pseek20
+    tya                         ; check smudge bit
+    bmi pseek04                 ; smudged? next!
+    and #bit5                   ; mask off immediate bit
+    sta n+3                     ; save it for later
+    lda n+2                     ; check vocabulary
+    beq pseek02                 ; are we looking in Forth?
+                                ; we are seeking in this vocabulary
+    bcc pseek04                 ; this word is in Forth? next!
+    ldy r0
+    iny
+    eor (tos),y                 ; compare vocabid
+    bne pseek04                 ; vocabid doesn't match?  next!
 pseek02
-	ldy n+6
-	jsr strcomp					; compare names
-	bne pseek04					; names don't match? next!
+    ldy r0
+    jsr strcomp                 ; compare names
+    bne pseek04                 ; names don't match? next!
     ; winner!
-	;ldy #0						; thanks, strcomp
+    ;ldy #0                     ; thanks, strcomp
 
 ;pseek02    
-	dey
-	tya							; YA = -1
-	bit n+3
-	beq out
-	iny
-	lda #1
+    dey
+    tya                         ; YA = -1
+    bit n+3
+    beq out
+    iny
+    lda #1
 out
-	jsr put6502
+    jsr put6502
 
-	dey			; Y=-1
-	and #bit5					; check immediate bit
-	beq pseek06
-	tay
-	iny
+    dey                         ; Y=-1
+    and #bit5                   ; check immediate bit
+    beq pseek06
+    tay
+    iny
 
 pseek03
-    bit n+4						; sorted or unsorted?
-    bne pseek04					; unsorted. next!
     eor n+6
     cmp n+6
+    bcs pseek07
 pseek04
     jsr nfaplus01               ; ~ check this
     bne pseek01                 ; bra
     
 pseek06
-	tya
+    tya
     brk
     .byt ld | TOS
     .byt push                   ; push the NFA
     .byt popd | TOS             ; get the CFA
     .byt br , <(pseek08-*-2)
 
+pseek07
+    ; loser...
+    brk
+    .byt ld | N0                ; get the original name
+    .byt st | TOS
+    .byt push                   ; push the name address twice
+pseek08
+    .byt st | TOS               ; CFA or original NAME
+    .byt ld | N4                ; status flag
+    .byt push
+    .byt nxt
+
+
+
+
+
+
+
  
-    lda n+2						; which vocabulary are we looking in?
+    lda n+2                     ; which vocabulary are we looking in?
     beq pseek02                 ; searching root?
     bvc pseek03                 ; is this word within a vocabulary?
     clv                         ; allow this word to be found
@@ -284,17 +307,83 @@ pseek04b
     lda n+4                     ; check modeflag
     beq pseek07                 ; core mode, and we've gone past it
 
-pseek07
-    ; loser...
-    brk
-    .byt ld | N0                ; get the original name
-    .byt st | TOS
-    .byt push                   ; push the name address twice
-pseek08
-    .byt st | TOS               ; CFA or original NAME
-    .byt ld | N4                ; status flag
-    .byt push
-    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=(VFIND)
+stack=( name vocid -- nfa xfa flag )
+tags=nosymbol,primitive
+Trial search within a vocabulary, used by FIND and (CREATE)
+
+~ this code could stand some tightening up, better commenting
+
+```
+: (vfind)   ( name vocid -- nfa xfa flag )
+: (vfind)   ( name vocid -- nfa xfa flag )
+    2dup 2>r  true symnew @ 2+ (seek)
+    ?dup 0=
+    if
+( name name )
+        2drop 2r@ false third pearson# 2* symtab @ + @ 2+ (seek)
+    then
+    rdrop rdrop ;
+```
+#endif
+#include "align.i65"
+_pvfind
+    jsr enter
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word twotor
+#include "page.i65"
+    .word true
+#include "page.i65"
+    .word symnew
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word pseek
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word qbranch
+    .byt <(pvfind01-*+1)
+#include "pad.i65"
+    .word twodrop
+#include "page.i65"
+    .word tworfetch
+#include "page.i65"
+    .word false
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word pearsonhash
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word pseek
+#include "page.i65"
+pvfind01
+    .word rdrop
+#include "page.i65"
+    .word rdrop
+#include "page.i65"
+    .word exit
 
 ;                  --------------------------------------------
 ;                  --------------------------------------------

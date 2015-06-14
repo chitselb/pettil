@@ -264,8 +264,8 @@ _semi
                     "\"tags\":#{@tags.to_json}\},\n"
         end
 
-		# 0x80 = Smudge bit
-		# 0x40 = Vocabulary bit
+        # 0x80 = Smudge bit
+        # 0x40 = Vocabulary bit
 		# 0x20 = Immediate bit
         def symbol_table_entry
             if @addr.nil?
