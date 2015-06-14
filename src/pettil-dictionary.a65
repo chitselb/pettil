@@ -175,14 +175,63 @@ smudge
 name=(SEEK)
 stack=( searchname vocid modeflag startnfa -- nfa xfa flag )
 tags=interpreter,nosymbol,primitive
-|||
-|searchname||
-|vocid||
-|^modeflag|TRUE = unsorted [[SYMNEW]]<br/>FALSE = sorted [[SYMTAB]]|
-|startnfa||
-|nfa||
-|xfa||
-|flag||
+Called by [[(VFIND)]] for each dictionary segment search, e.g.
+after this session:
+
+```
+VOCABULARY LATIN  OK
+VOCABULARY GERMAN  OK
+VOCABULARY SPANISH  OK
+VOCABULARY FRENCH  OK
+VOCABULARY RUSSIAN  OK
+FORTH ASSEMBLER FRENCH LATIN  OK
+VSTACK 5 DUMP 664E 02 05 01 00 00 OK
+```
+For each dictionary lookup, `(SEEK)` would be called eight times 
+in this sequence:
+
+# //unsorted// [[SYMNEW]] of //02// `LATIN`
+# //hashed// [[SYMTAB]] of //02// `LATIN`
+# //unsorted// [[SYMNEW]] of //05// `FRENCH`
+# //hashed// [[SYMTAB]] of //05// `FRENCH`
+# //unsorted// [[SYMNEW]] of //01// `ASSEMBLER`
+# //hashed// [[SYMTAB]] of //01// `ASSEMBLER`
+# //unsorted// [[SYMNEW]] of //00// `FORTH`
+# //hashed// [[SYMTAB]] of //00// `FORTH`
+
+|Register|Parameter|Description|h
+|^N0|^searchname|`nfa` we are trying to find|
+|^N1|^vocid|search vocabulary|
+|^|^modeflag|TRUE = unsorted [[SYMNEW]]<br/>FALSE = sorted [[SYMTAB]]|
+|^|^startnfa||
+|^|^nfa||
+|^|^xfa||
+|^|^flag||
+
+```
+                             ; still broken
+    
+    : fred   ." yaba daba doo" ;  ok
+    vocabulary french  ok
+    french definitions  ok
+    : fred   ." ooh la la" ;
+    fred ooh la la ok
+    forth  ok
+    vocabulary german  ok
+    german definitions  ok
+    : fred   ." ja ja yabadoo" ;
+    fred yaba daba doo ok            ~~~?
+    french fred ooh la la ok
+    german fred ooh la la ok         ~~~?
+    hex symnew ? 61ad  ok
+    
+>C:6180  6e 25 4c 45  41 56 45 4d  13 06 43 4d  44 4f 46 46   n%LEAVEM..CMDOFF
+>C:6190  9e 64 06 53  4d 55 44 47  45 13 07 07  45 44 49 54   .d.SMUDGE...EDIT
+>C:61a0  49 4e 47 41  66 07 50 45  54 53 43 49  49 d0 1a 04   INGAf.PETSCII...
+>C:61b0  46 52 45 44  e5 1a 06 46  52 45 4e 43  48 e9 1a 44   FRED...FRENCH..D
+>C:61c0  46 52 45 44  02 fa 1a 06  47 45 52 4d  41 4e 02 fe   FRED....GERMAN..
+>C:61d0  1a 44 46 52  45 44 03 00  00 00 00 00  00 00 00 00   .DFRED..........
+```
 #endif
 pseek
     ldy #3
@@ -192,126 +241,69 @@ pseek
     .byt sub | ACC
     .byt st | N4                ; set result = FALSE
     .byt ldi | N0               ; R0 = length of searchname
-    .byt dcr | N0
+    .byt dcr | N0               ; fix pointer to searchname
     .byt rtn
 pseek01
     jsr nfalen01
     beq pseek07                 ; end of list? exit with searchname/false
-    sta n+7
     eor r0                      ; check lengths, preserving C flag
     beq pseek20                 ; same length? proceed
     bit n+4                     ; sorted or unsorted?
     bmi pseek04                 ; unsorted. next!
-    lda n+7                     ; restore length
+pseek03                         ; okay, it's sorted
+    eor r0                      ; restore length
     cmp r0                      ; end of sorted list?
-    bcc pseek07                 ; went past it? exit with searchname/false
-pseek20
-    tya                         ; check smudge bit
-    bmi pseek04                 ; smudged? next!
-    and #bit5                   ; mask off immediate bit
-    sta n+3                     ; save it for later
-    lda n+2                     ; check vocabulary
-    beq pseek02                 ; are we looking in Forth?
-                                ; we are seeking in this vocabulary
-    bcc pseek04                 ; this word is in Forth? next!
-    ldy r0
-    iny
-    eor (tos),y                 ; compare vocabid
-    bne pseek04                 ; vocabid doesn't match?  next!
-pseek02
-    ldy r0
-    jsr strcomp                 ; compare names
-    bne pseek03                 ; names don't match? next!
-    ; winner!
-    ;ldy #0                     ; thanks, strcomp
-
-;pseek02
-    dey
-    tya                         ; YA = -1
-    bit n+3
-    beq out
-    iny
-    lda #1
-out
-    jsr put6502
-
-    dey                         ; Y=-1
-    and #bit5                   ; check immediate bit
-    beq pseek06
-    tay
-    iny
-
-pseek03
-    lda n+7
-    cmp n+6
-    bcs pseek07
+    bcs pseek07                 ; went past it? exit with searchname/false
 pseek04
-    jsr nfaplus01               ; ~ check this
+    jsr nfaplus01               ; next!
     bne pseek01                 ; bra
-    
-pseek06
-    tya
+
+pseek20
+    ;lda #0
+    dey                         ; just to set N flag, checking Smudge
+                                ; there are no 0-length words, so won't
+                                ; affect flag bits
+    bmi pseek04                 ; smudged? next!
+    ldy r0
+    lda n+2                     ; are we looking in the Forth vocabulary?
+    beq pseek02                 ; leave the carry flag alone
+    bcc pseek04                 ; this word doesn't belong to a vocabulary? next!
+    iny
+    eor (tos),y                 ; check the vocabid
+    bne pseek04                 ; mismatch vocabid?  next!
+    dey
+    clc
+pseek02
+    bcs pseek04                 ; this word belongs to a vocabulary? next!
+    jsr strcomp                 ; compare names
+    bne pseek04                 ; lengths match, 
+                                ; vocabid matches, 
+                                ; but names don't? next!
+    ; winner!
+    ;ldy #0
+    lda (tos),y
+    and #bit5
+    adc #$e0                    ; C=1 if Immediate
+    rol R14H                    ; propagate to Sweet16
     brk
-    .byt ld | TOS
-    .byt push                   ; push the NFA
     .byt popd | TOS             ; get the CFA
-    .byt br , <(pseek08-*-2)
+    .byt ldd | TOS              ; reget the CFA and fix TOS
+    .byt dcr | N4
+    .byt bnc , <(pseek10-*-2)
+    .byt inr | N4
+    .byt inr | N4
+pseek10
+    .byt push
+    .byt ld | N4                ; return status flag
+    .byt push
+    .byt nxt
 
 pseek07
     ; loser...
     brk
-    .byt ld | N0                ; get the original name
+    .byt ld | N0
     .byt st | TOS
-    .byt push                   ; push the name address twice
-pseek08
-    .byt st | TOS               ; CFA or original NAME
-    .byt ld | N4                ; status flag
-    .byt push
-    .byt nxt
-
-
-
-
-
-
-
- 
-    lda n+2                 ; which vocabulary are we searching?
-    beq pseek02             ; searching root?
-    bvc pseek03             ; is this word within a vocabulary?
-    clv                     ; allow this word to be found
-    ldy r11
-    iny
-    eor (tos),y             ; get vocabulary byte
-    bne pseek03             ; not the right vocabulary? next!
-
-;pseek02
-    bvs pseek03             ; root search may not find vocabulary member
-    lda r11
-    cmp n+6                     ; compare lengths
-    bne pseek04                 ; same length, compare strings too
-    jsr strcomp
-    bne pseek03
-    ;ldy #0                     ; thank you, strcomp
-
-    ; winner!
-    inc n+8                     ; assume immediate, set N4 = +1
-    lda (tos),y                 ; length and flags
-    bmi pseek06                 ; immediate?
-    dey
-    sty n+8
-    sty n+9                     ; normal, set N4 = -1
-pseek06b
-    brk
-    .byt ld | TOS
-    .byt push                   ; push the NFA
-    .byt popd | TOS             ; get the CFA
-    .byt br , <(pseek08-*-2)
-
-pseek04b
-    bcc pseek03                 ; shorter length? next!
-    lda n+4                     ; check modeflag
-    beq pseek07                 ; core mode, and we've gone past it
+    .byt br , <(pseek10-*-2)                                
 
 ;--------------------------------------------------------------
 #if 0
