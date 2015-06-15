@@ -430,11 +430,11 @@ _semi
                 "pettil-dictionary.a65 "\
                 "pettil-interpreter.a65 "\
                 "pettil-compiler.a65 "\
-                "pettil-forget.a65 "\
                 "pettil-utils.a65 "\
                 "pettil-editor.a65 "\
                 "pettil-assembler.a65 "
 
+#                "pettil-forget.a65 "\
 
     all_words = Hash.new
     pettil = PettilSource.new core_files+transient_files

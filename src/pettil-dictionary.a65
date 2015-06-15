@@ -286,6 +286,56 @@ nfalen01
 
 ;--------------------------------------------------------------
 #if 0
+name=nfalen16
+tags=nosymbol
+!!!Subroutine
+Sweet16 wrapper around nfalen16a subroutine
+Get name field length, ignoring flag bits
+
+sets C flag if smudged
+
+* inputs
+** TOS = NFA pointer
+* returns
+** ACC = length of NFA
+** C = smudge bit
+** V = vocabulary bit
+** R11L = length (copy of A)
+** Y = 0
+
+~ remove this after rewriting [[REHASH]]
+#endif
+nfalen16
+    jsr nfalen01
+    rol R14H                    ; Vocab bit
+    sta R0L
+    ldy #0
+    sty R0H
+    sty R14L                    ; prev = ACC
+    rts
+
+; the old dog chow below
+    jsr nfalen16a
+    rol R14H
+    sty R0H
+    sta R0L
+    sty R14L                    ; should be able to test length=0 without touching ACC first
+    rts
+
+nfalen16a                       ; used by several Forth primitives
+    ldy #0
+    lda (tos),y
+nfalen16b
+    sta r11
+    asl                         ; set carry flag if smudge bit
+    lda r11
+    and #$1f                    ; return length in A
+    bit r11                   ; set V flag = Vocabulary bit
+    sta r11
+    rts
+
+;--------------------------------------------------------------
+#if 0
 name=NFA+
 stack=( nfa -- nfa+ )
 tags=interpreter,ext,primitive,nosymbol
@@ -1289,6 +1339,12 @@ Does all the Sweet16 register setup for a [[PASS1]] symbol
 |^R13||^CPR||
 |^R14||^ST||
 |^R15||^PC||
+
+Yin has just a few questions:
+    Are you Smudged?  Then you must be the firstborn twin
+        We'll copy you first
+        How's your address?  Do you still live here?
+        
 #endif
 #include "align.i65"
 yin16
@@ -1351,14 +1407,14 @@ pass1a                      ; for each name in symtab...symtail
     .byt st | N0            ; turn off twin search
     .byt ext
     .word nfalen16
-    .byt bnz , <(pass1b-*-2) ; end of the chain
+    .byt bnz , <(pass1b-*-2) ; end of the chain?
     .byt rtn
-    inx
-    inx
+    inx                     ; nip
+    inx                     ; nip
     jmp next
 pass1b
     .byt ext
-    .word yin16
+    .word yin16             ; will it blend?
     .byt bnc, <(pass1d-*-2) ; smudge bit?  resolve twins
     .byt ld | TOS
     .byt st | N1
@@ -1779,42 +1835,3 @@ pearsonhash16
     sta r0
     rts
 
-;--------------------------------------------------------------
-#if 0
-name=nfalen16
-tags=nosymbol
-!!!Subroutine
-Sweet16 wrapper around nfalen16a subroutine
-Get name field length, ignoring flag bits
-
-sets C flag if smudged
-
-* inputs
-** TOS = NFA pointer
-* returns
-** ACC = length of NFA
-** C = smudge bit
-** V = vocabulary bit
-** R11L = length (copy of A)
-** Y = 0
-
-#endif
-nfalen16
-    jsr nfalen16a
-    rol R14H
-    sty R0H
-    sta R0L
-    sty R14L                    ; should be able to test length=0 without touching ACC first
-    rts
-
-nfalen16a                       ; used by several Forth primitives
-    ldy #0
-    lda (tos),y
-nfalen16b
-    sta r11
-    asl                         ; set carry flag if smudge bit
-    lda r11
-    and #$1f                    ; return length in A
-    bit r11                   ; set V flag = Vocabulary bit
-    sta r11
-    rts
