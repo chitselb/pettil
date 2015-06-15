@@ -431,6 +431,7 @@ _semi
                 "pettil-interpreter.a65 "\
                 "pettil-compiler.a65 "\
                 "pettil-forget.a65 "\
+                "pettil-utils.a65 "\
                 "pettil-editor.a65 "\
                 "pettil-assembler.a65 "
 
