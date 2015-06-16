@@ -277,6 +277,7 @@ Get the length of the symbol at TOS
 nfalen01
     ldy #0
     lda (tos),y
+nfalen02                ; used by YIN16 grabbing both TOS, N0 lengths
     tay
     asl
     asl                 ; C = Vocab bit
@@ -309,8 +310,10 @@ nfalen16
     jsr nfalen01
     rol R14H                    ; Vocab bit
     sta R0L
+    sty r0+22
     ldy #0
     sty R0H
+    sty r0+23
     sty R14L                    ; prev = ACC
     rts
 
@@ -1320,25 +1323,26 @@ twin16
 name=YIN16
 stack=( nfa -- nfa )
 tags=interpreter,ext
-Does all the Sweet16 register setup for a [[PASS1]] symbol
+Copy the symbol at TOS and any of its clones to N0
 
-|register|purpose|notes|<|h
-|^R0|^return|^ACC|0 means skip this one<br>-1 for candidate|
-|^R1|nfa+|^TOS||
-|^R2|^targ+|^N0|pile up output here|
-|^R3|^nfa|^N1|^temp storage used<br>for twin search<br>symcomp16 compares TOS vs N1|
-|^R4|name length|^N2|length of fraternal twins|
-|^R5|^symbol length|^N3|^length of identical twins<br>name+vocid|
-|^R6||^N4||
-|^R7||^N5||
-|^R8||^N6||
-|^R9|newdp|^N7|^discard CFAs between<br>these addresses|
-|^R10|tdict|^N8|~|
-|^R11||^EXT||
-|^R12||^SP||
-|^R13||^CPR||
-|^R14||^ST||
-|^R15||^PC||
+|register|<|purpose|notes|h
+|^R0|^ACC|^param|^CFA|
+|~|~|^return|^0 done with source|
+|^R1|^TOS|nfa+||
+|^R2|^N0|^targ+|pile up output here|
+|^R3|^N1|^nfa|^temp storage used<br>for twin search<br>symcomp16 compares TOS vs N1|
+|^R4|^N2|name length|length of fraternal twins|
+|^R5|^N3|^symbol length|^length of identical twins<br>name+vocid|
+|^R6|^N4|||
+|^R7|^N5|||
+|^R8|^N6|cfa||
+|^R9|^N7|newdp|^discard CFAs between<br>these addresses|
+|^R10|^N8|tdict|~|
+|^R11|^EXT|||
+|^R12|^SP|||
+|^R13|^CPR|||
+|^R14|^ST|||
+|^R15|^PC|||
 
 Yin has just a few questions:
     Are you Smudged?  Then you must be the firstborn twin
@@ -1348,10 +1352,33 @@ Yin has just a few questions:
 #endif
 #include "align.i65"
 yin16
-    jsr nfalen01
+    ldx #2
+yin16d
+    lda (tos,x)
+    jsr nfalen02
     adc #0
-    tax
+    sta n+4,x
+    sty n+5,x
+    dex
+    dex
+    bpl yin16d              ; TOS=nfa1, N0=nfa2 
+                            ; N1=nfa1[len+voc]/nfa1[orig] 
+                            ; N2=nfa2[len+voc]/nfa2[orig]
+                            ; A = nfa1[len+voc]
+                            ; Y = nfa1[orig]
 yin16a
+    tya
+    eor i
+    and #$1f                ; is this the length we are looking for this pass?
+;    bne notthispass                    ; 
+    tya
+    eor n+7                 ; compare nfa1[orig] to nfa2[orig]
+    and #$df                ; 1101 1111
+    asl                     ; Z = nfa1 and nfa2 vocabulary bits and len both match
+                            ; C = 1 smudge bits don't match (they never should)
+                            ; Y = nfa1[orig] still
+;    bne notclone            ; different length or nfa1 is Forth, nfa2 is vocab
+ ;   bcc notclone            ; because it's me
     ;ldy #0                 ; return 0 = wrong length -- thanks, nfalen16
     cmp i
     bne yin16c
@@ -1366,10 +1393,25 @@ yin16c
     sty r0+1
     rts
 
+                                ; find/copy all identical twins that are
+                                ; in range
+                                ; if a twin is active, mark it inactive
+                                ; then mark the top twin active
+                                ; (it might be the same twin)
+                                ; begin
+                                ;   compare TOS.name (newtwin) vs N1.name (candidate)
+                                ;   identical?
+                                ;   if !(newdp < newtwin.cfa < tdict)  (keep newtwin?)
+                                ;   N1 = targ+2 (replace candidate with newtwin)
+                                ;   append newtwin to targ
+                                ;   unsmudge newtwin in symtab so it won't trigger a search
+                                ;   was newtwin active before we just activated it?  (we are done)
+                                ; until
+                                ; N1.unsmudge (activate the candidate)
 ;--------------------------------------------------------------
 #if 0
 name=PASS1
-stack=( cfa -- )
+stack=( from to -- )
 tags=nosymbol,interpreter,ext
 Copying from [[SYMTAB]] down to [[PAD]], this passes over every
 available name length resulting in all names sorted by ascending
@@ -1395,75 +1437,33 @@ bing bong ding dong king kong ping pong sing song
 #endif
 #include "align.i65"
 pass1
+    lda #1
+    jsr locals              ; targ to N0
     brk
     .byt set | N0
     .word uarea+usernewdp-userarea
     .byt ldd | N0
-    .byt st | N7            ; NEWDP
+    .byt st | N7                ; NEWDP
     .byt ldd | N0
-    .byt st | N8            ; TDICT
-pass1a                      ; for each name in symtab...symtail
-    .byt sub | ACC
-    .byt st | N0            ; turn off twin search
+    .byt st | N8                ; TDICT
+pass1a                          ; for each name in symtab...symtail
+    .byt ldd | TOS              ; get cfa from source
+    .byt cpr | N8
+    .byt bc , <(pass1b-*-2)     ; in TDICT? green light
+    .byt cpr | N7
+    .byt bc , <(pass1b-*-2)     ; in CORE? green light
     .byt ext
-    .word nfalen16
-    .byt bnz , <(pass1b-*-2) ; end of the chain?
-    .byt rtn
-    inx                     ; nip
-    inx                     ; nip
-    jmp next
+    .word nfaplus01
+    .byt popd | TOS
+    .byt br , <(pass1a-*-2)     ; next!
 pass1b
     .byt ext
-    .word yin16             ; will it blend?
-    .byt bnc, <(pass1d-*-2) ; smudge bit?  resolve twins
-    .byt ld | TOS
-    .byt st | N1
-    .byt ld | N0            ; mark our place for later
+    .word yin16                 ; will it blend?
+    .byt bnz , <(pass1a-*-2)    ; more source?
+    .byt ld | N0
     .byt push
-    .byt ld | N1
-    .byt push
-pass1twinfinder
-    .byt ext
-    .word strcomp             ; is TOS a twin of N1?  ~ may need a sweet16 wrapper
-    .byt bc , <(pass1next-*-2)     ; yes, further investigation
-pass1c
-    .byt popd | TOS             ; get CFA
+    .byt nxt
 
-                                ; find/copy all identical twins that are
-                                ; in range
-                                ; if a twin is active, mark it inactive
-                                ; then mark the top twin active
-                                ; (it might be the same twin)
-                                ; begin
-                                ;   compare TOS.name (newtwin) vs N1.name (candidate)
-                                ;   identical?
-                                ;   if !(newdp < newtwin.cfa < tdict)  (keep newtwin?)
-                                ;   N1 = targ+2 (replace candidate with newtwin)
-                                ;   append newtwin to targ
-                                ;   unsmudge newtwin in symtab so it won't trigger a search
-                                ;   was newtwin active before we just activated it?  (we are done)
-                                ; until
-                                ; N1.unsmudge (activate the candidate)
-    .byt pull                   ; return to the original place
-    .byt ld | TOS
-    .byt st | N0
-    .byt pull
-    .byt sub | ACC
-    .byt st | N1            ; turn off twin search
-
-    .byt ext
-    .word twin16
-    .byt bz, <(pass1z-*-2)
-    .byt st | N2        ; pointer to CFA
-    .byt popd | N2      ; get the CFA
-    .byt cpr | N3       ; compare CFA to TDICT
-    .byt bp , <(pass1b-*-2) ; don't forget things above TDICT
-    .byt cpr | N4       ; compare CFA to NEWDP
-    .byt bp , <(pass1e-*-2) ; don't forget things below NEWDP
-
-;    are we done?
-
-pass1d
     ; we get here when we find a smudged symbol.
     ; This will always be the first-defined (original) twin
 
@@ -1480,49 +1480,6 @@ pass1d
     ; all unsorted twins will be ascending by order defined in SYMNEW
     ; the active twin will be the last one found
     ; the active twin trades places with the last smudged twin copied
-pass1e
-pass1z
-                            ; next!
-pass1next
-    .byt ext
-    .word nfaplus01             ; no, next symbol at TOS
-    .byt ext
-    .word nfalen16
-    .byt bnz , <(pass1twinfinder-*-2)
-    .byt pull
-    .byt st | N1
-    .byt pull
-    .byt ld | N1
-    .byt st | TOS
-    .byt rs
-
-
-    .word over
-#include "page.i65"
-    .word nfalen
-#include "page.i65"
-    .word qdup
-#include "page.i65"
-    .word qbranch
-    .byt <(pass1b-*+1)
-#include "pad.i65"
-    .word i
-#include "page.i65"
-    .word eq
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word qsymcopy
-#include "page.i65"
-    .word branch
-    .byt <(pass1-*+1)
-#include "pad.i65"
-pass1f
-    .word nip
-#include "page.i65"
-    .word nip
-#include "page.i65"
-    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1568,7 +1525,7 @@ Rebuilds the symbol table at [[SYMTAB]]
     1- newdp !
 
     passbits 4 erase
-    >syms 2+ pad  over
+    >syms pad  over 2+
     begin
         dup nfalen ?dup
     while
@@ -1600,8 +1557,6 @@ Rebuilds the symbol table at [[SYMTAB]]
 _pforget
     jsr enter
 #include "page.i65"
-    .word xyzzy
-#include "page.i65"
     .word oneminus
 #include "page.i65"
     .word newdp
@@ -1616,11 +1571,11 @@ _pforget
 #include "page.i65"
     .word _tosyms
 #include "page.i65"
-    .word twoplus
-#include "page.i65"
     .word _pad
 #include "page.i65"
     .word over
+#include "page.i65"
+    .word twoplus
 #include "page.i65"
 pforget01
     .word dup
@@ -1719,7 +1674,7 @@ _rehash
 
 ;--------------------------------------------------------------
 #if 0
-name=NEWF
+name=FORGET
 stack=( -- )
 tags=interpreter,dictionary,forth-83,forth-79,fig
 checks FENCE, moves DP, sorts symbol table
@@ -1747,7 +1702,7 @@ old FORGET
 ```
 #endif
 #include "align.i65"
-_newf
+_forget
     jsr enter
 #include "page.i65"
     .word _tick
@@ -1768,70 +1723,3 @@ _newf
     .word _pforget
 #include "page.i65"
     .word exit
-
-
-
-
-
-
-
-;                  --------------------------------------------
-;                  --------------------------------------------
-;obsolescent words --------------------------------------------
-;                  --------------------------------------------
-;--------------------------------------------------------------
-#if 0
-name=symcopy16
-tags=nosymbol
-Copies a string from (tos) to (n0) via the Y register.
-Copies the 0th byte, and moves N0 beyond the copied string
-
-* inputs
-** TOS (R1) source base address
-** N0 (R2) target base address
-** N1 (R3) string length
-* returns
-** Y = FF
-
-~ fix this to account for (V flag) inside a vocabulary
-#endif
-symcopy16
-    jsr nfalen16a
-    tay
-    bvc symcopy16a
-    iny                      ; string length
-    sty n+2
-symcopy16a
-    lda (tos),y
-    sta (n),y
-    dey
-    bpl symcopy16a
-    sec
-    lda n+2
-    adc n
-    sta n
-    bcc symcopy16b
-    inc n+1
-symcopy16b
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=pearsonhash16
-tags=interpreter,nosymbol
-Sweet16 wrapper around Pearson hash function
-
-* inputs
-** ACC (R0) length
-** TOS (R1) NFA
-* returns
-** ACC (R0) Pearson hash hexdigit
-
-#endif
-pearsonhash16
-    ldy r0
-    jsr pearsonhash02
-    sty r0+1
-    sta r0
-    rts
-

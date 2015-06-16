@@ -169,7 +169,7 @@ _semi
         #  at `#endif`, set the code trigger and cancel desc trigger
         # capture code += line if code trigger is set
         def is_code?(line,labelhash)
-            if @to_code && line !~ /^#include.*$/
+            if @to_code && line !~ /^\s*#include.*i65"\s*$/  # filter chaffy includes
                 if @code.nil?
                     # first line is special, the label
                     @label = line
@@ -429,12 +429,12 @@ _semi
                 "pettil-user.a65 "\
                 "pettil-dictionary.a65 "\
                 "pettil-interpreter.a65 "\
+                "pettil-forget.a65 "\
                 "pettil-compiler.a65 "\
                 "pettil-utils.a65 "\
                 "pettil-editor.a65 "\
                 "pettil-assembler.a65 "
 
-#                "pettil-forget.a65 "\
 
     all_words = Hash.new
     pettil = PettilSource.new core_files+transient_files
