@@ -93,7 +93,6 @@ are initially balanced with the same number of words,
 to reduce searches to (on average) 1/16th of the
 dictionary.
 
-
 ```
 symbol table entry
 +---------------+
@@ -101,9 +100,9 @@ symbol table entry
 |    CFA[high]  |
 +-+-+-+-+-+-+-+-+
 |     [   len   ]  +2      Length field
-[I]             |          Immediate bit
+[S]             |          Smudge bit
 | [V]           |          Vocabulary bit
-|   [S]         |          Smudge bit
+|   [I]         |          Immediate bit
 +-+-+-+-+-+-+-+-+
 |   name[1]     |  +3      Name field
 |           ... |
@@ -121,22 +120,23 @@ pearsonhash
 
 pearsonhash01
     jsr nfalen01            ; A=length
-    sta r0                  ; seed hash1 with length
+pearsonhash02               ; already have A?
+    sta 2*R11               ; seed hash1 with length
     tay                     ; count backwards
-pearsonhash02
+pearsonhash03
     lda (tos),y                     ;[5]
     and #$07                        ;[2] (size of pearson table - 1)
     tax                             ;[2]
-    lda r0                          ;[3]
+    lda 2*R11                       ;[3]
     eor pearson,x                   ;[4]
-    sta r0                          ;[3]
+    sta 2*R11                       ;[3]
     dey
-    bne pearsonhash02
+    bne pearsonhash03
     lsr
     lsr                     ; xor the pearson hash byte
     lsr                     ; into a single nybble
     lsr                     ; - - - - [ 7 6 5 4 ]
-    eor r0                  ; 7 6 5 4 [ 3 2 1 0 ]
+    eor 2*R11               ; 7 6 5 4 [ 3 2 1 0 ]
     and #$0f                ; - - - - [4bit hash]
     rts
 
@@ -277,7 +277,6 @@ Get the length of the symbol at TOS
 nfalen01
     ldy #0
     lda (tos),y
-nfalen02                ; used by YIN16 grabbing both TOS, N0 lengths
     tay
     asl
     asl                 ; C = Vocab bit
@@ -1361,6 +1360,7 @@ yeah
 ;   was newtwin active before we just activated it?  (we are done)
 ; until
 ; N1.unsmudge (activate the candidate)
+
 ;--------------------------------------------------------------
 #if 0
 name=PASS1
@@ -1372,21 +1372,6 @@ size at [[PAD]].
 
 Filtering occurs on this pass for forgotten symbols that fall 
 between [[NEWDP]] and [[TDICT]].
-
-bing bong ding dong king kong ping pong sing song
-
-```
-: pass1   ( targ nfa+ -- targ+ )
-    begin
-        nfalen ?dup
-    while
-        yin
-( nfa targ nfa+ flag )
-        ?symcopy
-( nfa targ nfa+ targ+ )
-    repeat
-    nip nip ;
-```
 #endif
 #include "align.i65"
 pass1
@@ -1401,6 +1386,7 @@ pass1
     .byt st | N8                ; TDICT
 pass1a                          ; for each name in symtab...symtail
     .byt ldd | TOS              ; get cfa from source
+    .byt bz , <(pass1d-*-2)     ; cfa = 0 means no more source
     .byt cpr | N8
     .byt bc , <(pass1c-*-2)     ; in TDICT? green light
     .byt cpr | N7
@@ -1440,6 +1426,61 @@ pass1d
     ; all unsorted twins will be ascending by order defined in SYMNEW
     ; the active twin will be the last one found
     ; the active twin trades places with the last smudged twin copied
+
+;--------------------------------------------------------------
+#if 0
+name=YANG16
+stack=( nfa -- nfa )
+tags=interpreter,ext
+Conditionally copy the symbol at TOS to N0        
+#endif
+#include "align.i65"
+yang16
+    clc                     ; we did not copy
+    jsr nfalen01
+    beq yang16f
+    jsr pearsonhash02
+    eor zi
+    bne yang16f
+    sec
+    dey
+    bmi yin16e              ; we have a clone
+yang16f
+    rol R14H
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=PASS2
+stack=( from to -- )
+tags=nosymbol,interpreter,ext
+Copying from [[PAD]] back to [[SYMTAB]], this passes over each
+Pearson hash value.  Names will be ordered chronologically by 
+size within each Pearson hashed list at [[SYMTAB]].
+#endif
+#include "align.i65"
+pass2
+    ldy #1
+    jsr locals              ; targ to N0
+    brk
+pass2a                          ; for each name in symtab...symtail
+    .byt ldd | TOS              ; get cfa from source
+    .byt bz , <(pass2c-*-2)     ; done with this pass?
+    .byt ext
+    .word yang16                ; compare Pearson hash to 'i'
+    .byt bnc , <(pass2b-*-2)    ; Pearson hash <> 'i'?
+    .byt std | N0               ; write cfa to target
+    .byt ext
+    .word copysym16
+pass2b
+    .byt ext
+    .word nfaplus01
+    .byt popd | TOS
+    .byt br , <(pass2a-*-2)     ; next!
+pass2c
+    .byt ld | N0
+    .byt st | TOS
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -1504,6 +1545,7 @@ Rebuilds the symbol table at [[SYMTAB]]
 ( )
     automem
 ( )
+    symtab @
     pad 2+ >syms
 ( nfa targ )
     16 0 do
@@ -1589,8 +1631,6 @@ pforget03
     .word ploop
     .byt <(pforget03-*+1)
 #include "pad.i65"
-    .word xyzzy
-#include "page.i65"
     .word nip
 #include "page.i65"
     .word dup
@@ -1601,6 +1641,39 @@ pforget03
 #include "page.i65"
     .word _automem
 #include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word _tosyms
+#include "page.i65"
+    .word clit
+    .byt 16
+#include "pad.i65"
+    .word zero
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+pforget04
+    .word xyzzy
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word pass2
+#include "page.i65"
+    .word ploop
+    .byt <(pforget04-*+1)
+#include "pad.i65"
     .word newdp
 #include "page.i65"
     .word fetch
