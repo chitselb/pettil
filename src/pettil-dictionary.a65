@@ -1248,74 +1248,36 @@ automem01
 automem02
     .word exit
 
-
-
-
-
-
-
-
 ;--------------------------------------------------------------
 #if 0
-name=?SYMCOPY
-tags=forget
-stack=( nfa targ flag -- nfa+ targ+ )
-If the flag is true, copy the symbol to `targ` and move `targ`
-past the copy. Always does NFA+
+name=symcopy16
+tags=nosymbol
+Copies a string from (tos) to (n0) via the Y register.
+Copies the 0th byte, and moves N0 beyond the copied string
+
+* inputs
+** TOS (R1) source base address
+** N0 (R2) target base address
+** N1 (R3) string length
+* returns
+** Y = FF
+
+~ fix this to account for (V flag) inside a vocabulary
 #endif
-qsymcopy
-    brk
-    .byt ld | TOS
-    .byt st | N2            ; flag
-    .byt pull
-    .byt st | N0            ; targ
-    .byt pull
-    .byt ld | N2            ; test flag
-    .byt bz , <qsymcopy01
-    .byt popd | TOS
-    .byt inr | TOS
-    .byt inr | TOS
-    .byt std | N0
-qsymcopy01
-    .byt rtn
-    jsr nfalen01
-    adc #0
-    tay
-    lda n+4
-    ora n+5
-    sty n+6             ; length+vocid
-    sta n+7             ; add to targ
-    beq qsymcopy04      ; test flag
-    sty n+7
-    inc n+7
-    inc n+7
-qsymcopy03
+copysym16
+    ldy n+2
+copysym16a
     lda (tos),y
     sta (n),y
     dey
-    bpl qsymcopy03
-qsymcopy04
-    jsr nfaplus01
-    clc
-    lda n+7
+    bpl copysym16a
+    sec
+    lda n+2
     adc n
-    ldy n+1
-    bcc qsymcopy05
-    iny
-qsymcopy05
-    jmp pushya
-
-;--------------------------------------------------------------
-#if 0
-name=TWIN16
-stack=( nfa -- nfa )
-tags=nosymbol,interpreter,ext
-Does all the Sweet16 register setup for a [[PASS1]] symbol
-
-
-#endif
-#include "align.i65"
-twin16
+    sta n
+    bcc copysym16b
+    inc n+1
+copysym16b
     rts
 
 ;--------------------------------------------------------------
@@ -1352,62 +1314,53 @@ Yin has just a few questions:
 #endif
 #include "align.i65"
 yin16
-    ldx #2
-yin16d
-    lda (tos,x)
-    jsr nfalen02
+    ldy #0
+    sty R14L                ; prior result
+    jsr nfalen01
+    beq yin16f
+    tax
     adc #0
-    sta n+4,x
-    sty n+5,x
-    dex
-    dex
-    bpl yin16d              ; TOS=nfa1, N0=nfa2 
-                            ; N1=nfa1[len+voc]/nfa1[orig] 
-                            ; N2=nfa2[len+voc]/nfa2[orig]
-                            ; A = nfa1[len+voc]
-                            ; Y = nfa1[orig]
-yin16a
-    tya
-    eor i
-    and #$1f                ; is this the length we are looking for this pass?
-;    bne notthispass                    ; 
-    tya
-    eor n+7                 ; compare nfa1[orig] to nfa2[orig]
-    and #$df                ; 1101 1111
-    asl                     ; Z = nfa1 and nfa2 vocabulary bits and len both match
-                            ; C = 1 smudge bits don't match (they never should)
-                            ; Y = nfa1[orig] still
-;    bne notclone            ; different length or nfa1 is Forth, nfa2 is vocab
- ;   bcc notclone            ; because it's me
-    ;ldy #0                 ; return 0 = wrong length -- thanks, nfalen16
-    cmp i
-    bne yin16c
-yin16b
-    sty n+5                 ; length of name only
-    sta n+4
-    sty n+7
-    stx n+6                 ; name+vocid
-    dey                     ; return -1 = right length
-yin16c
-    sty r0
-    sty r0+1
+    sta n+2                 ; length of name+vocab
+    txa
+    eor zi
+    clc
+    bne yin16f
+    sec
+    dey
+    bmi yin16e              ; we have a clone
+yin16f
+    rol R14H
     rts
+yin16e
+    nop
+yeah
+    nop
+    nop
+; TOS=nfa1, N0=nfa2 
+; N1=nfa1[len+voc]/nfa1[orig] 
+; N2=nfa2[len+voc]/nfa2[orig]
+; A = nfa1[len+voc]
+; Y = nfa1[orig]
+; ACC = CFA
+; C = 1 smudge bits don't match (they never should)
+; Y = nfa1[orig] still
 
-                                ; find/copy all identical twins that are
-                                ; in range
-                                ; if a twin is active, mark it inactive
-                                ; then mark the top twin active
-                                ; (it might be the same twin)
-                                ; begin
-                                ;   compare TOS.name (newtwin) vs N1.name (candidate)
-                                ;   identical?
-                                ;   if !(newdp < newtwin.cfa < tdict)  (keep newtwin?)
-                                ;   N1 = targ+2 (replace candidate with newtwin)
-                                ;   append newtwin to targ
-                                ;   unsmudge newtwin in symtab so it won't trigger a search
-                                ;   was newtwin active before we just activated it?  (we are done)
-                                ; until
-                                ; N1.unsmudge (activate the candidate)
+
+; find/copy all identical twins that are
+; in range
+; if a twin is active, mark it inactive
+; then mark the top twin active
+; (it might be the same twin)
+; begin
+;   compare TOS.name (newtwin) vs N1.name (candidate)
+;   identical?
+;   if !(newdp < newtwin.cfa < tdict)  (keep newtwin?)
+;   N1 = targ+2 (replace candidate with newtwin)
+;   append newtwin to targ
+;   unsmudge newtwin in symtab so it won't trigger a search
+;   was newtwin active before we just activated it?  (we are done)
+; until
+; N1.unsmudge (activate the candidate)
 ;--------------------------------------------------------------
 #if 0
 name=PASS1
@@ -1437,31 +1390,38 @@ bing bong ding dong king kong ping pong sing song
 #endif
 #include "align.i65"
 pass1
-    lda #1
+    ldy #1
     jsr locals              ; targ to N0
     brk
-    .byt set | N0
+    .byt set | N8
     .word uarea+usernewdp-userarea
-    .byt ldd | N0
+    .byt ldd | N8
     .byt st | N7                ; NEWDP
-    .byt ldd | N0
+    .byt ldd | N8
     .byt st | N8                ; TDICT
 pass1a                          ; for each name in symtab...symtail
     .byt ldd | TOS              ; get cfa from source
     .byt cpr | N8
-    .byt bc , <(pass1b-*-2)     ; in TDICT? green light
+    .byt bc , <(pass1c-*-2)     ; in TDICT? green light
     .byt cpr | N7
-    .byt bc , <(pass1b-*-2)     ; in CORE? green light
+    .byt bnc , <(pass1c-*-2)    ; in CORE? green light
+pass1b
     .byt ext
     .word nfaplus01
     .byt popd | TOS
     .byt br , <(pass1a-*-2)     ; next!
-pass1b
+pass1c
     .byt ext
     .word yin16                 ; will it blend?
-    .byt bnz , <(pass1a-*-2)    ; more source?
+    .byt bz , <(pass1d-*-2)     ; no more source?
+    .byt bnc , <(pass1b-*-2)    ; only copy the same length as 'i'
+    .byt std | N0
+    .byt ext
+    .word copysym16
+    .byt br , <(pass1b-*-2)     ; next
+pass1d
     .byt ld | N0
-    .byt push
+    .byt st | TOS
     .byt nxt
 
     ; we get here when we find a smudged symbol.
@@ -1622,8 +1582,6 @@ pforget03
 #include "page.i65"
     .word cbitfetch
 #include "page.i65"
-    .word xyzzy
-#include "page.i65"
     .word pquerycolon
     .word pass1
     .word drop
@@ -1631,11 +1589,17 @@ pforget03
     .word ploop
     .byt <(pforget03-*+1)
 #include "pad.i65"
+    .word xyzzy
+#include "page.i65"
     .word nip
+#include "page.i65"
+    .word dup
 #include "page.i65"
     .word three
 #include "page.i65"
     .word _erase
+#include "page.i65"
+    .word _automem
 #include "page.i65"
     .word newdp
 #include "page.i65"
@@ -1646,6 +1610,8 @@ pforget03
     .word dp
 #include "page.i65"
     .word store
+#include "page.i65"
+    .word _info
 #include "page.i65"
     .word exit
 
