@@ -252,58 +252,6 @@ nfalen01
 
 ;--------------------------------------------------------------
 #if 0
-name=nfalen16
-tags=nosymbol
-!!!Subroutine
-Sweet16 wrapper around nfalen16a subroutine
-Get name field length, ignoring flag bits
-
-sets C flag if smudged
-
-* inputs
-** TOS = NFA pointer
-* returns
-** ACC = length of NFA
-** C = smudge bit
-** V = vocabulary bit
-** R11L = length (copy of A)
-** Y = 0
-
-~ remove this after rewriting [[REHASH]]
-#endif
-nfalen16
-    jsr nfalen01
-    rol R14H                    ; Vocab bit
-    sta R0L
-    sty r0+22
-    ldy #0
-    sty R0H
-    sty r0+23
-    sty R14L                    ; prev = ACC
-    rts
-
-; the old dog chow below
-    jsr nfalen16a
-    rol R14H
-    sty R0H
-    sta R0L
-    sty R14L                    ; should be able to test length=0 without touching ACC first
-    rts
-
-nfalen16a                       ; used by several Forth primitives
-    ldy #0
-    lda (tos),y
-nfalen16b
-    sta r11
-    asl                         ; set carry flag if smudge bit
-    lda r11
-    and #$1f                    ; return length in A
-    bit r11                   ; set V flag = Vocabulary bit
-    sta r11
-    rts
-
-;--------------------------------------------------------------
-#if 0
 name=NFA+
 stack=( nfa -- nfa+ )
 tags=interpreter,ext,primitive,nosymbol
@@ -375,6 +323,34 @@ Copies the 0th byte, and moves N0 beyond the copied string
 
 #endif
 symcopy
+;--------------------------------------------------------------
+#if 0
+name=symcopy16
+tags=nosymbol
+Copies a string from (tos) to (n0) via the Y register.
+Copies the 0th byte, and moves N0 beyond the copied string
+
+* inputs
+** TOS (R1) source base address
+** N0 (R2) target base address
+** N1 (R3) string length
+* returns
+** Y = FF
+#endif
+symcopy16
+    ldy n+2
+symcopy16a
+    lda (tos),y
+    sta (n),y
+    dey
+    bpl symcopy16a
+    sec
+    lda n+2
+    adc n
+    sta n
+    bcc symcopy16b
+    inc n+1
+symcopy16b
     rts
 
 ;--------------------------------------------------------------
@@ -1225,38 +1201,6 @@ automem02
 
 ;--------------------------------------------------------------
 #if 0
-name=symcopy16
-tags=nosymbol
-Copies a string from (tos) to (n0) via the Y register.
-Copies the 0th byte, and moves N0 beyond the copied string
-
-* inputs
-** TOS (R1) source base address
-** N0 (R2) target base address
-** N1 (R3) string length
-* returns
-** Y = FF
-
-~ fix this to account for (V flag) inside a vocabulary
-#endif
-copysym16
-    ldy n+2
-copysym16a
-    lda (tos),y
-    sta (n),y
-    dey
-    bpl copysym16a
-    sec
-    lda n+2
-    adc n
-    sta n
-    bcc copysym16b
-    inc n+1
-copysym16b
-    rts
-
-;--------------------------------------------------------------
-#if 0
 name=smudgeclones
 stack=( nfa -- nfa )
 tags=interpreter,ext
@@ -1269,6 +1213,41 @@ setting the smudge bit for all exact matches to this clone
 * same name
 #endif
 smudgeclones
+    ldx #3
+    lda tos,x
+    pha
+    dex
+    bpl smudgeclones+2
+    lda tos
+    sta n
+    lda tos+1
+    sta n+1
+smudgeclonesb
+    jsr nfaplus01
+    tya
+    beq smudgeclonesz
+    ldy #0
+    eor (n),y
+    and #$5f
+    bne smudgeclonesb
+    jsr nfalen01
+    adc #0
+    tay
+    jsr strcomp
+    bne smudgeclonesb
+yep                             ; we have a clone
+    sec
+    jsr qsmudge
+    bne smudgeclonesb           ; bra
+    nop
+    nop
+smudgeclonesz
+    ldx #0
+    pla
+    sta tos,x
+    inx
+    cpx #4
+    bne smudgeclonesz+2
     rts
 
 ;--------------------------------------------------------------
@@ -1320,6 +1299,20 @@ yin16
     dey
     bpl yin16f              ; we have a clone
 yeah
+    brk
+    .byt ld | TOS           ; sweet16 troika doll
+    .byt st | R11
+    .byt ld | N0
+    .byt push
+    .byt ld | R11
+    .byt push
+    .byt st | N0
+clone01
+    .byt ext
+    .word nfaplus01
+    .byt bz , <(clone01-*-2)
+    
+    
     jsr smudgeclones
     jsr dectos
     sec
@@ -1403,7 +1396,7 @@ pass1c
     .byt ld | R11
     .byt sti | N0
     .byt ext
-    .word copysym16
+    .word symcopy16
     .byt br , <(pass1b-*-2)     ; next
 pass1d
     .byt ld | N0
@@ -1486,7 +1479,7 @@ pass2a                          ; for each name in symtab...symtail
     .byt bnc , <(pass2b-*-2)    ; Pearson hash <> 'i'?
     .byt std | N0               ; write cfa to target
     .byt ext
-    .word copysym16
+    .word symcopy16
 pass2b
     .byt ext
     .word nfaplus01
