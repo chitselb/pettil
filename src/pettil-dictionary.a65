@@ -80,6 +80,214 @@ _definitions
 
 ;--------------------------------------------------------------
 #if 0
+name=NFALEN
+stack=( nfa -- length )
+tags=nosymbol
+Return the length of the name
+#endif
+nfalen
+    jsr nfalen01           ; A=length; Y=0
+    ldy #0
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=nfalen01
+stack=( nfa -- nfa )
+tags=dictionary,nosymbol
+!!! Subroutine
+Get the length of the symbol at TOS
+
+|<br><i>inputs</i>|<|
+|<b>TOS</b>|NFA|
+|<br><i>returns</i>|<|
+|<b>TOS</b>|unchanged|
+|<b>A</b>|name length (without vocabid)|
+|<b>Y</b>|symbol flag/length byte|
+|^<b>Z</b>|<b>0</b> not last<br/><b>1</b> last|
+|^<b>C</b>|<b>0</b> Forth<br/><b>1</b> Vocabulary|
+#endif
+nfalen01
+    ldy #0
+    lda (tos),y
+nfalen02
+    tay
+    asl
+    asl                 ; C = Vocab bit
+    tya
+    and #$1f
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=NFA+
+stack=( nfa -- nfa+ )
+tags=interpreter,ext,primitive,nosymbol
+Chain to the next NFA on the list
+#endif
+nfaplus
+    jsr nfaplus01
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=nfaplus01
+stack=( nfa -- nfa+ )
+tags=dictionary,nosymbol
+!!! Subroutine
+Chain to the next NFA on the list
+
+|<br><i>inputs</i>|<|
+|<b>TOS</b>|NFA|
+|<br><i>returns</i>|<|
+|<b>TOS</b>|next NFA|
+|<b>Z</b>|always <b>0</b>|
+#endif
+nfaplus01
+    jsr nfalen01
+    adc #3              ; +cfa +length/flags +vocid
+    ;clc
+    adc tos
+    sta tos
+    bcc nfaplus02
+    inc tos+1
+nfaplus02
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=symcomp
+stack=( -- )
+tags=interpreter,nosymbol,primitive
+This is a general purpose map of Dictionary register usage 
+
+|Register|Parameter|Description|h
+|<br><i>inputs</i>|<|<|
+|^<b>TOS</b>|^startnfa|next symbol on list|
+|^<b>N0</b>|^searchnfa|symbol we are trying to find|
+|^<b>N1</b>|^search vocab|vocid of (N0)<br/><b>0</b> = Forth vocabulary|
+|~|^search flags/len|contents of (N0)|
+|^<b>N2</b>|^[[(SEEK)]]<br/>modeflag|^<b>TRUE</b> = unsorted [[SYMNEW]]<br/><b>FALSE</b> = sorted [[SYMTAB]]|
+|~|^[[(FORGET)]]||
+|^<b>N3</b>|^(tos)|this NFA's flags/len byte|
+|^<b>N4</b>|^||
+|^<b>N5</b>|^||
+|^<b>N6</b>|^||
+|^<b>N7</b>|newdp|^discard CFAs between<br>these addresses|
+|^<b>N8</b>|tdict|~|
+|^<b>A</b>|^||
+|^<b>X</b>|^||
+|^<b>Y</b>|^||
+|^<b>N</b>|^||
+|^<b>V</b>|^||
+|^<b>Z</b>|^||
+|^<b>C</b>|^||
+|<br><i>returns</i>|<|<|
+|^<b>TOS</b>|^startnfa|next symbol on list|
+|^<b>N0</b>|^searchnfa|symbol we are trying to find|
+|^<b>N1</b>|^search vocab|vocid of (N0)<br/><b>0</b> = Forth vocabulary|
+|~|^search flags/len|contents of (TOS)|
+|^<b>N2</b>|^modeflag|^<b>TRUE</b> = unsorted [[SYMNEW]]<br/><b>FALSE</b> = sorted [[SYMTAB]]|
+|^<b>N3</b>|^||
+|^<b>N4</b>|^||
+|^<b>N5</b>|^||
+|^<b>N6</b>|^||
+|^<b>N7</b>|^||
+|^<b>N8</b>|^||
+|^<b>A</b>|^||
+|^<b>X</b>|^||
+|^<b>Y</b>|^||
+|^<b>N</b>|^||
+|^<b>V</b>|^||
+|^<b>Z</b>|^||
+|^<b>C</b>|^||
+|^<b>A</b>|||
+|^<b>Y</b>||<b>0</b>|
+|^<b>C</b>|^|<b>0</b> more source<br/><b>1</b> end of source|
+#endif
+symcomp
+    sec
+    ldy #0
+    lda (tos),y
+    beq strcomp02
+    clc
+    sta n+6                 ; N3 = this nfa's flags/len byte
+    eor (n),y
+    and #$5f
+    bne strcomp02           ; length or vocab mismatch, exit
+    lda n+6
+    and #$1f
+    tay
+    bit n+6
+    bvc strcomp            ; both in Forth vocab
+    iny
+    lda (tos),y
+    dey
+    eor n+2
+    bne strcomp02
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=strcomp
+tags=nosymbol
+Compares two strings known to be the same length pointed to by
+`TOS` and `N0`.
+
+|<br><i>inputs</i>|<|
+|<b>TOS</b>|NFA|
+|<b>N0</b>|NFA being sought|
+|<b>Y</b>|length|
+|<br><i>returns</i>|<|
+|<b>TOS</b>|unchanged|
+|<b>N0</b>|unchanged|
+|^<b>Y</b>|index of mismatch<br><b>0</b> if success|
+|<b>Z</b>|strings match?|
+|<b>C</b>|unchanged|
+#endif
+strcomp
+    lda (tos),y
+    eor (n),y
+    bne strcomp02
+    dey
+    bne strcomp
+strcomp02
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=symcopy16
+tags=nosymbol,subroutine
+Copies a string from (tos) to (n0) via the Y register.
+Copies the 0th byte, and moves N0 beyond the copied string
+
+|<br><i>inputs</i>|<|
+|<b>TOS</b>|Source base address|
+|<b>N0</b>|Target base address|
+|<b>Y</b>|Name length (<i>symcopy16a</i>)|
+|<br><i>returns</i>|<|
+|<b>TOS</b>|unchanged|
+|<b>N0</b>|unchanged|
+|^<b>Y</b>|<b>FF</b>|
+|<b>Z</b>|<b>0</b>|
+#endif
+symcopy16
+    ldy n+4
+symcopy16a
+    lda (tos),y
+    sta (n),y
+    dey
+    bpl symcopy16a
+    sec
+    lda n+4
+    adc n
+    sta n
+    bcc symcopy16b
+    inc n+1
+symcopy16b
+    rts
+
+;--------------------------------------------------------------
+#if 0
 name=PEARSON#
 stack=( nfa -- pearsonhash )
 tags=nosymbol,ext
@@ -209,166 +417,6 @@ bloomhash03
     dey
     bne bloomhash02
     lda 2*R11
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=NFALEN
-stack=( nfa -- length )
-tags=nosymbol
-Return the length of the name
-#endif
-nfalen
-    jsr nfalen01           ; A=length; Y=0
-    ldy #0
-    jmp put
-
-;--------------------------------------------------------------
-#if 0
-name=nfalen01
-stack=( nfa -- nfa )
-tags=dictionary,nosymbol
-!!! Subroutine
-Get the length of the symbol at TOS
-
-|<br><i>inputs</i>|<|
-|<b>TOS</b>|NFA|
-|<br><i>returns</i>|<|
-|<b>TOS</b>|unchanged|
-|<b>A</b>|name length (without vocabid)|
-|<b>Y</b>|symbol flag/length byte|
-|^<b>Z</b>|<b>0</b> not last<br/><b>1</b> last|
-|^<b>C</b>|<b>0</b> Forth<br/><b>1</b> Vocabulary|
-#endif
-nfalen01
-    ldy #0
-    lda (tos),y
-    tay
-    asl
-    asl                 ; C = Vocab bit
-    tya
-    and #$1f
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=NFA+
-stack=( nfa -- nfa+ )
-tags=interpreter,ext,primitive,nosymbol
-Chain to the next NFA on the list
-#endif
-nfaplus
-    jsr nfaplus01
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=nfaplus01
-stack=( nfa -- nfa+ )
-tags=dictionary,nosymbol
-!!! Subroutine
-Chain to the next NFA on the list
-
-|<br><i>inputs</i>|<|
-|<b>TOS</b>|NFA|
-|<br><i>returns</i>|<|
-|<b>TOS</b>|next NFA|
-|<b>Z</b>|always <b>0</b>|
-#endif
-nfaplus01
-    jsr nfalen01
-    adc #3              ; +cfa +length/flags +vocid
-    ;clc
-    adc tos
-    sta tos
-    bcc nfaplus02
-    inc tos+1
-nfaplus02
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=symcomp
-stack=( -- )
-tags=interpreter,nosymbol,primitive
-
-#endif
-symcomp
-    ldy #0
-    lda (tos),y
-    sta n+3
-    eor (n),y
-    and #$5f
-    bne strcomp02           ; length or vocab mismatch, exit
-    lda n+3
-    and #$1f
-    tay
-    bit n+3
-    bvc strcomp            ; both in Forth vocab
-    iny
-    lda (tos),y
-    dey
-    eor n+2
-    bne strcomp02
-    ; fall through
-;--------------------------------------------------------------
-#if 0
-name=strcomp
-tags=nosymbol
-Compares two strings known to be the same length pointed to by
-`TOS` and `N0`.
-
-|<br><i>inputs</i>|<|
-|<b>TOS</b>|NFA|
-|<b>N0</b>|NFA being sought|
-|<b>Y</b>|length|
-|<br><i>returns</i>|<|
-|<b>TOS</b>|unchanged|
-|<b>N0</b>|unchanged|
-|^<b>Y</b>|index of mismatch<br><b>0</b> if success|
-|<b>Z</b>|strings match?|
-|<b>C</b>|unchanged|
-#endif
-strcomp
-    lda (tos),y
-    eor (n),y
-    bne strcomp02
-    dey
-    bne strcomp
-strcomp02
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=symcopy16
-tags=nosymbol,subroutine
-Copies a string from (tos) to (n0) via the Y register.
-Copies the 0th byte, and moves N0 beyond the copied string
-
-|<br><i>inputs</i>|<|
-|<b>TOS</b>|Source base address|
-|<b>N0</b>|Target base address|
-|<b>Y</b>|Name length (<i>symcopy16a</i>)|
-|<br><i>returns</i>|<|
-|<b>TOS</b>|unchanged|
-|<b>N0</b>|unchanged|
-|^<b>Y</b>|<b>FF</b>|
-|<b>Z</b>|<b>0</b>|
-#endif
-symcopy16
-    ldy n+4
-symcopy16a
-    lda (tos),y
-    sta (n),y
-    dey
-    bpl symcopy16a
-    sec
-    lda n+4
-    adc n
-    sta n
-    bcc symcopy16b
-    inc n+1
-symcopy16b
     rts
 
 ;--------------------------------------------------------------
@@ -680,16 +728,6 @@ in this sequence:
 # //hashed// [[SYMTAB]] of //01// `ASSEMBLER`
 # //unsorted// [[SYMNEW]] of //00// `FORTH`
 # //hashed// [[SYMTAB]] of //00// `FORTH`
-
-|Register|Parameter|Description|h
-|^N0|^searchname|`nfa` we are trying to find|
-|^N1|^vocid|search vocabulary|
-|^|^modeflag|TRUE = unsorted [[SYMNEW]]<br/>FALSE = sorted [[SYMTAB]]|
-|^|^startnfa||
-|^|^nfa||
-|^|^xfa||
-|^|^flag||
-
 ```
 test case
     : fred   ." yaba daba doo" ;  ok
@@ -710,13 +748,23 @@ pseek
     ldy #3
     jsr locals                  ; TOS = startnfa; N0 = searchname 
                                 ; N1 = vocid; N2 = modeflag
-    brk
-    .byt sub | ACC
-    .byt st | N4                ; set result = FALSE
-    .byt ldi | N0               ; R0 = length of searchname
-    .byt dcr | N0               ; fix pointer to searchname
-    .byt rtn
+    sty n+8
+    sty n+9                     ; set result = FALSE
+    lda (n),y
+    jsr nfalen02
+    sta r0      ; ~ this goes
+    ldy n+2
+    beq pseek00
+    ora #bit6
+pseek00
+    sta n+3                     ; vocab flag/len of symbol we are seeking
 pseek01
+;    jsr symcomp
+;    bcs pseek07                 ; end of list? exit with searchname/false
+;    beq pseek20                 ; symbols match? proceed
+;    bit n+4                     ; sorted or unsorted?
+;    bmi pseek04                 ; unsorted. next!
+
     jsr nfalen01
     beq pseek07                 ; end of list? exit with searchname/false
     eor r0                      ; check lengths, preserving C flag
@@ -1290,7 +1338,7 @@ Copy the symbol at TOS and any of its clones to N0
 |~|~|^return|^0 done with source|
 |^R1|^TOS|nfa+||
 |^R2|^N0|^targ+|pile up output here|
-|^R3|^N1|^nfa|^temp storage used<br>for twin search<br>symcomp16 compares TOS vs N1|
+|^R3|^N1|^nfa|^temp storage used<br>for twin search<br>symcomp compares TOS vs N1|
 |^R4|^N2|name length|length of fraternal twins|
 |^R5|^N3|^symbol length|^length of identical twins<br>name+vocid|
 |^R6|^N4|||
