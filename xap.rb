@@ -434,8 +434,6 @@ _semi
                 "pettil-editor.a65 "\
                 "pettil-assembler.a65 "
 
-#                "pettil-forget.a65 "\
-
     all_words = Hash.new
     pettil = PettilSource.new core_files+transient_files
 

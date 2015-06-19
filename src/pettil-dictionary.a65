@@ -96,19 +96,19 @@ dictionary.
 ```
 symbol table entry
 +---------------+
-|    CFA[low]   |  +0      Code field address
+|    CFA[low]   |  -2      Code field address
 |    CFA[high]  |
 +-+-+-+-+-+-+-+-+
-|     [   len   ]  +2      Length field
+|     [   len   ]  NFA     Length field
 [S]             |          Smudge bit
 | [V]           |          Vocabulary bit
 |   [I]         |          Immediate bit
 +-+-+-+-+-+-+-+-+
-|   name[1]     |  +3      Name field
+|   name[1]     |  +1      Name field
 |           ... |
-|   name[len]   |
+|   name[len]   |  +len
 +---------------+
-?  vocab ident  ?  +len+3  Vocabulary token (if V bit set)
+?  vocab ident  ?  +len+1  Vocabulary token (if V bit set)
 +---------------+
 ```
 #endif
@@ -231,9 +231,9 @@ tags=dictionary,nosymbol
 !!! Subroutine
 Get the length of the symbol at TOS
 
-|<b>inputs</b>|<|
+|<br><i>inputs</i>|<|
 |<b>TOS</b>|NFA|
-|<b>returns</b>|<|
+|<br><i>returns</i>|<|
 |<b>TOS</b>|unchanged|
 |<b>A</b>|name length (without vocabid)|
 |<b>Y</b>|symbol flag/length byte|
@@ -269,9 +269,9 @@ tags=dictionary,nosymbol
 !!! Subroutine
 Chain to the next NFA on the list
 
-|<b>inputs</b>|<|
+|<br><i>inputs</i>|<|
 |<b>TOS</b>|NFA|
-|<b>returns</b>|<|
+|<br><i>returns</i>|<|
 |<b>TOS</b>|next NFA|
 |<b>Z</b>|always <b>0</b>|
 #endif
@@ -288,19 +288,44 @@ nfaplus02
 
 ;--------------------------------------------------------------
 #if 0
+name=symcomp
+stack=( -- )
+tags=interpreter,nosymbol,primitive
+
+#endif
+symcomp
+    ldy #0
+    lda (tos),y
+    sta n+3
+    eor (n),y
+    and #$5f
+    bne strcomp02           ; length or vocab mismatch, exit
+    lda n+3
+    and #$1f
+    tay
+    bit n+3
+    bvc strcomp            ; both in Forth vocab
+    iny
+    lda (tos),y
+    dey
+    eor n+2
+    bne strcomp02
+    ; fall through
+;--------------------------------------------------------------
+#if 0
 name=strcomp
 tags=nosymbol
 Compares two strings known to be the same length pointed to by
 `TOS` and `N0`.
 
-|<b>inputs</b>|<|
-|<b>TOS</b>|NFA in chain|
+|<br><i>inputs</i>|<|
+|<b>TOS</b>|NFA|
 |<b>N0</b>|NFA being sought|
 |<b>Y</b>|length|
-|<b>returns</b>|<|
+|<br><i>returns</i>|<|
 |<b>TOS</b>|unchanged|
 |<b>N0</b>|unchanged|
-|^<b>Y</b>|index of mismatch<br>0=success|
+|^<b>Y</b>|index of mismatch<br><b>0</b> if success|
 |<b>Z</b>|strings match?|
 |<b>C</b>|unchanged|
 #endif
@@ -315,20 +340,21 @@ strcomp02
 
 ;--------------------------------------------------------------
 #if 0
-name=symcopy
-tags=nosymbol,subroutine
-Copies a symbol from (`TOS`) to (`N0`) 
-Copies the 0th byte, and moves N0 beyond the copied string
-
-
-#endif
-symcopy
-;--------------------------------------------------------------
-#if 0
 name=symcopy16
-tags=nosymbol
+tags=nosymbol,subroutine
 Copies a string from (tos) to (n0) via the Y register.
 Copies the 0th byte, and moves N0 beyond the copied string
+
+|<br><i>inputs</i>|<|
+|<b>TOS</b>|Source base address|
+|<b>N0</b>|Target base address|
+|<b>Y</b>|string length|
+|<br><i>returns</i>|<|
+|<b>TOS</b>|unchanged|
+|<b>N0</b>|unchanged|
+|^<b>Y</b>|index of mismatch<br><b>0</b> if success|
+|<b>Z</b>|strings match?|
+|<b>C</b>|unchanged|
 
 * inputs
 ** TOS (R1) source base address
@@ -338,14 +364,14 @@ Copies the 0th byte, and moves N0 beyond the copied string
 ** Y = FF
 #endif
 symcopy16
-    ldy n+2
+    ldy n+4
 symcopy16a
     lda (tos),y
     sta (n),y
     dey
     bpl symcopy16a
     sec
-    lda n+2
+    lda n+4
     adc n
     sta n
     bcc symcopy16b
@@ -1289,7 +1315,7 @@ yin16
     beq yin16f
     tax
     adc #0
-    sta n+2                 ; length of name+vocab
+    sta n+4                 ; length of name+vocab
     txa
     and #$1f
     eor zi
@@ -1436,7 +1462,7 @@ yang16
     bne yang16f                 ; same pearson hash?
     jsr nfalen01
     adc #0
-    sta n+2
+    sta n+4
     beq yang16f
     jsr bloomhash01
     tax
