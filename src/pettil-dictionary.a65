@@ -90,21 +90,33 @@ Get the length of the symbol at TOS
 |<b>TOS</b>|NFA|
 |<br><i>returns</i>|<|
 |<b>TOS</b>|unchanged|
+|<b>N1</b>|flags/len byte (as N1 msb)|
 |<b>A</b>|name length (without vocabid)|
-|<b>Y</b>|symbol flag/length byte|
-|^<b>Z</b>|<b>0</b> not last<br/><b>1</b> last|
+|<b>Y</b>|always <b>0</b>|
+|^<b>N</b>|<b>0</b> not smudged<br/><b>1</b> smudged|
+|^<b>V</b>|<b>0</b> Forth<br/><b>1</b> Vocabulary|
+|^<b>Z</b>|<b>0</b> not last<br/><b>1</b> end of list|
 |^<b>C</b>|<b>0</b> Forth<br/><b>1</b> Vocabulary|
 #endif
 nfalen01
-    ldy #0              ; [2] [23]
-    lda (tos),y         ; [5]
+    ldy #0                      ; [2]
+    lda (tos),y                 ; [5]
+    sta n+3                     ; [3]
 nfalen02
-    tay                 ; [2] [16]
-    asl                 ; [2]
-    asl                 ; [2] C = Vocab bit
-    tya                 ; [2]
-    and #$1f            ; [2]
-    rts                 ; [6] 
+    and #$1f                    ; [2]
+    bit n+3                     ; [3]
+    clc                         ; [2]
+    bvc nfalen03                ; [2/3]
+    sec                         ; [2]
+nfalen03
+    rts                         ; [6]
+
+    tay                         ; [2] [16]
+    asl                         ; [2]
+    asl                         ; [2] C = Vocab bit
+    tya                         ; [2]
+    and #$1f                    ; [2]
+    rts                         ; [6] 
 
 ;--------------------------------------------------------------
 #if 0
@@ -114,7 +126,7 @@ tags=nosymbol
 Return the length of the name
 #endif
 nfalen
-    jsr nfalen01           ; A=length; Y=0
+    jsr nfalen01
     ldy #0
     jmp put
 
@@ -199,7 +211,7 @@ This is a general purpose map of Dictionary register usage
 |^<b>Y</b>|^||
 |^<b>N</b>|^||
 |^<b>V</b>|^||
-|^<b>Z</b>|^||
+|^<b>Z</b>|^same?|^<b>0</b> symbols don't match<br/><b>1</b> symbols match|
 |^<b>C</b>|^||
 |^<b>A</b>|||
 |^<b>Y</b>||<b>0</b>|
@@ -397,10 +409,9 @@ and CBIT! or CBIT@ to do something useful with the result.
 #endif
 bloomhash01
     jsr nfalen01
+    sty 2*R11
+    sty 2*R11+1
     tay
-    lda #0
-    sta 2*R11
-    sta 2*R11+1
 bloomhash02
     lda (tos),y                 ;[5]
     clc                         ;[2]
@@ -750,27 +761,34 @@ pseek
                                 ; N1 = vocid; N2 = modeflag
     sty n+8
     sty n+9                     ; set result = FALSE
-    lda (n),y
-    jsr nfalen02
-    sta r0      ; ~ this goes
-    ldy n+2
+    lda n+2
     beq pseek00
-    ora #bit6
+    lda #bit6
 pseek00
     sta n+3                     ; vocab flag/len of symbol we are seeking
-pseek01
-;    jsr symcomp
-;    bcs pseek07                 ; end of list? exit with searchname/false
-;    beq pseek20                 ; symbols match? proceed
-;    bit n+4                     ; sorted or unsorted?
-;    bmi pseek04                 ; unsorted. next!
 
-    jsr nfalen01
-    beq pseek07                 ; end of list? exit with searchname/false
-    eor r0                      ; check lengths, preserving C flag
+    lda (n),y
+    jsr nfalen02
+    ora n+3
+    sta n+3
+    sta r0      ; ~ this goes
+pseek01
+    jsr symcomp
+    bcs pseek07                 ; end of list? exit with searchname/false
+    lda (tos),y
+    jsr nfalen02
+    eor n+3                     ; check lengths, preserving C flag
     beq pseek20                 ; same length? proceed
     bit n+4                     ; sorted or unsorted?
     bmi pseek04                 ; unsorted. next!
+
+;    lda (tos),y
+;    jsr nfalen01
+;    beq pseek07                 ; end of list? exit with searchname/false
+;    eor r0                      ; check lengths, preserving C flag
+;    beq pseek20                 ; same length? proceed
+;    bit n+4                     ; sorted or unsorted?
+;    bmi pseek04                 ; unsorted. next!
 pseek03                         ; okay, it's sorted
     eor r0                      ; restore length
     cmp r0                      ; end of sorted list?
@@ -1289,41 +1307,6 @@ setting the smudge bit for all exact matches to this clone
 * same name
 #endif
 smudgeclones
-    ldx #3
-    lda tos,x
-    pha
-    dex
-    bpl smudgeclones+2
-    lda tos
-    sta n
-    lda tos+1
-    sta n+1
-smudgeclonesb
-    jsr nfaplus01
-    tya
-    beq smudgeclonesz
-    ldy #0
-    eor (n),y
-    and #$5f
-    bne smudgeclonesb
-    jsr nfalen01
-    adc #0
-    tay
-    jsr strcomp
-    bne smudgeclonesb
-yep                             ; we have a clone
-    sec
-    jsr qsmudge
-    bne smudgeclonesb           ; bra
-    nop
-    nop
-smudgeclonesz
-    ldx #0
-    pla
-    sta tos,x
-    inx
-    cpx #4
-    bne smudgeclonesz+2
     rts
 
 ;--------------------------------------------------------------
@@ -1359,19 +1342,18 @@ Yin has just a few questions:
         
 #endif
 yin16
-    ldy #0
-    sty R14L                ; prior result
     jsr nfalen01
-    beq yin16f
+    sty R14L                ; prior result
+    beq yin16f              ; length = 0 means end of list
     tax
     adc #0
     sta n+4                 ; length of name+vocab
     txa
-    and #$1f
     eor zi
     clc
     bne yin16f
     sec
+    ldy n+3
     dey
     bpl yin16f              ; we have a clone
 yeah
@@ -1508,7 +1490,7 @@ yang16
     lda (tos),y
     jsr inctos
     eor zi
-    and #$f
+    and #$f                     ; ~ unnecessary?
     bne yang16f                 ; same pearson hash?
     jsr nfalen01
     adc #0
