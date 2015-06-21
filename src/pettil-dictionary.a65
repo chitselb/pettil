@@ -120,7 +120,6 @@ pearsonhash
 
 pearsonhash01
     jsr nfalen01            ; A=length
-pearsonhash02               ; already have A?
     sta 2*R11               ; seed hash1 with length
     tay                     ; count backwards
 pearsonhash03
@@ -165,8 +164,6 @@ tags=nosymbol,concepts
 Forth wrapper around Bloom hash function
 #endif
 bloomhash
-    jsr nfalen01
-    tay
     jsr bloomhash01             ; A=bloom#; Y=0
     jmp put
 
@@ -189,60 +186,27 @@ Calculate the bloom filter hash between 0..63.  Use >BIT
 and CBIT! or CBIT@ to do something useful with the result.
 #endif
 bloomhash01
+    jsr nfalen01
+    tay
     lda #0
-    sta r0
-    sta r0+1
+    sta 2*R11
+    sta 2*R11+1
 bloomhash02
     lda (tos),y                 ;[5]
     clc                         ;[2]
     adc #$FF-('9')              ;[2]
     adc #'9'-'0'+1              ;[2]
     bcc bloomhash03             ;[3] carry is set only for digits
-    adc r0                      ;[3] anything with digits is nonzero
+    adc 2*R11                   ;[3] anything with digits is nonzero
     and #(8*(pearson-(bloom+3)))-1   ;[2] keep it within the filter bits
-    sta r0                      ;[3]
+    sta 2*R11                   ;[3]
     bne bloomhash03             ; never return 0 if digits are present
     ldy #1                      ; if total of digits hits some multiple
     tya                         ; of 64, returns a nonzero value
 bloomhash03
     dey
     bne bloomhash02
-    lda r0
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=bloomhash16
-tags=nosymbol
-Sweet16 wrapper for Bloom hash
-
-sets bloom filter bit
-
-* inputs
-** TOS (R1) NFA
-** N1 (R3) length
-* returns
-** ACC (R0) address
-#endif
-bloomhash16
-    ldy n+2                     ; NFA size in N1
-    jsr bloomhash01
-    pha
-    lsr
-    lsr
-    lsr
-    clc
-    adc #<(bloom+3)
-    sta r0
-    tya
-    adc #>(bloom+3)
-    sta r0+1
-    pla
-    tay
-    lda power2,y
-    ldy #0
-    ora (r0),y
-    sta (r0),y
+    lda 2*R11
     rts
 
 ;--------------------------------------------------------------
@@ -1321,11 +1285,12 @@ yin16
     adc #0
     sta n+2                 ; length of name+vocab
     txa
+    and #$1f
     eor zi
     clc
     bne yin16f
     sec
-    dey
+    dex
     bmi yin16e              ; we have a clone
 yin16f
     rol R14H
@@ -1434,18 +1399,30 @@ stack=( nfa -- nfa )
 tags=interpreter,ext
 Conditionally copy the symbol at TOS to N0        
 #endif
-#include "align.i65"
 yang16
-    clc                     ; we did not copy
     jsr nfalen01
+    adc #0
+    sta n+2
     beq yang16f
-    jsr pearsonhash02
+    jsr pearsonhash01
     eor zi
     bne yang16f
+    jsr bloomhash01
+    tax
+    and #7
+    tay
+    txa
+    lsr
+    lsr
+    lsr
+    tax
+    lda power2,y
+    ora bloom+3,x
+    sta bloom+3,x
     sec
-    dey
-    bmi yin16e              ; we have a clone
+    .byt $29                ; AND #
 yang16f
+    clc                     ; we did not copy
     rol R14H
     rts
 
@@ -1641,6 +1618,13 @@ pforget03
 #include "page.i65"
     .word _automem
 #include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word clit
+    .byt 8
+#include "pad.i65"
+    .word _erase
+#include "page.i65"
     .word _pad
 #include "page.i65"
     .word _tosyms
@@ -1653,8 +1637,6 @@ pforget03
     .word pdo
 #include "page.i65"
 pforget04
-    .word xyzzy
-#include "page.i65"
     .word twodup
 #include "page.i65"
     .word symtab
@@ -1674,6 +1656,26 @@ pforget04
     .word ploop
     .byt <(pforget04-*+1)
 #include "pad.i65"
+;    .word xyzzy
+;#include "page.i65"
+    .word nip
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word symnew
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word symtail
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word _erase
+#include "page.i65"
     .word newdp
 #include "page.i65"
     .word fetch
@@ -1684,8 +1686,12 @@ pforget04
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word _info
-#include "page.i65"
+;    .word _words
+;#include "page.i65"
+;    .word cr
+;#include "page.i65"
+;    .word _info
+;#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
