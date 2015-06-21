@@ -379,6 +379,22 @@ symcopy
 
 ;--------------------------------------------------------------
 #if 0
+name=qsmudge
+stack=( nfa -- )
+tags=compiler,nosymbol
+#endif
+qsmudge
+    php
+    ldy #0
+    lda (tos),y
+    asl
+    plp
+    ror
+    sta (tos),y
+    rts
+
+;--------------------------------------------------------------
+#if 0
 name=UNSMUDGE
 stack=( nfa -- )
 tags=compiler
@@ -420,13 +436,7 @@ inactive any names that have been [[REDEFINED]].
 #endif
 smudge
     sec
-    php
-    ldy #0
-    lda (tos),y
-    asl
-    plp
-    ror
-    sta (tos),y
+    jsr qsmudge
     jmp drop
 
 ;--------------------------------------------------------------
@@ -1247,6 +1257,22 @@ copysym16b
 
 ;--------------------------------------------------------------
 #if 0
+name=smudgeclones
+stack=( nfa -- nfa )
+tags=interpreter,ext
+Scan forward from the current clone to the end of the chain, 
+setting the smudge bit for all exact matches to this clone
+
+* same length
+* same vocab bit
+* same vocabulary if vocab bit set
+* same name
+#endif
+smudgeclones
+    rts
+
+;--------------------------------------------------------------
+#if 0
 name=YIN16
 stack=( nfa -- nfa )
 tags=interpreter,ext
@@ -1277,7 +1303,6 @@ Yin has just a few questions:
         How's your address?  Do you still live here?
         
 #endif
-#include "align.i65"
 yin16
     ldy #0
     sty R14L                ; prior result
@@ -1295,8 +1320,12 @@ yin16
     dey
     bpl yin16f              ; we have a clone
 yeah
-    nop
-    nop
+    jsr smudgeclones
+    jsr dectos
+    sec
+    jsr qsmudge
+    jsr inctos
+    sec
 yin16f
     rol R14H
     rts
@@ -1406,13 +1435,16 @@ tags=interpreter,ext
 Conditionally copy the symbol at TOS to N0        
 #endif
 yang16
+    ldy #0
+    lda (tos),y
+    jsr inctos
+    eor zi
+    and #$f
+    bne yang16f                 ; same pearson hash?
     jsr nfalen01
     adc #0
     sta n+2
     beq yang16f
-    jsr pearsonhash01
-    eor zi
-    bne yang16f
     jsr bloomhash01
     tax
     and #7
@@ -1448,9 +1480,6 @@ pass2
     brk
 pass2a                          ; for each name in symtab...symtail
     .byt ldd | TOS              ; get cfa from source
-    .byt st | R11
-    .byt ldi | TOS
-    .byt ld | R11
     .byt bz , <(pass2c-*-2)     ; done with this pass?
     .byt ext
     .word yang16                ; compare Pearson hash to 'i'
