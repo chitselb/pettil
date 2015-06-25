@@ -90,7 +90,7 @@ Get the length of the symbol at TOS
 |<b>TOS</b>|NFA|
 |<br><i>returns</i>|<|
 |<b>TOS</b>|unchanged|
-|<b>N1</b>|flags/len byte (as N1 msb)|
+|<b>N6</b>|flags/length byte|
 |<b>A</b>|name length (without vocabid)|
 |<b>Y</b>|always <b>0</b>|
 |^<b>N</b>|<b>0</b> not smudged<br/><b>1</b> smudged|
@@ -99,24 +99,17 @@ Get the length of the symbol at TOS
 |^<b>C</b>|<b>0</b> Forth<br/><b>1</b> Vocabulary|
 #endif
 nfalen01
-    ldy #0                      ; [2]
-    lda (tos),y                 ; [5]
-    sta n+3                     ; [3]
+    ldy #0                      ;[2]
+    lda (tos),y                 ;[5]
 nfalen02
-    and #$1f                    ; [2]
-    bit n+3                     ; [3]
-    clc                         ; [2]
-    bvc nfalen03                ; [2/3]
-    sec                         ; [2]
+    sta n+12                    ;[3]
+    bit n+12                    ;[3]
+    and #$1f                    ;[2]
+    clc                         ;[2]
+    bvc nfalen03                ;[2/3]
+    sec                         ;[2]
 nfalen03
-    rts                         ; [6]
-
-    tay                         ; [2] [16]
-    asl                         ; [2]
-    asl                         ; [2] C = Vocab bit
-    tya                         ; [2]
-    and #$1f                    ; [2]
-    rts                         ; [6] 
+    rts                         ;[6]
 
 ;--------------------------------------------------------------
 #if 0
@@ -127,8 +120,34 @@ Return the length of the name
 #endif
 nfalen
     jsr nfalen01
-    ldy #0
     jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=nfaplus01
+stack=( nfa -- nfa+ )
+tags=dictionary,nosymbol
+!!! Subroutine
+Chain to the next NFA on the list
+
+|<br><i>inputs</i>|<|
+|<b>TOS</b>|NFA|
+|<br><i>returns</i>|<|
+|<b>TOS</b>|next NFA|
+|<b>N6</b>|flags/length byte|
+|<b>Y</b>|always <b>0</b>|
+|<b>Z</b>|always <b>0</b>|
+#endif
+nfaplus01
+    jsr nfalen01
+    adc #3              ; +cfa +flags/length +vocid
+    ;clc
+    adc tos
+    sta tos
+    bcc nfaplus02
+    inc tos+1
+nfaplus02
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -143,31 +162,6 @@ nfaplus
 
 ;--------------------------------------------------------------
 #if 0
-name=nfaplus01
-stack=( nfa -- nfa+ )
-tags=dictionary,nosymbol
-!!! Subroutine
-Chain to the next NFA on the list
-
-|<br><i>inputs</i>|<|
-|<b>TOS</b>|NFA|
-|<br><i>returns</i>|<|
-|<b>TOS</b>|next NFA|
-|<b>Z</b>|always <b>0</b>|
-#endif
-nfaplus01
-    jsr nfalen01
-    adc #3              ; +cfa +length/flags +vocid
-    ;clc
-    adc tos
-    sta tos
-    bcc nfaplus02
-    inc tos+1
-nfaplus02
-    rts
-
-;--------------------------------------------------------------
-#if 0
 name=symcomp
 stack=( -- )
 tags=interpreter,nosymbol,primitive
@@ -175,8 +169,8 @@ This is a general purpose map of Dictionary register usage
 
 |Register|Parameter|Description|h
 |<br><i>inputs</i>|<|<|
-|^<b>TOS</b>|^startnfa|next symbol on list|
-|^<b>N0</b>|^searchnfa|symbol we are trying to find|
+|^<b>TOS</b>|^nfa|next symbol on list|
+|^<b>N0</b>|^nfa|symbol we are comparing to|
 |^<b>N1</b>|^search vocab|vocid of (N0)<br/><b>0</b> = Forth vocabulary|
 |~|^search flags/len|contents of (N0)|
 |^<b>N2</b>|^[[(SEEK)]]<br/>modeflag|^<b>TRUE</b> = unsorted [[SYMNEW]]<br/><b>FALSE</b> = sorted [[SYMTAB]]|
@@ -215,28 +209,31 @@ This is a general purpose map of Dictionary register usage
 |^<b>C</b>|^||
 |^<b>A</b>|||
 |^<b>Y</b>||<b>0</b>|
-|^<b>C</b>|^|<b>0</b> more source<br/><b>1</b> end of source|
+|^<b>C</b>|^|<b>0</b> end of source<br/><b>1</b> more source|
 #endif
 symcomp
-    sec
-    ldy #0
-    lda (tos),y
-    beq strcomp02
-    clc
-    sta n+6                 ; N3 = this nfa's flags/len byte
-    eor (n),y
-    and #$5f
-    bne strcomp02           ; length or vocab mismatch, exit
-    lda n+6
-    and #$1f
-    tay
-    bit n+6
-    bvc strcomp            ; both in Forth vocab
-    iny
-    lda (tos),y
-    dey
-    eor n+2
-    bne strcomp02
+;    sec
+;    ldy #0
+;    lda (n),y
+;    and #$5f
+;    sta n+3
+;    beq strcomp02
+;symcomp01
+;    clc
+;    lda n+3
+;    eor (tos),y
+;    and #$5f
+;    bne strcomp02           ; length or vocab mismatch, exit
+;    lda n+6
+;    and #$1f
+;    tay
+;    bit n+6
+;    bvc strcomp            ; both in Forth vocab
+;    iny
+;    lda (tos),y
+;    dey
+;    eor n+2
+;    bne strcomp02
     ; fall through
 ;--------------------------------------------------------------
 #if 0
@@ -765,15 +762,10 @@ pseek
     beq pseek00
     lda #bit6
 pseek00
+    ora (n),y
     sta n+3                     ; vocab flag/len of symbol we are seeking
-
-    lda (n),y
-    jsr nfalen02
-    ora n+3
-    sta n+3
-    sta r0      ; ~ this goes
 pseek01
-    jsr symcomp
+    jsr symcomp01
     bcs pseek07                 ; end of list? exit with searchname/false
     lda (tos),y
     jsr nfalen02
@@ -781,14 +773,6 @@ pseek01
     beq pseek20                 ; same length? proceed
     bit n+4                     ; sorted or unsorted?
     bmi pseek04                 ; unsorted. next!
-
-;    lda (tos),y
-;    jsr nfalen01
-;    beq pseek07                 ; end of list? exit with searchname/false
-;    eor r0                      ; check lengths, preserving C flag
-;    beq pseek20                 ; same length? proceed
-;    bit n+4                     ; sorted or unsorted?
-;    bmi pseek04                 ; unsorted. next!
 pseek03                         ; okay, it's sorted
     eor r0                      ; restore length
     cmp r0                      ; end of sorted list?
@@ -1352,12 +1336,13 @@ yin16
     eor zi
     clc
     bne yin16f
+yep
     sec
-    ldy n+3
+    ldy n+12
     dey
-    bpl yin16f              ; we have a clone
+    bpl yin16f
 yeah
-    brk
+    brk                     ; we have a clone
     .byt ld | TOS           ; sweet16 troika doll
     .byt st | R11
     .byt ld | N0
