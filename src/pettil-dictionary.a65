@@ -755,72 +755,52 @@ test case
 pseek
     ldy #3
     jsr locals                  ; TOS = startnfa; N0 = searchname 
-                                ; N1 = vocid; N2 = modeflag
+                                ; N1 = vocid; N2 = modeflag (unsorted?)
     sty n+8
     sty n+9                     ; set result = FALSE
-    lda n+2
-    beq pseek00
-    lda #bit6
-pseek00
-    ora (n),y
-    sta n+3                     ; vocab flag/len of symbol we are seeking
 pseek01
-    jsr symcomp01
-    bcs pseek07                 ; end of list? exit with searchname/false
-    lda (tos),y
-    jsr nfalen02
-    eor n+3                     ; check lengths, preserving C flag
-    beq pseek20                 ; same length? proceed
-    bit n+4                     ; sorted or unsorted?
-    bmi pseek04                 ; unsorted. next!
-pseek03                         ; okay, it's sorted
-    eor r0                      ; restore length
-    cmp r0                      ; end of sorted list?
-    bcs pseek07                 ; went past it? exit with searchname/false
-pseek04
+    jsr nfalen01
+    beq pseek07                 ; end of list? done
+    cmp (n),y                   ; just the lengths
+    beq pseek03
+    bcc pseek02                 ; (tos) < (n)? keep going
+                                ; we get here when (tos) > (n)
+    lda n+4
+    beq pseek07                 ; went past it, sorted list? done
+pseek02
     jsr nfaplus01               ; next!
     bne pseek01                 ; bra
-
-pseek20
-    ;lda #0
-    dey                         ; just to set N flag, checking Smudge
-                                ; there are no 0-length words, so won't
-                                ; affect flag bits
-    bmi pseek04                 ; smudged? next!
-    ldy r0
-    lda n+2                     ; are we looking in the Forth vocabulary?
-    beq pseek02                 ; leave the carry flag alone
-    bcc pseek04                 ; this word doesn't belong to a vocabulary? next!
+pseek03
+    tay                         ; length
+    bvc pseek04                 ; (tos) is in Forth vocab?
+    lda n+2
+    beq pseek02                 ; (n) is in Forth vocab? next
     iny
-    eor (tos),y                 ; check the vocabid
-    bne pseek04                 ; mismatch vocabid?  next!
+    eor (tos),y                 ; compare vocab id
+    bne pseek02
     dey
-    clc
-pseek02
-    bcs pseek04                 ; this word belongs to a vocabulary? next!
+pseek04
     jsr strcomp                 ; compare names
-    bne pseek04                 ; lengths match, 
+    bne pseek02                 ; lengths match, 
                                 ; vocabid matches, 
                                 ; but names don't? next!
     ; winner!
-    ;ldy #0
     lda (tos),y
     and #bit5
-    adc #$e0                    ; C=1 if Immediate
-    rol R14H                    ; propagate to Sweet16
+    adc #$e0                    ; C=1 if Immediate, C=0 otherwise
+    rol R14H                    ; Sweet16 carry bit
     brk
     .byt popd | TOS             ; get the CFA
     .byt ldd | TOS              ; reget the CFA and fix TOS
-    .byt dcr | N4
+    .byt dcr | N4               ; return -1 (not immediate)
     .byt bnc , <(pseek10-*-2)
     .byt inr | N4
-    .byt inr | N4
+    .byt inr | N4               ; return +1 (immediate)
 pseek10
     .byt push
     .byt ld | N4                ; return status flag
     .byt push
     .byt nxt
-
 pseek07
     ; loser...
     brk
