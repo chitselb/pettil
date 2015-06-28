@@ -162,81 +162,6 @@ nfaplus
 
 ;--------------------------------------------------------------
 #if 0
-name=symcomp
-stack=( -- )
-tags=interpreter,nosymbol,primitive
-This is a general purpose map of Dictionary register usage
-
-|Register|Parameter|Description|h
-|<br><i>inputs</i>|<|<|
-|^<b>TOS</b>|^nfa|next symbol on list|
-|^<b>N0</b>|^nfa|symbol we are comparing to|
-|^<b>N1</b>|^search vocab|vocid of (N0)<br/><b>0</b> = Forth vocabulary|
-|~|^search flags/len|contents of (N0)|
-|^<b>N2</b>|^[[(SEEK)]]<br/>modeflag|^<b>TRUE</b> = unsorted [[SYMNEW]]<br/><b>FALSE</b> = sorted [[SYMTAB]]|
-|~|^[[(FORGET)]]||
-|^<b>N3</b>|^(tos)|this NFA's flags/len byte|
-|^<b>N4</b>|^||
-|^<b>N5</b>|^||
-|^<b>N6</b>|^||
-|^<b>N7</b>|newdp|^discard CFAs between<br>these addresses|
-|^<b>N8</b>|tdict|~|
-|^<b>A</b>|^||
-|^<b>X</b>|^||
-|^<b>Y</b>|^||
-|^<b>N</b>|^||
-|^<b>V</b>|^||
-|^<b>Z</b>|^||
-|^<b>C</b>|^||
-|<br><i>returns</i>|<|<|
-|^<b>TOS</b>|^startnfa|next symbol on list|
-|^<b>N0</b>|^searchnfa|symbol we are trying to find|
-|^<b>N1</b>|^search vocab|vocid of (N0)<br/><b>0</b> = Forth vocabulary|
-|~|^search flags/len|contents of (TOS)|
-|^<b>N2</b>|^modeflag|^<b>TRUE</b> = unsorted [[SYMNEW]]<br/><b>FALSE</b> = sorted [[SYMTAB]]|
-|^<b>N3</b>|^||
-|^<b>N4</b>|^||
-|^<b>N5</b>|^||
-|^<b>N6</b>|^||
-|^<b>N7</b>|^||
-|^<b>N8</b>|^||
-|^<b>A</b>|^||
-|^<b>X</b>|^||
-|^<b>Y</b>|^||
-|^<b>N</b>|^||
-|^<b>V</b>|^||
-|^<b>Z</b>|^same?|^<b>0</b> symbols don't match<br/><b>1</b> symbols match|
-|^<b>C</b>|^||
-|^<b>A</b>|||
-|^<b>Y</b>||<b>0</b>|
-|^<b>C</b>|^|<b>0</b> end of source<br/><b>1</b> more source|
-#endif
-symcomp
-;    sec
-;    ldy #0
-;    lda (n),y
-;    and #$5f
-;    sta n+3
-;    beq strcomp02
-;symcomp01
-;    clc
-;    lda n+3
-;    eor (tos),y
-;    and #$5f
-;    bne strcomp02           ; length or vocab mismatch, exit
-;    lda n+6
-;    and #$1f
-;    tay
-;    bit n+6
-;    bvc strcomp            ; both in Forth vocab
-;    iny
-;    lda (tos),y
-;    dey
-;    eor n+2
-;    bne strcomp02
-    ; fall through
-;--------------------------------------------------------------
-#if 0
 name=strcomp
 tags=nosymbol
 Compares two strings known to be the same length pointed to by
@@ -772,9 +697,9 @@ pseek02
     bne pseek01                 ; bra
 pseek03
     tay                         ; length
-    bvc pseek04                 ; (tos) is in Forth vocab?
     bit n+12
-    bmi pseek04                 ; smudged? next!
+    bmi pseek02                 ; smudged? next!
+    bvc pseek04                 ; (tos) is in Forth vocab?
     lda n+2
     beq pseek02                 ; (n) is in Forth vocab? next
     iny
@@ -788,12 +713,13 @@ pseek04
                                 ; but names don't? next!
     ; winner!
     lda (tos),y
-    and #bit5
-    lsr
-    lsr
-    lsr
-    lsr
-    ora #$01                    ; wind up with 3 or 1
+    asl
+    asl
+    asl
+    tya
+    rol
+    sec
+    rol                         ; wind up with 3 or 1
     sta n+8
 ;    adc #$e0                    ; C=1 if Immediate, C=0 otherwise
 ;    rol R14H                    ; Sweet16 carry bit
@@ -1268,18 +1194,22 @@ automem02
 
 ;--------------------------------------------------------------
 #if 0
-name=smudgeclones
+name=unsmudgeclone16
 stack=( nfa -- nfa )
-tags=interpreter,ext
-Scan forward from the current clone to the end of the chain,
-setting the smudge bit for all exact matches to this clone
-
-* same length
-* same vocab bit
-* same vocabulary if vocab bit set
-* same name
+tags=interpreter,ext,nosymbol
+Unsmudge the last clone
 #endif
-smudgeclones
+unsmudgeclone16
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=smudgeclone16
+stack=( nfa -- nfa )
+tags=interpreter,ext,nosymbol
+Unsmudge the last clone
+#endif
+smudgeclone16
     rts
 
 ;--------------------------------------------------------------
@@ -1324,10 +1254,8 @@ yin16
     eor zi
     clc
     bne yin16f
-yep
     sec
     ldy n+12
-    dey
     bpl yin16f
 yeah
     brk                     ; we have a clone
@@ -1338,16 +1266,37 @@ yeah
     .byt ld | R11
     .byt push
     .byt st | N0
-clone01
+yin01
+    .byt popd | TOS         ; get the CFA
+    .byt bz , <(yin03-*-2)
+    .byt cpr | N8
+    .byt bc , <(yin02-*-2)   ; out of bounds? ignore
+    .byt cpr | N7
+    .byt bnc , <(yin02-*-2)  ; out of bounds? ignore
+    .byt std | N0
+    .byt ld | N8            ; overwrite CFA to prevent recopy
+    .byt std | TOS          ; also TOS+2
+    .byt ext
+    .word symcopy16         ; copy the flags/length, name, ?vocid
+    .byt ext
+    .word smudgeclone16     ; smudge the clone we just copied
+yin02
     .byt ext
     .word nfaplus01
-    .byt bz , <(clone01-*-2)
-    jsr smudgeclones
-    jsr dectos
-    sec
-    jsr qsmudge
-    jsr inctos
-    sec
+    .byt bz , <(yin01-*-2)
+yin03
+    .byt ext
+    .word unsmudgeclone16   ; unsmudge the last clone
+    .byt pull
+    .byt st | R11
+    .byt pull
+    .byt st | N0
+    .byt ld | R11
+    .byt st | TOS
+    .byt ext
+    .word nfaplus01         ; skip past the original clone
+    .byt rtn
+    clc
 yin16f
     rol R14H
     rts
