@@ -159,6 +159,29 @@ nfaplus
 
 ;--------------------------------------------------------------
 #if 0
+name=symcomp
+tags=nosymbol
+Compares two symbols at TOS and N0
+
+|<br><i>inputs</i>|<|
+|<b>TOS</b>|NFA|
+|<b>N0</b>|NFA being sought|
+|<br><i>returns</i>|<|
+|^<b>Y</b>|index of mismatch<br><b>0</b> if success|
+|<b>Z</b>|symbols match?|
+#endif
+symcomp
+    ldy #0
+    lda (tos),y
+    eor (n),y
+    and #$5f
+    bne strcomp02           ; different lengths or vocab bit? 
+    jsr nfalen01
+    adc #0
+    tay
+    ; fall through
+;--------------------------------------------------------------
+#if 0
 name=strcomp
 tags=nosymbol
 Compares two strings known to be the same length pointed to by
@@ -182,6 +205,21 @@ strcomp
     dey
     bne strcomp
 strcomp02
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=symcomp16
+tags=nosymbol,subroutine
+Compares two symbols, returns Sweet-16 Carry flag set if match
+#endif
+symcomp16
+    jsr symcomp
+    clc
+    bne symcomp16b
+    sec
+symcomp16b
+    rol R14H
     rts
 
 ;--------------------------------------------------------------
@@ -1197,7 +1235,9 @@ tags=interpreter,ext,nosymbol
 Unsmudge the last clone
 #endif
 unsmudgeclone16
-    rts
+    clc
+    .byt $29
+    jmp qsmudge
 
 ;--------------------------------------------------------------
 #if 0
@@ -1207,7 +1247,8 @@ tags=interpreter,ext,nosymbol
 Unsmudge the last clone
 #endif
 smudgeclone16
-    rts
+    sec
+    jmp qsmudge
 
 ;--------------------------------------------------------------
 #if 0
@@ -1241,8 +1282,8 @@ found clone?
 push (mark our place)
 begin
 	copy CFA
-	calculate pearson hash
 	smudge original
+	calculate pearson hash
 	copy symbol
 	original CFA = NEWDP
 	(find next clone)
@@ -1254,12 +1295,6 @@ begin
 	    (is clone?)
 	    bcc begin
 	    is CFA in bounds?
-	    popd | TOS
-	    ldd | TOS
-	    cpr | N8 (tdict)
-	    bc , outer begin
-	    cpr | N7 (newdp)
-	    bnc , outer begin
 	until
 	br begin
 until
@@ -1269,12 +1304,13 @@ pull (resume)
 #endif
 yin16
     jsr nfalen01
-    sty R14L                ; R0 prior result
+    sty R14L                ; R0 prior result for bz test
     beq yin16f              ; length = 0 means end of list
     tay
-    adc #0
-    sta n+4                 ; length of name+vocab
-    tya
+    bvc yin04
+    iny
+yin04
+    sty n+4                 ; length of name+vocab
     eor zi
     clc
     bne yin16f
@@ -1283,16 +1319,15 @@ yin16
     bpl yin16f
 yeah
 ; this is the first clone. Its CFA is qualified.
-    tsx
-    lda $0104,x             ; ~ gross, possibly unnecessary
-    tax                     ; sweet16 troika doll
-    brk
+    brk                     ; sweet16 troika doll
     .byt ld | TOS           ; mark our place
     .byt push
 yin01                       ; BEGIN
     .byt popd | TOS         ; copy CFA at TOS to N0
     .byt ldd | TOS          ; fix TOS
     .byt bz , <(yin02-*-2)  ; at SYMTAIL?
+    .byt ext
+    .word smudgeclone16     ; smudge all clones before copying
     .byt std | N0
     .byt ext
     .word pearsonhash01     ; also copy the pearson hash
@@ -1300,27 +1335,28 @@ yin01                       ; BEGIN
     .byt sti | N0
     .byt ext
     .word symcopy16
+    .byt popd | TOS         ; back up 2 spaces
     .byt ld | N7
     .byt std | TOS          ; set the CFA = N7 to prevent duplication
-    .byt ext
-    .word smudgeclone16     ; smudge the clone we just copied
 yin02
     .byt ext
     .word nfaplus01
     .byt popd | TOS         ; get the CFA
+    .byt ldd | TOS
     .byt bz , <(yin03-*-2)
     .byt cpr | N8
     .byt bc , <(yin02-*-2)   ; out of bounds? ignore
     .byt cpr | N7
     .byt bnc , <(yin02-*-2)  ; out of bounds? ignore
-                            ; is it a clone?
+    .byt ext                 ; is it a clone?
+    .word symcomp16
+    .byt bnc ,  <(yin02-*-2)
     .byt std | N0
-    .byt ld | N8            ; overwrite CFA to prevent recopy
+    .byt popd | TOS
+    .byt ld | N7            ; overwrite CFA to prevent recopy
     .byt std | TOS          ; also TOS+2
     .byt ext
     .word symcopy16         ; copy the flags/length, name, ?vocid
-    .byt ext
-    .word smudgeclone16     ; smudge the clone we just copied
     .byt ext
     .word nfaplus01
     .byt bz , <(yin01-*-2)
