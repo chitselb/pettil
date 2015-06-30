@@ -9,14 +9,19 @@ tags=compiler,nosymbol
  Returns the least significant byte of DP
 #endif
 #include "align.i65"
-_herelsb
-    jsr enter
-#include "page.i65"
-    .word dp
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word exit
+herelsb
+    lda uarea+userdp-userarea
+    ldy #0
+    jmp pushya
+
+;_herelsb
+;    jsr enter
+;#include "page.i65"
+;    .word dp
+;#include "page.i65"
+;    .word cfetch
+;#include "page.i65"
+;    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -102,7 +107,7 @@ _cfacomma
     jsr enter
 #include "page.i65"
 cfacomma01
-    .word _herelsb
+    .word herelsb
 #include "page.i65"
     .word clit
     .byt $fe
@@ -138,6 +143,65 @@ cfacomma02
 
 ;--------------------------------------------------------------
 #if 0
+name=NEXTPAGE
+stack=( -- )
+tags=compiler,nosymbol
+Moves [[DP]] to the next page if needed, to preserve page alignment
+
+```
+: nextpage   ( -- )
+    ['] page here !
+    $100 herelsb - dp +! ;
+```
+#endif
+#include "align.i65"
+_nextpage
+    jsr enter
+#include "page.i65"
+    .word plit
+    .word page
+#include "pad.i65"
+    .word here
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word plit
+    .word $100
+#include "pad.i65"
+    .word herelsb
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?PAGE
+stack=( -- )
+tags=compiler,nosymbol
+Moves [[DP]] to the next page if needed, to preserve page alignment
+
+```
+: ?page   ( flag -- )
+     ?: nextpage next ;
+```
+#endif
+#include "align.i65"
+_qpage
+    jsr enter
+#include "page.i65"
+    .word pquerycolon
+    .word _nextpage
+    .word next
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=XT,
 stack=( xt -- )
 tags=compiler,nosymbol
@@ -162,31 +226,15 @@ dictionary stream at page boundaries
 _xtcomma
     jsr enter
 #include "page.i65"
-    .word _herelsb
+    .word herelsb
 #include "page.i65"
     .word clit
     .byt $fc
 #include "pad.i65"
     .word gt
 #include "page.i65"
-    .word qbranch
-    .byt <(xtcomma01-*+1)
+    .word _qpage
 #include "page.i65"
-    .word plit
-    .word page
-#include "pad.i65"
-    .word _comma
-#include "page.i65"
-    .word _herelsb
-#include "page.i65"
-    .word qbranch
-    .byt <(xtcomma01-*+1)
-#include "page.i65"
-    .word dp
-#include "pad.i65"
-    .word oneplusstore
-#include "page.i65"
-xtcomma01
     .word _comma
 #include "page.i65"
     .word exit
@@ -444,11 +492,7 @@ if this else that then
 
 : ?:   ( "name1" "name2" -- )
     ?comp
-    herelsb $f8 >
-    if
-        ['] page ,
-        here herelsb xor $100 + dp !
-    then
+    herelsb $f8 > ?page
     compile (:?) ' , ' , ; immediate
 ```
 ~ this is some ugly page management.  consider using a call to NEXT1
@@ -461,37 +505,15 @@ _querycolon
 #include "page.i65"
     .word _qcomp
 #include "page.i65"
-    .word _herelsb
+    .word herelsb
 #include "page.i65"
     .word clit
     .byt $f8
 #include "pad.i65"
     .word gt
 #include "page.i65"
-    .word qbranch
-    .byt <(querycolon01-*+1)
-#include "pad.i65"
-    .word plit
-    .word page
-#include "pad.i65"
-    .word _comma
+    .word _qpage
 #include "page.i65"
-    .word here
-#include "page.i65"
-    .word _herelsb
-#include "page.i65"
-    .word xor
-#include "page.i65"
-    .word plit
-    .word $100
-#include "pad.i65"
-    .word plus
-#include "page.i65"
-    .word dp
-#include "page.i65"
-    .word store
-#include "page.i65"
-querycolon01
     .word _compile
     .word pquerycolon
 #include "pad.i65"
@@ -671,6 +693,8 @@ name=$,
 stack=( addr -- )
 tags=string
 Enclose a quoted string in the dictionary
+
+~ doesn't handle page boundaries
 #endif
 #include "align.i65"
 _stringcomma
@@ -750,6 +774,7 @@ common code for ." and "
     then
     drop ;
 ```
+~ gross.  doesn't handle paging properly
 #endif
 #include "align.i65"
 _pdqq
