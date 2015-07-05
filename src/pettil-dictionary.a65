@@ -857,6 +857,135 @@ pvfind01
 
 ;--------------------------------------------------------------
 #if 0
+name=FIND
+stack=( addr1 -- addr2 flag )
+tags=interpreter,forth-83,nosymbol
+addr1 is the address of a counted string, which is the word to look
+up in the dictionary.
+
+if not found, addr2 is the original addr1, and flag = 0
+if found, addr2 is the code field address of the word,
+and flag = -1 for normal words, +1 for immediate words
+
+! outer interpreter
+
+name is the address of a counted string we are searching for.
+fflag is the find mode.  False means NFAs are sorted, True means check them all
+nfa is the first nfa in the hash list
+
+vocid identifies which vocabulary to search.  Vocabularies may be
+nested.  FIND walks up the CONTEXT tree and leaves a set of hashed
+NFAs (with the vocid appended to the name before hashing) on the stack.
+The final vocabulary searched will be core, and (FIND) will exit afterward.
+
+  0 = corelist
+
+  1 = assembler
+
+  2+ = vocabularies added by the user
+
+(FIND) first searches all unsorted names beginning at SYMTAIL, without regard
+to name length.  If it fails to find the word there,
+it tries the hash list, which is sorted in ascending size
+order.  Vocabularies are searched first, beginning with CONTEXT and chaining
+up until core (0) is reached.  The vocid is appended to the word when
+searching that vocabulary.  Only one symbol within a vocabulary may be
+active (unsmudged) at a time.  Smudged words are ignored.  The same symbol
+may be active within more than one vocabulary.
+
+ returns
+       ( cfa -1 ) found normal word
+       ( cfa 1 ) found immediate word
+       ( name 0 ) not in dictionary
+
+```
+: find ( name -- xfa flag )
+    dup bloom# >bit bloom + cbit@
+    if
+        >r  vstack
+ ( vstack ; name )
+        begin
+            c@+ r@ over
+ ( vptr vocid name vocid ; name )
+            (vfind)
+ ( vptr vocid nfa xfa found? ; name )
+            ?dup
+            if
+                rdrop 2>r 3drop 2r> exit
+            then
+            2drop 0=
+        until
+        drop r>
+    then
+    false ;
+```
+#endif
+#include "align.i65"
+_find
+    jsr enter
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word bloomhash
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word cbitfetch
+#include "page.i65"
+    .word qbranch
+    .byt <(find04-*+1)
+#include "pad.i65"
+    .word tor
+#include "page.i65"
+    .word vstack
+#include "page.i65"
+find01
+    .word cfetchplus
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _pvfind
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(find03-*+1)
+#include "pad.i65"
+    .word rdrop
+#include "page.i65"
+    .word twotor
+#include "page.i65"
+    .word threedrop
+#include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word exit
+#include "page.i65"
+find03
+    .word twodrop
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word qbranch
+    .byt <(find01-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+find04
+    .word false
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=UNDEFINE
 stack=( -- )
 tags=interpreter,dictionary,forth-83,forth-79,fig
