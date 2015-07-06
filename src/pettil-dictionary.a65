@@ -102,6 +102,7 @@ nfalen02
     sta n+12                    ;[3]
     bit n+12                    ;[3]
     and #$1f                    ;[2]
+    sta n+13                    ;[3]
     clc                         ;[2]
     bvc nfalen03                ;[2/3]
     sec                         ;[2]
@@ -167,17 +168,22 @@ Compares two symbols at TOS and N0
 |<b>TOS</b>|NFA|
 |<b>N0</b>|NFA being sought|
 |<br><i>returns</i>|<|
-|^<b>Y</b>|index of mismatch<br><b>0</b> if success|
-|<b>Z</b>|symbols match?|
+|^<b>Y</b>|index of mismatch<br/><b>0</b> if success<br/><b>FF</b> end of list|
+|^<b>Z</b>|symbols match?|
 #endif
 symcomp
     ldy #0
     lda (tos),y
+    bne symcomp01
+    dey
+    rts
+symcomp01
     eor (n),y
-    and #$5f
-    bne strcomp02           ; different lengths or vocab bit? 
+    and #$df
+    bne strcomp02           ; length, vocab bit or smudge?
     jsr nfalen01
     adc #0
+    ;clc
     tay
     ; fall through
 ;--------------------------------------------------------------
@@ -718,35 +724,36 @@ pseek
                                 ; N1 = vocid; N2 = modeflag (unsorted?)
     sty n+8
     sty n+9                     ; set result = FALSE
-pseek01
     jsr nfalen01
-    beq pseek06                 ; end of list? done
-    cmp (n),y                   ; just the lengths
-    beq pseek03
-    bcc pseek02                 ; (tos) < (n)? keep going
-                                ; we get here when (tos) > (n)
+    beq pseek06                 ; end of list?
+    lda (n),y
+    and #$1f
+    ldy n+2
+    beq pseek00
+    ldy #0
+    ora #bit6                   ; set vocab bit
+pseek00
+    sta (n),y
+    and #$1f
+    tay
+    iny
+    lda n+2
+    sta (n),y
+pseek01
+    jsr symcomp
+    beq pseek04                 ; vocab/length/name match?
+    bmi pseek06                 ; reached end of list?
     lda n+4
-    beq pseek06                 ; went past it, sorted list? done
+    bne pseek02                 ; unsorted list? next!
+    tay
+    lda (n),y
+    and #$1f
+    cmp n+13
+    bcc pseek06
 pseek02
     jsr nfaplus01               ; next!
     bne pseek01                 ; bra
-pseek03
-    tay                         ; length
-    bit n+12
-    bmi pseek02                 ; smudged? next!
-    bvc pseek04                 ; (tos) is in Forth vocab?
-    lda n+2
-    beq pseek02                 ; (n) is in Forth vocab? next
-    iny
-    eor (tos),y                 ; compare vocab id
-    bne pseek02
-    dey
-pseek04
-    jsr strcomp                 ; compare names
-    bne pseek02                 ; lengths match,
-                                ; vocabid matches,
-                                ; but names don't? next!
-    ; winner!
+pseek04                         ; winner!
     lda (tos),y
     asl
     asl
@@ -766,8 +773,7 @@ pseek05
     .byt ld | N4                ; return status flag
     .byt push
     .byt nxt
-pseek06
-    ; loser...
+pseek06                         ; loser...
     brk
     .byt ld | N0                ; return NFA FALSE
     .byt st | TOS
@@ -783,7 +789,6 @@ Trial search within a vocabulary, used by FIND and (CREATE)
 ~ this code could stand some tightening up, better commenting
 
 ```
-: (vfind)   ( name vocid -- nfa xfa flag )
 : (vfind)   ( name vocid -- nfa xfa flag )
     2dup 2>r  true symnew @ 2+ (seek)
     ?dup 0=
@@ -1493,7 +1498,6 @@ yin03
 yin16f
     rol R14H
     rts
-
 
 ; TOS=nfa1, N0=nfa2
 ; N1=nfa1[len+voc]/nfa1[orig]
