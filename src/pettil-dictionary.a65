@@ -246,14 +246,18 @@ Copies the 0th byte, and moves N0 beyond the copied string
 |<b>Z</b>|<b>0</b>|
 #endif
 symcopy16
-    ldy n+4
+    ldy n+13
+    bit n+12
+    bvc symcopy16a
+    iny
+    sty n+13
 symcopy16a
     lda (tos),y
     sta (n),y
     dey
     bpl symcopy16a
     sec
-    lda n+4
+    lda n+13
     adc n
     sta n
     bcc symcopy16b
@@ -742,7 +746,8 @@ pseek00
 pseek01
     jsr symcomp
     beq pseek04                 ; vocab/length/name match?
-    bmi pseek06                 ; reached end of list?
+    iny
+    beq pseek06                 ; reached end of list?
     lda n+4
     bne pseek02                 ; unsorted list? next!
     tay
@@ -1404,22 +1409,22 @@ Copy the symbol at TOS and any of its clones to N0. Modify
 clones as tbey are copied so they won't be copied twice.
 
 |register|<|purpose|notes|h
-|^R0|^ACC|^param|^CFA|
+|^R0|^ACC||^CFA|
 |~|~|^return|^0 done with source|
 |^R1|^TOS|nfa+||
-|^R2|^N0|^targ+|pile up output here|
-|^R3|^N1|^nfa|^temp storage used<br>for twin search<br>symcomp compares TOS vs N1|
-|^R4|^N2|name length|length of fraternal twins|
-|^R5|^N3|^symbol length|^length of identical twins<br>name+vocid|
+|^R2|^N0|||
+|^R3|^N1|||
+|^R4|^N2|||
+|^R5|^N3|||
 |^R6|^N4|||
 |^R7|^N5|||
-|^R8|^N6|cfa||
+|^R8|^N6|^symbol length|^length<br/>flags/length|
 |^R9|^N7|newdp|^discard CFAs between<br>these addresses|
 |^R10|^N8|tdict|~|
-|^R11|^EXT|||
+|^R11|^EXT|^return value|^<b>-1</b> end of list<br/><b>0</b> copy this symbol<br/><b>!0</b> do not copy<br/>|
 |^R12|^SP|||
 |^R13|^CPR|||
-|^R14|^ST|||
+|^R14|^ST||<b>set</b> clone<br/><b>clear</b> not a clone<br/>|
 |^R15|^PC|||
 
 When yin encountrs a clone at 'yeah'
@@ -1449,20 +1454,20 @@ pull (resume)
 #endif
 yin16
     jsr nfalen01
-    sty R14L                ; R0 prior result for bz test
-    beq yin16f              ; length = 0 means end of list
-    tay
-    bvc yin04
+    stx R14L                ; prior is R11
+    beq yin16e              ; end of list? return -1
     iny
-yin04
-    sty n+4                 ; length of name+vocab
     eor zi
-    clc
-    bne yin16f
-    sec
-    ldy n+12
-    bpl yin16f
-yeah
+    bne yin16f              ; return zero for correct length else 257
+yin16e
+    dey
+yin16f
+    sty 2*R11
+    sty 2*R11+1
+    rol n+12                ; copy smudge bit to carry
+    rol R14H
+    rts
+
 ; this is the first clone. Its CFA is qualified.
     brk                     ; sweet16 troika doll
     .byt ld | TOS           ; mark our place
@@ -1511,7 +1516,7 @@ yin03
     .byt pull
     .byt rtn
     clc
-yin16f
+;yin16f
     rol R14H
     rts
 
@@ -1564,23 +1569,21 @@ pass1
     .byt st | N7                ; NEWDP
     .byt ldd | N8
     .byt st | N8                ; TDICT
+    .byt ldd | TOS              ; get past first CFA
 pass1a                          ; for each name in symtab...symtail
-    .byt ldd | TOS              ; get cfa from source
-    .byt bz , <(pass1d-*-2)     ; cfa = 0 means no more source
-    .byt cpr | N8
-    .byt bc , <(pass1c-*-2)     ; in TDICT? green light
-    .byt cpr | N7
-    .byt bnc , <(pass1c-*-2)    ; in CORE? green light
-pass1b
-    .byt ext
-    .word nfaplus01
-    .byt popd | TOS
-    .byt br , <(pass1a-*-2)     ; next!
-pass1c
     .byt ext
     .word yin16                 ; will it blend?
-    .byt bz , <(pass1d-*-2)     ; no more source?
-    .byt bnc , <(pass1b-*-2)    ; only copy the same length as 'i'
+    .byt bm1 , <(pass1d-*-2)    ; no more source? ~ unnecessary?
+    .byt bnz , <(pass1c-*-2)    ; only copy the same length as 'i'
+    .byt bc , <(pass1e-*-2)     ; handle clones separately
+    .byt popd | TOS
+    .byt ldd | TOS              ; get the CFA
+    .byt bz , <(pass1d-*-2)     ; cfa = 0 means no more source
+    .byt cpr | N8
+    .byt bc , <(pass1b-*-2)     ; in TDICT? green light
+    .byt cpr | N7
+    .byt bc , <(pass1c-*-2)    ; in CORE? green light
+pass1b
     .byt std | N0
     .byt ext
     .word pearsonhash01
@@ -1588,11 +1591,17 @@ pass1c
     .byt sti | N0
     .byt ext
     .word symcopy16
-    .byt br , <(pass1b-*-2)     ; next
+pass1c
+    .byt ext
+    .word nfaplus01
+    .byt br , <(pass1a-*-2)     ; next!
 pass1d
     .byt ld | N0
     .byt st | TOS
     .byt nxt
+pass1e
+    .byt ext
+    .word plugh
 
     ; we get here when we find a smudged symbol.
     ; This will always be the first-defined (original) twin
