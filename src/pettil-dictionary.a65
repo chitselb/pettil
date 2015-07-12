@@ -1386,8 +1386,7 @@ Unsmudge the last clone
 #endif
 unsmudgeclone16
     clc
-    .byt $29
-    jmp qsmudge
+    .byt $29            ; AND #
 
 ;--------------------------------------------------------------
 #if 0
@@ -1405,52 +1404,28 @@ smudgeclone16
 name=YIN16
 stack=( nfa -- nfa )
 tags=interpreter,ext
-Copy the symbol at TOS and any of its clones to N0. Modify
-clones as tbey are copied so they won't be copied twice.
+Return -1 at end of list, -2 for copy, or a positive value to
+skip this symbol.  Sweet16 carry flag is set if this symbol is
+a clone.
 
-|register|<|purpose|notes|h
-|^R0|^ACC||^CFA|
-|~|~|^return|^0 done with source|
-|^R1|^TOS|nfa+||
-|^R2|^N0|||
-|^R3|^N1|||
-|^R4|^N2|||
-|^R5|^N3|||
-|^R6|^N4|||
-|^R7|^N5|||
-|^R8|^N6|^symbol length|^length<br/>flags/length|
-|^R9|^N7|newdp|^discard CFAs between<br>these addresses|
-|^R10|^N8|tdict|~|
-|^R11|^EXT|^return value|^<b>-1</b> end of list<br/><b>0</b> copy this symbol<br/><b>!0</b> do not copy<br/>|
-|^R12|^SP|||
-|^R13|^CPR|||
-|^R14|^ST||<b>set</b> clone<br/><b>clear</b> not a clone<br/>|
-|^R15|^PC|||
-
-When yin encountrs a clone at 'yeah'
-found clone?
-push (mark our place)
-begin
-	copy CFA
-	smudge original
-	calculate pearson hash
-	copy symbol
-	original CFA = NEWDP
-	(find next clone)
-	begin
-	    nfaplus01
-	    symcomp01
-	    (is symtail?)
-	    beq done
-	    (is clone?)
-	    bcc begin
-	    is CFA in bounds?
-	until
-	br begin
-until
-done
-unsmudge last clone
-pull (resume)
+|register|<|purpose|pass1|clone|h
+|^R0|^ACC||^CFA||
+|~|~|^return|^0 done with source||
+|^R1|^TOS|nfa+|||
+|^R2|^N0||^target|^target<br/>original|
+|^R3|^N1|||original|
+|^R4|^N2||positive|negative|
+|^R5|^N3||||
+|^R6|^N4||||
+|^R7|^N5||||
+|^R8|^N6|^symbol length|^length<br/>flags/length||
+|^R9|^N7|newdp|^discard CFAs between<br>these addresses||
+|^R10|^N8|tdict|~||
+|^R11|^EXT|^return value|^<b>-1</b> end of list<br/><b>0</b> copy this symbol<br/><b>!0</b> do not copy<br/>||
+|^R12|^SP||||
+|^R13|^CPR||||
+|^R14|^ST||<b>set</b> clone<br/><b>clear</b> not a clone<br/>||
+|^R15|^PC||||
 #endif
 yin16
     jsr nfalen01
@@ -1467,32 +1442,22 @@ yin16a
     asl n+12                    ; clone? is carry flag
     rol R14H
     rts
-
-; TOS=nfa1, N0=nfa2
-; N1=nfa1[len+voc]/nfa1[orig]
-; N2=nfa2[len+voc]/nfa2[orig]
-; A = nfa1[len+voc]
-; Y = nfa1[orig]
-; ACC = CFA
-; C = 1 smudge bits don't match (they never should)
-; Y = nfa1[orig] still
-
-
-; find/copy all identical twins that are
-; in range
-; if a twin is active, mark it inactive
-; then mark the top twin active
-; (it might be the same twin)
-; begin
-;   compare TOS.name (newtwin) vs N1.name (candidate)
-;   identical?
-;   if !(newdp < newtwin.cfa < tdict)  (keep newtwin?)
-;   N1 = targ+2 (replace candidate with newtwin)
-;   append newtwin to targ
-;   unsmudge newtwin in symtab so it won't trigger a search
-;   was newtwin active before we just activated it?  (we are done)
-; until
-; N1.unsmudge (activate the candidate)
+    
+;yin16
+;    jsr nfalen01
+;    stx R14L
+;    beq yin16a                  ; end of list = -1
+;    dey
+;    eor zi
+;    beq yin16a                  ; match = -2
+;    tay                         ; else +
+;yin16a
+;    dey
+;    sty 2*R11
+;    sty 2*R11+1
+;    asl n+12                    ; clone? is carry flag
+;    rol R14H
+;    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -1509,8 +1474,10 @@ between [[NEWDP]] and [[TDICT]].
 #include "align.i65"
 pass1
     ldy #2
-    jsr locals              ; targ to N0
+    jsr locals                  ; targ to N0
     brk
+    .byt sub | ACC
+    .byt st | N2                ; clear "clone" mode
     .byt set | N8
     .word uarea+usernewdp-userarea
     .byt ldd | N8
@@ -1527,63 +1494,49 @@ pass1b                          ; for each name in symtab...symtail
     .word yin16                 ; will it blend?
     .byt bp , <(pass1a-*-2)     ; mismatch length? next!
     .byt bm1 , <(pass1j-*-2)    ; end of list?
-    .byt bc , <(pass1d-*-2)     ; clone?
+    .byt bnc , <(pass1d-*-2)    ; first clone?
+
+    .byt ld | TOS               ; clone mode ON
+    .byt st | N1                ; pointer to first clone
+    .byt push                   ; mark our place
+    .byt dcr | N2               ; turn on "clone" mode
+    .byt ext
+    .word plugh
+    .byt br , <(pass1d-*-2)
+
+pass1c
+    .byt pull                   ; clone mode OFF
+    .byt sub | ACC
+    .byt st | N2
+    .byt br , <(pass1a-*-2)
+pass1d
     .byt popd | TOS
     .byt ldd | TOS              ; get the CFA
-;    .byt bz , <(pass1d-*-2)     ; cfa = 0 means no more source
     .byt cpr | N8
-    .byt bc , <(pass1c-*-2)     ; in TDICT? green light
+    .byt bc , <(pass1e-*-2)     ; in TDICT? green light
     .byt cpr | N7
     .byt bc , <(pass1a-*-2)    ; in CORE? green light
-pass1c
+pass1e
     .byt std | N0
     .byt ext
     .word pearsonhash01
     .byt ld | R11
     .byt sti | N0
+    .byt ld | N2
+    .byt bp , <(pass1f-*-2)
+    .byt ext 
+    .word smudgeclone16         ; smudge the original
+    .byt ext
+    .word symcopy16
+    .byt ext 
+    .word unsmudgeclone16       ; unsmudge the copy
+    .byt br , <(pass1a-*-2)
+pass1f
     .byt ext
     .word symcopy16
     .byt br , <(pass1a-*-2)
-pass1d                          ; found the first clone
-    .byt ext
-    .word plugh
-    .byt ld | TOS
-    .byt push
-pass1f
-    .byt popd | TOS
-    .byt ldd | TOS
-    .byt bz , <(pass1d-*-2)     ; fix this~~
-    .byt cpr | N8
-    .byt bc , <(pass1g-*-2)
-    .byt cpr | N7
-    .byt bc , <(pass1h-*-2)
-pass1g
-    .byt std | N0
-    .byt ext
-    .word pearsonhash01
-    .byt ld | R11
-    .byt sti | N0
-    .byt ld | N0
-    .byt st | N1
-    .byt ext
-    .word symcopy16
-    .byt ld | N1
-    .byt push
-    .byt ext
-    .word smudgeclone16
-    .byt pull
-    .byt ld | N0
-    .byt st | N2
-    .byt ld | N1
-    .byt st | N0
-    .byt ext
-    .word symcomp16
-    .byt bm1 , <(pass1h-*-2)
-pass1h
-    .byt ext
-    .word nfaplus01
-    .byt br , <(pass1f-*-2)
 pass1j
+    ; check N2, unnest if in clone mode
     .byt ld | N0
     .byt st | TOS
     .byt nxt
