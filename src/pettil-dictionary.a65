@@ -1007,47 +1007,6 @@ find04
 
 ;--------------------------------------------------------------
 #if 0
-name=UNDEFINE
-stack=( -- )
-tags=interpreter,dictionary,forth-83,forth-79,fig
-Removes the most recently defined symbol in SYMNEW.  Used by
-error recovery
-
-```
-: undefine   ( -- )
-    latest 2-  dup symtail !  dup @ dp !  3 erase ;
-```
-#endif
-#include "align.i65"
-_undefine
-    jsr enter
-#include "page.i65"
-    .word _latest
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word symtail
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word dp
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word _erase
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=(CREATE)
 stack=( cfa -- )
 tags=compiler,nosymbol
@@ -1430,12 +1389,25 @@ a clone.
 yin16
     jsr nfalen01
     stx R14L
-    beq yin16a                  ; end of list = -1
-    dey
+    beq yin16d                  ; A=0? end of list. return -1
     eor zi
-    beq yin16a                  ; match = -2
-    tay                         ; else +
+    bne yin16c                  ; bad length, return positive non-match
+    bit n+4
+    bpl yin16b                  ; match in pass1 mode
+    ldy zi
 yin16a
+    lda (tos),y
+    eor (n+2),y
+    bne yin16d
+    dey
+    bne yin16a
+    clc
+    ror n+12                    ; clear sweet16 carry
+yin16b
+    lda #$c0
+yin16c
+    tay
+yin16d
     dey
     sty 2*R11
     sty 2*R11+1
@@ -1443,22 +1415,6 @@ yin16a
     rol R14H
     rts
     
-;yin16
-;    jsr nfalen01
-;    stx R14L
-;    beq yin16a                  ; end of list = -1
-;    dey
-;    eor zi
-;    beq yin16a                  ; match = -2
-;    tay                         ; else +
-;yin16a
-;    dey
-;    sty 2*R11
-;    sty 2*R11+1
-;    asl n+12                    ; clone? is carry flag
-;    rol R14H
-;    rts
-
 ;--------------------------------------------------------------
 #if 0
 name=PASS1
@@ -1500,8 +1456,6 @@ pass1b                          ; for each name in symtab...symtail
     .byt st | N1                ; pointer to first clone
     .byt push                   ; mark our place
     .byt dcr | N2               ; turn on "clone" mode
-    .byt ext
-    .word plugh
     .byt br , <(pass1d-*-2)
 
 pass1c
@@ -1521,22 +1475,37 @@ pass1e
     .byt ext
     .word pearsonhash01
     .byt ld | R11
-    .byt sti | N0
+    .byt sti | N0               ; output the CFA and pearson hash
     .byt ld | N2
     .byt bp , <(pass1f-*-2)
+    .byt ld | N0
+    .byt st | N3                ; copy this, it might be the last one
     .byt ext 
     .word smudgeclone16         ; smudge the original
     .byt ext
     .word symcopy16
     .byt ext 
     .word unsmudgeclone16       ; unsmudge the copy
+    .byt popd | TOS             ; make this clone uncopyable
+    .byt ld | N7
+    .byt std | TOS
     .byt br , <(pass1a-*-2)
 pass1f
     .byt ext
     .word symcopy16
     .byt br , <(pass1a-*-2)
 pass1j
-    ; check N2, unnest if in clone mode
+    
+    .byt ld | N2                ; check N2
+    .byt bp , <(pass1k-*-2)
+    .byt inr | N2               ; turn off clone mode
+    .byt ld | N3
+    .byt st | TOS
+    .byt ext
+    .word unsmudgeclone16       ; unsmudge (activate) the last clone
+    .byt pull
+    .byt br , <(pass1a-*-2)     ; unnest
+pass1k
     .byt ld | N0
     .byt st | TOS
     .byt nxt
