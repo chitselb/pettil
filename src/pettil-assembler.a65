@@ -323,18 +323,91 @@ _docpu
 ;--------------------------------------------------------------
 #if 0
 name=UPMODE
-stack=( -- )
+stack=( flag -- )
 tags=assembler,nosymbol
 vocab=1
 Adjusts the addressing mode
 
 ```
- : upmode
-  ;
+: upmode    ( flag -- )
+    if  
+        mode @ 8 and 0=  
+        if 
+            8 mode +!  
+        then 
+    then
+    1 mode @ 0f and  0 
+    ?do 
+        dup + 
+    loop
+    over 1+ @ and 0= ;
 ```
 #endif
 #include "align.i65"
 _upmode
+    jsr enter
+#include "page.i65"
+    .word qbranch
+    .byt <(upmode01-*+1)
+#include "pad.i65"
+    .word asmmode
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word clit
+    .byt 8
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word qbranch
+    .byt <(upmode01-*+1)
+#include "pad.i65"
+    .word clit
+    .byt 8
+#include "pad.i65"
+    .word asmmode
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+upmode01
+    .word one
+#include "page.i65"
+    .word asmmode
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word clit
+    .byt $0f
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word pqdo
+    .byt <(upmode03-*+1)
+#include "pad.i65"
+upmode02
+    .word dup
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word ploop
+    .byt <(upmode02-*+1)
+#include "pad.i65"
+upmode03
+    .word over
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -377,6 +450,8 @@ _domcpu
     .word tworfrom
 #include "page.i65"
     .word tor
+#include "page.i65"
+    .word oneplus
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -469,9 +544,78 @@ mcpu02
     
 ;--------------------------------------------------------------
 #if 0
+name=CODE
+stack=( "name" -- )
+tags=vocabulary,ext
+Create a new (smudged) name and invoke the assembler vocabulary
+
+```
+: code   ( "name" -- )
+    here (create)  -3 allot  latest smudge
+    [ assembler ] mem assembler !csp ;
+```
+#endif
+#include "align.i65"
+_code
+    jsr enter
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word _pcreate
+#include "page.i65"
+    .word minusthree
+#include "page.i65"
+    .word _allot
+#include "page.i65"
+    .word _latest
+#include "page.i65"
+    .word smudge
+#include "page.i65"
+    .word asmmem
+#include "page.i65"
+    .word assembler
+#include "page.i65"
+    .word _storecsp
+#include "page.i65"
+    .word exit
+    
+;--------------------------------------------------------------
+#if 0
+name=END-CODE
+stack=( "name" -- )
+vocab=1
+tags=vocabulary,ext
+Remove [[ASSEMBLER]] vocabulary from VSTACK.  Does this by
+(re)invoking the [[ASSEMBLER]] vocabulary to make it the
+first one in [[VSTACK]], then sliding the rest of [[VSTACK]]
+backward to overwrite it.
+
+```
+: end-code   ( -- )
+    current @ context ! ?csp latest unsmudge ;
+```
+#endif
+#include "align.i65"
+_endcode
+    jsr enter
+#include "page.i65"
+    .word _qcsp
+#include "page.i65"
+    .word assembler             ; force assembler to front
+#include "page.i65"
+    .word _vdrop
+#include "page.i65"
+    .word _latest
+#include "page.i65"
+    .word unsmudge
+#include "page.i65"
+    .word exit
+    
+;--------------------------------------------------------------
+#if 0
 name=.A
 stack=( -- )
-tags=vocabulary,ext,nosymbol
+tags=vocabulary,ext
 vocab=1
 !!!Assembler mode
 Accumulator addressing mode
@@ -485,7 +629,7 @@ asmdota
 #if 0
 name=#
 stack=( -- )
-tags=vocabulary,ext,nosymbol
+tags=vocabulary,ext
 vocab=1
 !!!Assembler mode
 Immediate addressing mode
