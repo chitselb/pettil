@@ -473,32 +473,32 @@ decode
                         ; ---+--- left side is 8-bit
                         ;  2 | 3  bottom half has $8x modes.lsb
 decode00
-    ldy #2              ; assume quadrant 2
-    sty tos
+    ldy #2              ; assume bottom half
+    sty tos             ; assume 16-bit
     lda n+2             ; the lsb of the modes, please
     bmi decode01        ; $8x? (group 2,3)
     ldy #0
     lsr
     bcc decode02
-    sty tos
-    inx                 ; .A mode, no arguments
-    bne decode03        ; bra (quadrant 0)
+    sty tos             ; .A mode, no arguments
+    inx                 ; 
+    bne decode05        ; bra (quadrant 0)
 decode01
     asl
-    beq decode04        ; JMP or JSR? 16-bit (quadrant 3)
+    beq decode03        ; JMP or JSR? 16-bit (quadrant 3)
 decode02
     lda stackh+2,x
-    bne decode04        ; 16-bit
+    beq decode04        ; 8-bit?
 decode03
-    dec tos
-    dey                 ; quadrant 0|2
-    inx                 ; TOS=0; 2OS=junk; 3OS=arg8
-    bne decode05        ; bra
-decode04
     lda stackl+2,x
     sta stackl+1,x
     lda stackh+2,x
     sta stackl+2,x      ; TOS=0; 2OS=junk; 3OS=arg16.lo; 4OS=arg16.hi
+    iny
+    bne decode05
+decode04
+    dec tos             ; left side, 1 argument
+    inx                 ; TOS=0; 2OS=junk; 3OS=arg8
 decode05
     tya
     asl
@@ -508,11 +508,15 @@ decode05
     ora asmmode+3
     tay
     lda asmindex,y
-    bmi decode06
+    bpl decode06
+    lda #0
+    sta tos
+    beq decode07
+decode06
     adc n+1
     sta stackl,x
     inc tos
-decode06
+decode07
     jmp next
 
 ;--------------------------------------------------------------
