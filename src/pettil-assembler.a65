@@ -229,18 +229,18 @@ asmlocals
 
 ;--------------------------------------------------------------
 #if 0
-name=INDEX
+name=ASMINDEX
 stack=( -- n )
 tags=assembler,ext,nosymbol
 vocab=1
 !!!Assembler constant
 Table of addressing modes
 #endif
-#include "align.i65"
 asmindex
-    jsr docreate
-    .word  $0909 , $1505 , $0115 , $8011 , $8009 , $1d0d , $8019 , $8080
-    .word  $0080 , $1404 , $8014 , $8080 , $8080 , $1c0c , $801c , $2c80
+    .byt $09,$09,$05,$15,$15,$01,$11,$80
+    .byt $09,$80,$0d,$1d,$19,$80,$80,$80
+    .byt $80,$00,$04,$14,$14,$80,$80,$80
+    .byt $80,$80,$0c,$1c,$1c,$80,$80,$2c
 
 ;--------------------------------------------------------------
 #if 0
@@ -280,18 +280,6 @@ _doasmmode
     .word store
 #include "page.i65"
     .word exit
-    
-;    pla
-;    sta n
-;    pla
-;    sta n+1
-;    brk
-;    .byt set | N1
-;    .word asmmode+3
-;    .byt inr | N0
-;    .byt ldi | N0
-;    .byt std | N1
-;    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -314,9 +302,7 @@ _docpu
 #include "page.i65"
     .word cfetch
 #include "page.i65"
-    .word _ccomma
-#include "page.i65"
-    .word asmmem
+    .word _instrcomma
 #include "page.i65"
     .word exit
 
@@ -429,14 +415,118 @@ upmode03
 
 ;--------------------------------------------------------------
 #if 0
+name=INSTR,
+stack=( [ operand ... ] opcode 0|1|2|3 -- )
+tags=assembler,nosymbol
+vocab=1
+encloses the instruction and 0, 1 or 2 bytes of operand
+
+
+```
+ : opcode,
+    0 do
+        c,
+    loop ;
+```
+#endif
+#include "align.i65"
+_instrcomma
+    jsr enter
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word pdo
+#include "page.i65"
+instrcomma01
+    .word _ccomma
+#include "page.i65"
+    .word ploop
+    .byt <(instrcomma01-*+1)
+#include "pad.i65"
+    .word asmmem
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DECODE
+stack=( addr-1 --  [ [arghi] arglo] opcode n )
+tags=assembler,nosymbol
+vocab=1
+Adjusts the addressing mode
+determines the instruction
+encloses the instruction and 0, 1 or 2 bytes of operand
+#endif
+decode
+    brk
+    .byt ldd | TOS      ; n+0=junk n+1=opcode base
+    .byt st | N0
+    .byt ldd | TOS
+    .byt st | N1        ; n+2=modes.lsb n+3=modes.msb
+    .byt sub | ACC
+    .byt st | N2
+    .byt push
+    .byt push           ; TOS=0; 2OS=0; 3OS=junk; [4OS=arg] 
+    .byt rtn
+                        ; y = 0..3  instruction group
+                        ;  0 | 1  right side (odd) is 16-bit
+                        ; ---+--- left side is 8-bit
+                        ;  2 | 3  bottom half has $8x modes.lsb
+decode00
+    ldy #2              ; assume quadrant 2
+    sty tos
+    lda n+2             ; the lsb of the modes, please
+    bmi decode01        ; $8x? (group 2,3)
+    ldy #0
+    lsr
+    bcc decode02
+    sty tos
+    inx                 ; .A mode, no arguments
+    bne decode03        ; bra (quadrant 0)
+decode01
+    asl
+    beq decode04        ; JMP or JSR? 16-bit (quadrant 3)
+decode02
+    lda stackh+2,x
+    bne decode04        ; 16-bit
+decode03
+    dec tos
+    dey                 ; quadrant 0|2
+    inx                 ; TOS=0; 2OS=junk; 3OS=arg8
+    bne decode05        ; bra
+decode04
+    lda stackl+2,x
+    sta stackl+1,x
+    lda stackh+2,x
+    sta stackl+2,x      ; TOS=0; 2OS=junk; 3OS=arg16.lo; 4OS=arg16.hi
+decode05
+    tya
+    asl
+    asl
+    asl
+    ;clc
+    ora asmmode+3
+    tay
+    lda asmindex,y
+    bmi decode06
+    adc n+1
+    sta stackl,x
+    inc tos
+decode06
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
 name=M/CPU
 stack=( -- )
 tags=assembler,nosymbol
 vocab=1
 Adjusts the addressing mode
+determines the instruction
+encloses the instruction and 0, 1 or 2 bytes of operand
 
 ```
- : m/cpu  create c, , does>
+: m/cpu  create c, , does>
     dup 1+ @ 80 and
     if
         10 mode +! 
@@ -459,6 +549,9 @@ Adjusts the addressing mode
         then
     then
     mem ;
+
+: m/cpu  create c, , does>
+    2r> >r  decode  instr, ;
 ```
 #endif
 #include "align.i65"
@@ -469,94 +562,9 @@ _domcpu
 #include "page.i65"
     .word tor
 #include "page.i65"
-    .word oneplus
+    .word decode
 #include "page.i65"
-    .word dup
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word clit
-    .byt $80
-#include "pad.i65"
-    .word andx
-#include "page.i65"
-    .word qbranch
-    .byt <(mcpu01-*+1)
-#include "pad.i65"
-    .word clit
-    .byt $10
-#include "pad.i65"
-    .word asmmode
-#include "page.i65"
-    .word plusstore
-#include "page.i65"
-mcpu01
-    .word over
-#include "page.i65"
-    .word plit
-    .word $ff00
-#include "pad.i65"
-    .word andx
-#include "page.i65"
-    .word _upmode
-#include "page.i65"
-    .word _upmode
-#include "page.i65"
-    .word clit
-    .byt 11
-#include "pad.i65"
-    .word _qerror
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word asmmode
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word asmindex
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word _ccomma
-#include "page.i65"
-    .word asmmode
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word clit
-    .byt 7
-#include "pad.i65"
-    .word andx
-#include "page.i65"
-    .word qbranch
-    .byt <(mcpu02-*+1)
-#include "pad.i65"
-    .word asmmode
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word clit
-    .byt $0f
-#include "pad.i65"
-    .word andx
-#include "page.i65"
-    .word clit
-    .byt 7
-#include "pad.i65"
-    .word lt
-#include "page.i65"
-    .word pquerycolon
-    .word _ccomma
-    .word _comma
-#include "pad.i65"
-mcpu02
-    .word asmmem
+    .word _instrcomma
 #include "page.i65"
     .word exit
     
@@ -569,13 +577,15 @@ Create a new (smudged) name and invoke the assembler vocabulary
 
 ```
 : code   ( "name" -- )
-    here (create)  -3 allot  latest smudge
+    hex here (create)  -3 allot  latest smudge
     [ assembler ] mem assembler !csp ;
 ```
 #endif
 #include "align.i65"
 _code
     jsr enter
+#include "page.i65"
+    .word _hex
 #include "page.i65"
     .word here
 #include "page.i65"
