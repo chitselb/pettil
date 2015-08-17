@@ -325,7 +325,7 @@ _semi
 
 
 
-        bogus = " usernumlin twodrop fail03 fail02 brktoggle _qloaded _ddotr _emptybuffers _stringdot loadbuffers01 "
+        bogus = " brktoggle "
 
 
 

@@ -531,16 +531,6 @@ put
 
 ;--------------------------------------------------------------
 #if 0
-name=fetchya
-stack=( addr -- 16b )
-tags=forth-79,nucleus,memory,fig,forth-83,nosymbol
-Subroutine to do @
-#endif
-fetchya
-    clc
-    .byt $29    ; [2] AND immed to skip SEC instruction
-;--------------------------------------------------------------
-#if 0
 name=@
 stack=( addr -- 16b )
 tags=forth-79,nucleus,memory,fig,forth-83
@@ -550,16 +540,8 @@ Leave the 16 bit contents of address.
   16b is the value at addr.
 #endif
 fetch
-    sec         ; [2]
-    ldy #1      ; [2]
-    lda (tos),y ; [5]
-    sta n       ; [3]
-    dey         ; [2]
-    lda (tos),y ; [5]
-    ldy n       ; [3]
-    bcs put     ; [3] [34 = 25+9]
-    rts
-
+    sec
+    .byt $29        ; AND #
 ;--------------------------------------------------------------
 #if 0
 name=C@
@@ -572,9 +554,61 @@ tags=forth-79,nucleus,memory
 
 #endif
 cfetch
+    clc
+cfetch01
     ldy #0
     lda (tos),y
-    jmp put
+    bcc put
+    pha
+    iny
+    lda (tos),y
+    tay
+    pla
+    bcs put
+
+;--------------------------------------------------------------
+#if 0
+name=DOCCONST
+stack=( -- c )
+tags=nosymbol,inner
+Runtime behavior of a word defined by CCONSTANT
+#endif
+docconst
+    clc
+    .byt $29                ; AND # to skip the CLC
+;--------------------------------------------------------------
+#if 0
+name=DOCONST
+stack=( -- n )
+tags=nosymbol,inner,primitive
+Runtime behavior of a word defined by CONSTANT
+#endif
+doconst
+    sec
+    jsr slip
+    pla
+    sta tos
+    pla
+    sta tos+1
+    jsr inctos
+    bne cfetch01            ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=DO2CONST
+stack=( -- d )
+tags=nosymbol,inner
+Runtime behavior of words defined by 2CONSTANT
+#endif
+#include "align.i65"
+do2const
+    jsr enter
+#include "page.i65"
+    .word doconst
+#include "page.i65"
+    .word doconst
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -757,58 +791,6 @@ enter
     iny             ; [2]
     sty ip          ; [3]
     jmp nexto       ; [3] [39]
-
-;--------------------------------------------------------------
-#if 0
-name=DOCCONST
-stack=( -- c )
-tags=nosymbol,inner
-Runtime behavior of a word defined by CCONSTANT
-#endif
-docconst
-    sec
-    .byt $29                ; AND # to skip the CLC
-;--------------------------------------------------------------
-#if 0
-name=DOCONST
-stack=( -- n )
-tags=nosymbol,inner,primitive
-Runtime behavior of a word defined by CONSTANT
-#endif
-doconst
-    clc
-    pla
-    sta n
-    pla
-    sta n+1
-    ldy #2
-doconst01
-    lda (n),y
-    bcc doconst02
-    clc
-    lda #0
-doconst02
-    pha
-    dey
-    bne doconst01
-    jmp rfrom      ; 25 bytes
-
-;--------------------------------------------------------------
-#if 0
-name=DO2CONST
-stack=( -- d )
-tags=nosymbol,inner
-Runtime behavior of words defined by 2CONSTANT
-#endif
-#include "align.i65"
-do2const
-    jsr enter
-#include "page.i65"
-    .word doconst
-#include "page.i65"
-    .word doconst
-#include "page.i65"
-    .word exit
 
 ;--------------------------------------------------------------
 #if 0
