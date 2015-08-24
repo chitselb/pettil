@@ -169,7 +169,8 @@ _semi
         #  at `#endif`, set the code trigger and cancel desc trigger
         # capture code += line if code trigger is set
         def is_code?(line,labelhash)
-            if @to_code && line !~ /^\s*#include.*i65"\s*$/  # filter chaffy includes
+            if @to_code && line !~ /#include "(page|align|pad).i65"/  # filter chaffy includes
+                line = "    jsr toforth"   if line =~ /^#include "toforth.i65"$/
                 if @code.nil?
                     # first line is special, the label
                     @label = line
@@ -181,7 +182,7 @@ _semi
                         "state=\"$:/state/codeSlider\" animate=\"yes\">\n\n```"
                 end
                 # append code line, filter chaff
-                @code += "\n"+line   unless line =~ /#include "(page|enter|pad).i65"/
+                @code += "\n"+line   unless line =~ /#include "(page|align|pad).i65"/
             end
             # turn on code trigger after checking, to avoid capturing the `#endif`
             if (line =~ /^\#endif$/)    # non-`#if 0` should have a comment after #endif in source
