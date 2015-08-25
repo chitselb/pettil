@@ -1,11 +1,9 @@
-#!/home/chitselb/.rvm/rubies/ruby-2.2.1/bin/ruby
-#..../home/chitselb/bin/ruby
 # suchen.rb
 #
 # Analyzes a hexdump of the latest build, searching for duplicate strings
 # that might be factorable
 #
-minimum_size=7
+minimum_size=17
 
 
 all = File.binread("tmp/pettil.obj")

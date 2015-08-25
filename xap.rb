@@ -326,7 +326,7 @@ _semi
 
 
 
-        bogus = " brktoggle digit01 wrapabove03 _rleplus digit qkey "
+        bogus = " brktoggle digit01 wrapabove03 _rleplus digit qkey warm04 _hot "
 
 
 
