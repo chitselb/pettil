@@ -3,7 +3,7 @@
 # Analyzes a hexdump of the latest build, searching for duplicate strings
 # that might be factorable
 #
-minimum_size=10
+minimum_size=12
 
 
 all = File.binread("tmp/pettil.obj")
