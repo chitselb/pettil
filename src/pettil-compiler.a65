@@ -595,31 +595,81 @@ _dpswap
     .word _fetchswapstore
 #include "page.i65"
     .word exit
-    
+
+;--------------------------------------------------------------
+#if 0
+name=(BUILDS)
+stack=( == ; "name" -- )
+tags=compiler,defining
+helper word for `<BUILDS` in compile state
+
+core                    tdict             symnew
+----+----+---           ----+----*-       ----.-+-------
+    ^A   ^B                 ^C   ^D           ^E^F
+A = @E          B = @DP         C = @TDP        X = b-a
+DP = C+X        TDP = A         E = C           [C..D] = [A..B]
+0000  00 01 d7 63  76 06 86 06  00 00 05 50  00 01 07 70
+            latest dp    tdp 
+
+```
+: (builds)   ( dp tdp latest -- a c b-a )
+    latest 2- dup @  tdp @  here dup>r third -
+    2dup 2>r  
+    ( latest dup latest tdp@ latest-here R; tdp@ latest-here here )
+    cmove   tdp !  2r>    + dp !   2- r> swap ! ;
+```
+#endif
+pbuilds
+    ldy #4
+    jsr locals
+    brk
+    .byt popd | TOS
+    .byt st | N2        ; A
+    .byt ldd | N0       ; @dp
+    .byt popd | N0      ; reget B
+    .byt sub | N2       ; size
+    .byt st | N3        ; B-A
+    .byt ldd | N1       ; @tdp
+    .byt popd | N1      ; reget C
+    .byt st | N4
+    .byt std | TOS      ; set latest E = C
+    .byt add | N3
+    .byt std | N0       ; set DP = C+X
+    .byt ld | N2
+    .byt std | N1
+    .byt st | TOS
+    .byt ld | N4
+    .byt push
+    .byt ld | N3
+    .byt push
+    .byt nxt
+
 ;--------------------------------------------------------------
 #if 0
 name=<BUILDS
-stack=( -- ; parses the next token in the input stream )
+stack=( == ; "name" -- )
 tags=compiler,defining
+flags=immediate
  A defining word executed in the form
 
  `<BUILDS <name> ... DOES> ... ;`
 
- Creates a dictionary entry for <name>.  After <name> is
- created, the next available dictionary location is the first
- byte of <name>'s parameter field.  When <name> is
- subsequently executed, the address of the first byte of
- <name>'s parameter field is left on the stack.  CREATE does
- not allocate space in <name>'s parameter field.
-
+Creates a dictionary entry for <name>.  After <name> is
+created, the next available dictionary location is the first
+byte of <name>'s parameter field.  When <name> is
+subsequently executed, the address of the first byte of
+<name>'s parameter field is left on the stack.  CREATE does
+not allocate space in <name>'s parameter field.
+<br/>
 The compile-time portion of the word between `<BUILDS ... DOES>`
 is added to the [[transient dictionary|TDICT]] to conserve
 space in core.  Run-time behavior shared by child words is
 added to the core dictionary.
 
 ```
-: <builds   ( "name" -- )
-    create   dp tdp @swap! ;
+: <builds   ( == ; "name" -- )
+    compiling?
+    ?: (builds) create ; immediate
 
 ```
 #endif
@@ -627,17 +677,27 @@ added to the core dictionary.
 _builds
     jsr enter
 #include "page.i65"
+    .word _compilingq
+#include "page.i65"
+    .word qbranch
+    .byt <(builds01-*+1)
+#include "pad.i65"
     .word dp
 #include "page.i65"
     .word tdp
 #include "page.i65"
-    .word _fetchswapstore
+    .word _latest
 #include "page.i65"
-    .word plit
-    .word dodoes
+    .word xyzzy
+#include "page.i65"
+    .word pbuilds
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word _compile
+    .word _create
 #include "pad.i65"
-    .word _pcreate
-#include "page.i65"
+builds01
     .word exit
 
 ;--------------------------------------------------------------
