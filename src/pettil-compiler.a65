@@ -499,7 +499,7 @@ flags=immediate
 ```
 : ;   ( -- )
     ?csp
-    ['] exit compile
+    compile exit
     latest unsmudge       \ unsmudge the new colon definition
     redefined dup @ dup  :? smudge drop  off
     [ ; immediate
@@ -598,116 +598,6 @@ _dpswap
 
 ;--------------------------------------------------------------
 #if 0
-name=(BISH)
-stack=( dp tdp latest -- a c b-a )
-tags=compiler,defining,nosymbol
-helper word for `<BUILDS` in compile state
-
-```
-core                    tdict             symnew
-----+----+---           ----+----*-       ----.-+-------
-    ^A   ^B                 ^C   ^D           ^E^F
-A = @E          B = @DP         C = @TDP        X = b-a
-DP = C+X        TDP = A         E = C           [C..D] = [A..B]
-0000  00 01 d7 63  76 06 86 06  00 00 05 50  00 01 07 70
-            latest dp    tdp 
-```
-#endif
-pbish
-    ldy #4
-    jsr locals
-    brk
-    .byt popd | TOS
-    .byt st | N2        ; A
-    .byt ldd | N0       ; @dp
-    .byt popd | N0      ; reget B
-    .byt sub | N2       ; size
-    .byt st | N3        ; B-A
-    .byt ldd | N1       ; @tdp
-    .byt popd | N1      ; reget C
-    .byt st | N4
-    .byt std | TOS      ; set latest E = C
-    .byt add | N3
-    .byt std | N0       ; set DP = C+X
-    .byt ld | N2
-    .byt std | N1
-    .byt st | TOS
-    .byt ld | N4
-    .byt push
-    .byt ld | N3
-    .byt push
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=DOBUILDS
-stack=( -- )
-tags=compiler,defining,nosymbol
-#endif
-#include "align.i65"
-_dobuilds
-
-;--------------------------------------------------------------
-#if 0
-name=BISH
-stack=( -- )
-tags=compiler,defining,nosymbol
-helper word for `<BUILDS` in compile state
-
-```
-core                    tdict             symnew
-----+----+---           ----+----*-       ----.-+-------
-    ^A   ^B                 ^C   ^D           ^E^F
-A = @E          B = @DP         C = @TDP        X = b-a
-DP = C+X        TDP = A         E = C           [C..D] = [A..B]
-0000  00 01 d7 63  76 06 86 06  00 00 05 50  00 01 07 70
-            latest dp    tdp 
-```
-#endif
-#include "align.i65"
-_bish
-    jsr enter
-#include "page.i65"
-    .word dp
-#include "page.i65"
-    .word tdp
-#include "page.i65"
-    .word _latest
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word pbish
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word _compile
-    .word _dobuilds
-#include "pad.i65"
-    .word tdp
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _comma
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=WHET
-stack=( -- 'doparent )
-tags=compiler,defining,nosymbol
-flags=immediate
-
-: whet
-    (create)
-#endif
-#include "align.i65"
-_whet
-
-;--------------------------------------------------------------
-#if 0
 name=<BUILDS
 stack=( == ; "name" -- )
 tags=compiler,defining
@@ -730,12 +620,13 @@ added to the core dictionary.
 
 ```
 : <builds   ( == ; "name" -- )
-    compiling?  ?:  build-parent build-child
-    (create) ; immediate
+    compiling?
     if
-        dp tdp latest (builds) cmove
-    then
-    [compile] create ; immediate
+        dp tdp latest   ( b c f )
+        bishwhet   ( a a c b-a )
+        cmove  
+        compile plit , compile (create)
+    then ; immediate
 ```
 #endif
 #include "align.i65"
@@ -744,11 +635,72 @@ _builds
 #include "page.i65"
     .word _compilingq
 #include "page.i65"
-    .word pquerycolon
-    .word _bish
-    .word _whet
+    .word qbranch
+    .byt <(builds01-*+1)
 #include "pad.i65"
+    .word dp
+#include "page.i65"
+    .word tdp
+#include "page.i65"
+    .word _latest
+#include "page.i65"
+    .word bishwhet
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word _compile
+    .word plit
+#include "pad.i65"
+    .word _comma
+#include "page.i65"
+    .word _compile
+    .word _pcreate
+#include "pad.i65"
+builds01
     .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BISHWHET
+stack=( dp tdp latest -- a a c b-a )
+tags=compiler,defining,nosymbol
+helper word for `<BUILDS` in compile state
+
+```
+core                    tdict             symnew
+----+----+---           ----+----*-       ----.-+-------
+    ^A   ^B                 ^C   ^D           ^E^F
+A = @E          B = @DP         C = @TDP        X = b-a
+DP = C+X        TDP = A         E = C           [C..D] = [A..B]
+0000  00 01 d7 63  76 06 86 06  00 00 05 50  00 01 07 70
+            latest dp    tdp 
+```
+#endif
+bishwhet
+    ldy #4
+    jsr locals
+    brk
+    .byt popd | TOS
+    .byt st | N2        ; A
+    .byt ldd | N0       ; @dp
+    .byt popd | N0      ; reget B
+    .byt sub | N2       ; size
+    .byt st | N3        ; B-A
+    .byt ldd | N1       ; @tdp
+    .byt popd | N1      ; reget C
+    .byt st | N4
+    .byt std | TOS      ; set latest E = C
+    .byt add | N3
+    .byt std | N0       ; set DP = C+X
+    .byt ld | N2
+    .byt std | N1
+    .byt st | TOS       ; ( a )
+    .byt push           ; ( a a )
+    .byt ld | N4
+    .byt push           ; ( a a c )
+    .byt ld | N3
+    .byt push           ; ( a a c b-a )
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -762,43 +714,34 @@ commonly shared run-time (child) code into the core dictionary
 
 ```
 : does>
-    dp tdp 2dup @ swap @ <
-    ?: @swap! 2drop 
-    here latest 2- @  ! ; immediate
+    compiling?
+    if
+        compile exit
+        dpswap
+        ['] dodoes cfa,
+    then ; immediate
 ```
 #endif
 #include "align.i65"
 _does
     jsr enter
 #include "page.i65"
-    .word dp
+    .word _compilingq
 #include "page.i65"
-    .word tdp
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word lt
-#include "page.i65"
-    .word pquerycolon
-    .word _fetchswapstore
-    .word twodrop
+    .word qbranch
+    .byt <(does01-*+1)
 #include "pad.i65"
-    .word here
+    .word _compile
+    .word exit
+#include "pad.i65"
+    .word _dpswap
 #include "page.i65"
-    .word _latest
+    .word plit
+    .word dodoes
+#include "pad.i65"
+    .word _cfacomma
 #include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word store
-#include "page.i65"
+does01
     .word exit
 
 ;--------------------------------------------------------------
