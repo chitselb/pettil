@@ -326,7 +326,7 @@ _semi
 
 
 
-        bogus = " brktoggle rlencode01 docconst01 dplus cr betweenq01 pleave rlencode04 rlencode07 "
+        bogus = " udslashmodb brktoggle rlencode07 "
 
 
 
