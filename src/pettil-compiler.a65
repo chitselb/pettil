@@ -598,9 +598,9 @@ _dpswap
 
 ;--------------------------------------------------------------
 #if 0
-name=(BUILDS)
-stack=( == ; "name" -- )
-tags=compiler,defining
+name=(BUILD-PARENT)
+stack=( dp tdp latest -- a c b-a )
+tags=compiler,defining,nosymbol
 helper word for `<BUILDS` in compile state
 
 ```
@@ -611,14 +611,9 @@ A = @E          B = @DP         C = @TDP        X = b-a
 DP = C+X        TDP = A         E = C           [C..D] = [A..B]
 0000  00 01 d7 63  76 06 86 06  00 00 05 50  00 01 07 70
             latest dp    tdp 
-: (builds)   ( dp tdp latest -- a c b-a )
-    latest 2- dup @  tdp @  here dup>r third -
-    2dup 2>r  
-    ( latest dup latest tdp@ latest-here R; tdp@ latest-here here )
-    cmove   tdp !  2r>    + dp !   2- r> swap ! ;
 ```
 #endif
-pbuilds
+pbuildparent
     ldy #4
     jsr locals
     brk
@@ -645,6 +640,65 @@ pbuilds
 
 ;--------------------------------------------------------------
 #if 0
+name=BUILD-PARENT
+stack=( -- )
+tags=compiler,defining,nosymbol
+helper word for `<BUILDS` in compile state
+
+```
+core                    tdict             symnew
+----+----+---           ----+----*-       ----.-+-------
+    ^A   ^B                 ^C   ^D           ^E^F
+A = @E          B = @DP         C = @TDP        X = b-a
+DP = C+X        TDP = A         E = C           [C..D] = [A..B]
+0000  00 01 d7 63  76 06 86 06  00 00 05 50  00 01 07 70
+            latest dp    tdp 
+```
+#endif
+#include "align.i65"
+_buildparent
+    jsr enter
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word tdp
+#include "page.i65"
+    .word _latest
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word pbuildparent
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word _compile
+    .word _dobuilds
+#include "pad.i65"
+    .word tdp
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _comma
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BUILD-CHILD
+stack=( -- 'doparent )
+tags=compiler,defining,nosymbol
+flags=immediate
+
+: buildchild
+    (create)
+#endif
+#include "align.i65"
+_buildchild
+
+;--------------------------------------------------------------
+#if 0
 name=<BUILDS
 stack=( == ; "name" -- )
 tags=compiler,defining
@@ -667,7 +721,8 @@ added to the core dictionary.
 
 ```
 : <builds   ( == ; "name" -- )
-    compiling?
+    compiling?  ?:  build-parent build-child
+    (create) ; immediate
     if
         dp tdp latest (builds) cmove
     then
@@ -680,27 +735,10 @@ _builds
 #include "page.i65"
     .word _compilingq
 #include "page.i65"
-    .word qbranch
-    .byt <(builds01-*+1)
+    .word pquerycolon
+    .word _buildparent
+    .word _buildchild
 #include "pad.i65"
-    .word dp
-#include "page.i65"
-    .word tdp
-#include "page.i65"
-    .word _latest
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word pbuilds
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word _compile
-    .word _create
-#include "pad.i65"
-builds01
     .word exit
 
 ;--------------------------------------------------------------
