@@ -238,6 +238,10 @@ _semi
             @name
         end
 
+        def vocab
+            @vocab
+        end
+
         def wikiname
             (@wikiname.nil?) ? @name : @wikiname
         end
@@ -395,7 +399,7 @@ _semi
     def write_pearson_file(outputfile,forthwordhash)
         pearsonfile = File.open("./tmp/"+outputfile,'w')
         forthwordhash.each do |wordname, stuff|
-            pearsonfile.write "#{wordname}\n"   unless stuff.tags.index "nosymbol"
+            pearsonfile.write "#{stuff.name}\n"   unless stuff.tags.index "nosymbol"
         end
     end
 
@@ -443,7 +447,7 @@ _semi
         if !forthword.nil?
             forthword.feed line,all_labels
             if forthword.done?
-                all_words[forthword.name] = forthword
+                all_words[forthword.name+forthword.vocab.to_s] = forthword
                 forthword = nil
             end
         end
