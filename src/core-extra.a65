@@ -219,7 +219,9 @@ tags=compiler,nosymbol
 doringbuffer
     jsr dodoes
 #include "page.i65"
-    .word threeplus
+    .word four
+#include "page.i65"
+    .word plus
 #include "page.i65"
     .word exit
 
@@ -235,9 +237,10 @@ by mainline code.
 #endif
 events
     jsr doringbuffer
+    .byt 30                 ; size
+    .byt 0                  ; wrap
     .byt 0                  ; head
     .byt 0                  ; tail
-    .byt 30                 ; size
     .dsb 30,0
 
 ;--------------------------------------------------------------
@@ -262,9 +265,10 @@ said to be latched, and the IRQ will add it to the [[EVENTS]] list
 #endif
 newevents
     jsr doringbuffer
+    .byt 15                 ; size
+    .byt 0                  ; wrap
     .byt 0                  ; head
     .byt 0                  ; tail
-    .byt 15                 ; size
     .dsb 15,0
 
 ;--------------------------------------------------------------
@@ -281,41 +285,50 @@ the CFA then adding +2 to the head pointer
 #endif
 tasks
     jsr doringbuffer
+    .byt 20                 ; size
+    .byt 0                  ; wrap
     .byt 0                  ; head
     .byt 0                  ; tail
-    .byt 20                 ; size
     .dsb 20,0
 
 ;--------------------------------------------------------------
 #if 0
 name=HEAD/TAIL+
-stack=( addr offset -2|-3 -- addr )
+stack=( offset -1|-2 ringbuf -- addr )
 tags=compiler
-Increments (and possibly wraps) the head or tail of a [[RINGBUFFER]].
-Returns the memory address pointed to by the adjusted pointer.
+Increments the `head` (-2) or `tail` (-1) by `offset` 
+within a [[RINGBUFFER]] structure.  The pointer wraps
+back to the start of the buffer when it reaches `size`.
 
-Use -2 for the tail, -3 for the head
+Returns the address pointed to by the adjusted pointer.
+
 Use an offset of 0 to read the pointer location.
 #endif
 headtailplus
     ldy #4
-    jsr locals              ; N0 = addr; N1 = offset
-    dec n+1                 ; back up one page
-    ldy tos                 ; use $fd, $fe, $ff offsets for head, tail, limit
-    lda n+2                 ; the offset.  One byte will suffice
+    jsr locals              ; TOS = ringbuf; N0 = offset; N1 = head|tail
+    dec tos+1               ; back up one page
+    ldy n+2                 ; $fc = size; $fd = wrap; $fe = head; $ff = tail
+    lda n                   ; the offset.  One byte will suffice
+
     clc
-    adc (n),y               ; offset+[head|tail]
-    ldy #$ff
-    eor (n),y
-    beq headtailplus01      ; did we hit limit?  use A=0 to wrap
-    eor (n),y               ; no, change A back to the sum
+    adc (tos),y             ; offset+[head|tail]
+    ldy #$fc
+    cmp (tos),y
+    bcc headtailplus01
+    iny
+    lda (tos),y
+    adc #0
+    sta (tos),y             ; increment wrap counter
+    lda #0
 headtailplus01
-    ldy tos                 ; offset to head or tail
-    sta (n),y
+    ldy n+2                 ; offset to head or tail
+    sta (tos),y
+
     ;clc                    ; ringbuffer limited to one page
-    adc n                   ; add the offset
+    adc tos                 ; add the offset
     sta tos
-    lda n+1
+    lda tos+1
     adc #1                  ; put back the earlier page decrement
     sta tos+1
     jmp next
