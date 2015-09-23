@@ -307,10 +307,15 @@ Use an offset of 0 to read the pointer location.
 headtailplus
     ldy #4
     jsr locals              ; TOS = ringbuf; N0 = offset; N1 = head|tail
-    dec tos+1               ; back up one page
-    ldy n+2                 ; $fc = size; $fd = wrap; $fe = head; $ff = tail
-    lda n                   ; the offset.  One byte will suffice
+;    ldy n+2                 ; $fc = size; $fd = wrap; $fe = head; $ff = tail
+;    lda n                   ; the offset.  One byte will suffice
 
+    lsr n+2
+    lda n
+    jsr rbufplus
+    jmp next
+
+    dec tos+1               ; back up one page
     clc
     adc (tos),y             ; offset+[head|tail]
     ldy #$fc
@@ -332,3 +337,65 @@ headtailplus01
     adc #1                  ; put back the earlier page decrement
     sta tos+1
     jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=RBUF+
+stack=( ringbuffer -- addr )
+tags=compiler,subroutine
+This subroutine is reentrant.  It is called by the interrupt
+service routine and the mainline routine, so it can't use any
+memory as it might interrupt itself.  The IRQ service routine
+will push its own ringbuffers on the stack
+|register|input|output|
+|^''A''|^Offset to add to head or tail|
+|^''X''|~|
+|^''Y''|~|
+|^''C''|''0'' increment the head (read)<br/>''1'' increment the tail|
+Increments the `head` (-2) or `tail` (-1) by `offset` 
+within a [[RINGBUFFER]] structure.  The pointer wraps
+back to the start of the buffer when it reaches `size`.
+
+Returns the address pointed to by the adjusted pointer.
+
+Use an offset of 0 to read the pointer location.
+#endif
+rbufplus
+    pha                     ; keep a copy of offset
+    php                     ; keep a copy of carry flag 0=head 1=tail
+    dec tos+1               ; back up to prev page
+    ldy #$fe                ; head
+    bcc rbufplus01
+    iny                     ; no tail
+    clc
+rbufplus01
+    ;clc
+    adc (tos),y             ; [head|tail] += offset
+    sta (tos),y
+    ldy #$fc
+    cmp (tos),y             ; compare to size
+    bcc rbufplus03          ; inside the lines?
+    iny                     ; $fd wrap counter
+    lda (tos),y
+    adc #0
+    sta (tos),y             ; increment wrap counter
+    iny                     ; head
+    plp                     ; check copy of C flag
+    bcc rbufplus02
+    iny
+rbufplus02
+    lda #0
+    sta (tos),y             ; zero head|tail pointer
+    pla                     ; discard copy of offset
+    inc tos+1               ; move back to current page
+    rts
+rbufplus03
+    ;clc                    ; TOS += offset
+    pla                     ; discard carry flag
+    pla                     ; restore offset
+    adc tos
+    sta tos
+    lda tos+1
+    adc #1
+    sta tos+1
+    rts
