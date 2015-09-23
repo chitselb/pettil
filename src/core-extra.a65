@@ -293,27 +293,6 @@ tasks
 
 ;--------------------------------------------------------------
 #if 0
-name=RINGBUF+
-stack=( offset -1|-2 ringbuf -- addr )
-tags=compiler
-Increments the `head` (-2) or `tail` (-1) by `offset` 
-within a [[RINGBUFFER]] structure.  The pointer wraps
-back to the start of the buffer when it reaches `size`.
-
-Returns the address pointed to by the adjusted pointer.
-
-Use an offset of 0 to read the pointer location.
-#endif
-ringbufplus
-    lsr stackl,x            ; Carry bit is true for -1, false for -2
-    lda stackl+1,x          ; offset, 0 for read
-    jsr pringbufplus
-    inx
-    inx
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
 name=(RINGBUF+)
 stack=( ringbuffer -- addr )
 tags=compiler,subroutine,nosymbol
@@ -321,11 +300,13 @@ This subroutine is reentrant.  It is called by the interrupt
 service routine and the mainline routine, so it can't use any
 memory as it might interrupt itself.  The IRQ service routine
 will push its own ringbuffers on the stack
+
 |register|input|output|
-|^''A''|^Offset to add to head or tail|
-|^''X''|~|
-|^''Y''|~|
-|^''C''|''0'' increment the head (read)<br/>''1'' increment the tail|
+|^''A''|^Offset to add to head or tail||
+|^''X''||~|
+|^''Y''||~|
+|^''C''|''0''<br/>''1''|move the head (read)<br/>move the tail (write)|
+
 Increments the `head` (-2) or `tail` (-1) by `offset` 
 within a [[RINGBUFFER]] structure.  The pointer wraps
 back to the start of the buffer when it reaches `size`.
@@ -335,7 +316,7 @@ Returns the address pointed to by the adjusted pointer.
 Use an offset of 0 to read the pointer location.
 #endif
 pringbufplus
-    pha                     ; keep a copy of offset
+;    pha                     ; keep a copy of offset
     php                     ; keep a copy of carry flag 0=head 1=tail
     dec tos+1               ; back up to prev page
     ldy #$fe                ; head
@@ -360,16 +341,37 @@ pringbufplus01
 pringbufplus02
     lda #0
     sta (tos),y             ; zero head|tail pointer
-    pla                     ; discard copy of offset
+;    pla                     ; discard copy of offset
     inc tos+1               ; move back to current page
     rts
 pringbufplus03
-    ;clc                    ; TOS += offset
+    ;clc                    ; TOS += new position
     adc tos
     sta tos
     lda tos+1
     adc #1
     sta tos+1
     pla                     ; discard carry flag
-    pla                     ; restore offset
+;    pla                     ; discard offset
     rts
+
+;--------------------------------------------------------------
+#if 0
+name=RINGBUF+
+stack=( offset -1|-2 ringbuf -- addr )
+tags=compiler
+Increments the `head` (-2) or `tail` (-1) by `offset` 
+within a [[RINGBUFFER]] structure.  The pointer wraps
+back to the start of the buffer when it reaches `size`.
+
+Returns the address pointed to by the adjusted pointer.
+
+Use an offset of 0 to read the pointer location.
+#endif
+ringbufplus
+    lsr stackl,x            ; Carry bit is true for -1, false for -2
+    lda stackl+1,x          ; offset, 0 for read
+    jsr pringbufplus
+    inx
+    inx
+    jmp next
