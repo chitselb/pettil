@@ -227,24 +227,6 @@ doringbuffer
 
 ;--------------------------------------------------------------
 #if 0
-name=EVENTS
-stack=( -- addr )
-tags=compiler
-This is a [[RINGBUFFER]] of ten 3-byte elements, used by the 
-event IRQ routine.  It should not be read or written directly
-by mainline code.
-
-#endif
-events
-    jsr doringbuffer
-    .byt 30                 ; size
-    .byt 0                  ; wrap
-    .byt 0                  ; head
-    .byt 0                  ; tail
-    .dsb 30,0
-
-;--------------------------------------------------------------
-#if 0
 name=NEW-EVENTS
 stack=( -- addr )
 tags=compiler
@@ -303,7 +285,7 @@ will push its own ringbuffers on the stack
 
 |register|input|output|
 |^''A''|^Offset to add to head or tail||
-|^''X''||~|
+|^''X''|unused|unused|
 |^''Y''||~|
 |^''C''|''0''<br/>''1''|move the head (read)<br/>move the tail (write)|
 
@@ -372,3 +354,109 @@ ringbufplus
     inx
     inx
     jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=MAINIRQ
+stack=( -- )
+tags=events
+#endif
+cmainirq
+    jsr doconst
+    .word MAINIRQ
+
+;--------------------------------------------------------------
+#if 0
+name=EVENTIRQ
+stack=( -- )
+tags=events
+IRQ service routine used by event handler.  There are three 
+FIFO queues, two of them accessible to the application 
+programmer: [[EVENTS]] and [[TASKS]].  The third queue is 
+internal to this IRQ service routine and is not thread-safe 
+for read or write by mainline code.
+
+* check for events
+* decrement all timers
+* remove expired events
+* add expired event CFAs to the [[TASKS]] queue
+* add [[EVENTS]] from the [[NEW-EVENTS]] queue
+* chain the ROM IRQ service routine
+#endif
+eventirq
+    jsr slide               ; we may need two bytes of zero page
+    ldx evcounters+2        ; tail
+    dex
+    jmp eventirq02
+eventirq01
+    dec eventtimers,x
+    bne eventirq02
+    ; expired? add it to [[TASKS]]
+    lda #<(tasks+7)
+    sta tos
+    lda #>(tasks+7)
+    sta tos+1
+    clc                     ; the head
+    lda #0
+    jsr pringbufplus        ; get the head
+    ldy #0
+    lda eventcfalo,x
+    sta (tos),y
+    iny
+    lda eventcfahi,x
+    sta (tos),y
+    clc                     ; the head
+    lda #2
+    jsr pringbufplus        ; increment the head
+    ; remove the event here
+eventirq02
+    inx
+    txa
+    and #7                  ; for 8 events
+    ; and #15               ; for 16 events
+    tax
+    bne eventirq03
+    inc evcounters          ; bump wrap
+eventirq03
+    cpx evcounters+1        ; compare to head
+    bne eventirq01          ; we've got something
+    lda evcounters          ; wrap
+    lsr
+    bcs eventirq01          ; parity bit odd? queue is full
+eventirq04
+    ; add new events here
+    jsr slip                ; restore the data stack
+    jmp MAINIRQ
+
+    lda #<(newevents+7)
+    sta tos
+    lda #>(newevents+7)
+    sta tos+1
+    sec                 ; the tail
+    lda #0
+    jsr pringbufplus
+    ldy #0
+    lda (tos),y
+    beq eventirq01
+    inc VIDRAM
+    clc
+    sbc #0
+    sta (tos),y
+
+;--------------------------------------------------------------
+#if 0
+name=EVENTS
+stack=( -- )
+tags=events
+#endif
+evcounters
+;    .byt 8                 ; size is implicit, either 8 or 16
+    .byt 0                  ; wrap
+    .byt 0                  ; head
+    .byt 0                  ; tail
+eventtimers
+    .dsb 8,0
+eventcfalo
+    .dsb 8,0
+eventcfahi
+    .dsb 8,0
