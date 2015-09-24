@@ -211,28 +211,110 @@ xlmod40c
 
 ;--------------------------------------------------------------
 #if 0
-name=DOKONST
-stack=( n -- )
+name=DORINGBUFFER
+stack=( -- addr )
 tags=compiler,nosymbol
 
 #endif
-dokonst
+doringbuffer
     jsr dodoes
 #include "page.i65"
-    .word fetch
+    .word threeplus
 #include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=K1234
-stack=( n -- )
+name=EVENTS
+stack=( -- addr )
 tags=compiler
-
-: k1234   ( n == ; -- n )
+This is a [[RINGBUFFER]] of ten 3-byte elements, used by the 
+event IRQ routine.  It should not be read or written directly
+by mainline code.
 
 #endif
-#include "align.i65"
-k1234
-    jsr dokonst
-    .word $1234
+events
+    jsr doringbuffer
+    .byt 0                  ; head
+    .byt 0                  ; tail
+    .byt 30                 ; size
+    .dsb 30,0
+
+;--------------------------------------------------------------
+#if 0
+name=NEW-EVENTS
+stack=( -- addr )
+tags=compiler
+This is a [[RINGBUFFER]] of five 3-byte elements, used by the 
+event IRQ routine.  New events are added like this:
+
+* erase the next 3 bytes in the buffer
+* increment the tail by +3
+* [[C!]] the timeout byte
+* [[!]] the CFA word
+
+The [[!]] operation writes the most significant (high) byte
+last, and no code field exists on the zero page.  When both the
+timeout byte and the MSB of the CFA are non-zero, an event is
+said to be latched, and the IRQ will add it to the [[EVENTS]] list
+(and remove it from [[NEW-EVENTS]])
+
+#endif
+newevents
+    jsr doringbuffer
+    .byt 0                  ; head
+    .byt 0                  ; tail
+    .byt 15                 ; size
+    .dsb 15,0
+
+;--------------------------------------------------------------
+#if 0
+name=TASKS
+stack=( -- addr )
+tags=compiler
+This is a [[RINGBUFFER]] of ten 2-byte elements, used by the 
+event IRQ routine.  It will contain a list of CFAs to be executed
+in order by the mainline code.  Mainline code should not add
+elements to this queue, but can remove them by first zeroing 
+the CFA then adding +2 to the head pointer
+
+#endif
+tasks
+    jsr doringbuffer
+    .byt 0                  ; head
+    .byt 0                  ; tail
+    .byt 20                 ; size
+    .dsb 20,0
+
+;--------------------------------------------------------------
+#if 0
+name=HEAD/TAIL+
+stack=( addr offset -2|-3 -- addr )
+Increments (and possibly wraps) the head or tail of a [[RINGBUFFER]].
+Returns the memory address pointed to by the adjusted pointer.
+
+Use -2 for the tail, -3 for the head
+Use an offset of 0 to read the pointer location.
+#endif
+headtailplus
+    ldy #4
+    jsr locals              ; N0 = offset; N1 = addr
+    dec n+3                 ; back up one page
+    ldy tos                 ; use $fd, $fe, $ff offsets for head, tail, limit
+    lda n                   ; the offset.  One byte will suffice
+    clc
+    adc (n+2),y             ; offset+[head|tail]
+    ldy #$ff
+    eor (n+2),y
+    beq headtailplus01      ; did we hit limit?  use A=0 to wrap
+    eor (n+2),y             ; no, change A back to the sum
+headtailplus01
+    ldy tos                 ; offset to head or tail
+    sta (n+2),y
+    ;clc                    ; ringbuffer limited to one page
+    adc n+2
+    sta tos
+    lda n+3
+    adc #1                  ; put back the earlier page decrement
+    sta tos+1
+    jmp next
