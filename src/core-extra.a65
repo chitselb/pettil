@@ -349,7 +349,7 @@ bits 0..5 = offset to add
 
 return
 TOS = address
-
+A = always nonzero because A = P register
 #endif
 ringo
     pha
@@ -378,6 +378,7 @@ will push its own ringbuffers on the stack
 |^''X''|unused|unused|
 |^''Y''||~|
 |^''C''|''0''<br/>''1''|move the head (read)<br/>move the tail (write)|
+|^''Z''|''true'' always true||
 
 Increments the `head` (-2) or `tail` (-1) by `offset` 
 within a [[RINGBUFFER]] structure.  The pointer wraps
@@ -413,7 +414,7 @@ pringbufplus02
     lda #0
     sta (tos),y             ; zero head|tail pointer
     inc tos+1               ; move back to current page
-    rts
+    rts                     ; Z = 0
 pringbufplus03
     ;clc                    ; TOS += new position
     adc tos
@@ -422,7 +423,7 @@ pringbufplus03
     adc #1
     sta tos+1
     pla                     ; discard carry flag
-    rts
+    rts                     ; Z = 0
 
 ;--------------------------------------------------------------
 #if 0
@@ -561,27 +562,41 @@ nextboil
 nextcube
     jsr eventsaddr
     jsr rbuffull
+    bcs testcube
     beq nomoreice
 testcube
     lda #0|bit7|bit6        ; read | tail | events
     jsr ringo               ; tos points to the new event
-    ldy #0                  ; ~ do most calls to pringbufplus need Y=0 after?
-    lda (tos),y
-    beq nomoreice           ; timer=0? this event is incomplete. we're done
     ldy #2
     lda (tos),y
     beq nomoreice           ; cfahi=0?  this event is incomplete. we're done
-meltcube
+    pha
+    dey
+    lda (tos),y             ; cfalo
+    pha
+    dey
+    lda (tos),y             ; delay
+    bne water
+    ;lda #0                 ; read|head|tasks
+    jsr ringo               ; tos points to the next task
+    ldy #0
+    pla
+    sta (tos),y
+    iny
+    pla
+    sta (tos),y
+    lda #2                  ; move|head|tasks
+    jsr ringo               ; move the tail to consume event
+    bne water01             ; bra
+water
     inc present             ; add a new event
     ldx present
-    lda (tos),y
-    sta presentcfahi,x
-    dey
-    lda (tos),y
-    sta presentcfalo,x
-    dey
-    lda (tos),y
     sta present,x
+    pla
+    sta presentcfalo,x
+    pla
+    sta presentcfahi,x
+water01
     jsr eventsaddr
     lda #3|bit7|bit6        ; move | tail | events
     jsr ringo               ; move the tail to consume event
