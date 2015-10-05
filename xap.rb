@@ -330,7 +330,7 @@ _semi
 
 
 
-        bogus = " udslashmodb brktoggle rlencode07 currname01 cold warm01 "
+        bogus = " udslashmodb brktoggle rlencode07 currname01 cold warm01 expect01 _pudot "
 
 
 
