@@ -122,14 +122,39 @@ _semi
 
         def is_name?(line)
             if t = line.split(/^name=/)[1]
-                @name = t
                 @skip = true
+                z = t.split(' ')
+                case true
+                    when z[0] == "~"        # name=~ Multiple Words in a Title
+                        @name = @wikiname = z[1..-1].join ' '
+                        @symbol = "nosymbol"
+                    when z.length == 1      # name=FORTHWORD
+                        @name = @wikiname = @symbol = z[0]
+                    when z.length == 2      # name=[FORTHWORD] {WIKINAME} 
+                        @name = @symbol = z[0]
+                        @wikiname = z[1]
+                    when z.length == 3
+                        @name = z[0]
+                        @wikiname = z[1]
+                        t = z[2]
+                        while somechar = (/(.*)''(\h+)''(.*)/).match(t)
+                            t = somechar[1]+[somechar[2]].pack("H*")+somechar[3]
+                            puts "tick tick",t
+                        end
+                        @symbol = t
+                    else
+                        puts "wut?"
+                end
+            end
+=begin
+                @name = t
             end
             if t = line.split(/^wikiname=/)[1]
                 # an alternative name for use in the wiki
                 @wikiname = t
                 @skip = true
             end
+=end
 
         end
 
@@ -238,12 +263,16 @@ _semi
             @name
         end
 
-        def vocab
-            @vocab
+        def symbol
+            @symbol
         end
 
         def wikiname
-            (@wikiname.nil?) ? @name : @wikiname
+            @wikiname
+        end
+
+        def vocab
+            @vocab
         end
 
         def label
@@ -256,7 +285,8 @@ _semi
 
         def tiddler
             # ~ add @vocab here
-            text = "!!!#{@name}"
+            text = "!! #{@wikiname}"
+            text = "!! //#{@wikiname}//"   if @tags.index "nosymbol"
             text += ((@stack.nil?) ? "\n\n" : "&nbsp;&nbsp;&nbsp;#{@stack}\n\n")
             text += ((@prevword.nil?) ? '' : "[[<<|#{@prevword}]]&nbsp;")
             text += ((@addr.nil?) ? 'wut?' : "address:&nbsp;$#{hex4out @addr}&nbsp;&nbsp;")
@@ -264,9 +294,9 @@ _semi
             text += ((@nextword.nil?) ? "\n\n" : "[[>>|#{@nextword}]]\n\n")
             text += ((@desc.nil?) ? '' : @desc)
             text += ((@code.nil?) ? '' : @code)
-            return "\{ \"title\":#{wikiname.to_json},"\
-                    "\"text\":#{text.to_json},"\
-                    "\"tags\":#{@tags.to_json}\},\n"
+            return "\{ \"title\": #{wikiname.to_json},"\
+                    "\"text\": #{text.to_json},"\
+                    "\"tags\": #{@tags.to_json}\},\n"
         end
 
         # 0x80 = Smudge bit
@@ -276,20 +306,22 @@ _semi
             if @addr.nil?
                 return nil
             else
-                length = @name.length
+#            puts "name,wikiname,symbol",@name.to_s,@wikiname.to_s,@symbol.to_s
+                symlen = @name.length
+    puts  symlen.to_s + " " + @symbol
                 if !@vocab.nil?
-                    @name += [@vocab.to_i].pack("C")
-                    length |= 0x40
+                    @symbol += [@vocab.to_i].pack("C")
+                    symlen |= 0x40
                 end
-                length |= 0x20   if @flags.index("immediate")  unless @flags.nil?
+                symlen |= 0x20   if @flags.index("immediate")  unless @flags.nil?
                 # length |= 0x40   if ....  add vocabulary support ~
 
                 # a String,
                 # - 2 byte address
                 # - 1 byte length|flags
-                # - n byte name
+                # - n byte symbol
                 # - 1 byte vocid (optional)
-                return [@addr].pack("S<")+[length].pack("C")+@name.bytes.pack("C*")
+                return [@addr].pack("S<")+[symlen].pack("C")+@symbol.bytes.pack("C*")
             end
         end
     end
