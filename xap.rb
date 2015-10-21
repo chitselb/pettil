@@ -120,28 +120,37 @@ _semi
             end
         end
 
+        def petscii(s)
+            while somechar = (/(.*)''(\h+)''(.*)/).match(s)
+                s = somechar[1]+[somechar[2]].pack("H*")+somechar[3]
+            end       
+            return s 
+        end
+
         def is_name?(line)
             if t = line.split(/^name=/)[1]
                 @skip = true
                 z = t.split(' ')
                 case true
                     when z[0] == "~"        # name=~ Multiple Words in a Title
-                        @name = @wikiname = z[1..-1].join ' '
-                        @symbol = "nosymbol"
+                        @name = z[1..-1].join ' '
+                        @wikititle = @name
+                        @symbol = "HOWDIDTHISGETINHERE"
                     when z.length == 1      # name=FORTHWORD
-                        @name = @wikiname = @symbol = z[0]
-                    when z.length == 2      # name=[FORTHWORD] {WIKINAME} 
                         @name = @symbol = z[0]
-                        @wikiname = z[1]
-                    when z.length == 3
+                        @wikititle = @name
+                    when z.length == 2      # name=[FORTHWORD] {TITLE} 
+                        @name = @symbol = z[0]
+                        @wikititle = z[1]
+                    when z.length == 3      # name=[FORTHWORD] {TITLE} SYMBOL
                         @name = z[0]
-                        @wikiname = z[1]
-                        t = z[2]
-                        while somechar = (/(.*)''(\h+)''(.*)/).match(t)
-                            t = somechar[1]+[somechar[2]].pack("H*")+somechar[3]
-                            puts "tick tick",t
-                        end
-                        @symbol = t
+                        @wikititle = z[1]
+                        @symbol = petscii z[2]
+                    when z.length == 4      # name=[FORTHWORD] {TITLE} {WIKINAME} SYMBOL
+                        @name = z[0]
+                        @wikititle = z[1]
+                        @wikiname = z[2]
+                        @symbol = petscii z[3]
                     else
                         puts "wut?"
                 end
@@ -267,8 +276,12 @@ _semi
             @symbol
         end
 
+        def wikititle
+            @wikititle
+        end
+
         def wikiname
-            @wikiname
+            (@wikiname.nil?) ? @wikititle : @wikiname
         end
 
         def vocab
@@ -285,8 +298,8 @@ _semi
 
         def tiddler
             # ~ add @vocab here
-            text = "!! #{@wikiname}"
-            text = "!! //#{@wikiname}//"   if @tags.index "nosymbol"
+            text = "!! #{wikiname}"
+            text = "!! //#{wikiname}//"   if @tags.index "nosymbol"
             text += ((@stack.nil?) ? "\n\n" : "&nbsp;&nbsp;&nbsp;#{@stack}\n\n")
             text += ((@prevword.nil?) ? '' : "[[<<|#{@prevword}]]&nbsp;")
             text += ((@addr.nil?) ? 'wut?' : "address:&nbsp;$#{hex4out @addr}&nbsp;&nbsp;")
@@ -294,7 +307,8 @@ _semi
             text += ((@nextword.nil?) ? "\n\n" : "[[>>|#{@nextword}]]\n\n")
             text += ((@desc.nil?) ? '' : @desc)
             text += ((@code.nil?) ? '' : @code)
-            return "\{ \"title\": #{wikiname.to_json},"\
+            puts wikititle.to_json
+            return "\{ \"title\": #{wikititle.to_json},"\
                     "\"text\": #{text.to_json},"\
                     "\"tags\": #{@tags.to_json}\},\n"
         end
@@ -308,7 +322,6 @@ _semi
             else
 #            puts "name,wikiname,symbol",@name.to_s,@wikiname.to_s,@symbol.to_s
                 symlen = @name.length
-    puts  symlen.to_s + " " + @symbol
                 if !@vocab.nil?
                     @symbol += [@vocab.to_i].pack("C")
                     symlen |= 0x40
@@ -385,8 +398,8 @@ _semi
 #       end
         sortedbyaddr = forthwordhash.sort_by {|wordname, stuff| stuff.addr}
         for i in 0..(sortedbyaddr.size-2)
-            prevword = (i>0) ? sortedbyaddr[i-1][1].wikiname : nil
-            nextword = sortedbyaddr[i+1][1].wikiname
+            prevword = (i>0) ? sortedbyaddr[i-1][1].wikititle : nil
+            nextword = sortedbyaddr[i+1][1].wikititle
             size = sortedbyaddr[i+1][1].addr-sortedbyaddr[i][1].addr
             sortedbyaddr[i][1].set_size size
             sortedbyaddr[i][1].set_prevword prevword
