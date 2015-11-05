@@ -132,6 +132,8 @@ stack=( from to size -- targend uncompressed? )
 tags=vm,sweet16
 encode length {srclen} bytes from source address {srcaddr} to
 target address {targaddr}.  Return target end address {targend}
+
+~ use locals instead of pull?
 #endif
 rlencode
     ; tos   src (pristine)
@@ -1141,6 +1143,115 @@ stashforth
 
 ;--------------------------------------------------------------
 #if 0
+name=INTERLUDE
+stack=( ; from to -- )
+tags=vm,i/o,kernel,nosymbol
+Subroutine to set tape i/o start and end addresses passed on
+the return stack
+#endif
+#include "align.i65"
+interlude
+    pla
+    tax
+    pla
+    tay                         ; preserve return address
+    pla
+    sta $c9
+    pla
+    sta $ca
+    pla
+    sta $fb
+    pla
+    sta $fc
+    tya
+    pha
+    txa
+    pha                         ; restore return address
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=RELOCATE
+stack=( from to flag -- start end )
+tags=vm,i/o,kernel
+The `from` and `to` values are both adjusted, leaving `start`
+and `end`.  
+
+|flag|in|out|h
+|true|relocated|actual|
+|false|actual|relocated|
+
+```
+: relocate
+    memsiz @ symtab @ -
+    swap if negate then
+    dup>r +under r> + ;
+    
+vmbuf @ blkbuf .s    51fe 5200  ok
+false relocate .s    7bfe 7c00  ok
+true relocate .s     51fe 5200  ok
+```
+#endif
+#include "align.i65"
+_relocate
+    jsr enter
+#include "page.i65"
+    .word memsiz
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word qbranch
+    .byt <(relocate01-*+1)
+#include "pad.i65"
+    .word negate
+#include "page.i65"
+relocate01
+    .word duptor
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word exit
+
+;relocate
+;    ldy #4
+;    jsr locals          ; N0 = from, N1 = to, TOS = flag
+;    brk
+;    .byt set | N2
+;    .word uarea+usersymtab-userarea
+;    .byt ldd | N2
+;    .byt st | N3
+;    .byt set | N2
+;    .word uarea+usermemsiz-userarea
+;    .byt ldd | N2
+;    .byt sub | N3
+;    .byt st | N3
+;    .byt ld | TOS
+;    .byt bnz , <(relocate02-*-2)
+;    .byt sub | N3
+;    .byt st | N3
+;relocate02
+;    .byt ld | N3
+;    .byt add | N0
+;    .byt st | TOS
+;    .byt ld | N3
+;    .byt add | N1
+;    .byt push
+;    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
 name=(LOADVERA)
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
@@ -1271,28 +1382,51 @@ _loadbuffers
 
 ;--------------------------------------------------------------
 #if 0
-name=(IOSETUP)
-stack=( -- )
+name=(VMBUFPTR)
+stack=( -- from to )
 tags=vm,kernel,nosymbol
+Returns the start and end of the virtual memory buffer
 
+```
+: (vmbuf)   ( -- from to )
+    vmbuf @ blkbuf ;
+```
 #endif
 #include "align.i65"
-_piosetup
+_pvmbufptr
     jsr enter
 #include "page.i65"
     .word vmbuf
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word clit
-    .byt $fb
-#include "pad.i65"
-    .word store
-#include "page.i65"
     .word _blkbuf
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(SETIOPTR)
+stack=( from to -- )
+tags=vm,kernel,nosymbol
+Set zero page load/save pointers
+
+```
+: (setioptr)   ( from to -- )
+    $c9 !  $fb ! ;
+```
+#endif
+#include "align.i65"
+_setioptr
+    jsr enter
 #include "page.i65"
     .word clit
     .byt $c9
+#include "pad.i65"
+    .word store
+#include "page.i65"
+    .word clit
+    .byt $fb
 #include "pad.i65"
     .word store
 #include "page.i65"
@@ -1314,7 +1448,7 @@ psavebuf
 
 ;--------------------------------------------------------------
 #if 0
-name=SAVE-BUFFERS
+name=S-B
 stack=( -- )
 tags=vm,forth-83,i/o,kernel
 Writes the virtual memory area, from VMBUF to BLKBUF, out to a PRG file on cassette or disk
@@ -1337,7 +1471,36 @@ _savebuffers
 #include "page.i65"
     .word _setnam
 #include "page.i65"
-    .word _piosetup
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=S-B
+stack=( -- )
+tags=vm,forth-83,i/o,kernel
+Writes the virtual memory area, from VMBUF to BLKBUF, out to a PRG file on cassette or disk
+
+* DRV# is the device number
+* FILENAME is the filename
+
+d4 = drv#
+d1 = length
+(da) = name
+fb = to
+fd = from
+(c9) = to
+
+This is called by STOP-S in the editor
+#endif
+#include "align.i65"
+_sdashb
+    jsr enter
+#include "page.i65"
+    .word _setnam
+#include "page.i65"
+    .word _pvmbufptr
+#include "page.i65"
+    .word _setioptr
 #include "page.i65"
     .word psavebuf
 #include "page.i65"
@@ -1368,12 +1531,17 @@ _verifybuffers
 #include "page.i65"
     .word _setnam
 #include "page.i65"
-    .word ploadvera
+;    .word preadheader
 #include "page.i65"
-    .word _piosetup
+    .word _pvmbufptr
 #include "page.i65"
-    .word ploadverb
-    ; pad blkbuf-size size cmove
+    .word true
+#include "page.i65"
+    .word _relocate
+#include "page.i65"
+    .word _setioptr
+#include "page.i65"
+;    .word preaddata
 #include "page.i65"
     .word clit
     .byt STATUS
@@ -1389,28 +1557,6 @@ _verifybuffers
 verifybuffers06
 #include "pad.i65"
 verifybuffers05
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?EXIT
-stack=( flag -- )
-tags=forth-83,vm
-Exits the calling word if the flag is true
-
-```
-: ?exit   ( flag -- )
-    ?: rdrop next ;
-```
-#endif
-#include "align.i65"
-_qexit
-    jsr enter
-#include "page.i65"
-    .word pquerycolon
-    .word rdrop
-    .word exit
-#include "pad.i65"
     .word exit
 
 ;--------------------------------------------------------------
