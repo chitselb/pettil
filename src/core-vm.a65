@@ -1143,34 +1143,6 @@ stashforth
 
 ;--------------------------------------------------------------
 #if 0
-name=INTERLUDE
-stack=( ; from to -- )
-tags=vm,i/o,kernel,nosymbol
-Subroutine to set tape i/o start and end addresses passed on
-the return stack
-#endif
-#include "align.i65"
-interlude
-    pla
-    tax
-    pla
-    tay                         ; preserve return address
-    pla
-    sta $c9
-    pla
-    sta $ca
-    pla
-    sta $fb
-    pla
-    sta $fc
-    tya
-    pha
-    txa
-    pha                         ; restore return address
-    rts
-
-;--------------------------------------------------------------
-#if 0
 name=RELOCATE
 stack=( from to flag -- start end )
 tags=vm,i/o,kernel
@@ -1421,12 +1393,12 @@ _setioptr
     jsr enter
 #include "page.i65"
     .word clit
-    .byt $c9
+    .byt EAL            ; i/o end address
 #include "pad.i65"
     .word store
 #include "page.i65"
     .word clit
-    .byt $fb
+    .byt STAL           ; i/o start address
 #include "pad.i65"
     .word store
 #include "page.i65"
@@ -1435,20 +1407,39 @@ _setioptr
 ;--------------------------------------------------------------
 #if 0
 name=(SAVEBUF)
-stack=( -- )
+stack=( ; return c9 fb -- )
 tags=vm,forth-83,i/o,kernel,nosymbol
 
 ~ modify this to fake the header to appear as though [[VMBUF]]
 is based on [[SYMTAB]] == [[MEMSIZ]]
+
+~ could this use $F6CC instead?
 #endif
 psavebuf
     jsr stashforth
-    jsr PERFORMSAVE             ; save
+    jsr SAVEHEADER
+    pla
+    tax
+    pla
+    tay
+    pla
+    sta $c9
+    pla
+    sta $ca
+    pla
+    sta $fb
+    pla
+    sta $fc
+    tya
+    pha
+    txa
+    pha
+    jsr SAVEDATA
     jmp restoreforth
 
 ;--------------------------------------------------------------
 #if 0
-name=S-B
+name=SAVE-BUFFERS
 stack=( -- )
 tags=vm,forth-83,i/o,kernel
 Writes the virtual memory area, from VMBUF to BLKBUF, out to a PRG file on cassette or disk
@@ -1471,34 +1462,11 @@ _savebuffers
 #include "page.i65"
     .word _setnam
 #include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=S-B
-stack=( -- )
-tags=vm,forth-83,i/o,kernel
-Writes the virtual memory area, from VMBUF to BLKBUF, out to a PRG file on cassette or disk
-
-* DRV# is the device number
-* FILENAME is the filename
-
-d4 = drv#
-d1 = length
-(da) = name
-fb = to
-fd = from
-(c9) = to
-
-This is called by STOP-S in the editor
-#endif
-#include "align.i65"
-_sdashb
-    jsr enter
-#include "page.i65"
-    .word _setnam
-#include "page.i65"
     .word _pvmbufptr
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word twotor
 #include "page.i65"
     .word _setioptr
 #include "page.i65"
