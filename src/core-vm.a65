@@ -816,6 +816,104 @@ wrapstore01
 
 ;--------------------------------------------------------------
 #if 0
+name=#VMPKT!
+stack=( -- )
+tags=vm,nosymbol
+Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
+
+~ It should also validate flags and max-lengths, error out on corrupt VMBUF
+
+```
+: #vmpkt!   ( -- )
+    scr off  blk off  prev on  #vmpkt off  blkbuf 2-
+    begin
+        @ ?dup
+    while
+        #vmpkt 1+!
+        -
+    repeat
+    vmbuf ! ;
+
+```
+#endif
+#include "align.i65"
+_numvmpktstore
+    jsr enter
+#include "page.i65"
+    .word scr
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word prev
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word numvmpkt
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+numvmpktstore01
+    .word pktsize
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(numvmpktstore02-*+1)
+#include "pad.i65"
+    .word numvmpkt
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word branch
+    .byt <(numvmpktstore01-*+1)
+#include "pad.i65"
+numvmpktstore02
+    .word vmbuf
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=EMPTY-BUFFERS
+stack=( -- )
+tags=i/o,forth-83
+Unassign all virtual memory.  UPDATEed blocks are not written
+to mass storage.
+
+```
+: empty-buffers   ( -- )
+    blkbuf 2-  dup vmbuf !  off  #vmpkt! ;
+
+```
+#endif
+#include "align.i65"
+_emptybuffers
+    jsr enter
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word _numvmpktstore
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=BLOCK
 stack=( blk -- buf )
 tags=vm,fig,forth-79,forth-83
@@ -980,6 +1078,25 @@ currname01
 
 ;--------------------------------------------------------------
 #if 0
+name=(TAPEIOPTRS)
+stack=( filenameaddr drv# from to start end -- )
+tags=vm,i/o,kernel
+Sets up filename and device# parameters before tape and disk I/O
+
+todo: use labels instead of magic numbers for zero page addresses
+todo: move DRV# setup to SETLFS
+
+```
+: setnam   ( -- )
+    filename @ dup
+    if  count swap FNADR ( $da ) !  then
+    FNLEN ( $d1 ) c!  drv# @ FA ( $d4 ) c! ;
+```
+#endif
+ptapeioptrs
+
+;--------------------------------------------------------------
+#if 0
 name=SETNAM
 stack=( -- )
 tags=vm,i/o,kernel
@@ -987,6 +1104,13 @@ Sets up filename and device# parameters before tape and disk I/O
 
 todo: use labels instead of magic numbers for zero page addresses
 todo: move DRV# setup to SETLFS
+
+```
+: setnam   ( -- )
+    filename @ dup
+    if  count swap FNADR ( $da ) !  then
+    FNLEN ( $d1 ) c!  drv# @ FA ( $d4 ) c! ;
+```
 #endif
 #include "align.i65"
 _setnam
@@ -1006,13 +1130,13 @@ _setnam
     .word swap
 #include "page.i65"
     .word clit
-    .byt $da
+    .byt FNADR              ; file name address
 #include "pad.i65"
     .word store
 #include "page.i65"
 setnam01
     .word clit
-    .byt $d1
+    .byt FNLEN              ; Length of Current File Name
 #include "pad.i65"
     .word cstore
 #include "page.i65"
@@ -1021,107 +1145,9 @@ setnam01
     .word fetch
 #include "page.i65"
     .word clit
-    .byt $d4
+    .byt FA                 ; First Address (current device number)
 #include "pad.i65"
     .word cstore
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=#VMPKT!
-stack=( -- )
-tags=vm,nosymbol
-Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
-
-~ It should also validate flags and max-lengths, error out on corrupt VMBUF
-
-```
-: #vmpkt!   ( -- )
-    scr off  blk off  prev on  #vmpkt off  blkbuf 2-
-    begin
-        @ ?dup
-    while
-        #vmpkt 1+!
-        -
-    repeat
-    vmbuf ! ;
-
-```
-#endif
-#include "align.i65"
-_numvmpktstore
-    jsr enter
-#include "page.i65"
-    .word scr
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word blk
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word prev
-#include "page.i65"
-    .word on
-#include "page.i65"
-    .word numvmpkt
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-numvmpktstore01
-    .word pktsize
-#include "page.i65"
-    .word qdup
-#include "page.i65"
-    .word qbranch
-    .byt <(numvmpktstore02-*+1)
-#include "pad.i65"
-    .word numvmpkt
-#include "page.i65"
-    .word oneplusstore
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word branch
-    .byt <(numvmpktstore01-*+1)
-#include "pad.i65"
-numvmpktstore02
-    .word vmbuf
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EMPTY-BUFFERS
-stack=( -- )
-tags=i/o,forth-83
-Unassign all virtual memory.  UPDATEed blocks are not written
-to mass storage.
-
-```
-: empty-buffers   ( -- )
-    blkbuf 2-  dup vmbuf !  off  #vmpkt! ;
-
-```
-#endif
-#include "align.i65"
-_emptybuffers
-    jsr enter
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word _numvmpktstore
 #include "page.i65"
     .word exit
 
@@ -1139,34 +1165,6 @@ stashforth
     jsr aloha2
     lda #2
     sta $78                     ; mess with CHRGET, sets direct mode
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=INTERLUDE
-stack=( ; from to -- )
-tags=vm,i/o,kernel,nosymbol
-Subroutine to set tape i/o start and end addresses passed on
-the return stack
-#endif
-#include "align.i65"
-interlude
-    pla
-    tax
-    pla
-    tay                         ; preserve return address
-    pla
-    sta $c9
-    pla
-    sta $ca
-    pla
-    sta $fb
-    pla
-    sta $fc
-    tya
-    pha
-    txa
-    pha                         ; restore return address
     rts
 
 ;--------------------------------------------------------------
@@ -1295,6 +1293,170 @@ ploadverb
 
 ;--------------------------------------------------------------
 #if 0
+name=(VMBUFPTR)
+stack=( flag -- from to start end )
+tags=vm,kernel,nosymbol
+Returns the start and end of the virtual memory buffer, and
+the relocated values
+
+```
+: (vmbuf)   ( flag -- from to start end )
+    >r vmbuf @ blkbuf 2dup 
+    r> relocate ;
+```
+#endif
+#include "align.i65"
+_pvmbufptr
+    jsr enter
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word _relocate
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(SETIOPTR)
+stack=( from to -- )
+tags=vm,kernel,nosymbol
+Set zero page load/save pointers
+
+```
+: (setioptr)   ( from to -- )
+    $c9 !  $fb ! ;
+```
+#endif
+#include "align.i65"
+_setioptr
+    jsr enter
+#include "page.i65"
+    .word clit
+    .byt $c9
+#include "pad.i65"
+    .word store
+#include "page.i65"
+    .word clit
+    .byt $fb
+#include "pad.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(TAPEPARAMS)
+stack=( -- )
+tags=vm,forth-83,i/o,kernel,nosymbol
+non-reentrant subroutine to set tape start and end addresses
+SEC = write
+CLC = read
+~ save some room by doing this with the C flag
+#endif
+tapeparams
+    pla
+    tax
+    pla
+    tay                         ; preserve return address
+    pla
+    sta $c9
+    pla
+    sta $ca
+    pla
+    sta $fb
+    pla
+    sta $fc
+    tya
+    pha
+    txa
+    pha                         ; restore return address
+    bcs psave01
+    bcc ploadver01
+
+;--------------------------------------------------------------
+#if 0
+name=(SAVE)
+stack=( -- )
+tags=vm,forth-83,i/o,kernel,nosymbol
+
+~ modify this to fake the header to appear as though [[VMBUF]]
+is based on [[SYMTAB]] == [[MEMSIZ]]
+#endif
+psave
+    jsr stashforth
+    jsr SAVEHEAD
+    sec
+    bcs tapeparams
+psave01
+    jsr SAVEMEM             ; save
+    jmp restoreforth
+
+;--------------------------------------------------------------
+#if 0
+name=(LOADVER)
+stack=( -- )
+tags=vm,forth-83,i/o,kernel,nosymbol
+
+~ modify this to fake the header to appear as though [[VMBUF]]
+is based on [[SYMTAB]] == [[MEMSIZ]]
+#endif
+ploadver
+    jsr stashforth
+    jsr READHEAD
+    sec
+    bcs tapeparams
+ploadver01
+    jsr READMEM
+    jmp restoreforth
+
+;--------------------------------------------------------------
+#if 0
+name=SAVE-BUFFERS
+stack=( -- )
+tags=vm,forth-83,i/o,kernel
+Writes the virtual memory area, from VMBUF to BLKBUF, out to a PRG file on cassette or disk
+
+* DRV# is the device number
+* FILENAME is the filename
+
+d4 = drv#
+d1 = length
+(da) = name
+fb = to
+(c9) = to
+
+This is called by STOP-S in the editor
+#endif
+#include "align.i65"
+_savebuffers
+    jsr enter
+#include "page.i65"
+    .word _setnam
+#include "page.i65"
+    .word true
+#include "page.i65"
+    .word _pvmbufptr
+#include "page.i65"
+    .word twotor                ; loads to this address
+#include "page.i65"
+    .word _setioptr             ; set up tape header
+#include "page.i65"
+    .word psave
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=LOAD-BUFFERS
 stack=( -- )
 tags=vm,i/o,kernel
@@ -1382,132 +1544,6 @@ _loadbuffers
 
 ;--------------------------------------------------------------
 #if 0
-name=(VMBUFPTR)
-stack=( -- from to )
-tags=vm,kernel,nosymbol
-Returns the start and end of the virtual memory buffer
-
-```
-: (vmbuf)   ( -- from to )
-    vmbuf @ blkbuf ;
-```
-#endif
-#include "align.i65"
-_pvmbufptr
-    jsr enter
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(SETIOPTR)
-stack=( from to -- )
-tags=vm,kernel,nosymbol
-Set zero page load/save pointers
-
-```
-: (setioptr)   ( from to -- )
-    $c9 !  $fb ! ;
-```
-#endif
-#include "align.i65"
-_setioptr
-    jsr enter
-#include "page.i65"
-    .word clit
-    .byt $c9
-#include "pad.i65"
-    .word store
-#include "page.i65"
-    .word clit
-    .byt $fb
-#include "pad.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(SAVEBUF)
-stack=( -- )
-tags=vm,forth-83,i/o,kernel,nosymbol
-
-~ modify this to fake the header to appear as though [[VMBUF]]
-is based on [[SYMTAB]] == [[MEMSIZ]]
-#endif
-psavebuf
-    jsr stashforth
-    jsr PERFORMSAVE             ; save
-    jmp restoreforth
-
-;--------------------------------------------------------------
-#if 0
-name=S-B
-stack=( -- )
-tags=vm,forth-83,i/o,kernel
-Writes the virtual memory area, from VMBUF to BLKBUF, out to a PRG file on cassette or disk
-
-* DRV# is the device number
-* FILENAME is the filename
-
-d4 = drv#
-d1 = length
-(da) = name
-fb = to
-fd = from
-(c9) = to
-
-This is called by STOP-S in the editor
-#endif
-#include "align.i65"
-_savebuffers
-    jsr enter
-#include "page.i65"
-    .word _setnam
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=S-B
-stack=( -- )
-tags=vm,forth-83,i/o,kernel
-Writes the virtual memory area, from VMBUF to BLKBUF, out to a PRG file on cassette or disk
-
-* DRV# is the device number
-* FILENAME is the filename
-
-d4 = drv#
-d1 = length
-(da) = name
-fb = to
-fd = from
-(c9) = to
-
-This is called by STOP-S in the editor
-#endif
-#include "align.i65"
-_sdashb
-    jsr enter
-#include "page.i65"
-    .word _setnam
-#include "page.i65"
-    .word _pvmbufptr
-#include "page.i65"
-    .word _setioptr
-#include "page.i65"
-    .word psavebuf
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=VERIFY-BUFFERS
 stack=( -- )
 tags=vm,i/o,kernel,~wut?
@@ -1541,7 +1577,7 @@ _verifybuffers
 #include "page.i65"
     .word _setioptr
 #include "page.i65"
-;    .word preaddata
+    .word ploadver
 #include "page.i65"
     .word clit
     .byt STATUS
