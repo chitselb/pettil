@@ -172,23 +172,34 @@ _nextpage
 ;--------------------------------------------------------------
 #if 0
 name=?PAGE
-stack=( flag -- )
+stack=( limit -- )
 tags=compiler,nosymbol
-Moves [[DP]] to the next page if needed, to preserve page alignment
+Moves [[DP]] to the next page if needed, to preserve page
+alignment, where `limit` is the highest usable address within
+a page, typically `$FC`
 
 ```
 : ?page   ( flag -- )
-     ?: nextpage next ;
+     if nextpage then ;
+
+: ?page   ( limit -- )
+    herelsb < if nextpage then ;
 ```
 #endif
 #include "align.i65"
 _qpage
     jsr enter
 #include "page.i65"
-    .word pquerycolon
-    .word _nextpage
-    .word next
+    .word herelsb
 #include "page.i65"
+    .word lt
+#include "page.i65"
+    .word qbranch
+    .byt <(qpage01-*+1)
+#include "pad.i65"
+    .word _nextpage
+#include "page.i65"
+qpage01
     .word exit
 
 ;--------------------------------------------------------------
@@ -209,13 +220,9 @@ dictionary stream at page boundaries
 _xtcomma
     jsr enter
 #include "page.i65"
-    .word herelsb
-#include "page.i65"
     .word clit
     .byt $fc
 #include "pad.i65"
-    .word gt
-#include "page.i65"
     .word _qpage
 #include "page.i65"
     .word _comma
@@ -549,13 +556,9 @@ _querycolon
 #include "page.i65"
     .word _qcomp
 #include "page.i65"
-    .word herelsb
-#include "page.i65"
     .word clit
     .byt $f8
 #include "pad.i65"
-    .word gt
-#include "page.i65"
     .word _qpage
 #include "page.i65"
     .word _compile
@@ -576,7 +579,7 @@ _querycolon
 name=DPSWAP
 stack=( -- )
 tags=compiler
-Switches the transient dictionary pointer [[TDP]] with the core 
+Switches the transient dictionary pointer [[TDP]] with the core
 dictionary pointer [[DP]]
 
 ```
@@ -611,7 +614,7 @@ commonly shared run-time (child) code into the core dictionary
     compiling?
     if
         compile exit
-        dp @ tdp @ >  
+        dp @ tdp @ >
         if
             dpswap
         then
@@ -665,7 +668,7 @@ core                    tdict             symnew
 A = @E          B = @DP         C = @TDP        X = b-a
 DP = C+X        TDP = A         E = C           [C..D] = [A..B]
 0000  00 01 d7 63  76 06 86 06  00 00 05 50  00 01 07 70
-            latest dp    tdp 
+            latest dp    tdp
 ```
 #endif
 bishwhet
@@ -722,7 +725,7 @@ added to the core dictionary.
     if
         dp tdp latest   ( b c f )
         bishwhet   ( a a c b-a )
-        cmove  
+        cmove
         compile plit , compile (create)
     then ; immediate
 ```
@@ -1465,7 +1468,7 @@ dovocab04
 name=(VOCAB)
 stack=( -- )
 tags=compiler,nosymbol
-The business end of a word defined by [[VOCABULARY]].  Gets the 
+The business end of a word defined by [[VOCABULARY]].  Gets the
 vocid from the vocabulary and prepends it to [[VSTACK]]
 
 ```
@@ -1530,7 +1533,7 @@ _vdrop
     .word cmove
 #include "page.i65"
     .word exit
-    
+
 ;--------------------------------------------------------------
 #if 0
 name=BEGIN
@@ -1587,6 +1590,11 @@ flags=immediate
 _do
     jsr enter
 #include "page.i65"
+    .word clit
+    .byt $fb
+#include "pad.i65"
+    .word _qpage
+#include "page.i65"
     .word _compile
     .word pdo
 #include "pad.i65"
@@ -1608,11 +1616,16 @@ flags=immediate
 _qdo
     jsr enter
 #include "page.i65"
-    .word zero
+    .word clit
+    .byt $fb
+#include "pad.i65"
+    .word _qpage
 #include "page.i65"
     .word _compile
     .word pqdo
 #include "pad.i65"
+    .word zero
+#include "page.i65"
     .word _qtomark
 #include "page.i65"
     .word _qfrommark
@@ -1642,6 +1655,11 @@ _loop
     .word three
 #include "page.i65"
     .word _qpairs
+#include "page.i65"
+    .word clit
+    .byt $fb
+#include "pad.i65"
+    .word _qpage
 #include "page.i65"
     .word _compile
     .word ploop

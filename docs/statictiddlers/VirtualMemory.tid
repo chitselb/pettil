@@ -3,6 +3,32 @@ title: Virtual Memory
 
 !!Virtual Memory
 
+!!!General
+There is a single 1K block buffer (yes. just one buffer. yes. I know.) located directly below the [[symbol table|SYMTAB]].  Blocks are rlencoded and stored in the virtual memory buffer ([[VMBUF]]).  This `VMBUF` area is saved, loaded and verified in its entirety as a PRG file.  This could be to tape or disk, but currently only tape is supported, as that's what most of us had.  
+
+!!!Packets
+The packeting scheme handles two types of block, using metadata to distinguish them.  This approach came about to support the 1000-byte character limit of the display and the PET native editor's linewrapping features for source code while still providing traditional 1024-byte Forth blocks.  Each packet consists of a two-byte header
+
+|f|e|d|c|b|a|9|8|7|6|5|4|3|2|1|0||h
+|^S||^-|^-|^-||<|<|<|<|<|<|<|<|<|<|packet type<br/>0=data packet<br/>1=screen packet|
+||^C|^-|^-|^-||<|<|<|<|<|<|<|<|<|<|compression flag<br/>0=compressed<br/>1=uncompressed|
+||<|^-|^-|^-|^L|^L|^L|^L|^L|^L|^L|^L|^L|^L|^L|packet length<br/>(including header)|
+
+!!!Data vs. Screen packets
+|^Data|^Screen|h
+|^1024 bytes|^1003 bytes<br/>3 linewrap<br/>1000 screen codes|
+|^read-only in editor|^editable in editor|
+|^initialized to zeroes<br/>[[ERASE]]|^initialized to spaces<br/>[[BLANK]]|
+|^msb of header [[OFF]]<br/>(AND $7FFF)|^msb of header [[ON]]<br/>(OR $8000)|
+|^always unpacks to [[BLKBUF]]|^unpacks to [[VIDRAM]] (only when [[EDITING?]])|
+
+!!!Relocation
+
+When the Transient dictionary and symbols aren't present, the [[block buffer|BLKBUF]] will be 1K below the top of physical memory. Saving to disk or tape adjusts the start and end pointers in the tape header to always end at this address, and loading or verifying will adjust the start and end address to reflect the current location of [[VMBUF]]
+
+!!!Creating blocks
+The packet number is implicit by that packet's position within VMBUF.  The packet header stored at BUFFER-2 is for packet 0, and packets build downward from there.  BLOCK can't refer to a packet that doesn't exist, so when a packet is referenced by BLOCK, new packets may need to be created.  If EDITING? is false, all newly created blocks will be data packets, otherwise they will be screen packets
+
 !!!Virtual memory words
 *[[BUFFER]]  ( u -- addr )<br>Returns the //addr// of [[BLKBUF]] and sets either [[SCR]] or [[BLK]] = //u//.  No packet is created in the [[VMBUF]] region until [[UPDATE]], and no initialization of the [[BLKBUF]] buffer contents occurs.
 *[[BLKBUF]]  ( -- addr )<br>Returns the //addr// of BLKBUF.  No packet is registered to the buffer.
@@ -22,8 +48,3 @@ title: Virtual Memory
 *[[FLUSH]]   ( -- )<br>performs [[SAVE-BUFFERS]] then [[EMPTY-BUFFERS]]
 *[[FILENAME]]   ( -- addr )<br>User Variable<br>The address of a counted string.  The first 16 characters is the filename for [[SAVE-BUFFERS]] or [[LOAD-BUFFERS]]
 *[[DRV#]]   ( -- addr )<br>User Variable<br>Contains the current device number for [[SAVE-BUFFERS]] and [[LOAD-BUFFERS]].  The default value is 1 (cassette #1)
-!!!General
-There is a single (yes. just one. yes. I know.) 1K block buffer located directly below the [[symbol table|SYMTAB]] (or below [[MEMSIZ]] when the Transient dictionary and symbols aren't present).  During [[UPDATE]] copies the [[BLKBUF]] region to the assigned [[BLK]], or it copies the [[VIDRAM]] region to the assigned [[SCR]] in [[VMBUF]], without altering either the screen or the [[BLKBUF]] area their compressed versions.  
-
-!!!Creating blocks
-The packet (BLOCK) number is implicit by that packet's position within VMBUF.  The packet header stored at BUFFER-2 is for packet 0, and packets build downward from there.  BLOCK and UPDATE can't refer to a packet that doesn't exist, so when a packet is referenced by BLOCK or the BUFFER is committed to VMBUF by UPDATE, new packets may need to be created.  If EDITING? is false, all newly created blocks will be data packets, otherwise they will be screen packets
