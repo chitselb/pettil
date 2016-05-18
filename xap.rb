@@ -308,9 +308,9 @@ _semi
             text += ((@desc.nil?) ? '' : @desc)
             text += ((@code.nil?) ? '' : @code)
             puts wikititle.to_json
-            return "\{ \"title\": #{wikititle.to_json},"\
-                    "\"text\": #{text.to_json},"\
-                    "\"tags\": #{@tags.to_json}\},\n"
+            return "\{ \"tags\": #{tags.join(" ").to_json},"\
+                    "\"title\": #{wikititle.to_json},"\
+                    "\"text\": #{text.to_json}\},\n"
         end
 
         # 0x80 = Smudge bit
