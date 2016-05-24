@@ -1,0 +1,1329 @@
+; core-vm.a65
+#echo .       core-vm.a65               Virtual Memory
+
+;--------------------------------------------------------------
+#if 0
+name=B/BUF
+stack=( -- 1024 )
+tags=const,forth-83
+!!!Constant
+bytes per buffer = 1024
+#endif
+bperbuf
+    jsr doconst
+    .word 1024
+
+;--------------------------------------------------------------
+#if 0
+name=B/SCR
+stack=( -- 1000 )
+tags=const,vm,forth-83
+!!!Constant
+bytes per screen.  Not what it usually means in other Forths,
+(not blocks per screen = 1)
+#endif
+bperscr
+    jsr doconst
+    .word 1000
+
+;--------------------------------------------------------------
+#if 0
+name=CAS1BUF
+stack=( -- $027a )
+tags=const,vm
+!!!Constant
+base address of cassette buffer #1
+#endif
+cas1buf
+    jsr doconst
+    .word CAS1BUF
+
+;--------------------------------------------------------------
+#if 0
+name=CAS2BUF
+stack=( -- $033a )
+tags=const,vm
+!!!Constant
+base address of cassette buffer #2, used (for now) as a line buffer
+to unpack screens
+#endif
+cas2buf
+    jsr doconst
+    .word CAS2BUF
+
+;--------------------------------------------------------------
+#if 0
+name=BLKBUF
+stack=( -- addr )
+tags=vm
+Returns the address of the 1K virtual memory block buffer.
+
+There is only a single 1K fixed block buffer on the system, and
+all data and screen packets are retrieved from the packet buffer
+through it.
+
+Copying a block to a different block can be achieved by using [[PAD]] as
+temporary storage.  When [[REHASH]] rebuilds the symbol
+table, it performs [[automatic memory allocation|AUTOMEM]]
+and may move `BLKBUF` (and its contents) to a new location.
+
+!!! pronounced: "b-l-k-buff"
+#endif
+#include "align.i65"
+_blkbuf
+    jsr enter
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=WRAP^
+stack=( logline -- d )
+tags=editor,primitive,nosymbol
+
+ Reads a portion of the linewrap table above the requested
+ `logline`, up to but not including `logline`.
+
+ Returns a right-aligned double with a copy of those high bit values
+
+!!!pronounced: "wrap-above"
+#endif
+wrapabove
+    stx xsave       ; preserve Forth data stack pointer
+    ldx #0
+    stx n+1
+    stx n
+    stx tos+1
+    ldy tos         ; first physical line of this logical line
+    stx tos
+    tya
+    beq wrapabove03
+    sty n+2
+    dex
+wrapabove02
+    inx
+    cpx n+2         ; are we there yet?
+    beq wrapabove03 ; leave if done
+    lda $e0,x
+    asl             ; nondestructively
+    rol tos
+    rol tos+1
+    rol n
+    rol n+1         ; append the next high bit to the double
+    beq wrapabove02 ; this should always take the branch
+wrapabove03
+    lda n
+    ldy n+1         ; high half of the double is going on the stack
+    ldx xsave       ; restore Forth data stack pointer
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=RLENCODE
+stack=( from to size -- targend uncompressed? )
+tags=vm,sweet16
+encode length {srclen} bytes from source address {srcaddr} to
+target address {targaddr}.  Return target end address {targend}
+#endif
+rlencode
+    ; tos   src (pristine)
+    ; n0    src (in)
+    ; n1    size (in)
+    ; n2    targ (out)
+    ; n3    size (out)
+    ; n4    repeat
+    ; n5    prev
+    ; n6    $100
+    ; n7    targ (pristine)
+    ; n8    size (pristine)
+    brk
+    .byt ld | TOS       ; size
+    .byt st | N1        ; size (in)
+    .byt st | N3        ; size (out)
+    .byt st | N8        ; size (pristine)
+    .byt pull           ; to
+    .byt st | N2        ; targ (out)
+    .byt st | N7        ; targ (pristine)
+    .byt pull           ; from -- TOS = src (pristine)
+    .byt st | N0        ; src (pristine)
+    .byt set | N6       ; constant used to initialize (max repeat counter)
+    .word $100
+rlencode01
+    .byt ld | N6        ; also unfindable character
+rlencode02
+    .byt st | N5        ; prev character
+    .byt ld | N1
+    .byt bz, <(rlencode06-*-2)      ; done with input?
+    .byt ld | N3
+    .byt bm , <(rlencode07-*-2)     ; are we in the red?
+    .byt ldi | N0       ; read input stream
+    .byt dcr | N1
+    .byt sti | N2       ; write output stream
+    .byt dcr | N3
+    .byt cpr | N5       ; compare to prev
+    .byt bnz , <(rlencode02-*-2)    ; different? go get more
+    .byt ld | N6
+    .byt st | N4        ; count backwards from 256
+    .byt dcr | N4       ; count the one already in output stream
+rlencode03
+    .byt dcr | N4
+    .byt bz , <(rlencode04-*-2)     ; overflow?
+    .byt ld | N1
+    .byt bz , <(rlencode04-*-2)     ; end of input?
+    .byt ldi | N0       ; get from input stream
+    .byt dcr | N1
+    .byt cpr | N5
+    .byt bz , <(rlencode03-*-2)     ; same char? loop
+
+    .byt dcr | N0       ; different char?
+    .byt inr | N1       ; un-get from input stream
+rlencode04              ; overflow/end of input
+    .byt ld | N6
+    .byt sub | N4
+    .byt sti | N2       ; write count to output stream
+    .byt dcr | N3
+    .byt br , <(rlencode01-*-2)
+
+rlencode06              ; win
+    .byt ld | N2        ; targ (out)
+    .byt st | TOS
+    .byt sub | ACC
+    .byt push
+    .byt nxt
+
+
+;    rlencode
+;( targend uncompressed? ; floor  pkt )
+
+rlencode07              ; lose - copy
+    .byt ld | TOS
+    .byt st | N0        ; keep pristine TOS
+    .byt ld | N8        ; size
+    .byt add | N7       ; +pristine targ
+    .byt st | TOS
+    .byt set | ACC
+    .word $4000
+    .byt push
+    .byt ld | N0
+    .byt push
+    .byt ld | N7
+    .byt push
+    .byt ld | N8
+    .byt push
+    .byt rtn
+    jmp cmove
+
+;--------------------------------------------------------------
+#if 0
+name=RLDECODE
+stack=( from to size -- )
+tags=vm,sweet16
+decode length {srclen} bytes beginning at source address
+{srcaddr} to the target address (targaddr).
+#endif
+rldecode
+    ldy #4
+    jsr locals
+    brk
+    .byt set | N4
+    .word $100
+rldecode01
+    .byt ld | N4
+    .byt st | N2        ; set prev to unmatchable value
+rldecode02
+    .byt ld | TOS
+    .byt bz , <(rldecode06-*-2)
+    .byt dcr | TOS      ; decrement source counter
+    .byt ldi | N0       ; read source stream
+    .byt sti | N1       ; write target stream
+    .byt cpr | N2
+    .byt st | N2
+    .byt ld | R13
+    .byt bnz , <(rldecode02-*-2)    ; different? go get more
+rldecode03
+    .byt dcr | TOS      ; decrement source counter
+    .byt ldi | N0       ; get the repeat count
+    .byt bnz, <(rldecode04-*-2)
+    .byt ld | N4
+rldecode04
+    .byt st | N3
+    .byt dcr | N3
+    .byt bz , <(rldecode01-*-2)
+rldecode05
+    .byt dcr | N3
+    .byt bz , <(rldecode01-*-2)
+    .byt ld | N2
+    .byt sti | N1       ; write target stream
+    .byt br , <(rldecode05-*-2)
+rldecode06
+    .byt pull           ; drop srclen
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=PKT.SIZE
+stack=( packet -- packet size )
+tags=vm,nosymbol
+Returns the packet length from a packet header.  The term `size` includes the 2
+byte packet header, where a packet's `length` is just the contents (`size-2`)
+
+pronounced: "packet-size"
+
+```
+: pkt.size   ( packet -- packet size )
+    dup @ $7ff and ;
+```
+#endif
+pktsize
+    ldy #1
+    lda (tos),y
+    and #$07
+    pha
+    dey
+    lda (tos),y
+    pha
+    jmp rfrom               ; 14 bytes
+
+;    ldy #0
+;    lda (tos),y
+;    pha
+;    iny
+;    lda (tos),y
+;    and #$07
+;    tay
+;    pla
+;    jmp pushya             ; 15 bytes
+    
+;    jsr fetchya
+;    pha
+;    tya
+;    and #$07
+;    tay
+;    pla
+;    jmp pushya             ; 12 bytes
+
+;--------------------------------------------------------------
+#if 0
+name=PKT.INFO
+stack=( packet -- floor length uncompressed? scrpkt? )
+tags=vm,nosymbol
+Returns the floor, length and flags from a packet header.  [[SCRPKT]]
+is $8000 for screen packets, 0 for data packets.  the `uncompressed?`
+value is $4000 for uncompressed packets, 0 for [[RLENCODE]]d packets.
+The term `size` also includes the 2 byte packet header, while a
+packet's `length` is just the contents (`size-2`)
+
+pronounced: "packet-info"
+
+```
+: pkt.info   ( packet -- floor length uncompressed? scrpkt? )
+    dup>r pkt.size 2- dup>r -
+    r> r> @ dup>r  $4000 and
+    r>  vidram and ;
+```
+#endif
+#include "align.i65"
+pktinfo
+    jsr enter
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word pktsize
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word plit
+    .word $4000
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=>PKT
+stack=( n -- packet )
+tags=vm,ext,nosymbol
+Return the packet address of block N
+
+```
+: >pkt   ( n -- packet )
+    blkbuf 2-
+    begin
+        over
+    while
+        pktsize
+        - -1 +under
+    repeat
+    nip ;
+```
+#endif
+#include "align.i65"
+_topkt
+    jsr enter
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+topkt01
+    .word over
+#include "page.i65"
+    .word qbranch
+    .byt <(topkt02-*+1)
+#include "pad.i65"
+    .word pktsize
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word minusone
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
+    .word branch
+    .byt <(topkt01-*+1)
+#include "pad.i65"
+topkt02
+    .word nip
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=EDITING?
+stack=( -- flag )
+tags=vm,ext,nosymbol
+Retrieves the EDITING user variable
+#endif
+#include "align.i65"
+_editingq
+    jsr enter
+#include "page.i65"
+    .word editing
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SCRPKT?
+stack=( -- flag )
+tags=vm,ext,nosymbol
+Retrieves the SCRPKT user variable, which describes whether the current
+packet type is screen (true) or data (false)
+#endif
+#include "align.i65"
+_scrpktq
+    jsr enter
+#include "page.i65"
+    .word scrpkt
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=PKT+
+stack=( addr size -- floor )
+tags=vm,ext,nosymbol
+inserts a new packet at address.
+
+```
+: pkt+   ( addr size -- floor )
+    >r vmbuf @ over 1+
+    r@ negate  dup vmbuf +!  +move
+    r@ over !
+    r> - 2+ ;
+```
+#endif
+#include "align.i65"
+_pktplus
+    jsr enter
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word negate
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+    .word _plusmove
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=RLE+
+stack=( pkt -- floor )
+tags=vm,ext,nosymbol
+Converts the given packet into a maximum-sized packet so it may be used
+as a temporary buffer by [[RLENCODE]]. This is a design-around to avoid
+adding a second [[BLKBUF]] block buffer to the system.  Returns the
+address of the beginning of the 1K temporary buffer.
+
+```
+: rle+   ( pkt -- floor )
+    dup>r  b/buf dup 2+ r@ pkt.len
+    >r 2- over r> - pkt+ drop
+    r> ! - ;
+```
+#endif
+#include "align.i65"
+_rleplus
+    jsr enter
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word pktsize
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _pktplus
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=MKPKTS
+stack=( n -- )
+tags=vm,ext,nosymbol
+concatenates `n+1` new packets at the tail of the [[VMBUF]] area
+
+```
+: mkpkts   ( n -- )
+    begin
+        #vmkpkt 1+!  vmbuf @  editing?
+        if
+            dup>r 5 pkt+ dup on 1+ on vidram r> +!
+        else
+            2 pkt+ drop
+        then
+        1- 0<
+    until drop ;
+```
+#endif
+#include "align.i65"
+_mkpkts
+    jsr enter
+#include "page.i65"
+mkpkts01
+    .word numvmpkt
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _editingq
+#include "page.i65"
+    .word qbranch
+    .byt <(mkpkts02-*+1)
+#include "pad.i65"
+    .word duptor
+#include "page.i65"
+    .word clit
+    .byt 5
+#include "pad.i65"
+    .word _pktplus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+    .word branch
+    .byt <(mkpkts03-*+1)
+#include "pad.i65"
+mkpkts02
+    .word two
+#include "page.i65"
+    .word _pktplus
+#include "page.i65"
+    .word drop
+#include "page.i65"
+mkpkts03
+    .word oneminus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word qbranch
+    .byt <(mkpkts01-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?MKPKTS
+stack=( blk -- )
+tags=vm,ext,nosymbol
+Used by [[BLOCK]] to create empty packets.  If `blk` references a packet
+higher than  [[#VMPKT]], generates new packets at the tail of the buffer
+(screen or data, based on [[EDITING]])
+
+```
+: ?mkpkts   ( blk -- )
+    #vmpkt @ - dup 0<
+    ?: drop mkpkts ;
+```
+#endif
+#include "align.i65"
+_qmkpkts
+    jsr enter
+#include "page.i65"
+    .word numvmpkt
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word pquerycolon
+    .word drop
+    .word _mkpkts
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SRCTARG
+stack=( -- var buffer size char  )
+tags=vm,ext,nosymbol
+BLOCK packs from or unpacks to VIDRAM or BLKBUF, based on [[EDITING?]]
+
+~ horrible name
+
+```
+: srctarg   ( -- scr|prev vidram|blkbuf b/scr|b/buf bl|0 )
+    editing?
+    dup  ?: scr prev
+    swap ?: vidram blkbuf
+    scrpkt?
+    dup  ?: b/scr b/buf
+    swap ?: bl 0 ;
+```
+#endif
+#include "align.i65"
+_srctarg
+    jsr enter
+#include "page.i65"
+    .word _editingq
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word pquerycolon
+    .word scr
+    .word prev
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+    .word pquerycolon
+    .word vidram
+    .word _blkbuf
+#include "pad.i65"
+    .word _scrpktq
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word pquerycolon
+    .word bperscr
+    .word bperbuf
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+    .word pquerycolon
+    .word bl
+    .word zero
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?LOADED
+stack=( blk -- blk|blkbuf )
+tags=vm,ext
+Returns the same input argument or exits the calling word ([[BLOCK]])
+leaving the address of the [[BLKBUF]]
+
+```
+: ?loaded   ( blk -- blk|blkbuf )
+    editing? not
+    if
+        prev @ over =
+        if
+            drop blkbuf
+            rdrop
+        then
+    then ;
+```
+#endif
+#include "align.i65"
+_qloaded
+    jsr enter
+#include "page.i65"
+    .word _editingq
+#include "page.i65"
+    .word not
+#include "page.i65"
+    .word qbranch
+    .byt <(qloaded01-*+1)
+#include "pad.i65"
+    .word prev
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word qbranch
+    .byt <(qloaded01-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word rdrop
+#include "page.i65"
+qloaded01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=WRAP!
+stack=( wrapd -- )
+tags=nosymbol
+
+ Updates the linewrap table at $E1-F8 to reflect the low 24 bits
+ in double `wrapd`.  Since line 0 ($E0) is never a continuation
+ line, (always $80) it is not written to.  Only 24 bits are
+ written to $E1-$F8, not 25.  Although unused, the most
+ significant (2^24) bit may be set, as a framing bit, used
+ to detect when the wrap double is full.
+
+#endif
+wrapstore
+    ldy #2
+    jsr locals
+    stx xsave
+    ldx #24
+wrapstore01
+    asl $e0,x
+    lsr tos+1
+    ror tos
+    ror n+1
+    ror n
+    ror $e0,x
+    dex
+    bne wrapstore01
+    ldx xsave
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=BLOCK
+stack=( blk -- buf )
+tags=vm,fig,forth-79,forth-83
+Retrieves and decompresses a screen or data block from the [[VMBUF]]
+[[region|PETTIL system memory map]]. This is PETTIL's top of the food
+chain for reading packets, the antonym of [[UPDATE]] (which writes
+packets).
+
+The table below summarizes how `BLOCK` functions based on whether the
+user is in the editor or not, and whether the packet is screen or data.
+
+|^[[EDITING?]] |<|packet# sets [[SCR]]<br>returns [[VIDRAM]]|
+|>|^ [[SCRPKT?]]|[[VIDRAM]] initialized to spaces<br>linewrap stored to zero page<br>write 1000-byte packet to [[VIDRAM]]|
+|>|^ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;not [[SCRPKT?]]|[[VIDRAM]] initialized to nulls<br>zero page linewrap table set to all 40-column<br>displays first 1000 characters of data block|
+||<|<|
+|^not [[EDITING?]] |<|packet# sets [[PREV]]<br>returns [[BLKBUF]]|
+|>|^ [[SCRPKT?]]|[[BLKBUF]] initialized to spaces<br>linewrap stored in first three bytes of [[BLKBUF]]<br>followed by 1000-bytes of screencodes|
+|>|^ not [[SCRPKT?]]|[[BLKBUF]] initialized to nulls<br>1024 bytes of data expanded to [[BLKBUF]]|
+```
+: block   ( blk -- buffer )
+    ?loaded                     \ exit if this block is already loaded
+    \ create empty packets if there aren't enough
+    dup ?mkpkts
+    ( blk )
+
+    dup >pkt pkt.info           \ locate and unpack the header
+    ( blk floor len uncompressed? scrpkt? )
+    \ set scrpkt to data (0) or screen ($8000)
+    scrpkt ! rot
+    ( blk len uncompressed?  floor )
+    srctarg    \ find out more about the output
+    ( blk len uncompressed?  floor vidram|blkbuf scr|prev  b/scr|b/buf bl|0 )
+    3dup b/buf -rot nip fill 2drop  2>r r@  scrpkt?
+    ( blk len uncompressed? floor vidram|blkbuf scrpkt? ; vidram|blkbuf scr|prev )
+    if
+        drop  rot 3- -rot  3+ dup 3- 3c@  editing?
+    ( blk len-3 uncompressed?  floor+3 dwrap ; vidram|blkbuf scr|prev )
+        if
+            wrap! r@
+        else
+            r@ 3c! r@ 3+
+        then
+    then
+    ( blk len uncompressed? floor vidram|blkbuf ; vidram|blkbuf scr|prev )
+    2swap ?: cmove rldecode
+    ( blk ; vidram|blkbuf scr|prev )
+    2r> -rot ! ;
+```
+#endif
+#include "align.i65"
+_block
+    jsr enter
+#include "page.i65"
+    .word _qloaded
+#include "page.i65"
+    .word dup
+#include "page.i65"
+   .word _qmkpkts
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word _topkt
+#include "page.i65"
+    .word pktinfo
+#include "page.i65"
+    .word scrpkt
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word _srctarg
+#include "page.i65"
+    .word threedup
+#include "page.i65"
+    .word nip
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word fill
+#include "page.i65"
+    .word twodrop
+#include "page.i65"
+    .word twotor
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word _scrpktq
+#include "page.i65"
+    .word qbranch
+    .byt <(block02-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word threeminus
+#include "page.i65"
+    .word dashrot
+#include "page.i65"
+    .word threeplus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word threeminus
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word _editingq
+#include "page.i65"
+    .word qbranch
+    .byt <(block01-*+1)
+#include "pad.i65"
+    .word wrapstore
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word branch
+    .byt <(block02-*+1)
+#include "pad.i65"
+block01
+    .word rfetch
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word threeplus
+#include "page.i65"
+block02
+    .word twoswap
+#include "page.i65"
+    .word pquerycolon
+    .word cmove
+    .word rldecode
+#include "pad.i65"
+    .word tworfrom
+#include "page.i65"
+    .word dashrot
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=CURRNAME
+stack=( -- addr )
+tags=vm,i/o
+Current filename
+
+~ Same thing as FILENAME ?
+todo: All parameter and no code, maybe a string variable?
+#endif
+currname
+    .byt (currname01-*-1)
+    .asc "PETTILPACKETS"
+currname01
+    .asc "   "              ; pad buffer out to 16 characters
+
+;--------------------------------------------------------------
+#if 0
+name=#VMPKT!
+stack=( -- )
+tags=vm,nosymbol
+Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
+
+~ It should also validate flags and max-lengths, error out on corrupt VMBUF
+
+```
+: #vmpkt!   ( -- )
+    scr off  blk off  prev on  #vmpkt off  blkbuf 2-
+    begin
+        @ ?dup
+    while
+        #vmpkt 1+!
+        -
+    repeat
+    vmbuf ! ;
+
+```
+#endif
+#include "align.i65"
+_numvmpktstore
+    jsr enter
+#include "page.i65"
+    .word scr
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word prev
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word numvmpkt
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+numvmpktstore01
+    .word pktsize
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(numvmpktstore02-*+1)
+#include "pad.i65"
+    .word numvmpkt
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word branch
+    .byt <(numvmpktstore01-*+1)
+#include "pad.i65"
+numvmpktstore02
+    .word vmbuf
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=EMPTY-BUFFERS
+stack=( -- )
+tags=i/o,forth-83
+Unassign all virtual memory.  UPDATEed blocks are not written
+to mass storage.
+
+```
+: empty-buffers   ( -- )
+    blkbuf 2-  dup vmbuf !  off  #vmpkt! ;
+
+```
+#endif
+#include "align.i65"
+_emptybuffers
+    jsr enter
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word _numvmpktstore
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=UPDATE
+stack=( -- )
+tags=forth-83,vm
+Copies and compresses the current block buffer to the [[virtual memory
+packet buffer|PETTIL system memory map]].  Analogous to [[BLOCK]] which
+reads packets, this is PETTIL's top of the food chain for writing
+packets.
+
+The table below summarizes how `UPDATE` functions based on whether the
+user is in the editor or not, and whether the packet is screen or data.
+`UPDATE` first opens a 1024-byte hole in the [[VMBUF]] area where the
+output packet is written, stashes the current [[BLK]] or [[SCR]], then
+moves everything between [[VMBUF]] and the updated packet back up, to
+recover unused space.
+
+Copies the block buffer to the packet buffer at BLK where it will be
+saved to tape at the next [[SAVE-BUFFERS]]
+
+|[[EDITING?]] |<|packet# uses [[SCR]]|
+|>|^ [[SCRPKT?]]|linewrap from zero page<br>write 1000-byte packet from [[VIDRAM]]|
+|>|^ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;not [[SCRPKT?]]|`UPDATE` does not do anything<br>&nbsp; |
+||<|<|
+|not [[EDITING?]] |<|packet# uses [[PREV]]|
+|>|^ [[SCRPKT?]]|linewrap from [[BLKBUF]]<br>write 1000-byte packet from [[BLKBUF]]+3|
+|>|^ not [[SCRPKT?]]|no linewrap<br>write 1024-byte packet from [[BLKBUF]]|
+```
+: update   ( -- )
+    prev @ 0<  editing? 0=  and ?exit
+    srctarg
+( var buffer size char )
+    drop
+( var buffer size )
+    rot
+( buffer size var )
+    @
+( buffer size blk )
+    >pkt
+( buffer size packet )
+    dup>r
+( buffer size packet ; packet )
+    rle+
+( buffer size floor ; packet )
+    dup>r
+( buffer size floor ; floor packet )
+
+    \ handle 3 bytes of linewrap for screen packets
+    editing?
+( buffer size floor editing? ; floor packet )
+    rot
+( buffer floor editing? size ; floor packet )
+    >r
+( buffer floor editing? ; size floor packet )
+    scrpkt?
+( buffer floor editing? scrpkt? ; size floor packet )
+
+
+
+
+( vidram|blkbuf floor ; b/scr|b/buf floor  pkt )
+    if  \ scrpkt?
+( buffer floor editing? ; size floor packet )
+        if  \ editing?
+            ( from screen )
+            25 wrapabove third 3c!
+        else    \ not editing?
+            ( from blkbuf )
+            over 3c@ third 3c! 3 +under
+        then
+    3+
+    else    \ data packet
+( buffer floor editing? ; size floor packet )
+        if  \ editing?  treat data packets as read-only
+            2drop 2r> 2r> 4drop exit
+        then
+    then
+( buffer floor ; size floor packet )
+    over
+( buffer floor buffer ; size floor packet )
+    r>
+( buffer floor buffer size ; floor packet )
+    scrpkt?
+( buffer floor buffer size scrpkt? ; floor packet )
+    ?: -trailing -nulls
+( buffer floor buffer size ; floor packet )
+    nip
+( buffer floor size ; floor packet )
+    rlencode
+( targend uncompressed? ; floor  pkt )
+
+    \ set packet length
+    over r> - 2+ scrpkt? or or over !
+( targend ; pkt )
+
+    1+ vmbuf @ swap r> over 1- -
+    \ move vmbuf up
+( vmbuf targend pkt-targend )
+    +move ;
+```
+~ get rid of the `DROP` at the end
+#endif
+#include "align.i65"
+_update
+    jsr enter
+#include "page.i65"
+    .word prev
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word _editingq
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word _srctarg
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _topkt
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word _rleplus
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word _editingq
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _scrpktq
+#include "page.i65"
+    .word qbranch
+    .byt <(update03-*+1)
+#include "pad.i65"
+    .word qbranch
+    .byt <(update01-*+1)
+#include "pad.i65"
+    .word clit
+    .byt 25
+#include "pad.i65"
+    .word wrapabove
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word branch
+    .byt <(update02-*+1)
+#include "pad.i65"
+update01
+    .word over
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
+update02
+    .word threeplus
+#include "page.i65"
+    .word branch
+    .byt <(update04-*+1)
+#include "pad.i65"
+update03
+    .word qbranch
+    .byt <(update04-*+1)
+#include "pad.i65"
+    .word twodrop
+#include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word fourdrop
+#include "page.i65"
+    .word exit
+#include "page.i65"
+update04
+    .word over
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word _scrpktq
+#include "page.i65"
+    .word pquerycolon
+    .word dashtrailing
+    .word dashnulls
+#include "pad.i65"
+    .word nip
+#include "page.i65"
+    .word rlencode
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word _scrpktq
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+    .word _plusmove
+#include "page.i65"
+    .word exit
