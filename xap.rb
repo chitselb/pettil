@@ -375,7 +375,7 @@ _semi
 
 
 
-        bogus = " brktoggle expect "
+        bogus = " brktoggle expect _pvmbufptr "
 
 
 
