@@ -1069,9 +1069,10 @@ todo: All parameter and no code, maybe a string variable?
 #endif
 currname
     .byt (currname01-*-1)
-    .asc "PETTILPACKETS"
+    .asc "PETTILPACKETS           "
+        ;"@0:full16characters,s,w "
+        ; 123456789.123456789.1234
 currname01
-    .asc "           "              ; pad buffer out to 24 characters
 
 ;--------------------------------------------------------------
 #if 0
@@ -1110,6 +1111,21 @@ stack=( -- )
 tags=vm,i/o,nosymbol
 Retrieve DRV# SA# and FILENAME to set up for tape or disk i/o
 
+|save|load|verify|open|name|address|description|h
+|^?|^?|^?|^?|^FNLEN|^d1|^Length of current file name|
+|^?|^?|^?|^?|^FNADR|^da-db|^File name address|
+|^&nbsp;|<|<|<|<|<|<|
+|^0|^0|^0|^0|^STATUS|^96|^Status byte ST|
+|^?|^0|^1|^?|^VERCK|^9d|^Load/Verify flag (0,1)|
+|^01|^?|^?|^?|^TAPEID|^b4|^Tape buffer leading char<br/>01=PRG 05=EOT|
+|^?|^?|^?|^?|^EAL|^c9-ca|^Tape end address|
+|^?|^?|^?|^?|^LA|^d2|^Current logical file number|
+|^?|^?|^?|^?|^SA|^d3|^Current secondary address|
+|^?|^?|^?|^?|^FA|^d4|^First address (device number)|
+|^?|^?|^?|^?|^TAPE1|^d6|^Pointer - start of tape buffer|
+|^?|^?|^?|^?|^FSBLK|^de|^Cassette read/write block count|
+|^?|^?|^?|^?|^STAL|^fb-fc|^I/O start address|
+|''?'' = don't care<br/>''x'' = don't initialize|<|<|<|<|<|<|f
 #endif
 pfile
     brk
@@ -1128,83 +1144,31 @@ pfile
     .byt ldd | N0       ; DRV#
     .byt sti | N2       ; FA
     .byt ldd | N0       ; FILENAME
+    .byt bz , <(pfile01-*-2)
     .byt st | N0        ; tmp
     .byt inr | ACC
     .byt std | N3       ; FNADR
     .byt ldi | N0
+pfile01
     .byt sti | N4       ; FNLEN
     .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
-name=(TAPEIOPTRS)
-stack=( filenameaddr drv# from to start end -- )
-tags=vm,i/o,kernel
-Sets up filename and device# parameters before tape and disk I/O
-
-todo: use labels instead of magic numbers for zero page addresses
-todo: move DRV# setup to SETLFS
-
-```
-: (tapeioptrs)   ( -- )
-    filename @ dup
-    if  count swap FNADR ( $da ) !  then
-    FNLEN ( $d1 ) c!  drv# @ FA ( $d4 ) c! ;
-```
-#endif
-ptapeioptrs
-
-
-;--------------------------------------------------------------
-#if 0
-name=SETNAM
+name=(PRG-FILE)
 stack=( -- )
-tags=vm,i/o,kernel
-Sets up filename parameters before tape and disk I/O
-
-```
-: setnam   ( -- )
-    filename @ dup
-    if  count swap FNADR ( $da ) !  then
-    FNLEN ( $d1 ) c!  drv# @ FA ( $d4 ) c! ;
-```
+tags=vm,i/o,nosymbol
+Turn off SA# and set up for i/o
 #endif
 #include "align.i65"
-_setnam
+_pprgfile
     jsr enter
 #include "page.i65"
-    .word filename
+    .word sanum
 #include "page.i65"
-    .word fetch
+    .word off
 #include "page.i65"
-    .word dup
-#include "page.i65"
-    .word qbranch
-    .byt <(setnam01-*+1)
-#include "pad.i65"
-    .word count
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word clit
-    .byt FNADR              ; file name address
-#include "pad.i65"
-    .word store
-#include "page.i65"
-setnam01
-    .word clit
-    .byt FNLEN              ; Length of Current File Name
-#include "pad.i65"
-    .word cstore
-#include "page.i65"
-    .word drvnum
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word clit
-    .byt FA                 ; First Address (current device number)
-#include "pad.i65"
-    .word cstore
+    .word pfile
 #include "page.i65"
     .word exit
 
@@ -1220,8 +1184,8 @@ other Forth zero page during a BASIC system call
 stashforth
     stx n                       ; $ff (xsave) gets messed up by save!  Use N
     jsr aloha2
-    lda #2
-    sta $78                     ; mess with CHRGET, sets direct mode
+    lda #2                      ; set direct mode in CHRGET routine
+    sta $78                     ; so we get prompts during i/o
     rts
 
 ;--------------------------------------------------------------
@@ -1350,9 +1314,9 @@ ploadverb
 
 ;--------------------------------------------------------------
 #if 0
-name=(VMBUFPTR)
+name=(VMBUF)
 stack=( flag -- from to start end )
-tags=vm,kernel,nosymbol
+tags=vm,kernel
 Returns the start and end of the virtual memory buffer, and
 the relocated values
 
@@ -1363,7 +1327,7 @@ the relocated values
 ```
 #endif
 #include "align.i65"
-_pvmbufptr
+_pvmbuf
     jsr enter
 #include "page.i65"
     .word tor
@@ -1384,72 +1348,13 @@ _pvmbufptr
 
 ;--------------------------------------------------------------
 #if 0
-name=(SETUPIO)
-stack=( -- )
-tags=vm,kernel,nosymbol
-Set up various zero page locations prior to [[LOAD]]/[[VERIFY]]/[[SAVE]]/[[OPEN]]
-
-|save|load|verify|open|name|address|description|h
-|^?|^?|^?|^?|^FNLEN|^d1|^Length of current file name|
-|^?|^?|^?|^?|^FNADR|^da-db|^File name address|
-|^&nbsp;|<|<|<|<|<|<|
-|^0|^0|^0|^0|^STATUS|^96|^Status byte ST|
-|^?|^0|^1|^?|^VERCK|^9d|^Load/Verify flag (0,1)|
-|^01|^?|^?|^?|^TAPEID|^b4|^Tape buffer leading char<br/>01=PRG 05=EOT|
-|^?|^?|^?|^?|^EAL|^c9-ca|^Tape end address|
-|^?|^?|^?|^?|^LA|^d2|^Current logical file number|
-|^?|^?|^?|^?|^SA|^d3|^Current secondary address|
-|^?|^?|^?|^?|^FA|^d4|^First address (device number)|
-|^?|^?|^?|^?|^TAPE1|^d6|^Pointer - start of tape buffer|
-|^?|^?|^?|^?|^FSBLK|^de|^Cassette read/write block count|
-|^?|^?|^?|^?|^STAL|^fb-fc|^I/O start address|
-|''?'' = don't care<br/>''x'' = don't initialize|<|<|<|<|<|<|f
-
-```
-: (setupio)   ( count -- )
-    $c9 !  $fb ! ;
-```
-#endif
-#include "align.i65"
-setupio
-    brk
-    .byt set | N0
-    .word setupiozp
-    .byt set | N1
-    .word setupiovalue
-setupio01
-    .byt ldi | N0
-    .byt st | N2
-    .byt ldd | N1
-    .byt st | N3
-    .byt ldi | N3
-    .byt sti | N2
-    .byt dcr | TOS
-    .byt bnz, <(setupio01-*-2)
-    .byt nxt
-setupiozp
-    .byt  STATUS        ; $96
-    .byt  VERCK         ; $9d
-    .byt  FNLEN         ; $d1
-    .byt  FA            ; $d4
-    .byt  SA            ; $d3
-    .byt  LA            ; $d2
-setupiovalue
-    .word setupio       ; contains a 0
-    .word setupio       ; contains a 0
-    .word setupio       ; contains a 0
-    .word uarea+userdrvnum-userarea
-    .word setupio       ; contains a 0
-    .word setupio
-;--------------------------------------------------------------
-#if 0
 name=(SETIOPTR)
 stack=( from to -- )
 tags=vm,kernel,nosymbol
 Set zero page load/save pointers
 
 ```
-: (setioptr)   ( from to -- )
+: (setioptr)   ( from to hi/lo -- )
     $c9 !  $fb ! ;
 ```
 #endif
@@ -1538,8 +1443,6 @@ $f629       ; (f62a)
     jmp $f695   ; get buffer address
 psave02
 
-
-~ could this use $F6CC instead?
 #endif
 psave
     jsr stashforth
@@ -1547,7 +1450,7 @@ psave
     sec
     bcs tapeparams
 psave01
-    jsr SAVEMEM                 ; $f8d3
+    jsr SAVEDATA                ; $f8d3
     pla
     tax
     pla
@@ -1590,28 +1493,34 @@ ploadver01
 name=SAVE-BUFFERS
 stack=( -- )
 tags=vm,forth-83,i/o,kernel
-Writes the virtual memory area, from VMBUF to BLKBUF, out to a PRG file on cassette or disk
+Writes the virtual memory area between [[VMBUF]] and [[BLKBUF]] out
+to a PRG file on cassette or disk
 
-* DRV# is the device number
-* FILENAME is the filename
+Also called by STOP-S in the editor
 
-d4 = drv#
-d1 = length
-(da) = name
-fb = to
-(c9) = to
+* copy DRV# SA# FILENAME uservars to zero page
+* adjust VMBUF BLKBUF to simulate BLKBUF = MEMSIZ - 1K
+* copy adjusted values to tape buffer
+* SAVEHEAD
+* copy VMBUF BLKBUF to SAL ($c7) EAL ($c9)
+* SAVEDATA
 
-This is called by STOP-S in the editor
+```
+: save-buffers   ( -- )
+    (prg-file)
+```
 #endif
 #include "align.i65"
 _savebuffers
     jsr enter
 #include "page.i65"
-    .word _setnam
+    .word xyzzy
+#include "page.i65"
+    .word _pprgfile
 #include "page.i65"
     .word true
 #include "page.i65"
-    .word _pvmbufptr
+    .word _pvmbuf
 #include "page.i65"
     .word twotor                ; loads to this address
 #include "page.i65"
@@ -1629,17 +1538,11 @@ tags=vm,i/o,kernel
 Load a batch of packets from the file to VMBUF, replacing
 what existed there before
 
-* DRV# is the device number
-* FILENAME is the filename
-
-d4 = drv#
-d1 = length
-(da) = name
-
 called by STOP-L in the editor
 
 ```
 : load-buffers   ( -- )
+    sa# off (file)
     (vmbufptr) 2dup 2>r [ VERCK ] cliteral c!
     (loadvera) [ EAL ] cliteral dup>r @
     [ STAL ] cliteral dup>r @ - pad dup r> !
@@ -1650,7 +1553,10 @@ called by STOP-L in the editor
 #include "align.i65"
 _loadbuffers
     jsr enter
-    .word _pvmbufptr
+#include "page.i65"
+    .word _pprgfile
+#include "page.i65"
+    .word _pvmbuf
 #include "page.i65"
     .word twodup
 #include "page.i65"
@@ -1734,6 +1640,8 @@ todo: change magic number to labels in cbm.def
 _verifybuffers
     jsr enter
 #include "page.i65"
+    .word pfile
+#include "page.i65"
     .word one
 #include "page.i65"
     .word clit
@@ -1741,11 +1649,9 @@ _verifybuffers
 #include "pad.i65"
     .word cstore
 #include "page.i65"
-    .word _setnam
-#include "page.i65"
 ;    .word preadheader
 #include "page.i65"
-    .word _pvmbufptr
+    .word _pvmbuf
 #include "page.i65"
     .word true
 #include "page.i65"
