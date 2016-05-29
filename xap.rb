@@ -123,8 +123,8 @@ _semi
         def petscii(s)
             while somechar = (/(.*)''(\h+)''(.*)/).match(s)
                 s = somechar[1]+[somechar[2]].pack("H*")+somechar[3]
-            end       
-            return s 
+            end
+            return s
         end
 
         def is_name?(line)
@@ -139,7 +139,7 @@ _semi
                     when z.length == 1      # name=FORTHWORD
                         @name = @symbol = z[0]
                         @wikititle = @name
-                    when z.length == 2      # name=[FORTHWORD] {TITLE} 
+                    when z.length == 2      # name=[FORTHWORD] {TITLE}
                         @name = @symbol = z[0]
                         @wikititle = z[1]
                     when z.length == 3      # name=[FORTHWORD] {TITLE} SYMBOL
@@ -194,7 +194,7 @@ _semi
                 @skip = true
             end
         end
-        
+
         # captures desc += line unless code trigger is set or skip is true
         def is_desc?(line)
             @desc += "\n"+line   unless @skip or @to_code
@@ -239,7 +239,7 @@ _semi
         def prevword
             @prevword
         end
-        
+
         def set_prevword(prevword)
             @prevword = prevword
         end
@@ -247,7 +247,7 @@ _semi
         def nextword
             @nextword
         end
-        
+
         def set_nextword(nextword)
             @nextword = nextword
         end
@@ -315,7 +315,7 @@ _semi
 
         # 0x80 = Smudge bit
         # 0x40 = Vocabulary bit
-		# 0x20 = Immediate bit
+        # 0x20 = Immediate bit
         def symbol_table_entry
             if @addr.nil?
                 return nil
@@ -375,7 +375,7 @@ _semi
 
 
 
-        bogus = " brktoggle expect _pvmbufptr "
+        bogus = " brktoggle past expect _pvmbufptr udslashmoda rlencode04 spfetch _caller presentcfahi "
 
 
 

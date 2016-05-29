@@ -1109,7 +1109,58 @@ _file
 name=(FILE)
 stack=( -- )
 tags=vm,i/o,nosymbol
-Retrieve DRV# SA# and FILENAME to set up for tape or disk i/o
+Called at start of tape or disk i/o, sets up zero page variables.
+Retrieves DRV# SA# and FILENAME uservariables and stores them
+in zero page locations FA SA FNLEN FNADR.  Sets VERCK to zero.
+
+|zero page|<|source|description|h
+|^FNLEN|^d1|^FILENAME|^File name length|
+|^FNADR|^da-db|^FILENAME|^File name address|
+|^VERCK|^9d|^0|^Load or Verify|
+|^FA|^d4|^DRV#|Device number|
+|^SA|^d3|^SA#|Secondary address|
+
+
+```
+_pfile
+    jsr enter
+#include "page.i65"
+    .word drvnum
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word clit
+    .byt FA
+#include "pad.i65"
+    .word cstore
+#include "page.i65"
+    .word sanum
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word clit
+    .byt SA
+#include "pad.i65"
+    .word cstore
+#include "page.i65"
+    .word filename
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word clit
+    .byt FNLEN
+#include "pad.i65"
+    .word cstore
+#include "page.i65"
+    .word clit
+    .byt FNADR
+#include "pad.i65"
+    .word cstore
+#include "page.i65"
+    .word exit
+```
 
 |save|load|verify|open|name|address|description|h
 |^?|^?|^?|^?|^FNLEN|^d1|^Length of current file name|
@@ -1485,7 +1536,7 @@ ploadver
     sec
     bcs tapeparams
 ploadver01
-    jsr READMEM                 ; $f3f8
+    jsr READDATA                ; $f3f8
     jmp restoreforth
 
 ;--------------------------------------------------------------
@@ -1516,7 +1567,7 @@ _savebuffers
 #include "page.i65"
     .word xyzzy
 #include "page.i65"
-    .word _pprgfile
+    .word _pprgfile             ; set up z.p. device, secondary, filename
 #include "page.i65"
     .word true
 #include "page.i65"
@@ -1642,12 +1693,10 @@ _verifybuffers
 #include "page.i65"
     .word pfile
 #include "page.i65"
-    .word one
-#include "page.i65"
     .word clit
     .byt VERCK
 #include "pad.i65"
-    .word cstore
+    .word oneplusstore
 #include "page.i65"
 ;    .word preadheader
 #include "page.i65"
