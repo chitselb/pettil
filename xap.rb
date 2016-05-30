@@ -375,7 +375,7 @@ _semi
 
 
 
-        bogus = " brktoggle past expect _pvmbufptr udslashmoda rlencode04 spfetch _caller presentcfahi "
+        bogus = " pqdo02 past "
 
 
 
