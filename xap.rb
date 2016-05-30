@@ -375,7 +375,7 @@ _semi
 
 
 
-        bogus = " pqdo02 past "
+        bogus = " pqdo02 past dult "
 
 
 
