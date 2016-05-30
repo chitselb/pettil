@@ -80,6 +80,60 @@ lithi
 
 ;--------------------------------------------------------------
 #if 0
+name=SYSERR
+stack=( -- )
+tags=nosymbol,inner
+General-purpose error handler, callable from primitives, used
+to print a system error message and abort
+pass in the error # in Y
+      1 stack empty
+      2 stack full
+#endif
+error
+    sty tos
+    ldy #0
+    sty tos+1
+    ldy #>(_fail+3)
+    lda #<(_fail+3)    ; transfer control to FAIL
+;--------------------------------------------------------------
+#if 0
+name=>FORTH
+stack=( -- )
+tags=vocabulary,nosymbol
+Jump up to high-level Forth from inline 6502
+#endif
+toforth
+    sta ip
+    sty ip+1
+    lda #0                  ; fall through
+;--------------------------------------------------------------
+#if 0
+name=DOPAGE
+stack=( -- )
+tags=nosymbol
+Page boundary crossing is handled by the compiler inserting 'page'
+when the DP gets to $xxFD or $xxFE.  IP = $xxFF is never supposed
+to occur, and indicates an error in the compiler.
+
+pad is also used by LITERAL, string, and other words which
+contain inline arguments to offset IP at runtime
+#endif
+pad
+    clc                     ; pass A = offset added to IP
+    adc ip
+    bcs pagen               ; check for page boundary crossing
+    cmp #$ff
+    bne pado                ; check for xxFF at end of page
+page
+    lda #0
+pagen
+    inc ip+1                ; cross the page
+pado
+    sta ip
+    jmp nexto
+
+;--------------------------------------------------------------
+#if 0
 name=padjust
 stack=( -- )
 tags=nosymbol
@@ -124,6 +178,22 @@ padjust01
 padjust02
     sta ip
     rts
+
+;--------------------------------------------------------------
+#if 0
+name=?STACK
+stack=( -- )
+tags=inner
+Check the  data stack pointer for sanity, abort if trouble
+#endif
+qstack
+    ldy #2                          ; 2 = stack full
+    txa
+    bmi error
+    dey                             ; 1 = stack empty
+    cmp uarea+usersp0-userarea
+    bcs error
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -779,76 +849,6 @@ notirq
     pha
     plp
     jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=?STACK
-stack=( -- )
-tags=inner
-Check the  data stack pointer for sanity, abort if trouble
-#endif
-qstack
-    ldy #2                          ; 2 = stack full
-    txa
-    bmi error
-    dey                             ; 1 = stack empty
-    cmp uarea+usersp0-userarea
-    bcs error
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=SYSERR
-stack=( -- )
-tags=nosymbol,inner
-General-purpose error handler, callable from primitives, used
-to print a system error message and abort
-pass in the error # in Y
-      1 stack empty
-      2 stack full
-#endif
-error
-    sty tos
-    ldy #0
-    sty tos+1
-    ldy #>(_fail+3)
-    lda #<(_fail+3)    ; transfer control to FAIL
-;--------------------------------------------------------------
-#if 0
-name=>FORTH
-stack=( -- )
-tags=vocabulary,nosymbol
-Jump up to high-level Forth from inline 6502
-#endif
-toforth
-    sta ip
-    sty ip+1
-    lda #0                  ; fall through
-;--------------------------------------------------------------
-#if 0
-name=DOPAGE
-stack=( -- )
-tags=nosymbol
-Page boundary crossing is handled by the compiler inserting 'page'
-when the DP gets to $xxFD or $xxFE.  IP = $xxFF is never supposed
-to occur, and indicates an error in the compiler.
-
-pad is also used by LITERAL, string, and other words which
-contain inline arguments to offset IP at runtime
-#endif
-pad
-    clc                     ; pass A = offset added to IP
-    adc ip
-    bcs pagen               ; check for page boundary crossing
-    cmp #$ff
-    bne pado                ; check for xxFF at end of page
-page
-    lda #0
-pagen
-    inc ip+1                ; cross the page
-pado
-    sta ip
-    jmp nexto
 
 ;--------------------------------------------------------------
 #if 0
