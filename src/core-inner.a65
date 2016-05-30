@@ -80,6 +80,53 @@ lithi
 
 ;--------------------------------------------------------------
 #if 0
+name=padjust
+stack=( -- )
+tags=nosymbol
+!!!Subroutine
+Called by primitives to adjust `IP` and properly cross a
+page boundary.  This routine exists so words like [[."]] and [[?:]]
+can function outside the normal [[pad|DOPAGE]]/[[page|DOPAGE]] routines.
+
+|IP+A lo|IP lo|IP hi|
+| C set| IP+A| +1|
+||||
+| < FD| IP+A| IP+A|
+| FD| FE| +1|
+| FE| FE| +1|
+| FF| FE| +1|
+
+There is probably a worst-case scenario where it is possible to
+cross two page boundaries, e.g. with [[(.")]] printing a 255-byte
+string, where the [[(.")]] was compiled at the very top of the page.
+
+|$42FC-$42FD| [[(.")]] cfa |
+|$42FE| $FF(length) |
+|$42FF-$43FE| the string |
+|$43FF| `NOP` |
+
+In this worst-case scenarios, `IP` would be set after `padjust` to
+$44FE and the next execution of [[NEXT|Zero page buffer and NEXT routine]]
+would use $4400 as the address of the following instruction.
+#endif
+padjust
+    sec                     ; pass A = offset to be added to IP
+    adc ip
+    bcc padjust01
+    inc ip+1                ; cross the page
+padjust01
+    cmp #$fd
+    bcc padjust02
+    inc ip+1                ; cross the page
+    cmp #$ff
+    beq padjust02
+    lda #$fe
+padjust02
+    sta ip
+    rts
+
+;--------------------------------------------------------------
+#if 0
 name=(DOES)
 tags=inner,nosymbol,control
 stack=( -- )
@@ -105,26 +152,6 @@ dodoes
     sty ip+1        ; set IP from calling child word
     ldx xsave
     jmp next1       ; this entry point into NEXT only single-increments IP
-
-;dodoes
-;    jsr slip
-;    stx xsave
-;    tsx
-;    lda $0104,x
-;    sta tos+1
-;    lda $0103,x
-;    sta tos             ; PFA to TOS
-;    jsr inctos
-;    lda ip+1
-;    sta $0104,x
-;    lda ip
-;    sta $0103,x         ; IP to return stack (for EXIT)
-;    ldx xsave
-;    pla
-;    sta ip
-;    pla
-;    sta ip+1
-;    jmp next1
 
 ;--------------------------------------------------------------
 #if 0
