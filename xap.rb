@@ -380,7 +380,7 @@ _semi
 
 
 
-        always_use_decimal = false
+        always_use_decimal = true
         symfile = File.open("./tmp/"+outputfile,'w') do |file|
             labels.each do |label, addr|
                 addr_out = "$"+addr.to_s(16).rjust(4,'0')
