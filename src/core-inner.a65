@@ -58,108 +58,43 @@ spstoreo
 
 ;--------------------------------------------------------------
 #if 0
-name=?STACK
+name=HEX
+tags=number,i/o,forth-83
 stack=( -- )
-tags=inner
-Check the  data stack pointer for sanity, abort if trouble
+Sets the system number base to hexadecimal
 #endif
-qstack
-    ldy #2                          ; 2 = stack full
-    txa
-    bmi error
-    dey                             ; 1 = stack empty
-    cmp uarea+usersp0-userarea
-    bcc spstoreo
-    ;fall through
-;--------------------------------------------------------------
-#if 0
-name=SYSERR
-stack=( -- )
-tags=nosymbol,inner
-General-purpose error handler, callable from primitives, used
-to print a system error message and abort
-pass in the error # in Y
-      1 stack empty
-      2 stack full
-#endif
-error
-    sty tos
-    ldy #0
-    sty tos+1
-    ldy #>(_fail+3)
-    lda #<(_fail+3)    ; transfer control to FAIL
-;--------------------------------------------------------------
-#if 0
-name=>FORTH
-stack=( -- )
-tags=vocabulary,nosymbol
-Jump up to high-level Forth from inline 6502
-#endif
-toforth
-    sta ip
-    sty ip+1
-    jmp nexto
+#include "align.i65"
+_hex
+    jsr enter
+#include "page.i65"
+    .word clit
+    .byt 16
+#include "pad.i65"
+    .word base
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=(CLIT)
-tags=inner,nosymbol,control
-stack=( -- n )
-Runtime behavior of `CLITERAL`. Pushes the single byte following IP
-on the stack
-#endif
-clit
-    clc
-    lda #0
-    beq lit01               ; bra
-
-;--------------------------------------------------------------
-#if 0
-name=(LIT)
-tags=inner,nosymbol
-stack=( -- n )
-Runtime behavior of LITERAL, puts a number "n" on the stack
-
-#endif
-plit
-    sec
-    ldy #3
-    lda (ip),y
-lit01
-    tay
-    jsr slip
-    sty tos+1
-    ldy #2
-    lda (ip),y
-    sta tos
-    iny
-    tya
-    ; fall through
-;--------------------------------------------------------------
-#if 0
-name=DOPAGE
+name=DECIMAL
 stack=( -- )
-tags=nosymbol
-Page boundary crossing is handled by the compiler inserting 'page'
-when the DP gets to $xxFD or $xxFE.  IP = $xxFF is never supposed
-to occur, and indicates an error in the compiler.
-
-pad is also used by LITERAL, string, and other words which
-contain inline arguments to offset IP at runtime
+tags=number,i/o,forth-83
+Sets the system number base to decimal
 #endif
-pad
-    ;clc                     ; pass A = offset added to IP
-    adc ip
-    bcs pagen               ; check for page boundary crossing
-    cmp #$ff
-    bne pado                ; check for xxFF at end of page
-page
-    lda #0
-pagen
-    inc ip+1                ; cross the page
-pado
-    sta ip
-    jmp nexto
+#include "align.i65"
+_decimal
+    jsr enter
+#include "page.i65"
+    .word clit
+    .byt 10
+#include "pad.i65"
+    .word base
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -269,43 +204,109 @@ pdq
 
 ;--------------------------------------------------------------
 #if 0
-name=HEX
-tags=number,i/o,forth-83
+name=?STACK
 stack=( -- )
-Sets the system number base to hexadecimal
+tags=inner
+Check the  data stack pointer for sanity, abort if trouble
 #endif
-#include "align.i65"
-_hex
-    jsr enter
-#include "page.i65"
-    .word clit
-    .byt 16
-#include "pad.i65"
-    .word base
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
+qstack
+    ldy #2                          ; 2 = stack full
+    txa
+    bmi error
+    dey                             ; 1 = stack empty
+    cmp uarea+usersp0-userarea
+    bcc spstoreo
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=SYSERR
+stack=( -- )
+tags=nosymbol,inner
+General-purpose error handler, callable from primitives, used
+to print a system error message and abort
+pass in the error # in Y
+      1 stack empty
+      2 stack full
+#endif
+error
+    sty tos
+    ldy #0
+    sty tos+1
+    ldy #>(_fail+3)
+    lda #<(_fail+3)    ; transfer control to FAIL
+;--------------------------------------------------------------
+#if 0
+name=>FORTH
+stack=( -- )
+tags=vocabulary,nosymbol
+Jump up to high-level Forth from inline 6502
+#endif
+toforth
+    sta ip
+    sty ip+1
+    jmp nexto
 
 ;--------------------------------------------------------------
 #if 0
-name=DECIMAL
-stack=( -- )
-tags=number,i/o,forth-83
-Sets the system number base to decimal
+name=(CLIT)
+tags=inner,nosymbol,control
+stack=( -- n )
+Runtime behavior of `CLITERAL`. Pushes the single byte following IP
+on the stack
 #endif
-#include "align.i65"
-_decimal
-    jsr enter
-#include "page.i65"
-    .word clit
-    .byt 10
-#include "pad.i65"
-    .word base
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
+clit
+    clc
+    lda #0
+    beq lit01               ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=(LIT)
+tags=inner,nosymbol
+stack=( -- n )
+Runtime behavior of LITERAL, puts a number "n" on the stack
+
+#endif
+plit
+    sec
+    ldy #3
+    lda (ip),y
+lit01
+    tay
+    jsr slip
+    sty tos+1
+    ldy #2
+    lda (ip),y
+    sta tos
+bump01
+    lda #3                  ; ip+3 or ip+4 depending on Carry
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=DOPAGE
+stack=( -- )
+tags=nosymbol
+Page boundary crossing is handled by the compiler inserting 'page'
+when the DP gets to $xxFD or $xxFE.  IP = $xxFF is never supposed
+to occur, and indicates an error in the compiler.
+
+pad is also used by LITERAL, string, and other words which
+contain inline arguments to offset IP at runtime
+
+It is important that callers to `pad` set Carry
+#endif
+pad
+    adc ip                  ; pass A = offset added to IP
+    bcs pagen               ; check for page boundary crossing
+    cmp #$ff
+    bne pado                ; check for xxFF at end of page
+page
+    lda #0
+pagen
+    inc ip+1                ; cross the page
+pado
+    sta ip
+    jmp nexto
 
 ;--------------------------------------------------------------
 #if 0
@@ -341,9 +342,9 @@ qbranch
     tay             ; to set the Z flag
     beq branch
 bump
-    lda #3
+    ;lda #3         ; bump01 does this for us
     clc
-    jmp pad
+    bcc bump01      ; bra
 
 ;--------------------------------------------------------------
 #if 0
