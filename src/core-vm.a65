@@ -1090,12 +1090,12 @@ _file
 ;--------------------------------------------------------------
 #if 0
 name=(FILE)
-stack=( -- casbuf )
-tags=vm,i/o,nosymbol
+stack=( -- )
+tags=vm,i/o
 Called at start of tape or disk i/o, sets up zero page variables.
 Retrieves DRV# SA# and FILENAME uservariables and stores them
 in zero page locations FA SA FNLEN FNADR.  Sets VERCK to zero.
-Returns the address of the cassette buffer
+Relies on [[SA#]], [[DRV#]], and [[FILENAME]] being adjacent in uarea
 
 |zero page|<|source|description|h
 |^FNLEN|^d1|^FILENAME|^File name length|
@@ -1103,7 +1103,6 @@ Returns the address of the cassette buffer
 |^VERCK|^9d|^0|^Load or Verify|
 |^FA|^d4|^DRV#|Device number|
 |^SA|^d3|^SA#|Secondary address|
-
 
 |save|load|verify|open|name|address|description|h
 |^?|^?|^?|^?|^FNLEN|^d1|^Length of current file name|
@@ -1128,29 +1127,25 @@ pfile
     .byt ldd | N0       ; SA#
     .byt set | N1
     .word SA
-    .byt sti | N1       ; SA
+    .byt sti | N1       ; SA ($d3)
     .byt ldd | N0       ; DRV#
-;    .byt set | N1      ; shortcut because it's adjacent after SA
+;    .byt set | N1      ; removed because FA is adjacent after SA
 ;    .word FA
-    .byt sti | N1       ; FA
+    .byt sti | N1       ; FA ($d4)
     .byt ldd | N0       ; FILENAME
     .byt bz , <(pfile01-*-2)
     .byt st | N0        ; tmp
     .byt inr | ACC
     .byt set | N1
     .word FNADR
-    .byt std | N1       ; FNADR
+    .byt std | N1       ; FNADR ($da)
     .byt ldi | N0
 pfile01
     .byt set | N1
     .word FNLEN
-    .byt sti | N1       ; FNLEN
+    .byt sti | N1       ; FNLEN ($d1)
     .byt ext
-    .word GETBUF
-    .byt set | N1
-    .word TAPE1
-    .byt ldd | N1
-    .byt push
+    .word GETBUF        ; sets TAPE1 ($d6)
     .byt nxt
 
 ;--------------------------------------------------------------
@@ -1193,22 +1188,22 @@ stashforth
 name=(VMBUF)
 stack=( -- from to )
 tags=vm,kernel
-Returns the start and end of the virtual memory buffer
+Returns the end and start of the virtual memory buffer
 
 ```
-: (vmbuf)   ( -- from to )
-    vmbuf @ blkbuf ;
+: (vmbuf)   ( -- to from )
+    blkbuf  vmbuf @ ;
 ```
 #endif
 #include "align.i65"
 _pvmbuf
     jsr enter
 #include "page.i65"
+    .word _blkbuf
+#include "page.i65"
     .word vmbuf
 #include "page.i65"
     .word fetch
-#include "page.i65"
-    .word _blkbuf
 #include "page.i65"
     .word exit
 
@@ -1345,54 +1340,41 @@ Set zero page load/save pointers
 
 ```
 : (setioptr)   ( from to -- )
-    EAL !  STAL ! ;
+    SAL !  EAL !  SAL @ STAL ! ;
 ```
 #endif
 #include "align.i65"
-_setioptr
-    jsr enter
-#include "page.i65"
-    .word clit
-    .byt EAL            ; i/o end address
-#include "pad.i65"
-    .word store
-#include "page.i65"
-    .word clit
-    .byt STAL           ; i/o start address
-#include "pad.i65"
-    .word store
-#include "page.i65"
-    .word exit
+setioptr
+    brk
+    .byt set | N0
+    .word SAL
+    .byt pull
+    .byt std | N0
+    .byt pull
+    .byt std | N0
+    .byt ext
+    .word SETSTAL
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
-name=(TAPEPARAMS)
+name=(TAPEPTR)
 stack=( -- )
 tags=vm,forth-83,i/o,kernel,nosymbol
-non-reentrant subroutine to set tape start and end addresses
-SEC = write
-CLC = read
-~ save some room by doing this with the C flag
+subroutine to set tape start and end addresses
 #endif
-tapeparams
-    pla
-    tax
-    pla
-    tay                         ; preserve return address
-    pla
-    sta $c9
-    pla
-    sta $ca
-    pla
-    sta $fb
-    pla
-    sta $fc
-    tya
-    pha
-    txa
-    pha                         ; restore return address
-;    bcs psave01
-    bcc ploadver01
+ptapeptr
+    brk
+    .byt set | N0
+    .word SAL
+    .byt ld | TOS
+    .byt std | N0
+    .byt pull
+    .byt std | N0
+    .byt ext
+    .word SETSTAL
+    jsr TAPEPTR
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -1417,16 +1399,6 @@ dotapeio01
 dotapeio02
     jsr 0
     jmp restoreforth
-
-;--------------------------------------------------------------
-#if 0
-name=TAPEPARAMS
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-#endif
-ptapeparams
-    jsr dotapeio
-    .word TAPEPARAMS
 
 ;--------------------------------------------------------------
 #if 0
@@ -1482,8 +1454,8 @@ ploadver
 
     jsr stashforth
     jsr READHEAD                ; $f4d3
-    sec
-    bcs tapeparams
+;    sec
+;    bcs tapeparams
 ploadver01
     jsr READDATA                ; $f3f8
     jmp restoreforth
@@ -1525,11 +1497,11 @@ _savebuffers
 #include "page.i65"
     .word _relocate
 #include "page.i65"
-    .word third
+    .word xyzzy
 #include "page.i65"
-    .word oneplus
+    .word ptapeptr
 #include "page.i65"
-    .word twostore
+    .word xyzzy
 #include "page.i65"
     .word psavehead
 #include "page.i65"
@@ -1589,7 +1561,7 @@ _loadbuffers
 #include "page.i65"
     .word twostore
 #include "page.i65"
-    .word _setioptr
+    .word setioptr
 #include "page.i65"
     .word xyzzy
 #include "page.i65"
@@ -1688,7 +1660,7 @@ _verifybuffers
 #include "page.i65"
     .word _relocate
 #include "page.i65"
-    .word _setioptr
+    .word setioptr
 #include "page.i65"
     .word ploadver
 #include "page.i65"
