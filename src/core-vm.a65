@@ -1042,133 +1042,6 @@ block02
 
 ;--------------------------------------------------------------
 #if 0
-name=CURRNAME
-stack=( -- addr )
-tags=vm,i/o
-Current filename
-
-todo: All parameter and no code, maybe a string variable?
-#endif
-currname
-    .byt (currname01-*-1)
-    .asc "PETTILPACKETS",
-currname01
-    .asc              "           "
-        ;"@0:full16characters,s,w "
-        ; 123456789.123456789.1234
-
-;--------------------------------------------------------------
-#if 0
-name=FILE
-stack=( filename device secondary -- )
-tags=vm,i/o
-Set up parameters for file i/o
-
-```
-: file
-    sa# ! drv# ! filename ! ;
-```
-#endif
-#include "align.i65"
-_file
-    jsr enter
-#include "page.i65"
-    .word sanum
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word drvnum
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word filename
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(FILE)
-stack=( -- )
-tags=vm,i/o
-Called at start of tape or disk i/o, sets up zero page variables.
-Retrieves DRV# SA# and FILENAME uservariables and stores them
-in zero page locations FA SA FNLEN FNADR.  Sets VERCK to zero.
-Relies on [[SA#]], [[DRV#]], and [[FILENAME]] being adjacent in uarea
-
-|zero page|<|source|description|h
-|^FNLEN|^d1|^FILENAME|^File name length|
-|^FNADR|^da-db|^FILENAME|^File name address|
-|^VERCK|^9d|^0|^Load or Verify|
-|^FA|^d4|^DRV#|Device number|
-|^SA|^d3|^SA#|Secondary address|
-
-|save|load|verify|open|name|address|description|h
-|^?|^?|^?|^?|^FNLEN|^d1|^Length of current file name|
-|^?|^?|^?|^?|^FNADR|^da-db|^File name address|
-|^&nbsp;|<|<|<|<|<|<|
-|^0|^0|^0|^0|^STATUS|^96|^Status byte ST|
-|^?|^0|^1|^?|^VERCK|^9d|^Load/Verify flag (0,1)|
-|^01|^?|^?|^?|^TAPEID|^b4|^Tape buffer leading char<br/>01=PRG 05=EOT|
-|^?|^?|^?|^?|^EAL|^c9-ca|^Tape end address|
-|^?|^?|^?|^?|^LA|^d2|^Current logical file number|
-|^?|^?|^?|^?|^SA|^d3|^Current secondary address|
-|^?|^?|^?|^?|^FA|^d4|^First address (device number)|
-|^?|^?|^?|^?|^TAPE1|^d6|^Pointer - start of tape buffer|
-|^?|^?|^?|^?|^FSBLK|^de|^Cassette read/write block count|
-|^?|^?|^?|^?|^STAL|^fb-fc|^I/O start address|
-|''?'' = don't care<br/>''x'' = don't initialize|<|<|<|<|<|<|f
-#endif
-pfile
-    brk                   ; 34
-    .byt set | N0
-    .word uarea+usersanum-userarea
-    .byt ldd | N0       ; SA#
-    .byt set | N1
-    .word SA
-    .byt sti | N1       ; SA ($d3)
-    .byt ldd | N0       ; DRV#
-;    .byt set | N1      ; removed because FA is adjacent after SA
-;    .word FA
-    .byt sti | N1       ; FA ($d4)
-    .byt ldd | N0       ; FILENAME
-    .byt bz , <(pfile01-*-2)
-    .byt st | N0        ; tmp
-    .byt inr | ACC
-    .byt set | N1
-    .word FNADR
-    .byt std | N1       ; FNADR ($da)
-    .byt ldi | N0
-pfile01
-    .byt set | N1
-    .word FNLEN
-    .byt sti | N1       ; FNLEN ($d1)
-    .byt ext
-    .word GETBUF        ; sets TAPE1 ($d6)
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=(PRG-FILE)
-stack=( -- casbuf )
-tags=vm,i/o,nosymbol
-Turn off SA# and set up for i/o
-#endif
-#include "align.i65"
-_pprgfile
-    jsr enter
-#include "page.i65"
-    .word sanum
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word pfile
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=STASH-FORTH
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
@@ -1185,27 +1058,80 @@ stashforth
 
 ;--------------------------------------------------------------
 #if 0
-name=(VMBUF)
-stack=( -- from to )
-tags=vm,kernel
-Returns the end and start of the virtual memory buffer
+name=RESTORE-FORTH
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+Restore Forth stack after BASIC system call
 
-```
-: (vmbuf)   ( -- to from )
-    blkbuf  vmbuf @ ;
-```
 #endif
-#include "align.i65"
-_pvmbuf
-    jsr enter
-#include "page.i65"
-    .word _blkbuf
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word exit
+restoreforth
+    jsr aloha2
+    ldx n
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=DOTAPEIO
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+#endif
+dotapeio
+    pla
+    sta n
+    pla
+    sta n+1
+    ldy #2
+dotapeio01
+    lda (n),y
+    sta dotapeio02,y
+    dey
+    bne dotapeio01
+
+    jsr stashforth
+    ldy #1                  ; used only by savehead
+dotapeio02
+    jsr 0
+    jmp restoreforth
+
+;--------------------------------------------------------------
+#if 0
+name=SAVEHEAD
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+#endif
+psavehead
+    jsr dotapeio
+    .word SAVEHEAD
+
+;--------------------------------------------------------------
+#if 0
+name=SAVEDATA
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+#endif
+psavedata
+    jsr dotapeio
+    .word SAVEDATA
+
+;--------------------------------------------------------------
+#if 0
+name=READHEAD
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+#endif
+preadhead
+    jsr dotapeio
+    .word READHEAD
+
+;--------------------------------------------------------------
+#if 0
+name=READDATA
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+#endif
+preaddata
+    jsr dotapeio
+    .word READDATA
 
 ;--------------------------------------------------------------
 #if 0
@@ -1290,175 +1216,227 @@ relocate01
 
 ;--------------------------------------------------------------
 #if 0
-name=(LOADVERA)
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
+name=CURRNAME
+stack=( -- addr )
+tags=vm,i/o
+Current filename
+
+todo: All parameter and no code, maybe a string variable?
 #endif
-ploadvera
-    jsr stashforth
-    jsr $f695                   ; (d6) = 027a | 033a
-    jsr $f857                   ; press play on tape #
-    jsr $f449                   ; searching...
-ploadvera01
-    lda $d1
-    beq ploadvera03
-    jsr $f4d3                   ; search for a named tape header block
-    bne ploadvera04
-ploadvera02
-    brk
-    ;file not found
-ploadvera03
-    jsr $f5e5                   ; load next tape header
-    beq ploadvera02
-ploadvera04
-    cpx #1
-    bne ploadvera01
-    jsr $f67b                   ; (fb)=start; (c9)=end
-restoreforth
-    jsr aloha2
-    ldx n
-    jmp next
+currname
+    .byt (currname01-*-1)
+    .asc "PETTILPACKETS",
+currname01
+    .asc              "           "
+        ;"@0:full16characters,s,w "
+        ; 123456789.123456789.1234
 
 ;--------------------------------------------------------------
 #if 0
-name=(LOADVERB)
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-#endif
-ploadverb
-    jsr stashforth
-    jsr $f46d                   ; print LOADING or VERIFYING
-    jsr $f8a3                   ; verify
-    jmp restoreforth
-
-;--------------------------------------------------------------
-#if 0
-name=(SETIOPTR)
-stack=( from to -- )
-tags=vm,kernel,nosymbol
-Set zero page load/save pointers
+name=FILE
+stack=( filename device secondary -- )
+tags=vm,i/o
+Set up parameters for file i/o
 
 ```
-: (setioptr)   ( from to -- )
-    SAL !  EAL !  SAL @ STAL ! ;
+: file
+    sa# ! drv# ! filename ! ;
 ```
 #endif
 #include "align.i65"
-setioptr
+_file
+    jsr enter
+#include "page.i65"
+    .word sanum
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word drvnum
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word filename
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(FILE)
+stack=( -- )
+tags=vm,i/o
+Called at start of tape or disk i/o, sets up zero page variables.
+Retrieves DRV# SA# and FILENAME uservariables and stores them
+in zero page locations FA SA FNLEN FNADR.  Sets VERCK to zero.
+Relies on [[SA#]], [[DRV#]], and [[FILENAME]] being adjacent in uarea
+
+|zero page|<|value|set by|description|h
+|^STATUS|^96|^0|rom|^i/o status byte|
+|^VERCK|^9d|^0|(file)|^0=load; 1=verify|
+|^TAPEID|^b4|^1|(prg-file)|^01=PRG; 02=data; 04=SEQ; 05=EOT|
+|^SAL|^c7-c8|^||^start address|
+|^EAL|^c9-ca|^||^end address|
+|^FNLEN|^d1|^FILENAME[0]|(file)|^File name length|
+|^LA|^d2|^0|(file)|^logical file #|
+|^SA|^d3|^SA#|(prg-file)|Secondary address|
+|^FA|^d4|^DRV#|(file)|Device number|
+|^FNADR|^da-db|^FILENAME[1..]|(file)|^File name address|
+|^STAL|^fb-fc|^||^start address|
+
+|save|load|verify|open|name|address|description|h
+|^?|^?|^?|^?|^FNLEN|^d1|^Length of current file name|
+|^?|^?|^?|^?|^FNADR|^da-db|^File name address|
+|^&nbsp;|<|<|<|<|<|<|
+|^0|^0|^0|^0|^STATUS|^96|^Status byte ST|
+|^?|^0|^1|^?|^VERCK|^9d|^Load/Verify flag (0,1)|
+|^01|^?|^?|^?|^TAPEID|^b4|^Tape buffer leading char<br/>01=PRG 05=EOT|
+|^?|^?|^?|^?|^EAL|^c9-ca|^Tape end address|
+|^?|^?|^?|^?|^LA|^d2|^Current logical file number|
+|^?|^?|^?|^?|^SA|^d3|^Current secondary address|
+|^?|^?|^?|^?|^FA|^d4|^First address (device number)|
+|^?|^?|^?|^?|^TAPE1|^d6|^Pointer - start of tape buffer|
+|^?|^?|^?|^?|^FSBLK|^de|^Cassette read/write block count|
+|^?|^?|^?|^?|^STAL|^fb-fc|^I/O start address|
+|''?'' = don't care<br/>''x'' = don't initialize|<|<|<|<|<|<|f
+
+```
+pfile
     brk
     .byt set | N0
-    .word SAL
-    .byt pull
-    .byt std | N0
-    .byt pull
-    .byt std | N0
+    .word uarea+usersanum-userarea
+    .byt ldd | N0       ; SA#
+    .byt set | N1
+    .word SA
+    .byt sti | N1       ; SA ($d3)
+    .byt ldd | N0       ; DRV#
+;    .byt set | N1      ; removed because FA is adjacent after SA
+;    .word FA
+    .byt sti | N1       ; FA ($d4)
+    .byt ldd | N0       ; FILENAME
+    .byt bz , <(pfile01-*-2)
+    .byt st | N0        ; tmp
+    .byt inr | ACC
+    .byt set | N1
+    .word FNADR
+    .byt std | N1       ; FNADR ($da)
+    .byt ldi | N0
+pfile01
+    .byt set | N1
+    .word FNLEN
+    .byt sti | N1       ; FNLEN ($d1)
+```
+#endif
+pfile
+    brk
+    .byt set | N0
+    .word uarea+userfilename-userarea
+    .byt ldd | N0       ; FILENAME
+    .byt st | N2        ; pointer to FILENAME[0] or 0
+    .byt bz , <(pfile01-*-2)
+    .byt ldi | N2
+pfile01
+    .byt set | N1
+    .word FNLEN
+    .byt sti | N1       ; set FNLEN ($d1)
+
+;    .byt set | N1
+;    .word LA
+    .byt sub | ACC      ; 0
+    .byt sti | N1       ; set LA ($d2)
+
+;    .byt set | N1
+;    .word SA
+    .byt ldd | N0       ; get SA#
+    .byt sti | N1       ; set SA ($d3)
+
+;    .byt set | N1
+;    .word FA
+    .byt ldd | N0       ; DRV#
+    .byt sti | N1       ; set FA ($d4)
+
+    .byt set | N1
+    .word FNADR
+    .byt ld | N2
+    .byt std | N1       ; set FNADR ($da)
+
+    .byt set | N1
+    .word VERCK
+    .byt sub | ACC
+    .byt sti | N1       ; set VERCK ($9d)
+
+    .byt set | N1
+    .word TAPEID
+    .byt inr | ACC
+    .byt sti | N1       ; set TAPEID ($b4)
+
     .byt ext
-    .word SETSTAL
+    .word SETCASBUF     ; sets TAPE1 ($d6)
     .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
-name=(TAPEPTR)
+name=(PRG-FILE)
 stack=( -- )
-tags=vm,forth-83,i/o,kernel,nosymbol
-subroutine to set tape start and end addresses
+tags=vm,i/o,nosymbol
+Turn off SA# and set up for PRG file tape i/o
+
+* sets SA# = 0
+* sets TAPEID = 1
+* invoke [[(FILE)]]
+** copy `SA#` to SA
+** copy `DRV#` to FA
+** copy `FILENAME` to FNADR, FNLEN
+** set TAPEID to $01 (PRG)
+** set TAPE1 to point to CAS1BUF (or possibly CAS2BUF on a real PET)
+
+```
+: (prg-file)   ( -- )
+    sa# off  1 TAPEID c!  (file) ;
+```
 #endif
-ptapeptr
-    brk
-    .byt set | N0
-    .word SAL
-    .byt ld | TOS
-    .byt std | N0
-    .byt pull
-    .byt std | N0
-    .byt ext
-    .word SETSTAL
-    jsr TAPEPTR
-    jmp next
+#include "align.i65"
+_pprgfile
+    jsr enter
+#include "page.i65"
+    .word sanum
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word one
+#include "page.i65"
+    .word clit
+    .byt TAPEID
+#include "pad.i65"
+    .word cstore
+#include "page.i65"
+    .word pfile
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=DOTAPEIO
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
+name=(VMBUF)
+stack=( -- from to )
+tags=vm,kernel
+Returns the end and start of the virtual memory buffer
+
+```
+: (vmbuf)   ( -- to from )
+    blkbuf  vmbuf @ ;
+```
 #endif
-dotapeio
-    pla
-    sta n
-    pla
-    sta n+1
-    ldy #2
-dotapeio01
-    lda (n),y
-    sta dotapeio02,y
-    dey
-    bne dotapeio01
-
-    jsr stashforth
-    ldy #1                  ; used only by savehead
-dotapeio02
-    jsr 0
-    jmp restoreforth
-
-;--------------------------------------------------------------
-#if 0
-name=SAVEHEAD
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-#endif
-psavehead
-    jsr dotapeio
-    .word SAVEHEAD
-
-;--------------------------------------------------------------
-#if 0
-name=SAVEDATA
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-#endif
-psavedata
-    jsr dotapeio
-    .word SAVEDATA
-
-;--------------------------------------------------------------
-#if 0
-name=READHEAD
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-#endif
-preadhead
-    jsr dotapeio
-    .word READHEAD
-
-;--------------------------------------------------------------
-#if 0
-name=READDATA
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-#endif
-preaddata
-    jsr dotapeio
-    .word READDATA
-
-;--------------------------------------------------------------
-#if 0
-name=(LOADVER)
-stack=( -- )
-tags=vm,forth-83,i/o,kernel,nosymbol
-
-~ modify this to fake the header to appear as though [[VMBUF]]
-is based on [[SYMTAB]] == [[MEMSIZ]]
-#endif
-ploadver
-    jsr preadhead
-
-    jsr stashforth
-    jsr READHEAD                ; $f4d3
-;    sec
-;    bcs tapeparams
-ploadver01
-    jsr READDATA                ; $f3f8
-    jmp restoreforth
+#include "align.i65"
+_pvmbuf
+    jsr enter
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1470,19 +1448,18 @@ to a PRG file on cassette or disk
 
 Also called by STOP-S in the editor
 
-* copy DRV# SA# FILENAME uservars to zero page
-* adjust VMBUF BLKBUF to simulate BLKBUF = MEMSIZ - 1K
-* copy adjusted values to tape buffer
+* set up for PRG file tape i/o
+* get start/end pointers of virtual memory buffer
+* adjust end to top of memory `MEMSIZ - BLKBUF`
+* fiddle with machine stack for proper exit from `SAVEHEAD`
 * SAVEHEAD
-* copy VMBUF BLKBUF to SAL ($c7) EAL ($c9)
-* SAVEDATA
 
 ```
 : save-buffers   ( -- )
     (prg-file)
-    (vmbuf) false relocate
-    third 1+ 2!  (savehead)
-    (vmbuf) rot 1+ 2!  (savedata) ;
+    (vmbuf) 2dup false relocate
+    casbuf 1 over c!  2+ 2!
+    diddle (savehead) (savedata) ;
 ```
 #endif
 #include "align.i65"
@@ -1493,15 +1470,24 @@ _savebuffers
 #include "page.i65"
     .word _pvmbuf
 #include "page.i65"
+    .word twodup
+#include "page.i65"
     .word false
 #include "page.i65"
     .word _relocate
 #include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word ptapeptr
+    .word twoswap
 #include "page.i65"
     .word xyzzy
+#include "page.i65"
+    .word clit
+    .byt SAL
+#include "pad.i65"
+    .word twostore
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+;    .word ptapeptr
 #include "page.i65"
     .word psavehead
 #include "page.i65"
@@ -1561,9 +1547,7 @@ _loadbuffers
 #include "page.i65"
     .word twostore
 #include "page.i65"
-    .word setioptr
-#include "page.i65"
-    .word xyzzy
+;    .word setioptr
 #include "page.i65"
     .word twotor
 #include "page.i65"
@@ -1572,7 +1556,7 @@ _loadbuffers
 #include "pad.i65"
     .word cstore
 #include "page.i65"
-    .word ploadvera
+;    .word ploadvera
 #include "page.i65"
     .word clit
     .byt EAL
@@ -1606,7 +1590,7 @@ _loadbuffers
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word ploadverb
+;    .word ploadverb
     ; pad blkbuf-size size cmove
 #include "page.i65"
     .word _blkbuf
@@ -1660,9 +1644,9 @@ _verifybuffers
 #include "page.i65"
     .word _relocate
 #include "page.i65"
-    .word setioptr
+;    .word setioptr
 #include "page.i65"
-    .word ploadver
+;    .word ploadver
 #include "page.i65"
     .word clit
     .byt STATUS
