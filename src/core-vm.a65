@@ -1088,14 +1088,14 @@ dotapeio01
     bne dotapeio01
 
     jsr stashforth
-    ldy #1                  ; used only by savehead
+    lda #1                  ; PRG file id, required only by savehead
 dotapeio02
-    jsr 0
+    jsr 0                   ; child PFA replaces this address
     jmp restoreforth
 
 ;--------------------------------------------------------------
 #if 0
-name=SAVEHEAD
+name=(SAVEHEAD)
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
@@ -1105,7 +1105,7 @@ psavehead
 
 ;--------------------------------------------------------------
 #if 0
-name=SAVEDATA
+name=(SAVEDATA)
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
@@ -1115,7 +1115,7 @@ psavedata
 
 ;--------------------------------------------------------------
 #if 0
-name=READHEAD
+name=(READHEAD)
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
@@ -1125,7 +1125,7 @@ preadhead
 
 ;--------------------------------------------------------------
 #if 0
-name=READDATA
+name=(READDATA)
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
@@ -1233,6 +1233,18 @@ currname01
 
 ;--------------------------------------------------------------
 #if 0
+name=CASBUF
+stack=( -- buf )
+tags=vm,i/o
+Set cassette buffer to DRV# and return its address
+
+#endif
+#include "align.i65"
+casbuf
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
 name=FILE
 stack=( filename device secondary -- )
 tags=vm,i/o
@@ -1336,7 +1348,7 @@ pfile
     .byt bz , <(pfile01-*-2)
     .byt ldi | N2
 pfile01
-    .byt set | N1
+    .byt set | N1       ; N1 walks through FNLEN, LA, SA, FA on a PET
     .word FNLEN
     .byt sti | N1       ; set FNLEN ($d1)
 
@@ -1405,7 +1417,7 @@ _pprgfile
 #include "page.i65"
     .word one
 #include "page.i65"
-    .word clit
+    .word clit          ; ~ can remove this if using $f619
     .byt TAPEID
 #include "pad.i65"
     .word cstore
@@ -1440,6 +1452,39 @@ _pvmbuf
 
 ;--------------------------------------------------------------
 #if 0
+name=(CALL)
+stack=( -- )
+tags=vm,forth-83,i/o,kernel,nosymbol
+Invokes a rom routine and exits to next
+#endif
+#include "align.i65"
+_pcall
+    jsr enter
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word rfrom
+
+;--------------------------------------------------------------
+#if 0
+name=(SETEALSTAL)
+stack=( -- )
+tags=vm,forth-83,i/o,kernel,nosymbol
+Invokes a rom routine and exits to next
+#endif
+#include "align.i65"
+setealstal
+    jsr _pcall
+    .word SETEALSTAL            ; invoke a ROM routine
+
+;--------------------------------------------------------------
+#if 0
 name=SAVE-BUFFERS
 stack=( -- )
 tags=vm,forth-83,i/o,kernel
@@ -1466,8 +1511,6 @@ Also called by STOP-S in the editor
 _savebuffers
     jsr enter
 #include "page.i65"
-    .word _pprgfile             ; set up z.p. device, secondary, filename
-#include "page.i65"
     .word _pvmbuf
 #include "page.i65"
     .word twodup
@@ -1476,7 +1519,22 @@ _savebuffers
 #include "page.i65"
     .word _relocate
 #include "page.i65"
-    .word twoswap
+    .word _pprgfile             ; set up z.p. device, secondary, filename
+#include "page.i65"
+;   .word rdrop                 ; ?? is this needed?
+;#include "page.i65"
+    .word plit
+    .word next-1                ; tricks RTS into performing NEXT
+#include "pad.i65"
+    .word tor
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word SETEALSTAL            ; invoke a ROM routine
+#include "page.i65"
+    .word psavehead
 #include "page.i65"
     .word xyzzy
 #include "page.i65"
@@ -1486,18 +1544,6 @@ _savebuffers
     .word twostore
 #include "page.i65"
     .word xyzzy
-#include "page.i65"
-;    .word ptapeptr
-#include "page.i65"
-    .word psavehead
-#include "page.i65"
-    .word _pvmbuf
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word twostore
 #include "page.i65"
     .word psavedata
 #include "page.i65"
