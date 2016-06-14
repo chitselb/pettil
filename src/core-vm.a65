@@ -1443,19 +1443,19 @@ tags=vm,kernel
 Returns the end and start of the virtual memory buffer
 
 ```
-: (vmbuf)   ( -- to from )
-    blkbuf  vmbuf @ ;
+: (vmbuf)   ( -- vmbuf blkbuf )
+    vmbuf @  blkbuf ;
 ```
 #endif
 #include "align.i65"
 _pvmbuf
     jsr enter
 #include "page.i65"
-    .word _blkbuf
-#include "page.i65"
     .word vmbuf
 #include "page.i65"
     .word fetch
+#include "page.i65"
+    .word _blkbuf
 #include "page.i65"
     .word exit
 
@@ -1469,18 +1469,18 @@ to a PRG file on cassette or disk
 
 Also called by STOP-S in the editor
 
-* set up for PRG file tape i/o
-* get start/end pointers of virtual memory buffer
-* adjust end to top of memory `MEMSIZ - BLKBUF`
-* fiddle with machine stack for proper exit from `SAVEHEAD`
-* SAVEHEAD
-
 ```
 : save-buffers   ( -- )
     (prg-file)
-    (vmbuf) 2dup false relocate
-    casbuf 1 over c!  2+ 2!
-    diddle (savehead) (savedata) ;
+    (vmbuf) next-1  3dup
+    ( addresses for the data )
+    >r 2>r
+    ( addresses for the header )
+    >r false relocate 2>r
+    [ SETEALSTAL , ]
+    (savehead)
+    [ SETEALSTAL , ]
+    (savedata) ;
 ```
 #endif
 #include "align.i65"
@@ -1491,34 +1491,28 @@ _savebuffers
 #include "page.i65"
     .word _pvmbuf
 #include "page.i65"
-    .word twodup
+    .word clit
+    .byt next-1                 ; stupid stack tricks
+#include "pad.i65"
+    .word _threedup
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word twotor
+#include "page.i65"
+    .word tor
 #include "page.i65"
     .word false
 #include "page.i65"
     .word _relocate
 #include "page.i65"
-    .word clit
-    .byt next-1                 ; stupid stack tricks
-#include "pad.i65"
-    .word tor                   ; on SETEALSTAL exit, RTS to NEXT
+    .word twotor
 #include "page.i65"
-    .word tor                   ; relocated end address
-#include "page.i65"
-    .word tor                   ; relocated start address
-#include "page.i65"
-    .word SETEALSTAL            ; invoke a ROM routine
+    .word SETEALSTAL            ; invoke a ROM routine, RTS to NEXT
 #include "page.i65"
     .word psavehead
 #include "page.i65"
-    .word clit
-    .byt STAL
-#include "pad.i65"
-    .word store
-#include "page.i65"
-    .word clit
-    .byt EAL
-#include "pad.i65"
-    .word store
+    .word SETEALSTAL            ; invoke a ROM routine, RTS to NEXT
 #include "page.i65"
     .word psavedata
 #include "page.i65"
