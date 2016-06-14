@@ -1242,18 +1242,6 @@ currname01
 
 ;--------------------------------------------------------------
 #if 0
-name=CASBUF
-stack=( -- buf )
-tags=vm,i/o
-Set cassette buffer to DRV# and return its address
-
-#endif
-#include "align.i65"
-casbuf
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
 name=FILE
 stack=( filename device secondary -- )
 tags=vm,i/o
@@ -1321,32 +1309,6 @@ Relies on [[SA#]], [[DRV#]], and [[FILENAME]] being adjacent in uarea
 |^?|^?|^?|^?|^STAL|^fb-fc|^I/O start address|
 |''?'' = don't care<br/>''x'' = don't initialize|<|<|<|<|<|<|f
 
-```
-pfile
-    brk
-    .byt set | N0
-    .word uarea+usersanum-userarea
-    .byt ldd | N0       ; SA#
-    .byt set | N1
-    .word SA
-    .byt sti | N1       ; SA ($d3)
-    .byt ldd | N0       ; DRV#
-;    .byt set | N1      ; removed because FA is adjacent after SA
-;    .word FA
-    .byt sti | N1       ; FA ($d4)
-    .byt ldd | N0       ; FILENAME
-    .byt bz , <(pfile01-*-2)
-    .byt st | N0        ; tmp
-    .byt inr | ACC
-    .byt set | N1
-    .word FNADR
-    .byt std | N1       ; FNADR ($da)
-    .byt ldi | N0
-pfile01
-    .byt set | N1
-    .word FNLEN
-    .byt sti | N1       ; FNLEN ($d1)
-```
 #endif
 pfile
     brk
@@ -1380,20 +1342,14 @@ pfile01
     .word FNADR
     .byt ld | N2
     .byt std | N1       ; set FNADR ($da)
+    .byt rtn
 
-    .byt set | N1
-    .word VERCK
-    .byt sub | ACC
-    .byt sti | N1       ; set VERCK ($9d)
-
-    .byt set | N1
-    .word TAPEID
-    .byt inr | ACC
-    .byt sti | N1       ; set TAPEID ($b4)
-
-    .byt ext
-    .word SETCASBUF     ; sets TAPE1 ($d6)
-    .byt nxt
+    ldy #0
+    sty VERCK
+    iny
+    sty TAPEID
+    jsr SETCASBUF
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -1529,6 +1485,21 @@ what existed there before
 called by STOP-L in the editor
 
 ~ make #vmpkt! also set vmbuf
+
+```
+: save-buffers   ( -- )
+    (prg-file)
+    (vmbuf) next-1  3dup
+    ( addresses for the data )
+    >r 2>r
+    ( addresses for the header )
+    >r false relocate 2>r
+    [ SETEALSTAL , ]
+    (savehead)
+    [ SETEALSTAL , ]
+    (savedata) ;
+```
+
 
 ```
 : load-buffers   ( -- )
