@@ -68,6 +68,11 @@ table, it performs [[automatic memory allocation|AUTOMEM]]
 and may move `BLKBUF` (and its contents) to a new location.
 
 !!! pronounced: "b-l-k-buff"
+
+```
+: blkbuf   ( -- addr )
+    symtab @  ?: symtab memsiz  @ b/buf - ;
+```
 #endif
 #include "align.i65"
 _blkbuf
@@ -75,6 +80,12 @@ _blkbuf
 #include "page.i65"
     .word symtab
 #include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word pquerycolon
+    .word symtab
+    .word memsiz
+#include "pad.i65"
     .word fetch
 #include "page.i65"
     .word bperbuf
@@ -925,10 +936,10 @@ user is in the editor or not, and whether the packet is screen or data.
     dup ?mkpkts
     ( blk )
 
-    dup >pkt pkt.info           \ locate and unpack the header
-    ( blk floor len uncompressed? scrpkt? )
+    dup pkt.info           \ locate and unpack the header
+    ( blk floor len uncompressed? )
     \ set scrpkt to data (0) or screen ($8000)
-    scrpkt ! rot
+    rot
     ( blk len uncompressed?  floor )
     srctarg    \ find out more about the output
     ( blk len uncompressed?  floor vidram|blkbuf scr|prev  b/scr|b/buf bl|0 )
@@ -963,14 +974,6 @@ _block
 #include "page.i65"
     .word pktinfo
 #include "page.i65"
-;    .word _topkt
-;#include "page.i65"
-;    .word pktinfo
-;#include "page.i65"
-;    .word scrpkt
-;#include "page.i65"
-;    .word store
-;#include "page.i65"
     .word rot
 #include "page.i65"
     .word _srctarg
@@ -1075,46 +1078,42 @@ Restore Forth stack after BASIC system call
 restoreforth
     jsr aloha2
     ldx n
-    jmp next
+    jmp exit
 
 ;--------------------------------------------------------------
 #if 0
 name=DOTAPEIO
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
+Perform a ROM call framed between calls to [[Aloha]]. This is
+needed in particular for tape I/O, which might error out to a
+Commodore BASIC `ready.` prompt.
+
+Like [[EXECUTE]] and the Sweet-16 interpreter, this word
+uses the machine stack ($0100-$01ff) to transfer control
+so that code executes in this order:
 
 ```
-The business end of SAVE
- F755       LDA #$01    ; file header type PRG ($b4)
- F757       JSR $F619   ; SAVEHEAD
- F75A       JSR $F8CE   ; SAVEDATA
-
-The business end of LOAD/VERIFY
+stashforth
+caller's ROM routine
+restoreforth
 ```
 #endif
-dotapeio
-    pla
-    sta n
-    pla
-    sta n+1
-    ldy #2
-dotapeio01
-    lda (n),y
-    sta dotapeio02,y
-    dey
-    bne dotapeio01
-
-    jsr stashforth
-dotapeio02
-    jsr 0                   ; child PFA replaces this address
-    jmp restoreforth
-
-    .word _caller
-    .word fetch
-    .word oneminus
+#include "align.i65"
+_dotapeio
+    jsr enter
+#include "page.i65"
     .word plit
     .word restoreforth-1
+#include "pad.i65"
+    .word _caller
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
     .word twotor
+#include "page.i65"
     .word stashforth
 
 ;--------------------------------------------------------------
@@ -1124,7 +1123,7 @@ stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
 psaveprg
-    jsr dotapeio
+    jsr _dotapeio
     .word SAVEPRG
 
 ;--------------------------------------------------------------
@@ -1134,7 +1133,7 @@ stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
 preadhead
-    jsr dotapeio
+    jsr _dotapeio
     .word READHEAD
 
 ;--------------------------------------------------------------
@@ -1144,7 +1143,7 @@ stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
 preaddata
-    jsr dotapeio
+    jsr _dotapeio
     .word READDATA
 
 ;--------------------------------------------------------------
@@ -1162,6 +1161,11 @@ and `end`.
 ```
 : relocate
     memsiz @ symtab @ -
+    swap if negate then
+    dup>r +under r> + ;
+
+: relocate
+    blkbuf third -
     swap if negate then
     dup>r +under r> + ;
 
@@ -1282,7 +1286,8 @@ stack=( -- )
 tags=vm,i/o
 Called at start of tape or disk i/o, sets up zero page variables.
 Retrieves DRV# SA# and FILENAME uservariables and stores them
-in zero page locations FA SA FNLEN FNADR.  Sets VERCK to zero.
+in zero page locations FA SA FNLEN FNADR.
+
 Relies on [[SA#]], [[DRV#]], and [[FILENAME]] being adjacent in uarea
 
 |zero page|<|value|set by|description|h
@@ -1347,14 +1352,7 @@ pfile01
     .word FNADR
     .byt ld | N2
     .byt std | N1       ; set FNADR ($da)
-    .byt rtn
-
-    ldy #0
-    sty VERCK
-    iny
-    sty TAPEID
-    jsr SETCASBUF
-    jmp next
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -1473,51 +1471,38 @@ _savebuffers
     .word clit
     .byt next-1                 ; stupid stack tricks
 #include "pad.i65"
-    .word _threedup
-#include "page.i65"
     .word tor
-#include "page.i65"
-    .word twotor
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word false
-#include "page.i65"
-    .word _relocate
 #include "page.i65"
     .word twotor
 #include "page.i65"
     .word SETEALSTAL            ; invoke a ROM routine, RTS to NEXT
 #include "page.i65"
-    .word psavehead
-#include "page.i65"
-    .word SETEALSTAL            ; invoke a ROM routine, RTS to NEXT
-#include "page.i65"
-    .word psavedata
+    .word psaveprg
 #include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=LOAD-BUFFERS
+name=(LOADVERIFY)
 stack=( -- )
-tags=vm,i/o,kernel
-Load a batch of packets from the file to VMBUF, replacing
-what existed there before
-
-called by STOP-L in the editor
+tags=vm,i/o,kernel,nosymbol
+Load or compare a batch of packets from tape to [[VMBUF]]
 
 ```
-: load-buffers   ( -- )
-    (prg-file) (readhead)
+: (loadverify)   ( flag -- )
+    (prg-file) caller c@ (readhead)
     (casbuf) 1+  dup 2@
     true relocate  rot 2!
     (readdata)  #vmpkt! ;
-```
-#endif
-#include "align.i65"
-_loadbuffers
+
+    46
+_ploadverify
     jsr enter
+#include "page.i65"
+    .word clit
+    .byt VERCK
+#include "pad.i65"
+    .word cstore
 #include "page.i65"
     .word _pprgfile
 #include "page.i65"
@@ -1531,9 +1516,69 @@ _loadbuffers
 #include "page.i65"
     .word twofetch
 #include "page.i65"
-    .word true
+    .word over
 #include "page.i65"
-    .word _relocate
+    .word _blkbuf
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word negate
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word twostore
+#include "page.i65"
+    .word preaddata
+#include "page.i65"
+    .word _numvmpktstore
+#include "page.i65"
+    .word exit
+```
+#endif
+#include "align.i65"
+_ploadverify
+    jsr enter
+#include "page.i65"
+    .word clit
+    .byt VERCK
+#include "pad.i65"
+    .word cstore
+#include "page.i65"
+    .word _pprgfile
+#include "page.i65"
+    .word preadhead
+#include "page.i65"
+    .word pcasbuf
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word twofetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word _blkbuf
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word negate
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plus
 #include "page.i65"
     .word rot
 #include "page.i65"
@@ -1547,38 +1592,50 @@ _loadbuffers
 
 ;--------------------------------------------------------------
 #if 0
+name=LOAD-BUFFERS
+stack=( -- )
+tags=vm,i/o,kernel
+Load a batch of packets from the file to [[VMBUF]]
+
+called by STOP-L in the editor
+
+```
+: load-buffers   ( -- )
+    0 (loadverify) ;
+```
+#endif
+#include "align.i65"
+_loadbuffers
+    jsr enter
+#include "page.i65"
+    .word zero              ; LOAD
+#include "page.i65"
+    .word _ploadverify
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=VERIFY-BUFFERS
 stack=( -- )
 tags=vm,i/o,kernel,~wut?
-Verifies the virtual memory area following a write, from VMBUF to BLKBUF
+Verifies the [[VMBUF]] area following a write
 
-* DRV# is the device number
-* FILENAME is the filename
+called by STOP-V in the editor
 
-todo: change magic number to labels in cbm.def
+```
+: verify-buffers   ( -- )
+    1 (loadverify)
+    ST c@  if  ." error"  then ;
+```
 #endif
 #include "align.i65"
 _verifybuffers
     jsr enter
 #include "page.i65"
-    .word pfile
+    .word one               ; VERIFY
 #include "page.i65"
-    .word clit
-    .byt VERCK
-#include "pad.i65"
-    .word oneplusstore
-#include "page.i65"
-;    .word preadheader
-#include "page.i65"
-    .word _pvmbuf
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word _relocate
-#include "page.i65"
-;    .word setioptr
-#include "page.i65"
-;    .word ploadver
+    .word _ploadverify
 #include "page.i65"
     .word clit
     .byt STATUS
