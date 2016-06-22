@@ -12,6 +12,7 @@ doc: tiddlypettil publish
 clean:
 	rm -rf ./tmp/
 	mkdir ./tmp/
+	cp -v ../mmm/assets/loremcommie.txt ./tmp/
 
 launch: clean pettil
 	xpet -verbose -1 tapes/tapeio.tap -warp -moncommand ./tmp/pettil.mon ./tmp/pettil.obj &

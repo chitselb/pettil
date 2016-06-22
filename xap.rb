@@ -471,6 +471,7 @@ _semi
                 "core-io.a65 "\
                 "core-vm.a65 "\
                 "core-extra.a65 "\
+                "../../mmm/src/mmm-nucleus.a65 " \
                 "sweet16.a65 "
 #                "core-test.a65 "\
 
@@ -503,6 +504,7 @@ _semi
     end
 
     #calculate the @size field of each forthword
+#    puts all_words["LAUNCH"].addr
     set_sizes all_words   unless all_words["LAUNCH"].addr.nil?
 
     # output symbol table file
