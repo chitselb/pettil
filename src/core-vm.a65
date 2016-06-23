@@ -306,9 +306,8 @@ pronounced: "packet-info"
 
 ```
 : pkt.info   ( block -- floor length uncompressed? scrpkt? )
-    dup>r pkt.size 2- dup>r -
-    r> r> @ dup>r  $4000 and
-    r>  vidram and ;
+    >pkt dup>r pkt.size 2- dup>r -
+    r> r> @ dup>r $4000 and r> vidram and scrpkt ! ;
 ```
 #endif
 #include "align.i65"
@@ -407,34 +406,37 @@ name=EDITING?
 stack=( -- flag )
 tags=vm,ext,nosymbol
 Retrieves the EDITING user variable
+
+```
+: editing?
+    editing @ ;
+```
 #endif
-#include "align.i65"
 _editingq
-    jsr enter
-#include "page.i65"
-    .word editing
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word exit
+    lda uarea+userediting-userarea
+    ldy uarea+userediting-userarea+1
+    jmp pushya
 
 ;--------------------------------------------------------------
 #if 0
-name=SCRPKT?
+name=ISSCR?
 stack=( -- flag )
 tags=vm,ext,nosymbol
-Retrieves the SCRPKT user variable, which describes whether the current
+Retrieves the [[SCRPKT]] user variable, which describes whether the current
 packet type is screen (true) or data (false)
 #endif
-#include "align.i65"
-_scrpktq
-    jsr enter
-#include "page.i65"
-    .word scrpkt
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word exit
+_isscrq
+    lda uarea+userscrpkt-userarea
+    ldy uarea+userscrpkt-userarea+1
+    jmp pushya
+
+;    jsr enter
+;#include "page.i65"
+;    .word scrpkt
+;#include "page.i65"
+;    .word fetch
+;#include "page.i65"
+;    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -700,7 +702,7 @@ _srctarg
     .word vidram
     .word _blkbuf
 #include "pad.i65"
-    .word _scrpktq
+    .word _isscrq
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -865,34 +867,24 @@ user is in the editor or not, and whether the packet is screen or data.
 |^not [[EDITING?]] |<|packet# sets [[PREV]]<br>returns [[BLKBUF]]|
 |>|^ [[SCRPKT?]]|[[BLKBUF]] initialized to spaces<br>linewrap stored in first three bytes of [[BLKBUF]]<br>followed by 1000-bytes of screencodes|
 |>|^ not [[SCRPKT?]]|[[BLKBUF]] initialized to nulls<br>1024 bytes of data expanded to [[BLKBUF]]|
-```
-: block   ( blk -- buffer )
-    ?loaded                     \ exit if this block is already loaded
-    \ create empty packets if there aren't enough
-    dup ?mkpkts
-    ( blk )
 
-    dup pkt.info           \ locate and unpack the header
-    ( blk floor len uncompressed? )
-    \ set scrpkt to data (0) or screen ($8000)
-    rot
-    ( blk len uncompressed?  floor )
-    srctarg    \ find out more about the output
-    ( blk len uncompressed?  floor vidram|blkbuf scr|prev  b/scr|b/buf bl|0 )
-    3dup b/buf -rot nip fill 2drop  2>r r@  scrpkt?
-    ( blk len uncompressed? floor vidram|blkbuf scrpkt? ; vidram|blkbuf scr|prev )
-    if
-        drop  rot 3- -rot  3+ dup 3- 3c@  editing?
-    ( blk len-3 uncompressed?  floor+3 dwrap ; vidram|blkbuf scr|prev )
+```
+: block
+    dup ?mkpkts     \ create packets if they don't exist yet
+    dup pkt.info    \ ( blk floor len uncompressed? )
+    rot srctarg 3dup nip
+    b/buf swap fill 2drop 2>r r@ scrpkt?
+    if              \ ( blk len uncompressed? floor
+                    \ vidram|blkbuf scrpkt?
+                    \ R; vidram|blkbuf scr|prev )
+        drop rot 3- -rot 3+ dup 3- 3c@ editing?
         if
             wrap! r@
         else
             r@ 3c! r@ 3+
         then
     then
-    ( blk len uncompressed? floor vidram|blkbuf ; vidram|blkbuf scr|prev )
-    2swap ?: cmove rldecode
-    ( blk ; vidram|blkbuf scr|prev )
+    2swap  ?: cmove rldecode
     2r> -rot ! ;
 ```
 #endif
@@ -928,7 +920,7 @@ _block
 #include "page.i65"
     .word rfetch
 #include "page.i65"
-    .word _scrpktq
+    .word _isscrq
 #include "page.i65"
     .word qbranch
     .byt <(block02-*+1)
@@ -1476,76 +1468,29 @@ saved to tape at the next [[SAVE-BUFFERS]]
 |>|^ not [[SCRPKT?]]|no linewrap<br>write 1024-byte packet from [[BLKBUF]]|
 ```
 : update   ( -- )
-    prev @ 0<  editing? 0=  and ?exit
-    srctarg
-( var buffer size char )
-    drop
-( var buffer size )
-    rot
-( buffer size var )
-    @
-( buffer size blk )
-    >pkt
-( buffer size packet )
-    dup>r
-( buffer size packet ; packet )
-    rle+
-( buffer size floor ; packet )
-    dup>r
-( buffer size floor ; floor packet )
-
-    \ handle 3 bytes of linewrap for screen packets
-    editing?
-( buffer size floor editing? ; floor packet )
-    rot
-( buffer floor editing? size ; floor packet )
-    >r
-( buffer floor editing? ; size floor packet )
-    scrpkt?
-( buffer floor editing? scrpkt? ; size floor packet )
-
-
-
-
-( vidram|blkbuf floor ; b/scr|b/buf floor  pkt )
-    if  \ scrpkt?
-( buffer floor editing? ; size floor packet )
-        if  \ editing?
-            ( from screen )
-            25 wrapabove third 3c!
-        else    \ not editing?
-            ( from blkbuf )
+    prev @ 0< editing? 0= and ?exit
+    srctarg   \ ( var buffer size char )
+    drop rot @ >pkt dup>r rle+ dup>r
+    editing? rot >r scrpkt?
+    if
+        if
+            25 wrap^ third 3c!
+        else
             over 3c@ third 3c! 3 +under
         then
-    3+
-    else    \ data packet
-( buffer floor editing? ; size floor packet )
-        if  \ editing?  treat data packets as read-only
+        3+
+    else
+        if
             2drop 2r> 2r> 4drop exit
         then
     then
-( buffer floor ; size floor packet )
-    over
-( buffer floor buffer ; size floor packet )
-    r>
-( buffer floor buffer size ; floor packet )
-    scrpkt?
-( buffer floor buffer size scrpkt? ; floor packet )
-    ?: -trailing -nulls
-( buffer floor buffer size ; floor packet )
-    nip
-( buffer floor size ; floor packet )
-    rlencode
-( targend uncompressed? ; floor  pkt )
-
-    \ set packet length
+    over r> scrpkt?  ?: -trailing -nulls
+    nip rlencode
     over r> - 2+ scrpkt? or or over !
-( targend ; pkt )
+    1+ vmbuf @ swap r> over - 1+
+    dup vmbuf +! +move ;
 
-    1+ vmbuf @ swap r> over 1- -
-    \ move vmbuf up
-( vmbuf targend pkt-targend )
-    +move ;
+
 ```
 #endif
 #include "align.i65"
@@ -1568,8 +1513,6 @@ _update
 #include "page.i65"
     .word _srctarg
 #include "page.i65"
-    .word xyzzy
-#include "page.i65"
     .word drop
 #include "page.i65"
     .word rot
@@ -1590,7 +1533,7 @@ _update
 #include "page.i65"
     .word tor
 #include "page.i65"
-    .word _scrpktq
+    .word _isscrq
 #include "page.i65"
     .word qbranch
     .byt <(update03-*+1)
@@ -1633,13 +1576,15 @@ update03
     .word qbranch
     .byt <(update04-*+1)
 #include "pad.i65"
+    .word xyzzy
+#include "page.i65"
     .word twodrop
 #include "page.i65"
-    .word tworfrom
+    .word rdrop
 #include "page.i65"
-    .word tworfrom
+    .word rdrop
 #include "page.i65"
-    .word fourdrop
+    .word rdrop
 #include "page.i65"
     .word exit
 #include "page.i65"
@@ -1648,7 +1593,7 @@ update04
 #include "page.i65"
     .word rfrom
 #include "page.i65"
-    .word _scrpktq
+    .word _isscrq
 #include "page.i65"
     .word pquerycolon
     .word dashtrailing
@@ -1666,7 +1611,7 @@ update04
 #include "page.i65"
     .word twoplus
 #include "page.i65"
-    .word _scrpktq
+    .word _isscrq
 #include "page.i65"
     .word orx
 #include "page.i65"
