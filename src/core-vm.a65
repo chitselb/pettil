@@ -667,59 +667,6 @@ _qmkpkts
 
 ;--------------------------------------------------------------
 #if 0
-name=SRCTARG
-stack=( -- var buffer size char  )
-tags=vm,ext,nosymbol
-[[BLOCK]] packs from or unpacks to [[VIDRAM]] or [[BLKBUF]], based on [[EDITING?]] and [[SCRPKT?]]
-
-~ horrible name
-
-```
-: srctarg   ( -- scr|prev vidram|blkbuf b/scr|b/buf bl|0 )
-    editing?
-    dup  ?: scr prev
-    swap ?: vidram blkbuf
-    scrpkt?
-    dup  ?: b/scr b/buf
-    swap ?: bl 0 ;
-```
-#endif
-#include "align.i65"
-_srctarg
-    jsr enter
-#include "page.i65"
-    .word _editingq
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word pquerycolon
-    .word scr
-    .word prev
-#include "pad.i65"
-    .word swap
-#include "page.i65"
-    .word pquerycolon
-    .word vidram
-    .word _blkbuf
-#include "pad.i65"
-    .word _isscrq
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word pquerycolon
-    .word bperscr
-    .word bperbuf
-#include "pad.i65"
-    .word swap
-#include "page.i65"
-    .word pquerycolon
-    .word bl
-    .word zero
-#include "pad.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=WRAP!
 stack=( wrapd -- )
 tags=nosymbol
@@ -760,7 +707,7 @@ Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
 
 ```
 : #vmpkt!   ( -- )
-    scr off  blk off  prev on  #vmpkt off  blkbuf 2-
+    scr off  blk off  #vmpkt off  blkbuf 2-
     begin
         @ ?dup
     while
@@ -782,10 +729,6 @@ _numvmpktstore
     .word blk
 #include "page.i65"
     .word off
-#include "page.i65"
-    .word prev
-#include "page.i65"
-    .word on
 #include "page.i65"
     .word numvmpkt
 #include "page.i65"
@@ -844,136 +787,6 @@ _emptybuffers
     .word off
 #include "page.i65"
     .word _numvmpktstore
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=BLOCK
-stack=( blk -- buf )
-tags=vm,fig,forth-79,forth-83
-Retrieves and decompresses a screen or data block from the [[VMBUF]]
-[[region|PETTIL system memory map]]. This is PETTIL's top of the food
-chain for reading packets, the antonym of [[UPDATE]] (which writes
-packets).
-
-The table below summarizes how `BLOCK` functions based on whether the
-user is in the editor or not, and whether the packet is screen or data.
-
-|^[[EDITING?]] |<|packet# sets [[SCR]]<br>returns [[VIDRAM]]|
-|>|^ [[SCRPKT?]]|[[VIDRAM]] initialized to spaces<br>linewrap stored to zero page<br>write 1000-byte packet to [[VIDRAM]]|
-|>|^ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;not [[SCRPKT?]]|[[VIDRAM]] initialized to nulls<br>zero page linewrap table set to all 40-column<br>displays first 1000 characters of data block|
-||<|<|
-|^not [[EDITING?]] |<|packet# sets [[PREV]]<br>returns [[BLKBUF]]|
-|>|^ [[SCRPKT?]]|[[BLKBUF]] initialized to spaces<br>linewrap stored in first three bytes of [[BLKBUF]]<br>followed by 1000-bytes of screencodes|
-|>|^ not [[SCRPKT?]]|[[BLKBUF]] initialized to nulls<br>1024 bytes of data expanded to [[BLKBUF]]|
-
-```
-: block
-    dup ?mkpkts     \ create packets if they don't exist yet
-    dup pkt.info    \ ( blk floor len uncompressed? )
-    rot srctarg 3dup nip
-    b/buf swap fill 2drop 2>r r@ scrpkt?
-    if              \ ( blk len uncompressed? floor
-                    \ vidram|blkbuf scrpkt?
-                    \ R; vidram|blkbuf scr|prev )
-        drop rot 3- -rot 3+ dup 3- 3c@ editing?
-        if
-            wrap! r@
-        else
-            r@ 3c! r@ 3+
-        then
-    then
-    2swap  ?: cmove rldecode
-    2r> -rot ! ;
-```
-#endif
-#include "align.i65"
-_block
-    jsr enter
-#include "page.i65"
-    .word dup
-#include "page.i65"
-   .word _qmkpkts
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word pktinfo
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word _srctarg
-#include "page.i65"
-    .word _threedup
-#include "page.i65"
-    .word nip
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word fill
-#include "page.i65"
-    .word twodrop
-#include "page.i65"
-    .word twotor
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word _isscrq
-#include "page.i65"
-    .word qbranch
-    .byt <(block02-*+1)
-#include "pad.i65"
-    .word drop
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word threeminus
-#include "page.i65"
-    .word dashrot
-#include "page.i65"
-    .word threeplus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word threeminus
-#include "page.i65"
-    .word threecfetch
-#include "page.i65"
-    .word _editingq
-#include "page.i65"
-    .word qbranch
-    .byt <(block01-*+1)
-#include "pad.i65"
-    .word wrapstore
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word branch
-    .byt <(block02-*+1)
-#include "pad.i65"
-block01
-    .word rfetch
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word threeplus
-#include "page.i65"
-block02
-    .word twoswap
-#include "page.i65"
-    .word pquerycolon
-    .word cmove
-    .word rldecode
-#include "pad.i65"
-    .word tworfrom
-#include "page.i65"
-    .word dashrot
-#include "page.i65"
-    .word store
 #include "page.i65"
     .word exit
 
@@ -1441,6 +1254,189 @@ verifybuffers05
 
 ;--------------------------------------------------------------
 #if 0
+name=SRCTARG
+stack=( -- var buffer size char  )
+tags=vm,ext,nosymbol
+[[BLOCK]] packs from or unpacks to [[VIDRAM]] or [[BLKBUF]], based on [[EDITING?]] and [[SCRPKT?]]
+
+~ horrible name
+
+```
+: srctarg   ( -- scr|blk vidram|blkbuf b/scr|b/buf bl|0 )
+    editing?
+    dup  ?: scr blk
+    swap ?: vidram blkbuf
+    scrpkt?
+    dup  ?: b/scr b/buf
+    swap ?: bl 0 ;
+```
+#endif
+#include "align.i65"
+_srctarg
+    jsr enter
+#include "page.i65"
+    .word _editingq
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word pquerycolon
+    .word scr
+    .word blk
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+    .word pquerycolon
+    .word vidram
+    .word _blkbuf
+#include "pad.i65"
+    .word _isscrq
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word pquerycolon
+    .word bperscr
+    .word bperbuf
+#include "pad.i65"
+    .word swap
+#include "page.i65"
+    .word pquerycolon
+    .word bl
+    .word zero
+#include "pad.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BLOCK
+stack=( blk -- buf )
+tags=vm,fig,forth-79,forth-83
+Retrieves and decompresses a screen or data block from the [[VMBUF]]
+[[region|PETTIL system memory map]]. This is PETTIL's top of the food
+chain for reading packets, the antonym of [[UPDATE]] (which writes
+packets).
+
+The table below summarizes how `BLOCK` functions based on whether the
+user is in the editor or not, and whether the packet is screen or data.
+
+|^[[EDITING?]] |<|packet# sets [[SCR]]<br>returns [[VIDRAM]]|
+|>|^ [[SCRPKT?]]|[[VIDRAM]] initialized to spaces<br>linewrap stored to zero page<br>write 1000-byte packet to [[VIDRAM]]|
+|>|^ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;not [[SCRPKT?]]|[[VIDRAM]] initialized to nulls<br>zero page linewrap table set to all 40-column<br>displays first 1000 characters of data block|
+||<|<|
+|^not [[EDITING?]] |<|packet# sets [[BLK]]<br>returns [[BLKBUF]]|
+|>|^ [[SCRPKT?]]|[[BLKBUF]] initialized to spaces<br>linewrap stored in first three bytes of [[BLKBUF]]<br>followed by 1000-bytes of screencodes|
+|>|^ not [[SCRPKT?]]|[[BLKBUF]] initialized to nulls<br>1024 bytes of data expanded to [[BLKBUF]]|
+
+```
+: block
+    dup ?mkpkts     \ create packets if they don't exist yet
+    dup pkt.info    \ ( blk floor len uncompressed? )
+    rot srctarg 3dup nip
+    b/buf swap fill 2drop 2>r r@ scrpkt?
+    if              \ ( blk len uncompressed? floor
+                    \ vidram|blkbuf scrpkt?
+                    \ R; vidram|blkbuf scr|blk )
+        drop rot 3- -rot 3+ dup 3- 3c@ editing?
+        if
+            wrap! r@
+        else
+            r@ 3c! r@ 3+
+        then
+    then
+    2swap  ?: cmove rldecode
+    2r> -rot ! ;
+```
+#endif
+#include "align.i65"
+_block
+    jsr enter
+#include "page.i65"
+    .word dup
+#include "page.i65"
+   .word _qmkpkts
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word pktinfo
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word _srctarg
+#include "page.i65"
+    .word _threedup
+#include "page.i65"
+    .word nip
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word fill
+#include "page.i65"
+    .word twodrop
+#include "page.i65"
+    .word twotor
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word _isscrq
+#include "page.i65"
+    .word qbranch
+    .byt <(block02-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word threeminus
+#include "page.i65"
+    .word dashrot
+#include "page.i65"
+    .word threeplus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word threeminus
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word _editingq
+#include "page.i65"
+    .word qbranch
+    .byt <(block01-*+1)
+#include "pad.i65"
+    .word wrapstore
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word branch
+    .byt <(block02-*+1)
+#include "pad.i65"
+block01
+    .word rfetch
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word threeplus
+#include "page.i65"
+block02
+    .word twoswap
+#include "page.i65"
+    .word pquerycolon
+    .word cmove
+    .word rldecode
+#include "pad.i65"
+    .word tworfrom
+#include "page.i65"
+    .word dashrot
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=UPDATE
 stack=( -- )
 tags=forth-83,vm
@@ -1463,12 +1459,12 @@ saved to tape at the next [[SAVE-BUFFERS]]
 |>|^ [[SCRPKT?]]|linewrap from zero page<br>write 1000-byte packet from [[VIDRAM]]|
 |>|^ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;not [[SCRPKT?]]|`UPDATE` does not do anything<br>&nbsp; |
 ||<|<|
-|not [[EDITING?]] |<|packet# uses [[PREV]]|
+|not [[EDITING?]] |<|packet# uses [[BLK]]|
 |>|^ [[SCRPKT?]]|linewrap from [[BLKBUF]]<br>write 1000-byte packet from [[BLKBUF]]+3|
 |>|^ not [[SCRPKT?]]|no linewrap<br>write 1024-byte packet from [[BLKBUF]]|
 ```
 : update   ( -- )
-    prev @ 0< editing? 0= and ?exit
+    blk @ 0< editing? 0= and ?exit
     srctarg   \ ( var buffer size char )
     drop rot @ >pkt dup>r rle+ dup>r
     editing? rot >r scrpkt?
@@ -1490,14 +1486,51 @@ saved to tape at the next [[SAVE-BUFFERS]]
     1+ vmbuf @ swap r> over - 1+
     dup vmbuf +! +move ;
 
+editing? false
+and blk < 0
 
+editing? true
+and not isscr?
+
+
+
+: update   ( -- )
+    isscr? editing?
+    if
+        0= ?exit
+
+    else
+        blk @ 0< ?exit
+
+
+    blk @ 0< editing? 0= and ?exit
+    srctarg   \ ( var buffer size char )
+    drop rot @ >pkt dup>r rle+ dup>r
+    editing? rot >r scrpkt?
+    if
+        if
+            25 wrap^ third 3c!
+        else
+            over 3c@ third 3c! 3 +under
+        then
+        3+
+    else
+        if
+            2drop 2r> 2r> 4drop exit
+        then
+    then
+    over r> scrpkt?  ?: -trailing -nulls
+    nip rlencode
+    over r> - 2+ scrpkt? or or over !
+    1+ vmbuf @ swap r> over - 1+
+    dup vmbuf +! +move ;
 ```
 #endif
 #include "align.i65"
 _update
     jsr enter
 #include "page.i65"
-    .word prev
+    .word blk
 #include "page.i65"
     .word fetch
 #include "page.i65"
