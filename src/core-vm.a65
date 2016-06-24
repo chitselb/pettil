@@ -404,7 +404,7 @@ topkt02
 #if 0
 name=EDITING?
 stack=( -- flag )
-tags=vm,ext,nosymbol
+tags=vm,ext
 Retrieves the EDITING user variable
 
 ```
@@ -421,7 +421,7 @@ _editingq
 #if 0
 name=ISSCR?
 stack=( -- flag )
-tags=vm,ext,nosymbol
+tags=vm,ext
 Retrieves the [[SCRPKT]] user variable, which describes whether the current
 packet type is screen (true) or data (false)
 #endif
@@ -1486,38 +1486,20 @@ saved to tape at the next [[SAVE-BUFFERS]]
     1+ vmbuf @ swap r> over - 1+
     dup vmbuf +! +move ;
 
-editing? false
-and blk < 0
-
-editing? true
-and not isscr?
-
-
-
 : update   ( -- )
-    isscr? editing?
+    isscr? 0= editing? and ?exit        \ ignore data block in editor
+    editing? 0= blk @ 0< ?exit          \ don't update if block# < 0
+    editing? ?: scr blk
+    @ >pkt dup>r rle+ dup>r
+    scrpkt?
     if
-        0= ?exit
-
-    else
-        blk @ 0< ?exit
-
-
-    blk @ 0< editing? 0= and ?exit
-    srctarg   \ ( var buffer size char )
-    drop rot @ >pkt dup>r rle+ dup>r
-    editing? rot >r scrpkt?
-    if
+        editing?
         if
             25 wrap^ third 3c!
         else
             over 3c@ third 3c! 3 +under
         then
         3+
-    else
-        if
-            2drop 2r> 2r> 4drop exit
-        then
     then
     over r> scrpkt?  ?: -trailing -nulls
     nip rlencode
