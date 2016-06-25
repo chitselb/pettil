@@ -321,7 +321,7 @@ _nexttor
 #if 0
 name=PKT.SIZE
 stack=( packet -- packet size )
-tags=vm,nosymbol
+tags=vm
 Returns the packet length from a packet header.  The term `size` includes the 2
 byte packet header, where a packet's `length` is just the contents (`size-2`).  The subroutine mode replaces the packet address at
 `tos` with the length.  When called as a Forth word, `PKT.SIZE`
@@ -369,48 +369,36 @@ Return the packet address of block N
         over
     while
         pktsize
-        - -1 +under         ; ( n-1 newpkt )
-    repeat
-    nip ;
-```
-#endif
-topkt
-    jsr blkbufs             ; nesting Sweet16 is a bad idea
-    brk
-    .byt popd | TOS
-topkt01
-    .byt bz , <(topkt02-*-2)
-    .byt push
-    .byt ext
-    .word and07ff
-    .byt ext
-    .word donegate
-    .byt pull
-    .byt add | TOS
-    .byt st | TOS
-    .byt pull
-    .byt dcr | TOS
-    .byt push
-topkt02
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=>PKT2
-stack=( n -- packet )
-tags=vm,ext
-Return the packet address of block N
-
-```
-: >pkt   ( n -- packet )
-    blkbuf 2-
-    begin
-        over
-    while
-        pktsize
         - -1 +under
     repeat
     nip ;
+
+topkt
+    jsr blkbufs             ; nesting Sweet16 is a bad idea
+topktb
+    brk
+    .byt ld | TOS
+    .byt st | N0
+    .byt pull
+    .byt popd | N0          ; N0 = pkt
+topkt01
+    .byt ldd | N0
+    .byt bz , <(topkt04-*-2)
+    .byt popd | N0          ; N0 = pkt
+    .byt push               ; TOS = header
+    .byt ext
+    .word and07ff           ; TOS = pktsize
+    .byt ld | N0
+    .byt sub | TOS
+    .byt st | N0            ; N0 = floor
+    .byt pull
+    .byt dcr | TOS
+    .byt bnz , <(topkt01-*-2)
+topkt03
+    .byt ld | N0
+topkt04
+    .byt st | TOS           ; ( floor )
+    .byt nxt
 ```
 #endif
 #include "align.i65"
@@ -527,6 +515,11 @@ stack=( -- flag )
 tags=vm,ext
 Retrieves the [[SCRPKT]] user variable, which describes whether the current
 packet type is screen (true) or data (false)
+
+```
+: isscr?   ( -- flag )
+    scrpkt @ ;
+```
 #endif
 isscrq
     lda uarea+userscrpkt-userarea
@@ -774,12 +767,12 @@ name=WRAP!
 stack=( wrapd -- )
 tags=nosymbol
 
- Updates the linewrap table at $E1-F8 to reflect the low 24 bits
- in double `wrapd`.  Since line 0 ($E0) is never a continuation
- line, (always $80) it is not written to.  Only 24 bits are
- written to $E1-$F8, not 25.  Although unused, the most
- significant (2^24) bit may be set, as a framing bit, used
- to detect when the wrap double is full.
+Updates the linewrap table at $E1-F8 to reflect the low 24 bits
+in double `wrapd`.  Since line 0 ($E0) is never a continuation
+line, (always $80) it is not written to.  Only 24 bits are
+written to $E1-$F8, not 25.  Although unused, the most
+significant (2^24) bit may be set, as a framing bit, used
+to detect when the wrap double is full.
 
 #endif
 wrapstore
@@ -876,7 +869,6 @@ to mass storage.
 ```
 : empty-buffers   ( -- )
     blkbuf 2-  dup vmbuf !  off  #vmpkt! ;
-
 ```
 #endif
 #include "align.i65"
@@ -1540,7 +1532,7 @@ block02
 
 ;--------------------------------------------------------------
 #if 0
-name=UPDATE
+name=UPDATE2
 stack=( -- )
 tags=forth-83,vm
 Copies and compresses the current block buffer to the [[virtual memory
@@ -1907,134 +1899,9 @@ update01
     .word scr
 #include "page.i65"
 update02
-    .word pupdate
-#include "page.i65"
-
-
-    .word _topkt
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word _rleplus
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word editingq
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word isscrq
-#include "page.i65"
-    .word qbranch
-    .byt <(update03-*+1)
-#include "pad.i65"
-    .word qbranch
-    .byt <(update01-*+1)
-#include "pad.i65"
-    .word clit
-    .byt 25
-#include "pad.i65"
-    .word wrapabove
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word branch
-    .byt <(update02-*+1)
-#include "pad.i65"
-;update01
-    .word over
-#include "page.i65"
-    .word threecfetch
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word plusunder
-#include "page.i65"
-;update02
-    .word threeplus
-#include "page.i65"
-    .word branch
-    .byt <(update04-*+1)
-#include "pad.i65"
-update03
-    .word qbranch
-    .byt <(update04-*+1)
-#include "pad.i65"
-    .word xyzzy
-#include "page.i65"
-    .word twodrop
-#include "page.i65"
-    .word rdrop
-#include "page.i65"
-    .word rdrop
-#include "page.i65"
-    .word rdrop
-#include "page.i65"
-    .word exit
-#include "page.i65"
-update04
-    .word over
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word isscrq
-#include "page.i65"
-    .word pquerycolon
-    .word dashtrailing
-    .word dashnulls
-#include "pad.i65"
-    .word nip
-#include "page.i65"
-    .word rlencode
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word isscrq
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
     .word fetch
 #include "page.i65"
-    .word swap
+    .word _topkt
 #include "page.i65"
-    .word rfrom
+    .word pupdate
 #include "page.i65"
-    .word over
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word plusstore
-#include "page.i65"
-    .word _plusmove
-#include "page.i65"
-    .word exit
