@@ -803,7 +803,8 @@ Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
 
 ```
 : #vmpkt!   ( -- )
-    scr off  blk off  #vmpkt off  blkbuf 2-
+    scr off  blk off  ( ~ why? )
+    #vmpkt off  blkbuf 2-
     begin
         @ ?dup
     while
@@ -1823,12 +1824,12 @@ pupd2
 ;--------------------------------------------------------------
 #if 0
 name=?WRAP
-stack=( from to -- from+ to+ )
+stack=( from to -- from' to' )
 tags=forth-83,vm
 
 
 ```
-: ?wrap   ( from to -- from+ to+ )
+: ?wrap   ( from to -- from' to' )
     isscr? if
         editing? if
             25 wrap^
@@ -1894,16 +1895,34 @@ writing packets in the [[VMBUF]] region.
 ```
 : update   ( -- )
     blkbuf  editing? if
-        drop  isscr? ?: vidram exit ( no update if editing data )
+        drop  isscr? ?: vidram exit   \ early exit if editing data
     then
     b/buf blk  isscr? if
         2drop  b/scr scr
     then
     @ >pkt  vmbuf b/buf
-    (upd1)  cmove  ?wrap
-
-    isscr?  ?: -trailing -nulls  rlencode
-    (upd2)  cmove>  vmbuf ! ;
+    (upd1)
+( vmbuf-1024 floor  to from size  from to howmany )
+    cmove
+( vmbuf-1024 floor  to from size )
+    isscr? ?: -trailing -nulls rot 2>r
+(  from R; to size' )
+    isscr? if
+        editing? if
+            25 wrap^
+        else
+            3+ dup 3- 3c@
+        then
+        r@ 3c! r> 3+
+    else
+        r>
+    then
+    r>
+( from' to' size' )
+    rlencode
+( from       to  delta )
+( vmbuf-1024 end pkt-end )
+    +move #vmpkt! ;
 ```
 #endif
 #include "align.i65"
