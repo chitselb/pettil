@@ -61,6 +61,8 @@ and may move `BLKBUF` (and its contents) to a new location.
 : blkbuf   ( -- addr )
     symtab @  ?: symtab memsiz  @ b/buf - ;
 
+_blkbuf
+; 22 bytes
     jsr enter
 #include "page.i65"
     .word symtab
@@ -78,10 +80,9 @@ and may move `BLKBUF` (and its contents) to a new location.
     .word minus
 #include "page.i65"
     .word exit
-```
-#endif
-#include "align.i65"
+
 _blkbuf
+; 25 bytes
     lda #>(next-1)
     pha
     lda #<(next-1)
@@ -103,6 +104,28 @@ blkbuf01
     .byt st | TOS
     .byt rtn
     rts
+
+```
+#endif
+#include "align.i65"
+_blkbuf
+    jsr enter
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word pquerycolon
+    .word symtab
+    .word memsiz
+#include "pad.i65"
+    .word fetch
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -803,7 +826,7 @@ Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
 
 ```
 : #vmpkt!   ( -- )
-    scr off  blk off  ( ~ why? )
+\    scr off  blk off  ( ~ why? )
     #vmpkt off  blkbuf 2-
     begin
         @ ?dup
@@ -819,13 +842,13 @@ Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
 _numvmpktstore
     jsr enter
 #include "page.i65"
-    .word scr
+;    .word scr
 #include "page.i65"
-    .word off
+;    .word off
 #include "page.i65"
-    .word blk
+;    .word blk
 #include "page.i65"
-    .word off
+;    .word off
 #include "page.i65"
     .word numvmpkt
 #include "page.i65"
@@ -1763,13 +1786,10 @@ updateb04
 name=(UPD1)
 stack=( from to howmany char -- )
 tags=forth-83,vm
-d;m 0;m 1f0 1ff;m 52d0 530f;z
-
-floor = pkt-1024+2
 
 
 ||^data|^editing<br/>screen|h
-|TOS|0|<|
+|TOS|b/buf|<|
 |N0|blkbuf|vidram|
 |N1|b/buf|b/scr|
 |N2|pkt|<|
@@ -1780,31 +1800,38 @@ floor = pkt-1024+2
 |size|source|floor|from|to|howmany|
 |^b/buf<br/>b/scr |^blkbuf<br/>vidram |^pkt-1024|^vmbuf|^vmbuf-1024|^pkt-vmbuf|
 
-
+( vmbuf-1024 floor  to from size  from to howmany )
 #endif
 #include "align.i65"
 pupd1
-    ldy #10
+    ldy #8
     jsr locals
     brk
+    .byt ld | TOS
+    .byt st | N4            ; b/buf
+    .byt ld | N2            ; pkt
+    .byt st | TOS
     .byt ldd | N3           ; vmbuf @
     .byt st | N5
-    .byt ld | N1
-    .byt st | TOS           ; size
-    ; set up for ?wrap
-    .byt ld | N0
-    .byt push               ; source
-    .byt ld | N2
-    .byt sub | N4           ; pkt-1024
+    .byt sub | N4           ; vmbuf-1024
     .byt push
-    ; set up for cmove
-    .byt ld | N5
-    .byt push               ; from = vmbuf
-    .byt sub | N4
-    .byt push               ; to = vmbuf-1024
     .byt ld | N2
-    .byt sub | N5
-    .byt push               ; howmany = pkt-vmbuf
+    .byt sub | N4           ; floor
+    .byt push
+    .byt ld | N5
+    .byt sub | N4           ; to
+    .byt push
+    .byt ld | N0            ; from
+    .byt push
+    .byt ld | N1            ; howmany
+    .byt push               ; set up for rlencode
+    .byt ld | N5            ; from = vmbuf
+    .byt push
+    .byt sub | N4           ; to = vmbuf-1024
+    .byt push
+    .byt ld | N2
+    .byt sub | N5           ; howmany = pkt-vmbuf
+    .byt push               ; set up for cmove
     .byt nxt
 
 ;--------------------------------------------------------------
@@ -1841,11 +1868,11 @@ writing packets in the [[VMBUF]] region.
     then
     @ >pkt  vmbuf b/buf
     (upd1)
-( vmbuf-1024 floor  to from size  from to howmany )
+( pkt vmbuf-1024 floor  to from size  from to howmany )
     cmove
-( vmbuf-1024 floor  to from size )
+( pkt vmbuf-1024 floor  to from size )
     isscr? ?: -trailing -nulls rot 2>r
-(  from R; to size' )
+(  pkt from R; to size' )
     isscr? if
         editing? if
             25 wrap^
@@ -1857,12 +1884,14 @@ writing packets in the [[VMBUF]] region.
         r>
     then
     r>
-( from' to' size' )
+( pkt from' to' size' )
     rlencode
-( from       to  delta )
-( vmbuf-1024 end pkt-end )
+
+( pkt from       to  delta )
+( pkt vmbuf-1024 end pkt-end )
     +move #vmpkt! ;
 ```
+d;m 0;m 1f0 1ff;m 52d0 52ff;z
 #endif
 #include "align.i65"
 _update
@@ -1907,6 +1936,8 @@ update02
     .word vmbuf
 #include "page.i65"
     .word bperbuf
+#include "page.i65"
+    .word xyzzy
 #include "page.i65"
     .word pupd1
 #include "page.i65"
