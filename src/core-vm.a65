@@ -60,51 +60,6 @@ and may move `BLKBUF` (and its contents) to a new location.
 ```
 : blkbuf   ( -- addr )
     symtab @  ?: symtab memsiz  @ b/buf - ;
-
-_blkbuf
-; 22 bytes
-    jsr enter
-#include "page.i65"
-    .word symtab
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word pquerycolon
-    .word symtab
-    .word memsiz
-#include "pad.i65"
-    .word fetch
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word exit
-
-_blkbuf
-; 25 bytes
-    lda #>(next-1)
-    pha
-    lda #<(next-1)
-    pha
-blkbufs
-    brk
-    .byt push
-    .byt set | TOS
-    .word uarea+usersymtab-userarea
-    .byt ldd | TOS
-    .byt bnz , <(blkbuf01-*-2)
-    .byt set | TOS
-    .word uarea+usermemsiz-userarea
-    .byt ldd | TOS
-blkbuf01
-    .byt set | TOS
-    .word 1024
-    .byt sub | TOS
-    .byt st | TOS
-    .byt rtn
-    rts
-
 ```
 #endif
 #include "align.i65"
@@ -366,17 +321,12 @@ _pktsize
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word _nexttor
-#include "page.i65"
-    .word and07ff
+    .word plit
+    .word $07ff
+#include "pad.i65"
+    .word andx
 #include "page.i65"
     .word exit
-
-and07ff
-    lda tos+1
-    and #7
-    sta tos+1
-    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -395,33 +345,6 @@ Return the packet address of block N
         - -1 +under
     repeat
     nip ;
-
-topkt
-    jsr blkbufs             ; nesting Sweet16 is a bad idea
-topktb
-    brk
-    .byt ld | TOS
-    .byt st | N0
-    .byt pull
-    .byt popd | N0          ; N0 = pkt
-topkt01
-    .byt ldd | N0
-    .byt bz , <(topkt04-*-2)
-    .byt popd | N0          ; N0 = pkt
-    .byt push               ; TOS = header
-    .byt ext
-    .word and07ff           ; TOS = pktsize
-    .byt ld | N0
-    .byt sub | TOS
-    .byt st | N0            ; N0 = floor
-    .byt pull
-    .byt dcr | TOS
-    .byt bnz , <(topkt01-*-2)
-topkt03
-    .byt ld | N0
-topkt04
-    .byt st | TOS           ; ( floor )
-    .byt nxt
 ```
 #endif
 #include "align.i65"
@@ -845,7 +768,7 @@ _scr0
 #if 0
 name=#VMPKT!
 stack=( -- )
-tags=vm,nosymbol
+tags=vm
 Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
 
 ~ It should also validate flags and max-lengths, error out on corrupt VMBUF
@@ -1578,233 +1501,6 @@ block02
 
 ;--------------------------------------------------------------
 #if 0
-name=UPDATE2
-stack=( -- )
-tags=forth-83,vm
-Copies and compresses the current block buffer to the [[virtual memory
-packet buffer|PETTIL system memory map]].  Analogous to [[BLOCK]] which
-reads packets, this is PETTIL's top of the food chain for writing
-packets.
-
-The table below summarizes how `UPDATE` functions based on whether the
-user is in the editor or not, and whether the packet is screen or data.
-`UPDATE` first opens a 1024-byte hole in the [[VMBUF]] area where the
-output packet is written, stashes the current [[BLK]] or [[SCR]], then
-moves everything between [[VMBUF]] and the updated packet back up, to
-recover unused space.
-
-Copies the block buffer to the packet buffer at BLK where it will be
-saved to tape at the next [[SAVE-BUFFERS]]
-
-|[[EDITING?]] |<|packet# uses [[SCR]]|
-|>|^ [[SCRPKT?]]|linewrap from zero page<br>write 1000-byte packet from [[VIDRAM]]|
-|>|^ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;not [[SCRPKT?]]|`UPDATE` does not do anything<br>&nbsp; |
-||<|<|
-|not [[EDITING?]] |<|packet# uses [[BLK]]|
-|>|^ [[SCRPKT?]]|linewrap from [[BLKBUF]]<br>write 1000-byte packet from [[BLKBUF]]+3|
-|>|^ not [[SCRPKT?]]|no linewrap<br>write 1024-byte packet from [[BLKBUF]]|
-```
-: update   ( -- )
-    blk @ 0< editing? 0= and ?exit
-    srctarg   \ ( var buffer size char )
-    drop rot @ >pkt dup>r rle+ dup>r
-    editing? rot >r scrpkt?
-    if
-        if
-            25 wrap^ third 3c!
-        else
-            over 3c@ third 3c! 3 +under
-        then
-        3+
-    else
-        if
-            2drop 2r> 2r> 4drop exit
-        then
-    then
-    over r> scrpkt?  ?: -trailing -nulls
-    nip rlencode
-    over r> - 2+ scrpkt? or or over !
-    1+ vmbuf @ swap r> over - 1+
-    dup vmbuf +! +move ;
-
-: update   ( -- )
-    isscr? 0= editing? and ?exit        \ ignore data block in editor
-    editing? 0= blk @ 0< and ?exit          \ don't update if block# < 0
-    \ probably can do without this check
-    editing? ?: scr blk \ from
-    editing? ?:
-    @ >pkt dup>r rle+ dup>r
-    scrpkt?
-    if
-        editing?
-        if
-            25 wrap^ third 3c!
-        else
-            over 3c@ third 3c! 3 +under
-        then
-        3+
-    then
-    over r> scrpkt?  ?: -trailing -nulls
-    nip rlencode
-    over r> - 2+ scrpkt? or or over !
-    1+ vmbuf @ swap r> over - 1+
-    dup vmbuf +! +move ;
-```
-#endif
-#include "align.i65"
-_updateb
-    jsr enter
-#include "page.i65"
-    .word blk
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word zlt
-#include "page.i65"
-    .word editingq
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word _srctarg
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _topkt
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word _rleplus
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word editingq
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word isscrq
-#include "page.i65"
-    .word qbranch
-    .byt <(updateb03-*+1)
-#include "pad.i65"
-    .word qbranch
-    .byt <(updateb01-*+1)
-#include "pad.i65"
-    .word clit
-    .byt 25
-#include "pad.i65"
-    .word wrapabove
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word branch
-    .byt <(updateb02-*+1)
-#include "pad.i65"
-updateb01
-    .word over
-#include "page.i65"
-    .word threecfetch
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word plusunder
-#include "page.i65"
-updateb02
-    .word threeplus
-#include "page.i65"
-    .word branch
-    .byt <(updateb04-*+1)
-#include "pad.i65"
-updateb03
-    .word qbranch
-    .byt <(updateb04-*+1)
-#include "pad.i65"
-    .word twodrop
-#include "page.i65"
-    .word rdrop
-#include "page.i65"
-    .word rdrop
-#include "page.i65"
-    .word rdrop
-#include "page.i65"
-    .word exit
-#include "page.i65"
-updateb04
-    .word over
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word isscrq
-#include "page.i65"
-    .word pquerycolon
-    .word dashtrailing
-    .word dashnulls
-#include "pad.i65"
-    .word nip
-#include "page.i65"
-    .word rlencode
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word isscrq
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word plusstore
-#include "page.i65"
-    .word _plusmove
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=(UPD1)
 stack=( from to howmany char -- )
 tags=vm,nosymbol
@@ -1820,43 +1516,48 @@ along with a couple values that are required later.
 |N0|blkbuf|vidram|src|
 |N1|b/buf|b/scr|srcbufsiz|
 |N2|pkt|<|dst|
-|N3|vmbuf|<|bottom|
-|N4|b/buf|<|maxbufsiz|
+|N3|pktsize|<||
+|N4|vmbuf|<|bottom|
+|N5|b/buf|<|maxbufsiz|
+( bottom pkt floor / src dest src srcbufsiz / vmbuf vmbuf-b/buf pkt-vmbuf )
 
-( bottom pkt floor / src floor src srcbufsiz / vmbuf vmbuf-b/buf pkt-vmbuf )
+
+d;m 0;m 1f0 1ff;m 4ed0 4eff;m 52c0 532f;z
+
 #endif
 #include "align.i65"
 pupd1
     ldy #10
     jsr locals
     brk
-    .byt ldd | N3           ; vmbuf @
-    .byt st | N5            ; =vmbuf
-    ; things we'll need for later
-    .byt sub | N4           ; vmbuf-1024
+    .byt ldd | N1           ; vmbuf @
+    .byt st | N5            ; save for later
+    .byt sub | N2           ; vmbuf-1024
+    .byt add | TOS          ; vmbuf-1024+size
+    .byt dcr | ACC
+    .byt dcr | ACC          ; vmbuf-1024+size-2
+    .byt st | N6            ; save for later
+    ; things we'll need for CMOVE+
     .byt st | TOS           ; =bottom
-    .byt ld | N2            ; pkt
+    .byt ld | N4            ; pkt
     .byt push               ; =pkt
-    .byt sub | N4           ; pkt-1024
+    .byt sub | N2           ; pkt-1024
+    .byt st | N7            ; save for later
     .byt push               ; =floor
     ; things we'll need for RLENCODE
+    .byt push               ; =dest
     .byt ld | N0            ; blkbuf|vidram
-    .byt push               ; =from
-    .byt ld | N2            ; pkt-maxbufsiz
-    .byt sub | N4
-    .byt push               ; =to
-    .byt ld | N0            ; blkbuf|vidram
-    .byt push               ; =from
-    .byt ld | N1            ; b/buf|b/scr
+    .byt push               ; =src
+    .byt ld | N3            ; b/buf|b/scr
     .byt push               ; =srcbufsiz
     ; things we'll need for CMOVE
-    .byt ld | N5            ; vmbuf
-    .byt push               ; =from for CMOVE
-    .byt sub | N4           ; vmbuf-1024
-    .byt push               ; =to for CMOVE
-    .byt ld | N2
-    .byt sub | N5           ; pkt-vmbuf
-    .byt push               ; =howmany for CMOVE
+    .byt ld | N5
+    .byt push               ; =from
+    .byt ld | N6
+    .byt push               ; =bottom
+    .byt ld | N7
+    .byt sub | N6
+    .byt push               ; =howmany
     .byt nxt
 
 ;--------------------------------------------------------------
@@ -1867,44 +1568,58 @@ tags=vm,nosymbol
 Sets up the linewrap bits in the output buffer (if needed) and
 gets ready for RLENCODE and squeezing out unused space
 
-( bottom pkt floor / src floor srcsiz wrapd 'scrpkt )
-
 ||^data|^editing<br/>screen|<|h
-|TOS|0|<|<|
-|N0|blkbuf|vidram|src|
-|N1|b/buf|b/scr|srcbufsiz|
-|N2|pkt|<|dst|
-|N3|vmbuf|<|bottom|
-|N4|b/buf|<|maxbufsiz|
+|TOS|'scrpkt|<|<|
+|N0|floor|<|<|
+|N1|blkbuf|vidram|src|
+|N2|b/buf|b/scr|srcbufsiz|
+|N3|wrapdlo|<|<|
+|N4|wrapdhi|<|<|
 
-( bottom pkt floor / src floor srcsiz )
+need 3C@ and 3C! for linewrap
 
 #endif
 pupd2
     ldy #10
     jsr locals
+    lda n+7                         ; N3+1
+    sta n+12                        ; N6
     brk
     .byt ldd | TOS                  ; isscr?
+    .byt st | N5                    ; save for later
     .byt bz , <(pupd2b-*-2)
     .byt ldd | TOS                  ; editing?
     .byt bnz , <(pupd2a-*-2)
-    ; we're not editing, copy linewrap bits from source buffer
-    .byt ldd | N0
-    .byt st | N3
-    .byt ldi | N0
-    .byt st | N4
+    .byt ldd | N1
+    .byt std | N0
+    .byt ldi | N1
+    .byt sti | N0                   ; use linewrap from blkbuf
+    .byt br , <(pupd2b-*-2)
 pupd2a
-    .byt ld | N3
-    .byt std | N1
     .byt ld | N4
-    .byt sti | N1
+    .byt sti | N0
+    .byt ld | N6
+    .byt sti | N0
+    .byt ld | N3
+    .byt sti | N0
+;    .byt ld | N3
+;    .byt sti | N0
+;    .byt ld | N6
+;    .byt sti | N0
+;    .byt ld | N4
+;    .byt sti | N0                   ; write linewrap to output
 pupd2b
     ; setup for RLENCODE
-    .byt ld | N0                    ; from
+    .byt ld | N1                    ; from
     .byt st | TOS
-    .byt ld | N1                    ; to
+    .byt ld | N0                    ; to
+    .byt push
+    ; setup for -TRAILING or -NULLS
+    .byt ld | N1                    ; source
     .byt push
     .byt ld | N2                    ; actual size
+    .byt push
+    .byt ld | N5                    ; isscr?
     .byt push
     .byt nxt
 
@@ -1914,7 +1629,7 @@ name=(UPD3)
 stack=(  -- )
 tags=vm,nosymbol
 
-( bottom pkt floor / src floor srcsiz wrapd 'scrpkt )
+( bottom uncompressed? )
 
 ||^data|^editing<br/>screen|<|h
 |TOS|0|<|<|
@@ -1929,24 +1644,28 @@ tags=vm,nosymbol
 
 #endif
 pupd3
-    ldy #10
+    asl tos+1                   ; SCRPKT flag bit to Carry
+    lda stackh,x                ; UNCOMPRESSED? flag
+    ror                         ; combine flags in $8000, $4000 bits
+    and #$c0
+    sta tos+1
+    ldy #8
     jsr locals
+    sty tos                     ; low byte of packet flags
     brk
-    .byt popd | N2
-    .byt ld | N3
-    .byt sub | N2
+    .byt ld | N2
+    .byt sub | N1
     .byt add | TOS
-    .byt add | N4
-    .byt std | N1               ; set packet header
-    .byt popd | N1
-    .byt ld | N0
+    .byt st | N3                ; packet header
+    .byt ldd | N3               ; +2
+    .byt ld | N2
     .byt st | TOS
+    .byt ld | N0
+    .byt sub | TOS
+    .byt dcr | TOS              ; =targend-1
+    .byt push                   ; =pkt-targend
     .byt ld | N3
-    .byt dcr | ACC
-    .byt push
-    .byt ld | N1
-    .byt sub | N3
-    .byt push
+    .byt std | N0
     .byt nxt
 
 ;--------------------------------------------------------------
@@ -1961,25 +1680,36 @@ writing packets in the [[VMBUF]] region.
 
 ```
 : update   ( -- )
+    #vmpkt @ 0= ?exit                   \ early exit if buffer empty
     blkbuf  editing? if
-        drop  isscr? ?: vidram exit   \ early exit if editing data
+        drop  isscr? ?: vidram exit     \ early exit if editing data
     then
+    vmbuf b/buf
     b/buf blk  isscr? if
         2drop  b/scr scr
     then
-    @ >pkt  vmbuf b/buf
+    @ >pkt
     (upd1)
-    cmove isscr? ?: -trailing -nulls nip  25 wrap^ scrpkt
+    cmove
+    25 wrap^ scrpkt
     (upd2)
-    rlencode
+    ?: -trailing -nulls  nip rlencode isscr?
     (upd3)
     +move #vmpkt! ;
 ```
-d;m 0;m 1f0 1ff;m 4ed0 4eff;m 52d0 532f;z
+d;m 0;m 1f0 1ff;m 4ed0 4eff;m 52c0 532f;z
 #endif
 #include "align.i65"
 _update
     jsr enter
+#include "page.i65"
+    .word numvmpkt
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word _qexit
 #include "page.i65"
     .word _blkbuf
 #include "page.i65"
@@ -1997,6 +1727,10 @@ _update
     .word exit
 #include "pad.i65"
 update01
+    .word vmbuf
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
     .word bperbuf
 #include "page.i65"
     .word blk
@@ -2017,23 +1751,11 @@ update02
 #include "page.i65"
     .word _topkt
 #include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word zero
+    .word _pktsize
 #include "page.i65"
     .word pupd1
 #include "page.i65"
     .word cmove
-#include "page.i65"
-    .word isscrq
-#include "page.i65"
-    .word pquerycolon
-    .word dashtrailing
-    .word dashnulls
-#include "pad.i65"
-    .word nip
 #include "page.i65"
     .word clit
     .byt 25
@@ -2043,6 +1765,12 @@ update02
     .word scrpkt
 #include "page.i65"
     .word pupd2
+#include "page.i65"
+    .word pquerycolon
+    .word dashtrailing
+    .word dashnulls
+#include "pad.i65"
+    .word nip
 #include "page.i65"
     .word rlencode
 #include "page.i65"
