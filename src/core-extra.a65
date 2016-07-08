@@ -467,17 +467,17 @@ tags=math
 
 returns: Y=count
 #endif
-rad50fill
+rad50char
         ldy msg+9               ; count remaining in this triplet
         bne rad50fill03
         ldy msg+7               ; triplet is empty, get next word
-        inc msg+7
-        inc msg+7
         lda (n),y
         sta tos
         iny
         lda (n),y
         sta tos+1
+        iny
+        sty msg+7
         jsr slmod40             ; chop
         sta msg+12
         jsr slmod40             ; chop ha-daa!
@@ -489,8 +489,9 @@ rad50fill
         ldy #3
         sty msg+9               ; reset triplet counter to 3
 rad50fill03
+        dec msg+9
+        lda msg+9,y
         rts
-
 
 ;--------------------------------------------------------------
 #if 0
@@ -505,27 +506,33 @@ Perform a divide by 40 and a modulo 40, useful for screen positioning and
 rad50process
         ldy #4
         jsr locals
-        jsr rad50fill
-        dec msg+9
-        lda msg+9,y
-        beq rad50eom
-        cmp #27
+        jsr rad50char
+        beq rad50eom            ; test EOM
+        cmp #27                 ; test alpha, space
         beq rad50space
-        bcc rad50alpha
-        ;sec
-        sbc #'0'+27
+        bcs rad50alphanum
+        ;clc
+        adc #$14                ; sets 0-9 range
+        cmp #$3a
+        beq rad50period
+        bcs rad50alphanum
+        ; we need one from the second alphabet
+        jsr rad50char
+        tay
+        lda rad50table,y
+        .byt $2c            ; BIT abs instruction
+rad50period
+        lda #$2e            ; '.'
+        .byt $2c            ; BIT abs instruction
 rad50space
-rad50alpha
+        lda #$20            ; ' '
+rad50alphanum
+        ldy msg+8
+        sta (n+2),y         ; ship it
 rad50eom
-        ldy msg+9
-        beq rad50process01          ; end of message
-        ldy #0
-        sta tos
-        iny
-        lda (n),y
-        sta tos+1
 rad50process01
         jmp next
+rad50table
 
 ;--------------------------------------------------------------
 #if 0
