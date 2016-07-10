@@ -383,8 +383,8 @@ Perform a divide by 40 and a modulo 40, useful for screen positioning and
 [[Radix50|http://en.wikipedia.org/wiki/DEC_Radix-50]]
 #endif
 xlmod40
-        jsr slmod40
-        jmp next
+    jsr slmod40
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -397,22 +397,22 @@ Perform a divide by 40 and a modulo 40, useful for screen positioning and
 [[Radix50|http://en.wikipedia.org/wiki/DEC_Radix-50]]
 #endif
 slmod40
-        jsr slip
-        lda #0
-        ldy #16
+    jsr slip
+    lda #0
+    ldy #16
 slmod40b
-        cmp #20
-        bcc slmod40c
-        sbc #20
+    cmp #20
+    bcc slmod40c
+    sbc #20
 slmod40c
-        rol tos
-        rol tos+1
-        rol
-        dey
-        bne slmod40b
-        sta stackl,x
-        sty stackh,x
-        rts
+    rol tos
+    rol tos+1
+    rol
+    dey
+    bne slmod40b
+    sta stackl,x
+    sty stackh,x
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -422,25 +422,25 @@ tags=math
 Fast integer unsigned TOS multiply by 40, no overflow checking
 #endif
 fortytimes
-        lda tos+1
-        pha
-        lda tos
-        asl
-        rol tos+1
-        asl
-        rol tos+1
-        adc tos
-        sta tos
-        pla
-        adc tos+1
-        asl tos
-        rol
-        asl tos
-        rol
-        asl tos
-        rol
-        sta tos+1
-        jmp next
+    lda tos+1
+    pha
+    lda tos
+    asl
+    rol tos+1
+    asl
+    rol tos+1
+    adc tos
+    sta tos
+    pla
+    adc tos+1
+    asl tos
+    rol
+    asl tos
+    rol
+    asl tos
+    rol
+    sta tos+1
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -460,7 +460,7 @@ msg
     .word 0                 ; to
     .word 0                 ; from
     .word 0                 ; counters
-    .byt 0,$aa,$bb,$cc        ; chars
+    .byt 0,$aa,$bb,$cc      ; chars
 
 ;--------------------------------------------------------------
 #if 0
@@ -471,67 +471,101 @@ tags=math
 returns: Y=count
 #endif
 rad50char
-        ldy msg+9               ; count remaining in this triplet
-        bne rad50fill03
-        ldy msg+7               ; triplet is empty, get next word
-        lda (n),y
-        sta tos
-        iny
-        lda (n),y
-        sta tos+1
-        iny
-        sty msg+7
-        jsr slmod40             ; chop
-        sta msg+12
-        jsr slmod40             ; chop ha-daa!
-        sta msg+11
-        lda tos
-        sta msg+10              ; put three remainders in msg[10..12]
-        inx
-        inx
-        ldy #3
-        sty msg+9               ; reset triplet counter to 3
+    ldy msg+9               ; count remaining in this triplet
+    bne rad50fill03
+    ldy msg+7               ; triplet is empty, get next word
+    lda (n),y
+    sta tos
+    iny
+    lda (n),y
+    sta tos+1
+    iny
+    sty msg+7
+    jsr slmod40             ; chop
+    sta msg+10
+    jsr slmod40             ; chop ha-daa!
+    sta msg+11
+    lda tos
+    sta msg+12              ; put three remainders in msg[10..12]
+    inx
+    inx
+    ldy #3
+    sty msg+9               ; reset triplet counter to 3
 rad50fill03
-        dec msg+9
-        lda msg+9,y
-        rts
+    dec msg+9
+    lda msg+9,y
+    rts
 
 ;--------------------------------------------------------------
 #if 0
 name=RAD50PROCESS
-stack=( )
+stack=( from to -- len )
 tags=math
 #endif
 rad50process
-        ldy #4
-        jsr locals
-        jsr rad50char
-        beq rad50eom            ; test EOM
-        cmp #27                 ; test alpha, space
-        beq rad50space
-        bcs rad50alphanum
-        ;clc
-        adc #$14                ; sets 0-9 range
-        cmp #$3a
-        beq rad50period
-        bcs rad50alphanum
-        ; we need one from the second alphabet
-        jsr rad50char
-        tay
-        lda rad50table,y
-        .byt $2c            ; BIT abs instruction
-rad50period
-        lda #$2e            ; '.'
-        .byt $2c            ; BIT abs instruction
-rad50space
-        lda #$20            ; ' '
-rad50alphanum
-        ldy msg+8
-        sta (n+2),y         ; ship it
-rad50eom
+    ldy #4
+    jsr locals
 rad50process01
-        jmp next
+    jsr rad50char
+    beq rad50altchar        ; space
+    cmp #27                 ; alpha?
+    beq rad50altchar        ; comma
+    bcc rad50alphanum       ; 1..26
+    ;sec
+    adc #19                 ; sets 0-9 range 28..37 --> 48..57
+    cmp #57                 ; numeric?
+    bcc rad50alphanum       ; number
+    lsr                     ; is it 38 or 39 then?
+    bcc rad50altchar        ; period = 29
+
+    jsr rad50char           ; 0..31 are characters
+    cmp #(rad50actions-rad50table)
+    bcc rad50altchar
+    asl
+    tay
+    lda rad50actions-63,y
+    pha
+    lda rad50actions-64,y
+    pha
+    rts                     ; jump to command
+
+rad50altchar
+    tay
+    lda rad50table,y        ; alt character set
+    .byt $2c                ; BIT abs instruction
+rad50period
+    lda #$2e                ; '.'
+rad50alphanum
+    ldy msg+8
+    inc msg+8
+    sta (n+2),y             ; ship it
+    bpl rad50process01
+rad50eom
+    tay
+    lda msg+8               ; return length
+    jmp put
 rad50table
+    .byt $20,$00, $1b,$1c,$1d,$1e,$1f, $21      ;" @[\]^_!
+    .byt $22,$23,$24,$25,$26,$27,$28,$29        ;""#$%&'()
+    .byt $2a,$2b, $2d, $2f, $3a,$3b,$3c,$3d     ;"*+-/:;<=
+    .byt $3e,$3f ,$51,$2c,$57,$2e,$41,$53       ;">?Q,W.AS
+    .byt $5a,$58                                ;"ZX
+rad50actions
+    .word rad50endline
+    .word rad50togglespeaker
+    .word rad50endbubble
+    .word rad50endscene
+
+rad50endbubble
+    lda #25
+rad50togglespeaker
+    lda #26
+rad50endthought
+    lda #27
+rad50endline
+    lda #28
+rad50endscene
+    lda #29
 
 ;--------------------------------------------------------------
 #if 0
@@ -539,6 +573,10 @@ name=RAD50DECODE
 stack=( from to -- size )
 tags=math
 [[Radix50|http://en.wikipedia.org/wiki/DEC_Radix-50]]
+
+hello, world!
+32d4 4d7f 6e8f 609c 1f1e 0000
+
 #endif
 #include "align.i65"
 _rad50decode
