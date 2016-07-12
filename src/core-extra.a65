@@ -327,7 +327,8 @@ tags=events
 generate a random unsigned byte less than `max`
 
 ```
-: rndmax   ( addr size -- )
+: rndmax   ( max -- )
+    dup 0= ?exit
     1- dup randmask
     begin
         randu
@@ -341,6 +342,12 @@ generate a random unsigned byte less than `max`
 #include "align.i65"
 _rndmax
     jsr enter
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word _qexit
 #include "page.i65"
     .word oneminus
 #include "page.i65"
@@ -457,10 +464,22 @@ tags=math
 #endif
 msg
     jsr docreate
+msgtarg
     .word 0                 ; to
+msgsrc
     .word 0                 ; from
-    .word 0                 ; counters
+msgtargptr
+    .byt 0
+msgsrcptr
+    .byt 0
+msgchars
     .byt 0,$aa,$bb,$cc      ; chars
+msgspeaker
+    .byt 0                  ; whom is speaking? (0=player)
+msgmaxwidth
+    .byt 0
+msgheight
+    .byt 0
 
 ;--------------------------------------------------------------
 #if 0
@@ -471,29 +490,29 @@ tags=math
 returns: Y=count
 #endif
 rad50char
-    ldy msg+9               ; count remaining in this triplet
+    ldy msgchars            ; count remaining in this triplet
     bne rad50fill03
-    ldy msg+7               ; triplet is empty, get next word
+    ldy msgsrcptr           ; triplet is empty, get next word
     lda (n),y
     sta tos
     iny
     lda (n),y
     sta tos+1
     iny
-    sty msg+7
+    sty msgsrcptr
     jsr slmod40             ; chop
-    sta msg+10
+    sta msgchars+1
     jsr slmod40             ; chop ha-daa!
-    sta msg+11
+    sta msgchars+2
     lda tos
-    sta msg+12              ; put three remainders in msg[10..12]
+    sta msgchars+3          ; put three remainders in msg[10..12]
     inx
     inx
     ldy #3
-    sty msg+9               ; reset triplet counter to 3
+    sty msgchars            ; reset triplet counter to 3
 rad50fill03
-    dec msg+9
-    lda msg+9,y
+    dec msgchars
+    lda msgchars,y
     rts
 
 ;--------------------------------------------------------------
@@ -507,62 +526,86 @@ rad50process
     jsr locals
 rad50process01
     jsr rad50char
-    beq rad50altchar        ; space
+    beq rad50altchar        ; space = 0
     cmp #27                 ; alpha?
-    beq rad50altchar        ; comma
-    bcc rad50alphanum       ; 1..26
+    beq rad50altpunct       ; comma = 27
+    bcc rad50alphanum       ; a-z = 1..26
     ;sec
-    adc #19                 ; sets 0-9 range 28..37 --> 48..57
-    cmp #57                 ; numeric?
+    adc #19                 ; 0-9 = 28..37 --> 48..57
+    cmp #58                 ; numeric?
     bcc rad50alphanum       ; number
-    lsr                     ; is it 38 or 39 then?
-    bcc rad50altchar        ; period = 29
+    lsr
+    bcc rad50altpunct       ; period = 29
 
-    jsr rad50char           ; 0..31 are characters
+    jsr rad50char           ; from second alphabet, or action
     cmp #(rad50actions-rad50table)
     bcc rad50altchar
     asl
+    ;clc
     tay
-    lda rad50actions-63,y
+    lda rad50actions-59,y
     pha
-    lda rad50actions-64,y
+    lda rad50actions-60,y
     pha
     rts                     ; jump to command
 
+rad50altpunct
+    sbc #26
 rad50altchar
     tay
     lda rad50table,y        ; alt character set
 rad50alphanum
-    ldy msg+8
-    inc msg+8
+    ldy msgtargptr
+    inc msgtargptr
     sta (n+2),y             ; ship it
-    bpl rad50process01
-rad50eom
-    tay
-    lda msg+8               ; return length
+    bpl rad50process01      ; bra
+rad50exit
+    ldy #0
+    lda msgtargptr          ; return length
     jmp put
 rad50table
-    .byt $20,$00, $1b,$1c,$1d,$1e,$1f, $21      ;" @[\]^_!
-    .byt $22,$23,$24,$25,$26,$27,$28,$29        ;""#$%&'()
-    .byt $2a,$2b, $2d, $2f, $3a,$3b,$3c,$3d     ;"*+-/:;<=
-    .byt $3e,$3f ,$51,$2c,$57,$2e,$41,$53       ;">?Q,W.AS
-    .byt $5a,$58                                ;"ZX
+    .byt $20,$2c,$2e,$21, $22,$23,$24,$25       ;" ,.!"#$%
+    .byt $26,$27,$28,$29, $2a,$2b,$2d,$2f       ;"&'()*+-/
+    .byt $3a,$3b,$3c,$3d, $3e,$3f,$40,$1b       ;":;<=>?@[
+    .byt $1c,$1d,$1e,$1f, $60,$7f               ;"\]^_|~
+
 rad50actions
-    .word rad50endline
-    .word rad50togglespeaker
-    .word rad50endbubble
-    .word rad50endscene
+    .word rad50endline-1                        ;30
+    .word rad50togglespeaker-1                  ;31
+    .word rad50endbubble-1                      ;32
+    .word rad50endscene-1                       ;33
 
 rad50endbubble
-    lda #25
+    jmp rad50endbubble
 rad50togglespeaker
-    lda #26
+    lda #$12
+    lsr msgspeaker
+    bcs rad50togglespeaker01
+    lda #$92
+    inc msgspeaker
+rad50togglespeaker01
+    jsr $ffd2
+    jmp rad50process01
+
 rad50endthought
-    lda #27
+    jmp rad50endthought
+
 rad50endline
-    lda #28
+    lda msgheight
+    beq rad50endline01
+    lda #0
+    sta msgtargptr
+    lda n+2
+    adc #40
+    sta n+2
+    bcc rad50endline01
+    inc n+3
+rad50endline01
+    inc msgheight
+    jmp rad50process01
+
 rad50endscene
-    lda #29
+    jmp rad50exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -600,3 +643,69 @@ _rad50decode
         .word rad50process
 #include "page.i65"
         .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=GAME
+stack=( -- )
+tags=mmm
+bubble position
+the lesser of 38-w, x-1
+the larger of 0, x-w
+
+
+
+#endif
+#include "align.i65"
+_game
+        jsr enter
+#include "page.i65"
+game01
+        .word _pause
+#include "page.i65"
+        .word _pause
+#include "page.i65"
+        .word zero
+#include "page.i65"
+        .word _block
+#include "page.i65"
+        .word cas2buf
+#include "page.i65"
+        .word duptor
+#include "page.i65"
+        .word _rad50decode
+#include "page.i65"
+game02
+        .word msg
+#include "page.i65"
+        .word nine
+#include "page.i65"
+        .word plus
+#include "page.i65"
+        .word cfetch
+        .word plus
+#include "page.i65"
+        .word forty
+#include "page.i65"
+        .word over
+#include "page.i65"
+        .word minus
+#include "page.i65"
+        .word twominus
+#include "page.i65"
+        .word qdup
+#include "page.i65"
+        .word qbranch
+        .byt <(game02-*+1)
+#include "page.i65"
+        .word _rndmax
+#include "page.i65"
+game03
+        .word rfrom
+#include "page.i65"
+        .word plus
+#include "page.i65"
+        .word vidram
+#include "page.i65"
+        .word exit
+
