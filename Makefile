@@ -13,7 +13,7 @@ clean:
 	rm -rf ./tmp/
 	mkdir ./tmp/
 	cp -v ../mmm/assets/loremcommie.txt ./tmp/
-	cd ../mmm && ruby squeeze.rb
+	cd ../mmm && ${RUBY} squeeze.rb
 
 launch: clean pettil
 	xpet -verbose -1 tapes/tapeio.tap -warp -moncommand ./tmp/pettil.mon ./tmp/pettil.obj &
