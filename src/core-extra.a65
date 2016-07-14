@@ -480,12 +480,15 @@ msgmaxwidth
     .byt 0
 msgheight
     .byt 0
+msgprocessing
+    .byt 0                  ; flag is set while processing script
+msgend
 
 ;--------------------------------------------------------------
 #if 0
-name=RAD50FILL
+name=RAD50CHAR
 stack=( )
-tags=math
+tags=math,nosymbol
 
 returns: Y=count
 #endif
@@ -518,10 +521,32 @@ rad50fill03
 ;--------------------------------------------------------------
 #if 0
 name=RAD50PROCESS
-stack=( from to -- len )
+stack=( from to msg -- {? addr}|{width height false} )
 tags=math
+`from` is the start of a RAD50-encoded `script`
+`to` is the target address where the `script` is unpacked
+in `segments` (delimited by `actions`)
+`addr` is the address a Forth word to execute in between
+`segments` of a `script`, with an additional (arbitrary)
+set of parameters.  [[RAD50DECODE]] makes round-trips
+back here until it reaches the endscene action, returning 0 as `addr`.
+
+We violate some Forth rules here, returning a variable number
+of arguments, invoking words from the stack, calling
+this word inside a loop and using a flag `msgprocessing` to
+determine how many stack arguments it consumes... the crimes
+are endless.
+
+|Action|Value|Description|h
+|^endbubble|^33|^scroll the screen up `height`+2 lines<br/>copy text from buffer to screen<br/>wrap the text with a bubble<br/>wait for user to press spacebar|
+|^endthought|^32|^turn on `RVS` bit<br/>erase thought area<br/>copy text to thought area|
+|^endscene|^31|^same as endbubble,<br/>but displays next thought<br/>instead of waiting for spacebar press|
+|^togglespeaker|^30|^|
+|^append|^29|^|
 #endif
 rad50process
+    lsr msgprocessing
+    bcs rad50process01
     ldy #6
     jsr locals
 rad50process01
@@ -614,9 +639,16 @@ stack=( from to -- size )
 tags=math
 [[Radix50|http://en.wikipedia.org/wiki/DEC_Radix-50]]
 
-hello, world!
-32d4 4d7f 6e8f 609c 1f1e 0000
-
+```
+: rad50decode   ( from to -- width height 0 )
+    msg dup 14 erase  3dup 2!
+    begin
+        rad50process
+        ?dup
+    while
+        execute
+    repeat ;
+```
 #endif
 #include "align.i65"
 _rad50decode
@@ -624,22 +656,18 @@ _rad50decode
 #include "page.i65"
         .word msg
 #include "page.i65"
+        .word dup
+#include "page.i65"
+        .word clit
+        .byt (msgend-msg)
+#include "pad.i65"
+        .word _erase
+#include "page.i65"
         .word _threedup
 #include "page.i65"
         .word twostore
 #include "page.i65"
-        .word dup
-#include "page.i65"
-        .word four
-#include "page.i65"
-        .word plus
-#include "page.i65"
-        .word three
-#include "page.i65"
-        .word _erase
-#include "page.i65"
-        .word msg
-#include "page.i65"
+rad50decode01
         .word xyzzy
 #include "page.i65"
         .word rad50process
