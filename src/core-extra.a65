@@ -447,7 +447,80 @@ fortytimes
     asl tos
     rol
     sta tos+1
+fortytimes01
     jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=ARGS
+stack=( ? n -- n )
+tags=math
+Peels n arguments off the stack and stores them in the `N` area
+#endif
+args
+    lda tos
+    asl
+    tay
+    jsr locals
+    beq fortytimes01                ; next
+
+;--------------------------------------------------------------
+#if 0
+name=SCROLLUP
+stack=( lines -- )
+tags=mmm
+Scroll the speech bubble area up some number of `lines`
+
+vidram+lines*40 vidram (15-lines)*40 cmove
+vidram+(15-lines)*40 (lines+1)*40 blank
+
+: lines   ( lines -- )
+    40* dup>r
+    vidram + vidram [ 40 15 * ] literal r@ -
+    2dup + >r cmove
+    r> r> 40 + blank ;
+
+#endif
+#include "align.i65"
+_scrollup
+    jsr enter
+#include "page.i65"
+    .word fortytimes
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word plit
+    .word 40*15
+#include "pad.i65"
+    .word rfetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word forty
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word _blank
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -477,11 +550,9 @@ msgchars
 msgspeaker
     .byt 0                  ; whom is speaking? (0=player)
 msgmaxwidth
-    .byt 0
+    .byt 0                  ; longest line 1..38
 msgheight
-    .byt 0
-msgprocessing
-    .byt 0                  ; flag is set while processing script
+    .byt 0                  ; number of lines 1..3
 msgend
 
 ;--------------------------------------------------------------
@@ -490,7 +561,10 @@ name=RAD50CHAR
 stack=( )
 tags=math,nosymbol
 
-returns: Y=count
+returns:
+    A = current rad50 char
+    Y = count
+    N = clear
 #endif
 rad50char
     ldy msgchars            ; count remaining in this triplet
@@ -520,23 +594,167 @@ rad50fill03
 
 ;--------------------------------------------------------------
 #if 0
+name=RAD50ENDLINE
+stack=( -- )
+tags=math
+
+#endif
+rad50endline
+    lda msgtargptr
+    sec
+rad50process01
+    sbc #40
+    bcs rad50process01
+    adc #40                 ; width % 40
+    cmp msgmaxwidth
+    bcc rad50process02
+    sta msgmaxwidth
+    clc
+rad50process02
+    lda msgheight
+    beq rad50endline01
+    lda msgtargptr
+    adc #40
+    sta msgtargptr
+rad50endline01
+    inc msgheight
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=RAD50TOGGLESPEAKER
+stack=( from to -- size )
+tags=math
+
+#endif
+rad50togglespeaker
+    lda #$12
+    lsr msgspeaker
+    bcs rad50togglespeaker01
+    lda #$92
+    inc msgspeaker
+rad50togglespeaker01
+    jsr $ffd2
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=(RAD50ENDBUBBLE)
+stack=( -- speaker width height )
+tags=math
+
+#endif
+prad50endbubble
+    brk
+    .byt set | ACC
+    .word (msgspeaker-msgtarg)
+    .byt add | N2
+    .byt st | N3
+    .byt ldi | N3               ; msg.speaker
+    .byt st | TOS
+    .byt ldi | N3               ; msg.width
+    .byt push
+    .byt ldi | N3               ; msg.height
+    .byt push
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=RAD50ENDBUBBLE
+stack=( )
+tags=math
+
+* scroll the screen up
+* horizontally locate the bubble
+* copy the text from the buffer to video
+* draw the bubble
+* connect the speaker
+
+```
+: rad50endbubble ( x -- 0 )
+    rad50endline  (rad50endbubble)
+    ( speaker width height )
+    dup 2+ scrollup
+    cas2buf
+```
+#endif
+#include "align.i65"
+_rad50endbubble
+    jsr enter
+#include "page.i65"
+    .word rad50endline
+#include "page.i65"
+    .word prad50endbubble       ;
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fortytimes
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word _scrollup
+#include "page.i65"
+    .word cas2buf
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word plit
+    .word 40*14
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneplus           ; horizontally locate here
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word false
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=RAD50ENDSCENE
+stack=( )
+tags=math
+
+#endif
+rad50endscene
+    jmp rad50exit
+
+;--------------------------------------------------------------
+#if 0
+name=RAD50ENDTHOUGHT
+stack=( )
+tags=math
+
+#endif
+rad50endthought
+    jmp rad50endthought
+
+;--------------------------------------------------------------
+#if 0
 name=RAD50PROCESS
-stack=( from to msg -- {? addr}|{width height false} )
+stack=( from to msg -- flag )
 tags=math
 
 * `from` is the start of a RAD50-encoded `script`
 * `to` is the target address to where the `script` is unpacked in `segments`, which are delimited by `actions` ending in the `endscene` action
-* `addr` is the address a Forth word that will `EXECUTE` after this `segment` of a `script`, with its own (arbitrary) set of parameters, prepared by the `action` handler.
+* `msg` is a pointer to a RAD50-encoded message
 
-After unpacking a segment and executing that segment's action handler, [[RAD50DECODE]] loops back to RAD50PROCESS but the beginning (pulling parameters from the stack) is skipped.  This is because the parameters are already in place and it would be a waste of time and energy, or because the `action` handler and `script` would prefer they not be touched.
-
-Following an `endscene` action, the `addr` returned is 0, with the `width` (longest line) and `height` (in lines) of the unpacked message below it on the stack.
-
-We violate some Forth rules here, returning a variable number
-of arguments, invoking words from the stack, calling
-a word inside a loop and using a flag `msgprocessing` to
-determine how many stack arguments it consumes... the crimes
-are endless.
+This word is executed iterative by [[RAD50DECODE]] until it
+returns a true flag once the script is complete
 
 |Action|Value|Description|h
 |^endbubble|^33|^scroll the screen up `height`+2 lines<br/>copy text from buffer to screen<br/>wrap the text with a bubble<br/>wait for user to press spacebar|
@@ -546,12 +764,6 @@ are endless.
 |^append|^29|^|
 #endif
 rad50process
-    lsr msgprocessing
-    bcs rad50process01
-    ldy #6
-    jsr locals
-rad50process01
-    inc msgprocessing       ; flag on by default, endscript clears it
     jsr rad50char
     beq rad50altchar        ; space = 0
     cmp #27                 ; alpha?
@@ -567,14 +779,14 @@ rad50process01
     jsr rad50char           ; from second alphabet, or action
     cmp #(rad50actions-rad50table)
     bcc rad50altchar
+testthis
     asl
-    ;clc
     tay
     lda rad50actions-59,y
     pha
     lda rad50actions-60,y
     pha
-    rts                     ; jump to command
+    rts                     ; EXECUTE
 
 rad50altpunct
     sbc #26
@@ -585,7 +797,7 @@ rad50alphanum
     ldy msgtargptr
     inc msgtargptr
     sta (n+2),y             ; ship it
-    bpl rad50process01      ; bra
+    bpl rad50process        ; bra
 rad50exit
     ldy #0
     lda msgtargptr          ; return length
@@ -597,53 +809,22 @@ rad50table
     .byt $1c,$1d,$1e,$1f, $60,$5e               ;"\]^_|~
 
 rad50actions
-    .word rad50endline-1                        ;30
-    .word rad50togglespeaker-1                  ;31
-    .word rad50endbubble-1                      ;32
-    .word rad50endscene-1                       ;33
-
-rad50endbubble
-    jmp rad50endbubble
-rad50togglespeaker
-    lda #$12
-    lsr msgspeaker
-    bcs rad50togglespeaker01
-    lda #$92
-    inc msgspeaker
-rad50togglespeaker01
-    jsr $ffd2
-    jmp rad50process01
-
-rad50endthought
-    jmp rad50endthought
-
-rad50endline
-    lda msgheight
-    beq rad50endline01
-    lda #0
-    sta msgtargptr
-    lda n+2
-    adc #40
-    sta n+2
-    bcc rad50endline01
-    inc n+3
-rad50endline01
-    inc msgheight
-    jmp rad50process01
-
-rad50endscene
-    jmp rad50exit
+    .word rad50endscene-1                       ;30
+    .word rad50endline-1                        ;31
+    .word _rad50endbubble-1                     ;32
+    .word rad50togglespeaker-1                  ;33
+    .word rad50endthought-1                     ;34
 
 ;--------------------------------------------------------------
 #if 0
 name=RAD50DECODE
-stack=( from to -- size )
-tags=math
+stack=( from to -- from to howmany )
+tags=mmm
 [[Radix50|http://en.wikipedia.org/wiki/DEC_Radix-50]]
 
 ```
 : rad50decode   ( from to -- width height 0 )
-    msg dup 14 erase  3dup 2!
+    msg dup 14 erase  3dup 2!  3 args
     begin
         rad50process
         ?dup
@@ -651,30 +832,95 @@ tags=math
         execute
     repeat ;
 ```
+
+
+d;m 0;ii 33a;m 1a65 1a74;z
+
+
 #endif
 #include "align.i65"
 _rad50decode
-        jsr enter
+    jsr enter
 #include "page.i65"
-        .word msg
+    .word dup
 #include "page.i65"
-        .word dup
-#include "page.i65"
-        .word clit
-        .byt (msgend-msg)
+    .word clit
+    .byt 192
 #include "pad.i65"
-        .word _erase
+    .word _blank
 #include "page.i65"
-        .word _threedup
+    .word msg
 #include "page.i65"
-        .word twostore
+    .word dup
+#include "page.i65"
+    .word clit
+    .byt (msgend-msgtarg)
+#include "pad.i65"
+    .word _erase
+#include "page.i65"
+    .word _threedup
+#include "page.i65"
+    .word twostore
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word args
 #include "page.i65"
 rad50decode01
-        .word xyzzy
+    .word rad50process
 #include "page.i65"
-        .word rad50process
+    .word qbranch
+    .byt <(rad50decode01-*+1)
+#include "pad.i65"
+rad50decode02
+    .word xyzzy
 #include "page.i65"
-        .word exit
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SCRIPT
+stack=( n -- )
+tags=mmm
+rad50decode and play back script #`n`
+
+```
+: script   ( n -- )
+    2* 0 block tuck dup @ + + @ +
+    cas2buf rad50decode cmove ;
+```
+#endif
+#include "align.i65"
+_script
+    jsr enter
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word _block
+#include "page.i65"
+    .word tuck
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word cas2buf
+#include "page.i65"
+    .word _rad50decode
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -690,54 +936,54 @@ the larger of 0, x-w
 #endif
 #include "align.i65"
 _game
-        jsr enter
+    jsr enter
 #include "page.i65"
 game01
-        .word _pause
+    .word _pause
 #include "page.i65"
-        .word _pause
+    .word _pause
 #include "page.i65"
-        .word zero
+    .word zero
 #include "page.i65"
-        .word _block
+    .word _block
 #include "page.i65"
-        .word cas2buf
+    .word cas2buf
 #include "page.i65"
-        .word duptor
+    .word duptor
 #include "page.i65"
-        .word _rad50decode
+    .word _rad50decode
 #include "page.i65"
 game02
-        .word msg
+    .word msg
 #include "page.i65"
-        .word nine
+    .word nine
 #include "page.i65"
-        .word plus
+    .word plus
 #include "page.i65"
-        .word cfetch
-        .word plus
+    .word cfetch
+    .word plus
 #include "page.i65"
-        .word forty
+    .word forty
 #include "page.i65"
-        .word over
+    .word over
 #include "page.i65"
-        .word minus
+    .word minus
 #include "page.i65"
-        .word twominus
+    .word twominus
 #include "page.i65"
-        .word qdup
+    .word qdup
 #include "page.i65"
-        .word qbranch
-        .byt <(game02-*+1)
-#include "page.i65"
-        .word _rndmax
+    .word qbranch
+    .byt <(game02-*+1)
+#include "pad.i65"
+    .word _rndmax
 #include "page.i65"
 game03
-        .word rfrom
+    .word rfrom
 #include "page.i65"
-        .word plus
+    .word plus
 #include "page.i65"
-        .word vidram
+    .word vidram
 #include "page.i65"
-        .word exit
+    .word exit
 
