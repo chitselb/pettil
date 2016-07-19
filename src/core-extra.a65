@@ -1018,6 +1018,69 @@ rad50actions
 
 ;--------------------------------------------------------------
 #if 0
+name=?BUTTON
+stack=( -- keyval|false )
+tags=mmm
+Detects a leading edge transition of either spacebar or return
+key and leaves either key value on the stack, otherwise [[FALSE]]
+
+LSTX contains the ASCII value of the current keypress
+or 255 if no key is pressed
+
+```
+qbutton
+    ldy #0
+    lda qbuttonlatch
+    bne qbutton03
+    lda 151
+    cmp #$ff
+    beq qbutton02
+    cmp #' '
+    beq qbutton01
+    cmp #$0d
+    bne qbutton02
+qbutton02
+    inc qbuttonlatch
+    inc qbuttonlatch
+qbutton01
+    lsr qbuttonlatch
+    tya
+    .byt $2c
+qbutton03
+    jmp pushya
+qbuttonlatch
+    .byt 0
+```
+#endif
+qbutton
+    lda LSTX        ; $97 -- Current Key Pressed 255 = No Key
+    ldy latch
+    beq testkeys
+    ldy #0
+testthis
+    cmp latch
+    bne unlatch
+testkeys
+    cmp #13
+    beq latchit
+    cmp #32
+    bne unlatch
+latchit
+    eor latch
+    beq fail
+    .byt $24        ; BIT zp
+unlatch
+    tya
+    sta latch
+    .byt $24        ; BIT zp
+fail
+    tya
+    jmp pushya
+latch
+    .byt $0
+
+;--------------------------------------------------------------
+#if 0
 name=R50SEGMENT
 stack=( linecount\speaker -- )
 tags=mmm
@@ -1041,9 +1104,9 @@ r50segment
     beq r50segment01
     ldy #2
 r50segment01
-    lda r50segtable+1,y
+;    lda r50segtable+1,y
     pha
-    lda r50segtable,y
+;    lda r50segtable,y
     pha
     rts
 r50segtable
@@ -1057,20 +1120,37 @@ tags=mmm
 [[Radix50|http://en.wikipedia.org/wiki/DEC_Radix-50]]
 
 ```
-: r50script   ( from to -- width height 0 )
-    dup 192 blank
+: script   ( n -- )
+    2* 0 block tuck dup @ + + @ +
+    cas2buf r50script ;
+
+\ address of message #n
+: >msg   ( n -- addr )
+    2* 0 block tuck dup @ + + @ + ;
+
+: msg.init   ( src targ -- msg )
+    msg dup (msgend-msgtarg) erase
+    3dup 2!  3 args ;
+
+: script   ( n -- )
+    >msg msg.init
+
+msg dup (msgend-msgtarg) erase
+
+: r50script   ( n -- )
+    >script cas2buf msg.init
     msg dup (msgend-msgtarg) erase
     3dup 2!  3 args
     begin
+        msg.targ 192 blank
         r50proc
     while
 
     msg dup 14 erase  3dup 2!  3 args
     begin
-        r50proc  ?dup
-    while
-        execute
-    repeat ;
+        r50proc
+        ?dup ?: msg.bubble msg.bar
+    until ;
 ```
 
 
@@ -1261,6 +1341,8 @@ _script
 #include "page.i65"
     .word cas2buf
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
     .word _r50script
 #include "page.i65"
     .word exit
@@ -1374,45 +1456,6 @@ game03
     .word vidram
 #include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?BUTTON
-stack=( -- keyval|false )
-tags=mmm
-Detects a leading edge transition of either spacebar or return
-key and leaves either key value on the stack, otherwise [[FALSE]]
-
-LSTX contains the ASCII value of the current keypress
-or 255 if no key is pressed
-
-#endif
-qbutton
-    lda LSTX        ; $97 -- Current Key Pressed 255 = No Key
-    ldy latch
-    beq testkeys
-    ldy #0
-testthis
-    cmp latch
-    bne unlatch
-testkeys
-    cmp #13
-    beq latchit
-    cmp #32
-    bne unlatch
-latchit
-    eor latch
-    beq fail
-    .byt $24        ; BIT zp
-unlatch
-    tya
-    sta latch
-    .byt $24        ; BIT zp
-fail
-    tya
-    jmp pushya
-latch
-    .byt $0
 
 ;--------------------------------------------------------------
 #if 0
