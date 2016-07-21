@@ -603,28 +603,26 @@ tags=math
 #endif
 msg
     jsr docreate
-msgtarg
-    .word 0                 ; to
 msgsrc
     .word 0                 ; from
-msgtargptr
-    .byt 0
 msgsrcptr
     .byt 0
-msgchars
-    .byt 0,$aa,$bb,$cc      ; chars
-msgspeaker
-    .byt 0                  ; whom is speaking? (0=player)
-msgmaxwidth
-    .byt 0                  ; longest line 1..38
+msgtargptr
+    .byt 0
 msgwidth
     .byt 0                  ; this line 1..38
+msgmaxwidth
+    .byt 0                  ; longest line 1..38
 msgcharcount
     .byt 0                  ; output chars remaining this line
 msgheight
     .byt 0                  ; number of lines 1..3
 msglinecount
     .byt 0                  ; lines remaining to process
+msgchars
+    .byt 0,$aa,$bb,$cc      ; chars
+msgspeaker
+    .byt 0                  ; whom is speaking? (0=player)
 msgend
 
 ;--------------------------------------------------------------
@@ -727,7 +725,7 @@ tags=math
 prad50endbubble
     brk
     .byt set | ACC
-    .word (msgend-msgtarg)
+    .word (msgend-msgsrc)
     .byt add | N2
     .byt st | N3
     .byt pop | N3               ; msg.height
@@ -1026,34 +1024,8 @@ key and leaves either key value on the stack, otherwise [[FALSE]]
 
 LSTX contains the ASCII value of the current keypress
 or 255 if no key is pressed
-
-```
-qbutton
-    ldy #0
-    lda qbuttonlatch
-    bne qbutton03
-    lda 151
-    cmp #$ff
-    beq qbutton02
-    cmp #' '
-    beq qbutton01
-    cmp #$0d
-    bne qbutton02
-qbutton02
-    inc qbuttonlatch
-    inc qbuttonlatch
-qbutton01
-    lsr qbuttonlatch
-    tya
-    .byt $2c
-qbutton03
-    jmp pushya
-qbuttonlatch
-    .byt 0
-```
 #endif
 qbutton
-    ldy #0
     lda LSTX   ;get current button value, 255=none
     cmp qbutton03   ;changed?
     beq qbutton01
@@ -1063,9 +1035,9 @@ qbutton
     cmp #32
     beq qbutton02
 qbutton01
-    tya   ;return false
+    lda #0   ;return false
 qbutton02
-    jmp pushya
+    jmp push0a
 
 qbutton03
     .byt 0
@@ -1165,7 +1137,7 @@ _r50script
     .word dup
 #include "page.i65"
     .word clit
-    .byt (msgend-msgtarg)
+    .byt (msgend-msgsrc)
 #include "pad.i65"
     .word _erase
 #include "page.i65"
@@ -1232,7 +1204,7 @@ _rad50decode
     .word dup
 #include "page.i65"
     .word clit
-    .byt (msgend-msgtarg)
+    .byt (msgend-msgsrc)
 #include "pad.i65"
     .word _erase
 #include "page.i65"
@@ -1453,22 +1425,27 @@ game03
 name=UTTER
 stack=( -- flag )
 tags=mmm
-Utters the next speech bubble in a script, or puts a thought or
-words from the bartender on the bar.  `flag` is true when there is
-no more left in this script.
+Put text on the screen and return [[TRUE]] at end of script
 
-[[MSG]] must be set up before calling this!  A value <256 in
-[[MSG]] is the script number.  On first time call for a new
-script, this is transformed into the script's base address.
+* next speech bubble in a script
+* bartender
+* thought
+Uses the Lazy loading pattern.  Kick things off by storing
+the script number at [[MSG]]. On first invocation, `UTTER`
+will look up the address of the first message in that
+script, blank the [[CAS2BUF]] area, and zero other
+internal [[MSG]] variables.
 
 ```
 : utter   ( -- flag )
     \ initialization if new message
-    msg @ dup msb 0=
+    cas2buf msg @ dup msb 0=
     if
-        >msg
+        >msg  msg (msgend-msgsrc) erase
+        cas2buf 192 blank
     then
-    msg !
+    msg 2dup !   3 args
+
 
 
 ```
@@ -1476,6 +1453,8 @@ script, this is transformed into the script's base address.
 #include "align.i65"
 _utter
     jsr enter
+#include "page.i65"
+    .word cas2buf
 #include "page.i65"
     .word msg
 #include "page.i65"
@@ -1492,17 +1471,31 @@ _utter
 #include "pad.i65"
     .word _tomsg
 #include "page.i65"
+    .word msg
+#include "page.i65"
+    .word clit
+    .byt (msgend-msgsrc)
+#include "pad.i65"
+    .word _erase
+#include "page.i65"
+    .word cas2buf
+#include "page.i65"
+    .word clit
+    .byt 192
+#include "pad.i65"
+    .word _blank
+#include "page.i65"
 utter01
     .word msg
 #include "page.i65"
+    .word twodup
+#include "page.i65"
     .word store
-
 #include "page.i65"
-    .word oneplus
-    .word pquerycolon
-    .word
-    .word rnd
+    .word xyzzy
 #include "page.i65"
-    .word zeq
+    .word three
+#include "page.i65"
+    .word args
 #include "page.i65"
     .word exit
