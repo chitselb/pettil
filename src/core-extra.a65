@@ -447,7 +447,6 @@ fortytimes
     asl tos
     rol
     sta tos+1
-fortytimes01
     jmp next
 
 ;--------------------------------------------------------------
@@ -462,7 +461,7 @@ args
     asl
     tay
     jsr locals
-    beq fortytimes01                ; next
+    jmp drop
 
 ;--------------------------------------------------------------
 #if 0
@@ -627,6 +626,46 @@ msgend
 
 ;--------------------------------------------------------------
 #if 0
+name=MSG.BUBBLE
+stack=( )
+tags=mmm
+Scroll the speech bubble area up some number of `lines`
+
+vidram+lines*40 vidram (15-lines)*40 cmove
+vidram+(15-lines)*40 (lines+1)*40 blank
+
+: msg.bubble   ( )
+;
+
+#endif
+#include "align.i65"
+_msgbubble
+    jsr enter
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=MSG.BAR
+stack=( )
+tags=mmm
+Scroll the speech bubble area up some number of `lines`
+
+vidram+lines*40 vidram (15-lines)*40 cmove
+vidram+(15-lines)*40 (lines+1)*40 blank
+
+: msg.bar   ( )
+;
+
+#endif
+#include "align.i65"
+_msgbar
+    jsr enter
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=RAD50CHAR
 stack=( )
 tags=math,nosymbol
@@ -648,10 +687,10 @@ rad50char
     ldy msgchars            ; count remaining in this triplet
     bne rad50char03
     ldy msgsrcptr           ; triplet is empty, get next word
-    lda (n),y
+    lda (n+2),y
     sta tos
     iny
-    lda (n),y
+    lda (n+2),y
     sta tos+1
     iny
     sty msgsrcptr
@@ -799,28 +838,8 @@ _rad50endbubble
 
 ;--------------------------------------------------------------
 #if 0
-name=RAD50ENDSCENE
-stack=( )
-tags=math
-
-#endif
-rad50endscene
-    jmp rad50exit
-
-;--------------------------------------------------------------
-#if 0
-name=RAD50ENDTHOUGHT
-stack=( )
-tags=math
-
-#endif
-rad50endthought
-    jmp rad50endthought
-
-;--------------------------------------------------------------
-#if 0
 name=R50PROC
-stack=( from to msg -- flag )
+stack=( msg -- flag )
 tags=math
 
 * `from` is the start of a RAD50-encoded `script`
@@ -850,7 +869,9 @@ returns a true flag once the script is complete
 
 
 
-d;m 0;ii 33a;m 1ab0 1acf;n
+d;m 0;ii 33a 3ff;m 1ad0 1aef;n
+
+
 
 ```
     jsr rad50char           ; actor & lines
@@ -866,9 +887,6 @@ d;m 0;ii 33a;m 1ab0 1acf;n
     sta msgheight           ; for the bar, 1=thought, 2=bartender
     sta msglinecount
 ```
-
-
-
 #endif
 r50proc
     jsr rad50char           ; actor & lines
@@ -911,7 +929,7 @@ r50altchar
 r50alphanum
     ldy msgtargptr
     inc msgtargptr
-    sta (n+2),y             ; ship it
+    sta (n),y               ; ship it
     dec msgcharcount
     bne r50proc02
     dec msglinecount
@@ -937,82 +955,11 @@ r50table
     .byt $1c,$1d,$1e,$1f, $60,$5e               ;"\]^_|~
 
 r50actions
-    .word rad50endscene-1                       ;30
-    .word rad50endline-1                        ;31
-    .word _rad50endbubble-1                     ;32
-    .word rad50togglespeaker-1                  ;33
-    .word rad50endthought-1                     ;34
-
-;--------------------------------------------------------------
-#if 0
-name=RAD50PROCESS
-stack=( from to msg -- flag )
-tags=math
-
-* `from` is the start of a RAD50-encoded `script`
-* `to` is the target address to where the `script` is unpacked in `segments`, which are delimited by `actions` ending in the `endscene` action
-* `msg` is a pointer to a RAD50-encoded message
-
-This word is executed iterative by [[RAD50DECODE]] until it
-returns a true flag once the script is complete
-
-|Action|Value|Description|h
-|^endbubble|^33|^scroll the screen up `height`+2 lines<br/>copy text from buffer to screen<br/>wrap the text with a bubble<br/>wait for user to press spacebar|
-|^endthought|^32|^turn on `RVS` bit<br/>erase thought area<br/>copy text to thought area|
-|^endscene|^31|^same as endbubble,<br/>but displays next thought<br/>instead of waiting for spacebar press|
-|^togglespeaker|^30|^|
-|^append|^29|^|
-#endif
-rad50process
-    jsr rad50char
-    beq rad50altchar        ; space = 0
-    cmp #27                 ; alpha?
-    beq rad50altpunct       ; comma = 27
-    bcc rad50alphanum       ; a-z = 1..26
-    ;sec
-    adc #19                 ; 0-9 = 28..37 --> 48..57
-    cmp #58                 ; numeric?
-    bcc rad50alphanum       ; number
-    lsr
-    bcc rad50altpunct       ; period = 29
-
-    jsr rad50char           ; from second alphabet, or action
-    cmp #(rad50actions-rad50table)
-    bcc rad50altchar
-    asl
-    tay
-    lda rad50actions-59,y
-    pha
-    lda rad50actions-60,y
-    pha
-    rts                     ; EXECUTE
-
-rad50altpunct
-    sbc #26
-rad50altchar
-    tay
-    lda rad50table,y        ; alt character set
-rad50alphanum
-    ldy msgtargptr
-    inc msgtargptr
-    sta (n+2),y             ; ship it
-    bpl rad50process        ; bra
-rad50exit
-    ldy #0
-    lda msgtargptr          ; return length
-    jmp put
-rad50table
-    .byt $20,$2c,$2e,$21, $22,$23,$24,$25       ;" ,.!"#$%
-    .byt $26,$27,$28,$29, $2a,$2b,$2d,$2f       ;"&'()*+-/
-    .byt $3a,$3b,$3c,$3d, $3e,$3f,$40,$1b       ;":;<=>?@[
-    .byt $1c,$1d,$1e,$1f, $60,$5e               ;"\]^_|~
-
-rad50actions
-    .word rad50endscene-1                       ;30
-    .word rad50endline-1                        ;31
-    .word _rad50endbubble-1                     ;32
-    .word rad50togglespeaker-1                  ;33
-    .word rad50endthought-1                     ;34
+    .word r50actions-1                       ;30
+    .word r50actions-1                        ;31
+    .word r50actions-1                     ;32
+    .word r50actions-1                  ;33
+    .word r50actions-1                     ;34
 
 ;--------------------------------------------------------------
 #if 0
@@ -1167,81 +1114,23 @@ r50script02
 
 ;--------------------------------------------------------------
 #if 0
-name=RAD50DECODE
-stack=( from to -- from to howmany )
-tags=mmm
-[[Radix50|http://en.wikipedia.org/wiki/DEC_Radix-50]]
-
-```
-: rad50decode   ( from to -- width height 0 )
-    msg dup 14 erase  3dup 2!  3 args
-    begin
-        rad50process
-        ?dup
-    while
-        execute
-    repeat ;
-```
-
-
-d;m 0;ii 33a;m 1a65 1a74;z
-
-
-#endif
-#include "align.i65"
-_rad50decode
-    jsr enter
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word clit
-    .byt 192
-#include "pad.i65"
-    .word _blank
-#include "page.i65"
-    .word msg
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word clit
-    .byt (msgend-msgsrc)
-#include "pad.i65"
-    .word _erase
-#include "page.i65"
-    .word _threedup
-#include "page.i65"
-    .word twostore
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word args
-#include "page.i65"
-rad50decode01
-    .word rad50process
-#include "page.i65"
-    .word qbranch
-    .byt <(rad50decode01-*+1)
-#include "pad.i65"
-    .word xyzzy
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=>MSG
 stack=( n -- addr )
 tags=mmm
-Return the start address of script #`n`
+Return the start address of script #`n`.  Script numbers begin
+at 1.
 
 ```
 \ address of message #n
 : >msg   ( n -- addr )
-    2* 0 block tuck dup @ + + @ + ;
+    1- 2* 0 block tuck dup @ + + @ + ;
 ;```
 #endif
 #include "align.i65"
 _tomsg
     jsr enter
+#include "page.i65"
+    .word oneminus
 #include "page.i65"
     .word twostar
 #include "page.i65"
@@ -1312,51 +1201,6 @@ _script
 
 ;--------------------------------------------------------------
 #if 0
-name=SCRIPT2
-stack=( n -- )
-tags=mmm
-rad50decode and play back script #`n`
-
-```
-: script2   ( n -- )
-    2* 0 block tuck dup @ + + @ +
-    cas2buf rad50decode cmove ;
-```
-#endif
-#include "align.i65"
-_script2
-    jsr enter
-#include "page.i65"
-    .word twostar
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word _block
-#include "page.i65"
-    .word tuck
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word cas2buf
-#include "page.i65"
-    .word _rad50decode
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=GAME
 stack=( -- )
 tags=mmm
@@ -1371,52 +1215,37 @@ the larger of 0, x-w
 _game
     jsr enter
 #include "page.i65"
-game01
-    .word _pause
+    .word _rndmax
 #include "page.i65"
-    .word _pause
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=INHALE
+stack=( -- 'msg cas2buf msg x )
+tags=mmm
+Set up a few variables used by [[UTTER]] and its friends.
+Used prior to the `3 ARGS` when some intervening word has
+altered the `N` area needed by [[R50DECODE]]
+
+```
+: inhale   ( -- 'msg cas2buf msg x )
+    msg cas2buf over @ dup ;
+```
+#endif
+#include "align.i65"
+_inhale
+    jsr enter
 #include "page.i65"
-    .word zero
-#include "page.i65"
-    .word _block
+    .word msg
 #include "page.i65"
     .word cas2buf
 #include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word _rad50decode
-#include "page.i65"
-game02
-    .word msg
-#include "page.i65"
-    .word nine
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word cfetch
-    .word plus
-#include "page.i65"
-    .word forty
-#include "page.i65"
     .word over
 #include "page.i65"
-    .word minus
+    .word fetch
 #include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word qdup
-#include "page.i65"
-    .word qbranch
-    .byt <(game02-*+1)
-#include "pad.i65"
-    .word _rndmax
-#include "page.i65"
-game03
-    .word rfrom
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word vidram
+    .word dup
 #include "page.i65"
     .word exit
 
@@ -1433,39 +1262,44 @@ Put text on the screen and return [[TRUE]] at end of script
 Uses the Lazy loading pattern.  Kick things off by storing
 the script number at [[MSG]]. On first invocation, `UTTER`
 will look up the address of the first message in that
-script, blank the [[CAS2BUF]] area, and zero other
-internal [[MSG]] variables.
+script, blank the [[CAS2BUF]] area, and zero other internal
+[[MSG]] variables.
 
 ```
 : utter   ( -- flag )
-    \ initialization if new message
-    msg @
-    dup 0= ?exit
-    dup msb 0=
+    msg @ 0= ?dup ?exit         \ done?
+    inhale  msb 0=
     if
-        >msg
-        msg (msgend-msgsrc) erase
-        cas2buf 192 blank
+        >msg -rot
+        192 blank  dup (msgend-msgsrc) erase  !
+        inhale drop
     then
-    msg 2dup !
-    cas2buf tuck
-    3 args
-
-
-
+    third  3 args
+    r50proc  ?dup ?: msg.bubble msg.bar ;
 ```
+
+
+
+d;m 0;ii 33a 3ff;m 1ad0 1aef;z
+
+
+
 #endif
 #include "align.i65"
 _utter
     jsr enter
 #include "page.i65"
-    .word cas2buf
-#include "page.i65"
     .word msg
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word dup
+    .word zeq
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word _inhale
 #include "page.i65"
     .word msb
 #include "page.i65"
@@ -1476,31 +1310,41 @@ _utter
 #include "pad.i65"
     .word _tomsg
 #include "page.i65"
-    .word msg
-#include "page.i65"
-    .word clit
-    .byt (msgend-msgsrc)
-#include "pad.i65"
-    .word _erase
-#include "page.i65"
-    .word cas2buf
+    .word dashrot
 #include "page.i65"
     .word clit
     .byt 192
 #include "pad.i65"
     .word _blank
 #include "page.i65"
-utter01
-    .word msg
+    .word dup
 #include "page.i65"
-    .word twodup
+    .word clit
+    .byt (msgend-msgsrc)
+#include "pad.i65"
+    .word _erase
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word xyzzy
+    .word _inhale
+#include "page.i65"
+    .word drop
+#include "page.i65"
+utter01
+    .word third
 #include "page.i65"
     .word three
 #include "page.i65"
     .word args
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word r50proc
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word pquerycolon
+    .word _msgbubble
+    .word _msgbar
+#include "pad.i65"
     .word exit
