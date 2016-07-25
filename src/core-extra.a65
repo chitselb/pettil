@@ -466,58 +466,86 @@ args
 ;--------------------------------------------------------------
 #if 0
 name=SCROLLUP
-stack=( lines -- )
+stack=( lines -- addr )
 tags=mmm
 Scroll the speech bubble area up some number of `lines`
 
 vidram+lines*40 vidram (15-lines)*40 cmove
 vidram+(15-lines)*40 (lines+1)*40 blank
 
-: lines   ( lines -- )
-    40* dup>r
+```
+: scrollup   ( lines -- addr )
+    2+ 40*  560
+    vidram 2dup >r >r
+    dup>r
+    vidram + dup vidram
+    560 r@ - cmove r> - ;
+
+
+
+    2+ 40* vidram over + vidram 560
+    2dup + >r 3 roll - >r cmove 2r> - ;
+
+
+: scrollup   ( lines -- )
+    dup>r
     vidram + vidram [ 40 15 * ] literal r@ -
     2dup + >r cmove
     r> r> 40 + blank ;
 
+vidram+560-160
+vidram+160
+vidram
+560-160
+
+: scrollup   ( lines -- addr )
+    2+ 40*
+                        160
+    560 over -
+                        160 400
+    vidram tuck 2dup 2>r
+                        160 vidram 400 vidram ; vidram 400
+    + -rot +
+                        400+vidram vidram+160  ; vidram 400
+    r> r> cmove ;
+```
 #endif
 #include "align.i65"
 _scrollup
     jsr enter
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
     .word fortytimes
 #include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word vidram
-#include "page.i65"
     .word plit
-    .word 40*15
+    .word 560
 #include "pad.i65"
-    .word rfetch
+    .word over
 #include "page.i65"
     .word minus
 #include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word tuck
+#include "page.i65"
     .word twodup
 #include "page.i65"
+    .word twotor
+#include "page.i65"
     .word plus
 #include "page.i65"
-    .word tor
+    .word dashrot
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word rfrom
 #include "page.i65"
     .word cmove
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word forty
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word _blank
 #include "page.i65"
     .word exit
 
@@ -608,6 +636,8 @@ msgsrcptr
     .byt 0
 msgtargptr
     .byt 0
+msgspeaker
+    .byt 0                  ; whom is speaking? (0=player)
 msgwidth
     .byt 0                  ; this line 1..38
 msgmaxwidth
@@ -620,9 +650,26 @@ msglinecount
     .byt 0                  ; lines remaining to process
 msgchars
     .byt 0,$aa,$bb,$cc      ; chars
-msgspeaker
-    .byt 0                  ; whom is speaking? (0=player)
 msgend
+
+;--------------------------------------------------------------
+#if 0
+name=(MSG.BUBBLE)
+stack=( -- speaker maxwidth lines )
+tags=mmm
+#endif
+pmsgbubble
+    brk
+    .byt set | N3
+    .word msgspeaker
+    .byt ldi | N3           ; speaker
+    .byt st | TOS
+    .byt inr | N3           ; skip msgwidth
+    .byt ldd | N3           ; msgmaxwidth (msgcharcount==0)
+    .byt push
+    .byt ldi | N3           ; msgheight
+    .byt push
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -635,12 +682,21 @@ vidram+lines*40 vidram (15-lines)*40 cmove
 vidram+(15-lines)*40 (lines+1)*40 blank
 
 : msg.bubble   ( )
+    (msg.bubble)
 ;
 
 #endif
 #include "align.i65"
 _msgbubble
     jsr enter
+#include "page.i65"
+    .word pmsgbubble
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word _scrollup
+#include "page.i65"
+    .word pmsgbubble
 #include "page.i65"
     .word exit
 
@@ -711,133 +767,6 @@ rad50char03
 
 ;--------------------------------------------------------------
 #if 0
-name=RAD50ENDLINE
-stack=( -- )
-tags=math
-
-#endif
-rad50endline
-    lda msgtargptr
-    sec
-rad50process01
-    sbc #40
-    bcs rad50process01
-    adc #40                 ; width % 40
-    cmp msgmaxwidth
-    bcc rad50process02
-    sta msgmaxwidth
-    clc
-rad50process02
-    lda msgheight
-    beq rad50endline01
-    lda msgtargptr
-    adc #40
-    sta msgtargptr
-rad50endline01
-    inc msgheight
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=RAD50TOGGLESPEAKER
-stack=( from to -- size )
-tags=math
-
-#endif
-rad50togglespeaker
-    lda #$12
-    lsr msgspeaker
-    bcs rad50togglespeaker01
-    lda #$92
-    inc msgspeaker
-rad50togglespeaker01
-    jsr $ffd2
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=(RAD50ENDBUBBLE)
-stack=( -- height width speaker )
-tags=math
-
-#endif
-prad50endbubble
-    brk
-    .byt set | ACC
-    .word (msgend-msgsrc)
-    .byt add | N2
-    .byt st | N3
-    .byt pop | N3               ; msg.height
-    .byt st | TOS
-    .byt pop | N3               ; msg.width
-    .byt push
-    .byt pop | N3               ; msg.speaker
-    .byt push
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=RAD50ENDBUBBLE
-stack=( )
-tags=math
-
-* scroll the screen up
-* horizontally locate the bubble
-* copy the text from the buffer to video
-* draw the bubble
-* connect the speaker
-
-```
-: rad50endbubble ( x -- 0 )
-    rad50endline  (rad50endbubble)
-    ( speaker width height )
-    dup 2+ scrollup
-    cas2buf
-```
-#endif
-#include "align.i65"
-_rad50endbubble
-    jsr enter
-#include "page.i65"
-    .word rad50endline
-#include "page.i65"
-    .word prad50endbubble       ; ( height width speaker )
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word fortytimes
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word _scrollup
-#include "page.i65"
-    .word cas2buf
-#include "page.i65"
-    .word plit
-    .word VIDRAM+14*40
-#include "pad.i65"
-    .word rfetch
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word oneplus           ; horizontally locate here
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word oneminus
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word false
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=R50PROC
 stack=( msg -- flag )
 tags=math
@@ -869,7 +798,7 @@ returns a true flag once the script is complete
 
 
 
-d;m 0;ii 33a 3ff;m 1ad0 1aef;n
+d;m 0;ii 33a 3ff;ii 8000 83e7;m 1ad0 1aef;n
 
 
 
@@ -942,6 +871,23 @@ r50alphanum
     sta msgtargptr
     plp
     bne r50proc01           ; loop back for more lines?
+    ldy #2                  ; add current src offset to src
+    lda (n+4),y             ; and zero src offset in MSG structure
+    pha
+    lda #0
+    sta (n+4),y
+    tay
+    pla
+    clc
+    adc (n+4),y
+    pha
+    tya
+    iny
+    adc (n+4),y
+    sta (n+4),y
+    dey
+    pla
+    sta (n+4),y
 r50proc04
     lda #$ff
 r50proc09
@@ -1156,51 +1102,6 @@ _tomsg
 
 ;--------------------------------------------------------------
 #if 0
-name=SCRIPT
-stack=( n -- )
-tags=mmm
-rad50decode and play back script #`n`
-
-```
-: script   ( n -- )
-    2* 0 block tuck dup @ + + @ +
-    cas2buf r50script ;
-```
-#endif
-#include "align.i65"
-_script
-    jsr enter
-#include "page.i65"
-    .word twostar
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word _block
-#include "page.i65"
-    .word tuck
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word cas2buf
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word _r50script
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=GAME
 stack=( -- )
 tags=mmm
@@ -1265,13 +1166,18 @@ will look up the address of the first message in that
 script, blank the [[CAS2BUF]] area, and zero other internal
 [[MSG]] variables.
 
+Annoyingly, the operating system uses part of the 2nd tape
+buffer for its own purposes, so we don't get the whole 192
+bytes.  164 is enough since we never exceed three lines in
+a text bubble and all output to the bar is one line
+
 ```
 : utter   ( -- flag )
     msg @ 0= ?dup ?exit         \ done?
     inhale  msb 0=
     if
         >msg -rot
-        192 blank  dup (msgend-msgsrc) erase  !
+        (192-28) blank  dup (msgend-msgsrc) erase  !
         inhale drop
     then
     third  3 args
@@ -1313,7 +1219,7 @@ _utter
     .word dashrot
 #include "page.i65"
     .word clit
-    .byt 192
+    .byt 192-28             ; key repeat, 6/5 clock adjust above here
 #include "pad.i65"
     .word _blank
 #include "page.i65"
@@ -1336,8 +1242,6 @@ utter01
     .word three
 #include "page.i65"
     .word args
-#include "page.i65"
-    .word xyzzy
 #include "page.i65"
     .word r50proc
 #include "page.i65"
