@@ -461,7 +461,7 @@ _semi
     # build an xpet monitor file with both core and transient labels
     write_xpet_monfile "pettil.mon",all_labels
 
-    # Adding new files here?  Also add them to src/pettil-core.a65
+    # Changing any files here?  Also modify src/pettil-core.a65
     core_files = "pettil-core.a65 "\
                 "core-subroutines.a65 "\
                 "core-user.a65 "\
