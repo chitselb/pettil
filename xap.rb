@@ -413,7 +413,7 @@ _semi
     end
 
     def write_symtab_file(outputfile,forthwordhash)
-        symfile = File.open("./tmp/"+outputfile,'w')
+        symfile = File.open("./tmp/"+outputfile,'wb')
         forthwordhash.each do |wordname, stuff|
             symfile.write stuff.symbol_table_entry   unless stuff.tags.index "nosymbol"
         end
