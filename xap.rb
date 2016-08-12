@@ -307,7 +307,7 @@ _semi
             text += ((@nextword.nil?) ? "\n\n" : "[[>>|#{@nextword}]]\n\n")
             text += ((@desc.nil?) ? '' : @desc)
             text += ((@code.nil?) ? '' : @code)
-            puts wikititle.to_json
+#            puts wikititle.to_json
             return "\{ \"tags\": #{tags.join(" ").to_json},"\
                     "\"title\": #{wikititle.to_json},"\
                     "\"text\": #{text.to_json}\},\n"
