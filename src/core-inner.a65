@@ -37,7 +37,7 @@ execute
     pha             ; [4]
     lda tos         ; [3]
     pha             ; [4]
-    jsr slide       ; [a lot]
+    jsr slide       ; [a lot]   (slide always clears Z flag)
     php             ; [4]
     rti             ; [7]
 
@@ -351,7 +351,11 @@ pqleave
     jsr slide
     plp
     bne pleave
-    beq bump
+
+bump
+    ;lda #3         ; bump01 does this for us
+    clc
+    bcc bump01      ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -362,37 +366,15 @@ If the flag is zero, takes the branch
 #endif
 qbranch
     lda tos
-    ora tos+1       ; check the flag
     ldy stackl,x
     sty tos
     ldy stackh,x
-    sty tos+1
-    inx             ; drop
-    tay             ; to set the Z flag
-    beq branch
-bump
-    ;lda #3         ; bump01 does this for us
-    clc
-    bcc bump01      ; bra
-
-;--------------------------------------------------------------
-#if 0
-name=(?DO)
-stack=( end begin -- )
-tags=inner,nosymbol,control
-Performs a do-loop if end<>begin
-
-~ the way this handles `ip` is a little dicey at page boundaries
-#endif
-pqdo
-    inc ip              ; skip past branch byte
-    jsr subeq
-    bne pdo
-pqdo02
     inx
-    jsr slide
-    dec ip              ; we need the branch byte
+    ora tos+1
+    sty tos+1
+    bne bump
     ; fall through
+
 ;--------------------------------------------------------------
 #if 0
 name=BRANCH
@@ -423,28 +405,21 @@ branch03
 
 ;--------------------------------------------------------------
 #if 0
-name=(LOOP)
-stack=( -- )
+name=(?DO)
+stack=( end begin -- )
 tags=inner,nosymbol,control
-Compiled by [[LOOP]], this is the runtime routine to increment
-the inner loop index `zi`.  If loop index exceeds loop limit
-`zlim`, iterate back to (do), otherwise exit the loop.
+Performs a do-loop if end<>begin
 
-PETTIL uses four bytes of [[zero page|PETTIL Zero page memory map]] for the inner loop
-index/limit (`zi` `zlim`), for speed
 #endif
-ploop
-    inc zi
-    bne ploop01
-    inc zi+1
-ploop01
-    lda zi
-    eor zlim
-    bne branch
-    lda zi+1
-    eor zlim+1
-    bne branch
-    beq ploop02
+pqdo
+    inc ip              ; tentatively skip past branch offset
+    sec
+    jsr subeq           ; subroutine, nondestructively compare TOS vs 2OS
+    bne pdo             ; compiler should guard page boundaries ~test
+    dec ip              ; wups, we need the branch offset
+    inx
+    jsr slide           ; 2drop
+    bne branch          ; bra -- because slide always clears Z flag
 
 ;--------------------------------------------------------------
 #if 0
@@ -506,6 +481,31 @@ pleave
     sta zi+3
     bcs bump
     bcc branch
+
+;--------------------------------------------------------------
+#if 0
+name=(LOOP)
+stack=( -- )
+tags=inner,nosymbol,control
+Compiled by [[LOOP]], this is the runtime routine to increment
+the inner loop index `zi`.  If loop index exceeds loop limit
+`zlim`, iterate back to (do), otherwise exit the loop.
+
+PETTIL uses four bytes of [[zero page|PETTIL Zero page memory map]] for the inner loop
+index/limit (`zi` `zlim`), for speed
+#endif
+ploop
+    inc zi
+    bne ploop01
+    inc zi+1
+ploop01
+    lda zi
+    eor zlim
+    bne branch
+    lda zi+1
+    eor zlim+1
+    bne branch
+    beq ploop02
 
 ;--------------------------------------------------------------
 #if 0
@@ -758,7 +758,7 @@ rfetch
 name=J
 stack=( -- index )
 tags=control
-Push the outer loop index of a DO LOOP to the stack
+Push the outer loop index of a DO LOOP to the stack (alias for [[R@]])
 #endif
 j
     stx xsave   ; [3]
