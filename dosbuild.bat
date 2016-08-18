@@ -1,11 +1,17 @@
 rd -recurse tmp
 mkdir tmp
-cd src
+cd tmp
+mkdir tiddlypettil
+cd tiddlypettil
+mkdir tiddlers
+cd ..\..\src
 xa pettil-core.a65 -o ../tmp/pettil-core.obj -e ../tmp/pettil-core.err -l ../tmp/pettil-core.lab
+if %errorlevel% neq 0 exit /b %errorlevel%
 cd ..
 ruby xap.rb
 cd src
 xa ./pettil-tdict.a65 -o ../tmp/pettil-tdict.obj -e ../tmp/pettil-tdict.err -l ../tmp/pettil-tdict.lab
+if %errorlevel% neq 0 exit /b %errorlevel%
 cd ..
 ruby xap.rb
 cd tmp
@@ -28,7 +34,7 @@ echo %S:~-8% %f%>> ..\docs\sizes.txt
 cd ..
 mkdir -p ./tmp/tiddlypettil/tiddlers
 copy .\docs\statictiddlers\tiddlywiki.info .\tmp\tiddlypettil\
-copy .\docs\statictiddlers\*.tid .\tmp\tiddlypettil\tiddlers\
+copy .\docs\statictiddlers\*.tid .\tmp\tiddlypettil\tiddlers\ >NUL
 set mydate=doc generated %date:~10,4%-%date:~4,2%-%date:~7,2%
 sed "s/datetimestamp/%mydate%/" ./docs/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
-cd .\tmp\tiddlypettil & tiddlywiki --load ../pettil.json --output ../../docs/ --rendertiddler $:/core/save/all tiddlypettil.html text/plain & cd ..\..
+cd .\tmp\tiddlypettil & tiddlywiki --load ../pettil.json --output ../../docs/ --rendertiddler $:/core/save/all tiddlypettil.html text/plain >NUL & cd ..\..

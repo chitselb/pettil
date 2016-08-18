@@ -757,11 +757,13 @@ _builds
 ;--------------------------------------------------------------
 #if 0
 name=CONSTANT
-stack=( n -- )
+stack=( "name" ; n == ) ( -- n )
 tags=compiler
 
-: constant   ( n -- )
-
+```
+: constant   ( "name" ; n == ) ( -- n )
+    doconst (create) , ;
+```
 #endif
 #include "align.i65"
 _constant
@@ -779,11 +781,15 @@ _constant
 ;--------------------------------------------------------------
 #if 0
 name=CCONSTANT
-stack=( n -- )
+stack=( "name" ; c == ) ( -- c )
 tags=compiler
 
- create an 8-bit constant
+create an 8-bit constant
 
+```
+: cconstant   ( "name" ; c == ) ( -- c )
+    doconst (create) c, ;
+```
 #endif
 #include "align.i65"
 _cconstant
@@ -795,6 +801,32 @@ _cconstant
     .word _pcreate
 #include "page.i65"
     .word _ccomma
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=2CONSTANT
+stack=( "name" ; d == ) ( -- d )
+tags=compiler
+
+```
+: 2constant   ( "name" ; d == ) ( -- d )
+    do2const (create) , , ;
+```
+#endif
+#include "align.i65"
+_twoconstant
+    jsr enter
+#include "page.i65"
+    .word plit
+    .word dotwoconst
+#include "pad.i65"
+    .word _pcreate
+#include "page.i65"
+    .word _comma
+#include "page.i65"
+    .word _comma
 #include "page.i65"
     .word exit
 
@@ -1661,6 +1693,10 @@ stack=( ulim llim -- )
 tags=compiler,control
 flags=immediate
 
+```
+: ?do   ( )
+    $fb ?page  compile (?do)  0 ?>mark  ?<mark drop swap 3 ; immediate
+```
 #endif
 #include "align.i65"
 _qdo
@@ -1696,7 +1732,15 @@ tags=compiler
 flags=immediate
 
 Immediate word, compiles runtime code to terminate a loop that
-counts up by 1.  The loop index and limit are treated as unsigned, e.g. `0 0 DO LOOP` will iterate 65536 times.  This is distinct from [[+LOOP]] which treats the loop index/limit both as signed integers.
+counts up by 1.  The loop index and limit are treated as 
+unsigned, e.g. `0 0 DO LOOP` will iterate 65536 times.  This 
+is distinct from [[+LOOP]] which treats the loop index/limit 
+both as signed integers.
+
+```
+: loop   ( )
+    3 ?pairs  $fb ?page  compile (loop)  ?<resolve ; immediate
+```
 #endif
 #include "align.i65"
 _loop
@@ -1721,16 +1765,22 @@ _loop
 ;--------------------------------------------------------------
 #if 0
 name=+LOOP
-stack=( n -- )
+stack=( )
 tags=compiler,control
 flags=immediate
 
 Immediate word, compiles runtime code to terminate a loop that
-steps by an arbitrary value on the stack, terminating when the loop index goes past the limit.
+steps by an arbitrary value on the stack, terminating when the 
+loop index goes past the limit.
 
 [[Posted question on comp.lang.forth|https://groups.google.com/d/msg/comp.lang.forth/V9evPkLwRoM/Khwons3O4QwJ]]
 
 ~ pass pploop or ploop as an argument, combine these
+
+```
+: +loop   ( )
+    3 ?pairs  compile (+loop)  ?<resolve ; immediate
+```
 #endif
 #include "align.i65"
 _plusloop
@@ -1754,6 +1804,10 @@ stack=( -- )
 tags=compiler
 flags=immediate
 
+```
+: leave   ( )
+    compile (leave)  3 add>mark ; immediate
+```
 #endif
 #include "align.i65"
 _leave
@@ -1774,6 +1828,10 @@ stack=( n -- )
 tags=compiler,control
 flags=immediate
 
+```
+: leave   ( )
+    compile (?leave)  3 add>mark ; immediate
+```
 #endif
 #include "align.i65"
 _qleave
@@ -1790,10 +1848,14 @@ _qleave
 ;--------------------------------------------------------------
 #if 0
 name=UNTIL
-stack=( f -- )
+stack=( )
 tags=compiler
 flags=immediate
 
+```
+: until   ( )
+    1 ?pairs  compile ?branch  ?<resolve ; immediate
+```
 #endif
 #include "align.i65"
 _until
@@ -1829,6 +1891,10 @@ stack=( -- )
 tags=compiler,control
 flags=immediate
 
+```
+: again   ( )
+    1 ?pairs  compile branch  ?<resolve ; immediate
+```
 #endif
 #include "align.i65"
 _again
@@ -1852,6 +1918,10 @@ stack=( f -- )
 tags=compiler,control
 flags=immediate
 
+```
+: if   ( )
+    0 0 compile ?branch  ?>mark 2 ; immediate
+```
 #endif
 #include "align.i65"
 _if
@@ -1877,6 +1947,10 @@ stack=( -- )
 tags=compiler,control
 flags=immediate
 
+```
+: else   ( )
+    2 ?pairs  compile branch  swap ?>mark ?>resolve 0 -2 ; immediate
+```
 #endif
 #include "align.i65"
 _else
@@ -1899,18 +1973,21 @@ _else
 #include "page.i65"
     .word zero
 #include "page.i65"
-    .word plit
-    .word -2
-#include "pad.i65"
+    .word minustwo
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
 name=WHILE
-stack=( f -- )
+stack=( )
 tags=compiler
 flags=immediate
 
+```
+: while   ( )
+    compile ?branch  1 add>mark ; immediate
+```
 #endif
 #include "align.i65"
 _while
@@ -1922,23 +1999,6 @@ _while
     .word one
 #include "page.i65"
     .word _addtomark
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=2CONSTANT
-stack=( d == ) ( -- d )
-tags=compiler
-
-#endif
-#include "align.i65"
-_twoconst
-    jsr enter
-#include "page.i65"
-    .word _constant
-#include "page.i65"
-    .word _comma
 #include "page.i65"
     .word exit
 
