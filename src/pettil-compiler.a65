@@ -171,11 +171,12 @@ _nextpage
 ;--------------------------------------------------------------
 #if 0
 name=?PAGE
-stack=( limit -- )
+stack=( margin -- )
 tags=compiler,nosymbol
-Moves [[DP]] to the next page if needed, to preserve page
-alignment, where `limit` is the highest usable address within
-a page, typically `$FC`
+Moves [[DP]] to the next page if it is past the margin, to
+work around the NMOS jmp ($xxFF) bug.  The value of `margin`
+is the highest usable address within a page, which is `$xxFC`
+by default.
 
 ```
 : ?page   ( flag -- )
@@ -1229,7 +1230,7 @@ _dotp
 ;--------------------------------------------------------------
 #if 0
 name=?>MARK
-stack=
+stack=( marker -- dp )
 tags=compiler,nosymbol
 
 ```
@@ -1254,7 +1255,7 @@ _qtomark
 ;--------------------------------------------------------------
 #if 0
 name=?<MARK
-stack=
+stack=( -- dp 0 )
 tags=compiler,nosymbol
 
 ```
@@ -1353,7 +1354,7 @@ _qltresolve
 ;--------------------------------------------------------------
 #if 0
 name=ADD>MARK
-stack=
+stack=( dp marker -- ; )
 tags=compiler,nosymbol
 
 ```
@@ -1361,12 +1362,12 @@ tags=compiler,nosymbol
     true >r
     begin
         swap 2dup >r
-        =
+        and
     until
     drop ?>mark
     begin
         r> dup true
-        =
+        and
     until
     drop ;
 ```
@@ -1386,7 +1387,7 @@ addtomark01
 #include "page.i65"
     .word tor
 #include "page.i65"
-    .word eq
+    .word andx
 #include "page.i65"
     .word qbranch
     .byt <(addtomark01-*+1)
@@ -1402,7 +1403,7 @@ addtomark02
 #include "page.i65"
     .word true
 #include "page.i65"
-    .word eq
+    .word andx
 #include "page.i65"
     .word qbranch
     .byt <(addtomark02-*+1)
@@ -1619,7 +1620,7 @@ _vdrop
 ;--------------------------------------------------------------
 #if 0
 name=BEGIN
-stack=
+stack=( == dp 0 4 ) ( -- )
 tags=compiler,control
 flags=immediate
 
@@ -1674,7 +1675,7 @@ _then
 ;--------------------------------------------------------------
 #if 0
 name=DO
-stack=( == ) ( limit start -- )
+stack=( == dp 0 3 ) ( limit start -- )
 tags=compiler,control
 flags=immediate
 
@@ -2001,7 +2002,7 @@ flags=immediate
 
 ```
 : else   ( )
-    2 ?pairs  compile branch  swap ?>mark ?>resolve 0 -2 ; immediate
+    2 ?pairs  compile branch  swap ?>mark ?>resolve 0 -8 ; immediate
 ```
 #endif
 #include "align.i65"
@@ -2029,10 +2030,9 @@ _else
 #include "page.i65"
     .word zero
 #include "page.i65"
-    .word eight
-#include "page.i65"
-    .word negate
-#include "page.i65"
+    .word plit
+    .word -8
+#include "pad.i65"
     .word exit
 
 ;--------------------------------------------------------------
