@@ -1,4 +1,5 @@
-rd -recurse tmp
+rem echo off
+rd /s /q tmp
 mkdir tmp
 cd tmp
 mkdir tiddlypettil
