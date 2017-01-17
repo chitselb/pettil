@@ -388,24 +388,6 @@ branch03
 
 ;--------------------------------------------------------------
 #if 0
-name=(?DO)
-stack=( end begin -- )
-tags=inner,nosymbol
-Performs a do-loop if end<>begin
-
-#endif
-pqdo
-    inc ip              ; tentatively skip past branch offset
-    sec
-    jsr subeq           ; subroutine, nondestructively compare TOS vs 2OS
-    bne pdo             ; compiler guards page boundaries
-    dec ip              ; wups, we need the branch offset
-    inx
-    jsr slide           ; 2drop
-    bne branch          ; bra -- because slide always clears Z flag
-
-;--------------------------------------------------------------
-#if 0
 name=(+LOOP)
 stack=( n -- )
 tags=inner,nosymbol
@@ -504,6 +486,18 @@ pqleave
 
 ;--------------------------------------------------------------
 #if 0
+name=(?DO)
+stack=( end begin -- )
+tags=inner,nosymbol
+Performs a do-loop if end<>begin
+
+#endif
+pqdo
+    sec                 ; tell subeq to exit with RTS
+    .byt $29            ; AND# to skip CLC instruction
+                        ; fall through
+;--------------------------------------------------------------
+#if 0
 name=(DO)
 stack=( end begin -- )
 tags=inner,nosymbol
@@ -513,19 +507,30 @@ d;m 0 8f;m 1e0 1ff;m 6c80 6caf;z
 
 #endif
 pdo
-    ;ldy #2
-    jsr locals2
-    ldy #2
-    lda (ip),y
+    clc
+    php
+    ldy #2                  ; set up the stack for EXIT
+    lda (ip),y              ; forward branch offset
     clc
     adc ip
     tay
     lda ip+1
     adc #0
+    plp
     pha
     tya
     pha
     inc ip                  ; get past loop exit offset
+    bcc pdo00
+    jsr subeq               ; (?DO) test here
+    bne pdo00
+    inx                     ; loop indices are identical, don't iterate
+    jsr slide
+    jmp exit
+pdo00
+    ;ldy #2
+    jsr locals2
+
     ldy #3
 pdo01
     lda zi,y
