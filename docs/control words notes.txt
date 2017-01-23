@@ -44,306 +44,151 @@ pdo01
     bne drop                ; bra
 
 
-
-    ldy #3
-x01
-	pla
-	sta zi,y
-	dey
-	bpl x01
-
-
-
-enter
-    pla             ; [4]
-    tay             ; [2]
-    pla             ; [4]
-    sta xsave       ; [3]
-    lda ip+1        ; [3]
-    pha             ; [3]
-    lda ip          ; [3]
-    pha             ; [3]
-    lda xsave       ; [3]
-    bne unloopexit	; [3] bra
-
-unloop
-	pla
-	sta zi
-	pla
-	sta zi+1
-	pla
-	sta zi+2
-	pla
-	sta zi+3
-	pla				; address of word following (LOOP)
-	tay
-	pla
-unloopexit
-    sta ip+1        ; [3]
-    sty ip          ; [3]
-    jmp nextl       ; [3] [37]
-
-
-
-
-ploop02
-    sec
-    .byt $29            ; AND #
-;--------------------------------------------------------------
-#if 0
-name=(LEAVE)
-stack=( -- )
-tags=inner,nosymbol
-Exit a do loop early
-#endif
-pleave
-    clc
-    pla
-    sta zi
-    pla
-    sta zi+1
-    pla
-    sta zi+2
-    pla
-    sta zi+3
-    bcs bump
-    bcc branch
-
-    ldy #252
-    
-: ?error
-    swap if error else drop then ;
-L0ccd .byt 6 | bit7
- .asc "?ERRO","R"|bit7
- .word L0cbc
-QERROR ; ( flag message# -- ) print an error message and abort if flag is true
- .word DOCOL
- .word SWAP
- .word ZBRAN
- .word 8
- .word ERROR
- .word BRANCH
- .word 4
- .word DROP
- .word SEMIS
-
-: ?pairs
-    negate 19 ?error ;
-L0d14 .byt 6 | bit7
- .asc "?PAIR","S"|bit7
- .word L0cff
-QPAIRS
- .word DOCOL
- .word NEGATE
- .word CLIT
- .byt 19
- .word QERROR
- .word SEMIS
-
-: ?comp
-    state @ 0= 17 ?error ;
-L0ce8 .byt 5 | bit7
- .asc "?COM","P"|bit7
- .word L0ccd
-QCOMP
- .word DOCOL
- .word STATE
- .word FETCH
- .word ZEQ
- .word CLIT
- .byt 17
- .word QERROR
- .word SEMIS
-
+FIG control words
 : back
-    here negate , ;
-L19c0 .byt 4 | bit7
- .byt "BAC","K"|bit7
- .word L1953
-BACK
- .word DOCOL
- .word HERE
- .word NEGATE
- .word COMMA
- .word SEMIS
-
+    here - , ;
 : begin
     ?comp here 1 ;
-L19d1 .byt 5 | bit7 | bit6
- .asc "BEGI","N"|bit7
- .word L19c0
-BEGIN
- .word DOCOL
- .word QCOMP
- .word HERE
- .word ONE
- .word SEMIS
-
 : endif
-    ?comp 2 ?pairs here over negate swap ! ;
-L19e3 .byt 5 | bit7 | bit6
- .asc "ENDI","F"|bit7
- .word L19d1
-ENDIF
- .word DOCOL
- .word QCOMP
- .word TWO
- .word QPAIRS
- .word HERE
- .word OVER
- .word NEGATE
- .word SWAP
- .word STORE
- .word SEMIS
-
+    ?comp 2 ?pairs here over - swap ! ;
 : then
     endif ;
-L19ff .byt 4 | bit7 | bit6
- .asc "THE","N"|bit7
- .word L19e3
-THEN
- .word DOCOL
- .word ENDIF
- .word SEMIS
-
 : do
     [compile] (do) here 3 ;
-L1a0c .byt 2 | bit7 | bit6
- .asc "D","O"|bit7
- .word L19ff
-DO
- .word DOCOL
- .word COMPILE
- .word PDO
- .word HERE
- .word THREE
- .word SEMIS
-
 : loop
     3 ?pairs [compile] (loop) back ;
-L1a1d .byt 4 | bit7 | bit6
- .asc "LOO","P"|bit7
- .word L1a0c
-LOOP
- .word DOCOL
- .word THREE
- .word QPAIRS
- .word COMPILE
- .word PLOOP
- .word BACK
- .word SEMIS
-
 : +loop
     3 ?pairs [compile] (+loop) back ;
-L1a32 .byt 5 | bit7 | bit6
- .asc "+LOO","P"|bit7
- .word L1a1d
-PLUSLOOP
- .word DOCOL
- .word THREE
- .word QPAIRS
- .word COMPILE
- .word PPLOOP
- .word BACK
- .word SEMIS
-
 : until
-    1 ?pairs [compile] ?branch back ;
-L1a48 .byt 5 | bit7 | bit6
- .asc "UNTI","L"|bit7
- .word L1a32
-UNTIL
- .word DOCOL
- .word ONE
- .word QPAIRS
- .word COMPILE
- .word ZBRAN
- .word BACK
- .word SEMIS
-
+    1 ?pairs [compile] 0branch back ;
 : end
     until ;
-L1a5e .byt 3 | bit7 | bit6
- .asc "EN","D"|bit7
- .word L1a48
-END
- .word DOCOL
- .word UNTIL
- .word SEMIS
-
 : again
     1 ?pairs [compile] branch back ;
-L1a6a .byt 5 | bit7 | bit6
- .byt "AGAI","N"|bit7
- .word L1a5e
-AGAIN
- .word DOCOL
- .word ONE
- .word QPAIRS
- .word COMPILE
- .word BRANCH
- .word BACK
- .word SEMIS
-
 : repeat
-    >r >r again r> r> 2 negate endif ;
-L1a80 .byt 6 | bit7 | bit6
- .byt "REPEA","T"|bit7
- .word L1a6a
-REPEAT
- .word DOCOL
- .word TOR
- .word TOR
- .word AGAIN
- .word RFROM
- .word RFROM
- .word TWO
- .word NEGATE
- .word ENDIF
- .word SEMIS
-
+    >r >r again r> r> 2 - endif ;
 : if
-    [compile] ?branch here 0 , 2 ;
-L1a9d .byt 2 | bit7 | bit6
- .byt "I","F"|bit7
- .word L1a80
-IF
- .word DOCOL
- .word COMPILE
- .word ZBRAN
- .word HERE
- .word ZERO
- .word COMMA
- .word TWO
- .word SEMIS
-
+    [compile] 0branch here 0 , 2 ;
 : else
     2 ?pairs [compile] branch here 0 , swap 2 endif 2 ;
-L1ab2 .byt 4 | bit7 | bit6
- .asc "ELS","E"|bit7
- .word L1a9d
-ELSE
- .word DOCOL
- .word TWO
- .word QPAIRS
- .word COMPILE
- .word BRANCH
- .word HERE
- .word ZERO
- .word COMMA
- .word SWAP
- .word TWO
- .word ENDIF
- .word TWO
- .word SEMIS
-
 : while
     if 2+ ;
-L1ad3 .byt 5 | bit7 | bit6
- .asc "WHIL","E"|bit7
- .word L1ab2
-WHILE
- .word DOCOL
- .word IF
- .word TWOP
- .word SEMIS
+
+
+
+
+
+IF
+ELSE
+THEN
+
+DO
+?do
+LEAVE
+?leave
+LOOP  
++LOOP
+
+BEGIN
+WHILE    
+UNTIL
+AGAIN
+REPEAT
+
+
+: if
+    0 0  [compile] ?branch  ?>mark 2 ; immediate
+: else
+    2 ?pairs  [compile] branch  swap ?>mark swap ?>resolve 0 -2 ; immediate
+: then
+    ?comp abs 2 ?pairs ?>resolve ?>resolve ; immediate
+: do
+    [ $fb ] literal ?page  [compile] (do) ?<mark 3 ; immediate
+: ?do
+    [ $fb ] literal ?page
+    [compile] (?do)  0 ?>mark ?<mark drop swap 3 ; immediate
+: leave
+    [compile] (leave)  3 add>mark ;
+: ?leave
+    [compile] (?leave)  3 add>mark ; immediate
+: loop
+    3 ?pairs [ $fb ] cliteral ?page [compile] (loop) ?<resolve ; immediate
+: +loop
+    3 ?pairs [compile] (+loop) ?<resolve ; immediate
+: begin
+    ?<mark 1 ; immediate
+: while
+    [compile] ?branch  1 add>mark ; immediate
+: until
+    1 ?pairs [compile] ?branch ?<resolve ; immediate
+: again
+    1 ?pairs [compile] branch ?<resolve ; immediate
+: repeat
+    again ; immediate
+
+eighterase
+    ldy #7
+    .byt $2c        ; BIT abs
+fourerase
+    ldy #3
+    .byt $2c        ; BIT abs
+threeerase
+    ldy #2
+    lda #0
+threeerase01
+    sta (tos),y
+    dey
+    bpl threeerase01
+    jmp drop
+
+1 begin/while/until/again/repeat
+2 if/else/then
+3 do/loop
+
+pairs
+    .dsb 3,0            ; storage for counters
+
+
+_resetpairs
+    jsr enter
+    .word plit
+    .word pairs
+    .word threerase
+    .word exit
+
+(pairs)
+pluspairs
+    clc
+    .byt $29            ; AND immediate
+minuspairs
+    sec
+    txa
+    ldx tos
+    bcs pairs01
+    inc pairs-1,x
+    inc pairs-1,x
+pairs01
+    dec pairs-1,x
+    bmi pairs03
+    tax
+    ldy #6              ; UNPAIRED CONDITIONALS
+pairs02
+    ldy #5              ; COMPILATION ONLY
+    lda uarea+userstate-userarea
+    beq pairs04
+    jmp drop
+
+querypairs
+    ldy tos
+    lda pairs-1,y
+    bne pairs02         ; OKAY
+pairs03
+    ldy #6              ; UNPAIRED CONDITIONALS
+pairs04
+    jmp error
+
+
+: if
+    0 0  [compile] ?branch  ?>mark 2 +pairs ; immediate
+else
+    2 ?pairs  [compile] branch  swap ?>mark swap ?>resolve 0 -2 ; immediate
