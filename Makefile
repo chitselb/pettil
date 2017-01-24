@@ -17,7 +17,7 @@ clean:
 	cd ../mmm && ${RUBY} rad50.rb
 
 launch: clean pettil
-	cd ./tmp  &&  xpet -verbose -1 ../tapes/tapeio.tap -warp -moncommand pettil.mon pettil.obj &
+	cd ./tmp  &&  /usr/bin/xpet -verbose -1 ../tapes/tapeio.tap -warp -moncommand pettil.mon pettil.obj &
 
 pettil:
 #	echo . Phase I
