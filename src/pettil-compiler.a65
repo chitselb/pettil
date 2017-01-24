@@ -180,9 +180,6 @@ is the highest usable address within a page, which is `$xxFC`
 by default.
 
 ```
-: ?page   ( flag -- )
-     if nextpage then ;
-
 : ?page   ( limit -- )
     herelsb < if nextpage then ;
 ```
@@ -214,7 +211,7 @@ dictionary stream at page boundaries
 
 ```
 : xt,   ( xt -- )
-     herelsb $fc > ?page  , ;
+    $fc ?page  , ;
 ```
 #endif
 #include "align.i65"
@@ -273,28 +270,6 @@ _undefine
 
 ;--------------------------------------------------------------
 #if 0
-name=COMPILING?
-stack=( -- f )
-tags=compiler,nosymbol
-True if [[STATE]] is on
-
-```
-: compiling?   ( -- flag )
-   state @ ;
-```
-#endif
-#include "align.i65"
-_compilingq
-    jsr enter
-#include "page.i65"
-    .word state
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=?ERROR
 stack=( flag errcode -- )
 tags=ext,compiler
@@ -334,7 +309,9 @@ error if [[STATE]] is off ([[INTERPRET]] mode)
 _qcomp
     jsr enter
 #include "page.i65"
-    .word _compilingq
+    .word state
+#include "page.i65"
+    .word fetch
 #include "page.i65"
     .word zeq
 #include "page.i65"
@@ -442,7 +419,7 @@ _colon
 #include "pad.i65"
     .word _pcreate
 #include "page.i65"
-    .word _storecsp
+    .word storecsp
 #include "page.i65"
     .word _latest
 #include "page.i65"
@@ -470,7 +447,7 @@ and resetting `REDEFINED`.  Used by `;` `;CODE` and `END-CODE`
 _closedefinition
     jsr enter
 #include "page.i65"
-    .word _qcsp
+    .word qcsp
 #include "page.i65"
     .word _qpairs
 #include "page.i65"
@@ -542,9 +519,7 @@ is equivalent to
 if this else that then
 
 : ?:   ( "name1" "name2" -- )
-    ?comp
-    herelsb $f8 > ?page
-    compile (:?) ' , ' , ; immediate
+    ?comp  $f8 ?page [compile] (?:) ' , ' , ; immediate
 ```
 ~ fix this page management.  $f8 is overkill
 #endif
@@ -869,23 +844,6 @@ _latest
 
 ;--------------------------------------------------------------
 #if 0
-name=!CSP
-tags=compiler,nosymbol
-#endif
-#include "align.i65"
-_storecsp
-    jsr enter
-#include "page.i65"
-    .word spfetch
-#include "page.i65"
-    .word csp
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=$,
 stack=( addr -- )
 tags=string
@@ -1000,7 +958,9 @@ common code for ." and "
 _pdqq
     jsr enter
 #include "page.i65"
-    .word _compilingq
+    .word state
+#include "page.i65"
+    .word fetch
 #include "page.i65"
     .word duptor
 #include "page.i65"
@@ -1100,129 +1060,6 @@ _abortq
     .word _compile
     .word _abort
 #include "pad.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?PAIRS
-stack=( -- )
-tags=compiler,nosymbol
-Aborts compilation if control structures are unbalanced
-
-```
-: ?pairs
-    [ 'pairs ] literal  3c@ or six ?error ; 
-```
-!!! pronounced: "query-pairs"
-#endif
-#include "align.i65"
-_qpairs
-    jsr enter
-#include "page.i65"
-    .word plit
-    .word pairs
-#include "pad.i65"
-    .word threecfetch
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word threecfetch
-#include "page.i65"
-    .word six
-#include "page.i65"
-    .word _qerror
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=0PAIRS
-stack=( -- )
-tags=compiler,nosymbol
-clear the three [[PAIRS]] counters
-
-```
-: 0pairs   ( -- )
-    [ 'pairs ] literal  3 erase ;
-```
-!!! pronounced: "query-pairs"
-#endif
-#include "align.i65"
-_zeropairs
-#include "align.i65"
-    jsr enter
-#include "page.i65"
-    .word plit
-    .word pairs
-#include "pad.i65"
-    .word three
-#include "page.i65"
-    .word _erase
-#include "page.i65"
-    .word exit
-pairs
-    .dsb 3,0            ; storage for counters
-
-; (pairs)
-pluspairs
-    clc
-    .byt $29            ; AND immediate
-minuspairs
-    sec
-    txa
-    ldx tos
-    bcs pairs01
-    inc pairs-1,x
-    inc pairs-1,x
-pairs01
-    dec pairs-1,x
-    bmi pairs03
-    tax
-    ldy #6              ; UNPAIRED CONDITIONALS
-pairs02
-    ldy #5              ; COMPILATION ONLY
-    lda uarea+userstate-userarea
-    beq pairs04
-    jmp drop
-
-querypairs
-    ldy tos
-    lda pairs-1,y
-    bne pairs02         ; OKAY
-pairs03
-    ldy #6              ; UNPAIRED CONDITIONALS
-pairs04
-    jmp error
-
-;--------------------------------------------------------------
-#if 0
-name=?CSP
-stack=( -- )
-tags=compiler,nosymbol
-Generates an error if the data stack is unbalanced when defining
-`CODE` or `:` words
-
-```
-: ?csp
-    sp@ csp @ <>  4 ?error ;
-```
-#endif
-#include "align.i65"
-_qcsp
-    jsr enter
-#include "page.i65"
-    .word spfetch
-#include "page.i65"
-    .word csp
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word ne
-#include "page.i65"
-    .word four
-#include "page.i65"
-    .word _qerror
-#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1671,6 +1508,121 @@ _saveforth
 ;    jsr enter
 ;#include "page.i65"
 ;    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?PAIRS
+stack=( -- )
+tags=compiler,nosymbol
+Aborts compilation if control structures are unbalanced
+
+```
+: ?pairs
+    [ 'pairs ] literal  3c@ or six ?error ; 
+```
+!!! pronounced: "query-pairs"
+#endif
+#include "align.i65"
+_qpairs
+    jsr enter
+#include "page.i65"
+    .word plit
+    .word pairs
+#include "pad.i65"
+    .word threecfetch
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word six
+#include "page.i65"
+    .word _qerror
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=0PAIRS
+stack=( -- )
+tags=compiler,nosymbol
+clear the three [[PAIRS]] counters
+
+```
+: 0pairs   ( -- )
+    [ 'pairs ] literal  3 erase ;
+```
+!!! pronounced: "query-pairs"
+#endif
+#include "align.i65"
+_zeropairs
+#include "align.i65"
+    jsr enter
+#include "page.i65"
+    .word plit
+    .word pairs
+#include "pad.i65"
+    .word three
+#include "page.i65"
+    .word _erase
+#include "page.i65"
+    .word exit
+pairs
+    .dsb 3,0            ; storage for counters
+
+; (pairs)
+pluspairs
+    sec
+    .byt $29            ; AND immediate
+minuspairs
+    clc
+    txa
+    ldx tos
+    bcc pairs01
+    inc pairs-1,x
+    inc pairs-1,x
+pairs01
+    dec pairs-1,x
+    bmi pairs03
+    tax
+    ldy #6              ; UNPAIRED CONDITIONALS
+pairs02
+    ldy #5              ; COMPILATION ONLY
+    lda uarea+userstate-userarea
+    beq pairs04
+    jmp drop
+
+querypairs
+    ldy tos
+    lda pairs-1,y
+    bne pairs02         ; OKAY
+pairs03
+    ldy #6              ; UNPAIRED CONDITIONALS
+pairs04
+    jmp error
+
+;--------------------------------------------------------------
+#if 0
+name=?CSP
+stack=( -- )
+tags=compiler,nosymbol
+Generates an error if the data stack is unbalanced when defining
+`CODE` or `:` words
+#endif
+qcsp
+    ldy #4              ; DEFINITION UNFINISHED
+    cpx uarea+usercsp-userarea
+    bne pairs04
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=!CSP
+tags=compiler,nosymbol
+#endif
+#include "align.i65"
+storecsp
+    stx uarea+usercsp-userarea
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0

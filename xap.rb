@@ -4,6 +4,7 @@
 #
 
     require 'json'
+    require 'csv'
 
     # Grind through a group of 6502 source code files and spew out nextline
     # after nextline of source
@@ -440,6 +441,14 @@ _semi
         jsonfile.write "{ \"title\":\"Headless\",\"tags\":\"\",\"text\":#{headless.to_json}}]"
     end
 
+    def write_size_file(outputfile,forthwordhash)
+        sizefile = File.open("./tmp/"+outputfile,'w')
+        forthwordhash.each do |wordname,stuff|
+            sizeline = ["#{wordname}","#{stuff.size}"].to_csv
+            sizefile.write sizeline
+        end
+    end
+
     # write a simple list of names for the pearson cruncher
     def write_pearson_file(outputfile,forthwordhash)
         pearsonfile = File.open("./tmp/"+outputfile,'w')
@@ -512,6 +521,9 @@ _semi
 
     # output tiddlers for tiddlypettil
     write_json_file "pettil.json",all_words
+
+    # output word sizes as csv
+    write_size_file "size.csv",all_words
 
     # output word names for pearson cruncher
     write_pearson_file "pearson.txt",all_words
