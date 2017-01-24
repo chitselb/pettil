@@ -472,6 +472,8 @@ _closedefinition
 #include "page.i65"
     .word _qcsp
 #include "page.i65"
+    .word _qpairs
+#include "page.i65"
     .word _latest
 #include "page.i65"
     .word unsmudge
@@ -507,11 +509,7 @@ flags=immediate
 
 ```
 : ;   ( -- )
-    ?csp
-    compile exit
-    latest unsmudge       \ unsmudge the new colon definition
-    redefined dup @ dup  :? smudge drop  off
-    [ ; immediate
+    [compile] exit  closedefinition ; immediate
 ```
 #endif
 #include "align.i65"
@@ -1107,13 +1105,13 @@ _abortq
 ;--------------------------------------------------------------
 #if 0
 name=?PAIRS
-stack=( a b -- )
+stack=( -- )
 tags=compiler,nosymbol
-Aborts compilation if `a`<>`b`
+Aborts compilation if control structures are unbalanced
 
 ```
 : ?pairs
-    <> 6 ?error ;
+    [ 'pairs ] literal  3c@ or six ?error ; 
 ```
 !!! pronounced: "query-pairs"
 #endif
@@ -1121,15 +1119,19 @@ Aborts compilation if `a`<>`b`
 _qpairs
     jsr enter
 #include "page.i65"
-    .word andx
+    .word plit
+    .word pairs
+#include "pad.i65"
+    .word threecfetch
 #include "page.i65"
-    .word zeq
+    .word orx
+#include "page.i65"
+    .word threecfetch
 #include "page.i65"
     .word six
 #include "page.i65"
     .word _qerror
 #include "page.i65"
-qpairs01
     .word exit
 
 ;--------------------------------------------------------------
@@ -1161,8 +1163,6 @@ _zeropairs
 pairs
     .dsb 3,0            ; storage for counters
 
-
-
 ; (pairs)
 pluspairs
     clc
@@ -1193,7 +1193,6 @@ pairs03
     ldy #6              ; UNPAIRED CONDITIONALS
 pairs04
     jmp error
-
 
 ;--------------------------------------------------------------
 #if 0
@@ -1283,187 +1282,6 @@ _dotp
     .word count
 #include "page.i65"
     .word type
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?>MARK
-stack=( marker -- dp )
-tags=compiler,nosymbol
-
-```
-: ?>mark
-    here swap c, ;
-```
-#endif
-#include "align.i65"
-_qtomark
-    jsr enter
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word _ccomma
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?<MARK
-stack=( -- dp 0 )
-tags=compiler,nosymbol
-
-```
-: ?<mark
-    here 0 ;
-```
-#endif
-#include "align.i65"
-_qfrommark
-    jsr enter
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?>RESOLVE
-stack=
-tags=compiler,nosymbol
-
-```
-: ?>resolve
-    begin
-        ?dup
-    while
-        dup c@ here third - 1+ rot c!
-    repeat ;
-```
-#endif
-#include "align.i65"
-_qtoresolve
-    jsr enter
-#include "page.i65"
-qtoresolve01
-    .word qdup
-#include "page.i65"
-    .word qbranch
-    .byt <(qtoresolve02-*+1)
-#include "pad.i65"
-    .word dup
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word branch
-    .byt <(qtoresolve01-*+1)
-#include "pad.i65"
-qtoresolve02
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?<RESOLVE
-stack=
-tags=compiler,nosymbol
-flags=immediate
-
-```
-: ?<resolve
-    swap here - 1+ c, ?>resolve ;
-```
-#endif
-#include "align.i65"
-_qltresolve
-    jsr enter
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word _ccomma
-#include "page.i65"
-    .word _qtoresolve
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=ADD>MARK
-stack=( dp marker -- ; )
-tags=compiler,nosymbol
-
-```
-: add>mark
-    true >r
-    begin
-        swap 2dup >r
-        and
-    until
-    drop ?>mark
-    begin
-        r> dup true
-        and
-    until
-    drop ;
-```
-#endif
-#include "align.i65"
-_addtomark
-    jsr enter
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word tor
-#include "page.i65"
-addtomark01
-    .word swap
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word qbranch
-    .byt <(addtomark01-*+1)
-#include "pad.i65"
-    .word drop
-#include "page.i65"
-    .word _qtomark
-#include "page.i65"
-addtomark02
-    .word rfrom
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word qbranch
-    .byt <(addtomark02-*+1)
-#include "pad.i65"
-    .word drop
 #include "page.i65"
     .word exit
 
@@ -1669,6 +1487,369 @@ _vdrop
     .byt 9
 #include "pad.i65"
     .word cmove
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=2VARIABLE
+stack=( == ) ( -- )
+tags=compiler
+Create storage for a new double
+#endif
+#include "align.i65"
+_twovariable
+    jsr enter
+#include "page.i65"
+    .word _variable
+#include "page.i65"
+    .word two
+#include "pad.i65"
+    .word _allot
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DROPLIT
+stack=( d == ) ( -- n )
+tags=compiler,nosymbol
+Compiles the least significant 16 bits of a double into the dictionary as
+a numeric literal
+
+!!!pronounced: drop-lit
+#endif
+#include "align.i65"
+_droplit
+    jsr enter
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word branch
+    .byt <(literal00-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=LITERAL
+stack=( n == ) ( -- n )
+tags=compiler
+flags=immediate
+Enclose `n` into the dictionary.  At runtime, leaves `n` on the
+stack.
+#endif
+#include "align.i65"
+_literal
+    jsr enter
+#include "page.i65"
+literal00
+    .word dup
+#include "page.i65"
+    .word plit
+    .word 256
+#include "pad.i65"
+    .word ult
+#include "page.i65"
+    .word qbranch
+    .byt <(literal01-*+1)
+#include "pad.i65"
+    .word _compile
+    .word clit
+#include "pad.i65"
+    .word _ccomma
+#include "page.i65"
+    .word branch
+    .byt <(literal02-*+1)
+#include "pad.i65"
+literal01
+    .word _compile
+    .word plit
+#include "pad.i65"
+    .word _comma
+#include "page.i65"
+literal02
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DLIT
+stack=( d == ) ( -- d )
+tags=compiler
+Compiles a double into the dictionary as a numeric literal
+!!!pronounced: d-lit
+#endif
+#include "align.i65"
+_dlit
+    jsr enter
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word _literal
+#include "page.i65"
+    .word _literal
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=LOAD
+stack=( u -- )
+tags=compiler
+
+ The contents of >IN and BLK , which locate the current input
+ stream, are saved.  The input stream is then redirected to
+ the beginning of screen u by setting >IN to zero and BLK to
+ u.  The screen is then interpreted.  If interpretation from
+ screen u is not terminated explicitly it will be terminated
+ when the input stream is exhausted and then the contents of
+ >IN and BLK will be restored.  An error condition exists if
+ u is zero.  See  >IN  BLK  BLOCK
+
+```
+: load   ( scr -- )
+    ?dup
+    if
+        blk @  >in @ 2>r
+        blk !  source! interpret
+        r> >in !  r> blk !  source!
+    then ;
+```
+#endif
+#include "align.i65"
+_load
+    jsr enter
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(load01-*+1)
+#include "pad.i65"
+    .word blk
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word toin
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twotor
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word _sourcestore
+#include "page.i65"
+    .word _interpret
+#include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word toin
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word _sourcestore
+#include "page.i65"
+load01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SAVE-FORTH
+stack=( -- )
+tags=compiler,unimplemented
+
+ Writes a binary file of the core dictionary to mass storage
+ ($0401 to HERE)
+
+#endif
+#include "align.i65"
+_saveforth
+;    jsr enter
+;#include "page.i65"
+;    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?>MARK
+stack=( marker -- dp )
+tags=compiler,nosymbol
+
+```
+: ?>mark
+    here swap c, ;
+```
+#endif
+#include "align.i65"
+_qtomark
+    jsr enter
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word _ccomma
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?<MARK
+stack=( -- dp 0 )
+tags=compiler,nosymbol
+
+```
+: ?<mark
+    here 0 ;
+```
+#endif
+#include "align.i65"
+_qfrommark
+    jsr enter
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?>RESOLVE
+stack=
+tags=compiler,nosymbol
+
+```
+: ?>resolve
+    begin
+        ?dup
+    while
+        dup c@ here third - 1+ rot c!
+    repeat ;
+```
+#endif
+#include "align.i65"
+_qtoresolve
+    jsr enter
+#include "page.i65"
+qtoresolve01
+    .word qdup
+#include "page.i65"
+    .word qbranch
+    .byt <(qtoresolve02-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word branch
+    .byt <(qtoresolve01-*+1)
+#include "pad.i65"
+qtoresolve02
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?<RESOLVE
+stack=
+tags=compiler,nosymbol
+flags=immediate
+
+```
+: ?<resolve
+    swap here - 1+ c, ?>resolve ;
+```
+#endif
+#include "align.i65"
+_qltresolve
+    jsr enter
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word _ccomma
+#include "page.i65"
+    .word _qtoresolve
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ADD>MARK
+stack=( dp marker -- ; )
+tags=compiler,nosymbol
+
+```
+: add>mark
+    true >r
+    begin
+        swap 2dup >r
+        and
+    until
+    drop ?>mark
+    begin
+        r> dup true
+        and
+    until
+    drop ;
+```
+#endif
+#include "align.i65"
+_addtomark
+    jsr enter
+#include "page.i65"
+    .word true
+#include "page.i65"
+    .word tor
+#include "page.i65"
+addtomark01
+    .word swap
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word qbranch
+    .byt <(addtomark01-*+1)
+#include "pad.i65"
+    .word drop
+#include "page.i65"
+    .word _qtomark
+#include "page.i65"
+addtomark02
+    .word rfrom
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word true
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word qbranch
+    .byt <(addtomark02-*+1)
+#include "pad.i65"
+    .word drop
 #include "page.i65"
     .word exit
 
@@ -2070,185 +2251,3 @@ _while
     .word _addtomark
 #include "page.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=2VARIABLE
-stack=( == ) ( -- )
-tags=compiler
-Create storage for a new double
-#endif
-#include "align.i65"
-_twovariable
-    jsr enter
-#include "page.i65"
-    .word _variable
-#include "page.i65"
-    .word two
-#include "pad.i65"
-    .word _allot
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=DROPLIT
-stack=( d == ) ( -- n )
-tags=compiler,nosymbol
-Compiles the least significant 16 bits of a double into the dictionary as
-a numeric literal
-
-!!!pronounced: drop-lit
-#endif
-#include "align.i65"
-_droplit
-    jsr enter
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word branch
-    .byt <(literal00-*+1)
-
-;--------------------------------------------------------------
-#if 0
-name=LITERAL
-stack=( n == ) ( -- n )
-tags=compiler
-flags=immediate
-Enclose `n` into the dictionary.  At runtime, leaves `n` on the
-stack.
-#endif
-#include "align.i65"
-_literal
-    jsr enter
-#include "page.i65"
-literal00
-    .word dup
-#include "page.i65"
-    .word plit
-    .word 256
-#include "pad.i65"
-    .word ult
-#include "page.i65"
-    .word qbranch
-    .byt <(literal01-*+1)
-#include "pad.i65"
-    .word _compile
-    .word clit
-#include "pad.i65"
-    .word _ccomma
-#include "page.i65"
-    .word branch
-    .byt <(literal02-*+1)
-#include "pad.i65"
-literal01
-    .word _compile
-    .word plit
-#include "pad.i65"
-    .word _comma
-#include "page.i65"
-literal02
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=DLIT
-stack=( d == ) ( -- d )
-tags=compiler
-Compiles a double into the dictionary as a numeric literal
-!!!pronounced: d-lit
-#endif
-#include "align.i65"
-_dlit
-    jsr enter
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word _literal
-#include "page.i65"
-    .word _literal
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=LOAD
-stack=( u -- )
-tags=compiler
-
- The contents of >IN and BLK , which locate the current input
- stream, are saved.  The input stream is then redirected to
- the beginning of screen u by setting >IN to zero and BLK to
- u.  The screen is then interpreted.  If interpretation from
- screen u is not terminated explicitly it will be terminated
- when the input stream is exhausted and then the contents of
- >IN and BLK will be restored.  An error condition exists if
- u is zero.  See  >IN  BLK  BLOCK
-
-```
-: load   ( scr -- )
-    ?dup
-    if
-        blk @  >in @ 2>r
-        blk !  source! interpret
-        r> >in !  r> blk !  source!
-    then ;
-```
-#endif
-#include "align.i65"
-_load
-    jsr enter
-#include "page.i65"
-    .word qdup
-#include "page.i65"
-    .word qbranch
-    .byt <(load01-*+1)
-#include "pad.i65"
-    .word blk
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word twotor
-#include "page.i65"
-    .word blk
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word _sourcestore
-#include "page.i65"
-    .word _interpret
-#include "page.i65"
-    .word tworfrom
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word blk
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word _sourcestore
-#include "page.i65"
-load01
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=SAVE-FORTH
-stack=( -- )
-tags=compiler,unimplemented
-
- Writes a binary file of the core dictionary to mass storage
- ($0401 to HERE)
-
-#endif
-#include "align.i65"
-_saveforth
-;    jsr enter
-;#include "page.i65"
-;    .word exit
