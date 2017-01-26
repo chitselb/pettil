@@ -523,7 +523,7 @@ _semi
     write_json_file "pettil.json",all_words
 
     # output word sizes as csv
-    write_size_file "size.csv",all_words
+    write_size_file "sizes.csv",all_words
 
     # output word names for pearson cruncher
     write_pearson_file "pearson.txt",all_words

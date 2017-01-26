@@ -122,8 +122,6 @@ cfacomma01
 #include "pad.i65"
 cfacomma02
 #include "page.i65"
-    ;.word clit
-    ;.byt $20
     .word bl                    ; JSR instruction
 #include "page.i65"
     .word _ccomma
@@ -184,21 +182,29 @@ by default.
     herelsb < if nextpage then ;
 ```
 #endif
-#include "align.i65"
-_qpage
-    jsr enter
-#include "page.i65"
-    .word herelsb
-#include "page.i65"
-    .word lt
-#include "page.i65"
-    .word qbranch
-    .byt <(qpage01-*+1)
-#include "pad.i65"
-    .word _nextpage
-#include "page.i65"
-qpage01
-    .word exit
+pagemargin
+    ldy #1
+    inc ip
+    lda uarea+userdp-userarea
+    cmp (ip),y
+    bcs _nextpage
+    jmp next
+
+;#include "align.i65"
+;_qpage
+;    jsr enter
+;#include "page.i65"
+;    .word herelsb
+;#include "page.i65"
+;    .word lt
+;#include "page.i65"
+;    .word qbranch
+;    .byt <(qpage01-*+1)
+;#include "pad.i65"
+;    .word _nextpage
+;#include "page.i65"
+;qpage01
+;    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -218,11 +224,9 @@ dictionary stream at page boundaries
 _xtcomma
     jsr enter
 #include "page.i65"
-    .word clit
+    .word pagemargin
     .byt $fc
 #include "pad.i65"
-    .word _qpage
-#include "page.i65"
     .word _comma
 #include "page.i65"
     .word exit
@@ -408,7 +412,7 @@ tags=compiler,defining,fig
 _colon
     jsr enter
 #include "page.i65"
-    .word _zeropairs
+    .word zeropairs
 #include "page.i65"
     .word redefined
 #include "page.i65"
@@ -529,11 +533,9 @@ _querycolon
 #include "page.i65"
     .word _qcomp
 #include "page.i65"
-    .word clit
+    .word pagemargin
     .byt $f8
 #include "pad.i65"
-    .word _qpage
-#include "page.i65"
     .word _compile
     .word pquerycolon
 #include "pad.i65"
@@ -594,7 +596,7 @@ _does
 #include "page.i65"
     .word _qcomp
 #include "page.i65"
-    .word _zeropairs
+    .word zeropairs
 #include "page.i65"
     .word _compile
     .word exit
@@ -640,7 +642,6 @@ DP = C+X        TDP = A         E = C           [C..D] = [A..B]
 ```
 #endif
 bishwhet
-    ;ldy #4
     jsr locals4
     brk
     .byt popd | TOS
@@ -700,7 +701,7 @@ _builds
 #include "page.i65"
     .word _qcomp
 #include "page.i65"
-    .word _zeropairs
+    .word zeropairs
 #include "page.i65"
     .word dp
 #include "page.i65"
@@ -1533,8 +1534,6 @@ _qpairs
 #include "page.i65"
     .word orx
 #include "page.i65"
-    .word threecfetch
-#include "page.i65"
     .word six
 #include "page.i65"
     .word _qerror
@@ -1551,29 +1550,61 @@ clear the three [[PAIRS]] counters
 ```
 : 0pairs   ( -- )
     [ 'pairs ] literal  3 erase ;
+
+;_zeropairs
+;#include "align.i65"
+;    jsr enter
+;#include "page.i65"
+;    .word plit
+;    .word pairs
+;#include "pad.i65"
+;    .word three
+;#include "page.i65"
+;    .word _erase
+;#include "page.i65"
+;    .word exit
 ```
 !!! pronounced: "query-pairs"
 #endif
 #include "align.i65"
-_zeropairs
-#include "align.i65"
-    jsr enter
-#include "page.i65"
-    .word plit
-    .word pairs
-#include "pad.i65"
-    .word three
-#include "page.i65"
-    .word _erase
-#include "page.i65"
-    .word exit
+zeropairs
+    ldy #$fd            ; -3
+    lda #0
+zeropairs01
+    sta pairs-$fd,y
+    iny
+    bne zeropairs01
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=PAIRS
+stack=( flag -- )
+tags=compiler,control,nosymbol
+Counters for the IF/ELSE/THEN, BEGIN/WHILE/REPEAT/AGAIN/UNTIL, and DO/LEAVE/LOOP used by the compiler to match up opening and closing pairs
+of conditional control words
+#endif
 pairs
     .dsb 3,0            ; storage for counters
 
-; (pairs)
+;--------------------------------------------------------------
+#if 0
+name=+PAIRS
+stack=( 1|2|3 -- )
+tags=compiler,control,nosymbol
+Increments the pair counter
+#endif
 pluspairs
     sec
     .byt $29            ; AND immediate
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=-PAIRS
+stack=( 1|2|3 -- )
+tags=compiler,control,nosymbol
+Decrements the pair counter
+#endif
 minuspairs
     clc
     txa
@@ -1583,16 +1614,24 @@ minuspairs
     inc pairs-1,x
 pairs01
     dec pairs-1,x
-    bmi pairs03
+    php
     tax
-    ldy #6              ; UNPAIRED CONDITIONALS
+    plp
+    bmi pairs03         ; UNPAIRED CONDITIONALS if counter negative
 pairs02
     ldy #5              ; COMPILATION ONLY
     lda uarea+userstate-userarea
     beq pairs04
     jmp drop
 
-querypairs
+;--------------------------------------------------------------
+#if 0
+name=?PAIROPEN
+stack=( 1|2|3 -- )
+tags=compiler,control,nosymbol
+Tests that the pair counter is nonzero (open)
+#endif
+querypairopen
     ldy tos
     lda pairs-1,y
     bne pairs02         ; OKAY
@@ -1617,12 +1656,168 @@ qcsp
 ;--------------------------------------------------------------
 #if 0
 name=!CSP
-tags=compiler,nosymbol
+tags=compiler
 #endif
 #include "align.i65"
 storecsp
     stx uarea+usercsp-userarea
     jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=DO
+stack=( == dp ) ( limit start -- )
+tags=compiler,control
+flags=immediate
+
+```
+: do   ( )
+    [ $fb ] pagemargin compile (do) 3 +pairs here ; immediate
+```
+#endif
+#include "align.i65"
+_do
+    jsr enter
+#include "page.i65"
+    .word pagemargin
+    .byt $fb
+#include "pad.i65"
+    .word _compile
+    .word pdo
+#include "pad.i65"
+    .word three
+#include "page.i65"
+    .word pluspairs
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=LOOP
+stack=( == ) ( -- )
+tags=compiler,control
+flags=immediate
+
+Immediate word, compiles runtime code to terminate a loop that
+counts up by 1.  The loop index and limit are treated as
+unsigned, e.g. `0 0 DO LOOP` will iterate 65536 times.  This
+is distinct from [[+LOOP]] which treats the loop index/limit
+both as signed integers.
+
+```
+: loop   ( )
+    3 -pairs  [ $fb ] pagemargin  compile (loop)
+    dup>r here
+    - dup r> c!
+    negate c, ; immediate
+```
+#endif
+#include "align.i65"
+_loop
+    jsr enter
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word minuspairs
+#include "page.i65"
+    .word pagemargin
+    .byt $fb
+#include "pad.i65"
+    .word _compile
+    .word ploop
+#include "pad.i65"
+    .word duptor
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word negate
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word _ccomma
+#include "page.i65"
+    .word exit
+#include "page.i65"
+;    .word exit
+#include "page.i65"
+;    .word exit
+#include "page.i65"
+;    .word exit
+
+;    .dsb 15,0
+;--------------------------------------------------------------
+#if 0
+name=OLDLOOP
+stack=( == ) ( -- )
+tags=compiler,control
+flags=immediate
+
+Immediate word, compiles runtime code to terminate a loop that
+counts up by 1.  The loop index and limit are treated as
+unsigned, e.g. `0 0 DO LOOP` will iterate 65536 times.  This
+is distinct from [[+LOOP]] which treats the loop index/limit
+both as signed integers.
+
+```
+: loop   ( )
+    3 ?pairs  $fb ?page  compile (loop)  ?<resolve ; immediate
+```
+#endif
+#include "align.i65"
+_oldloop
+    jsr enter
+#include "page.i65"
+    .word two
+#include "page.i65"
+    .word _qpairs
+#include "page.i65"
+    .word pagemargin
+    .byt $fb
+#include "pad.i65"
+    .word _compile
+    .word ploop
+#include "pad.i65"
+    .word _qltresolve
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=OLDDO
+stack=( == dp 0 3 ) ( limit start -- )
+tags=compiler,control
+flags=immediate
+
+```
+: do   ( )
+    $fb ?page compile (do) ?<mark 3 ;
+```
+#endif
+#include "align.i65"
+_olddo
+    jsr enter
+#include "page.i65"
+    .word pagemargin
+    .byt $fb
+#include "pad.i65"
+    .word _compile
+    .word pdo
+#include "pad.i65"
+    .word _qfrommark
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1858,36 +2053,6 @@ _then
 
 ;--------------------------------------------------------------
 #if 0
-name=DO
-stack=( == dp 0 3 ) ( limit start -- )
-tags=compiler,control
-flags=immediate
-
-```
-: do   ( )
-    $fb ?page compile (do) ?<mark 3 ;
-```
-#endif
-#include "align.i65"
-_do
-    jsr enter
-#include "page.i65"
-    .word clit
-    .byt $fb
-#include "pad.i65"
-    .word _qpage
-#include "page.i65"
-    .word _compile
-    .word pdo
-#include "pad.i65"
-    .word _qfrommark
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=?DO
 stack=( == ) ( limit start -- )
 tags=compiler,control
@@ -1902,11 +2067,9 @@ flags=immediate
 _qdo
     jsr enter
 #include "page.i65"
-    .word clit
+    .word pagemargin
     .byt $fb
 #include "pad.i65"
-    .word _qpage
-#include "page.i65"
     .word _compile
     .word pqdo
 #include "pad.i65"
@@ -1921,44 +2084,6 @@ _qdo
     .word swap
 #include "page.i65"
     .word three
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=LOOP
-stack=( == ) ( -- )
-tags=compiler,control
-flags=immediate
-
-Immediate word, compiles runtime code to terminate a loop that
-counts up by 1.  The loop index and limit are treated as
-unsigned, e.g. `0 0 DO LOOP` will iterate 65536 times.  This
-is distinct from [[+LOOP]] which treats the loop index/limit
-both as signed integers.
-
-```
-: loop   ( )
-    3 ?pairs  $fb ?page  compile (loop)  ?<resolve ; immediate
-```
-#endif
-#include "align.i65"
-_loop
-    jsr enter
-#include "page.i65"
-    .word two
-#include "page.i65"
-    .word _qpairs
-#include "page.i65"
-    .word clit
-    .byt $fb
-#include "pad.i65"
-    .word _qpage
-#include "page.i65"
-    .word _compile
-    .word ploop
-#include "pad.i65"
-    .word _qltresolve
 #include "page.i65"
     .word exit
 

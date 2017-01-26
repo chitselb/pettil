@@ -42,6 +42,7 @@ pettil:
 	mv ./tmp/t.t ./tmp/pettil.mon
 #	ls -l ./tmp/*.obj ./tmp/*.sym > ./docs/sizes.txt
 	stat -c '%8s %n' tmp/*.obj tmp/*.sym | sed -e 's/tmp\///' > docs/sizes.txt
+	cp -v ./tmp/sizes.csv docs/
 
 tiddlypettil:
 	echo . Phase IV
