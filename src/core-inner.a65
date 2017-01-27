@@ -457,15 +457,21 @@ tags=inner,nosymbol
 Normal exit for [[LOOP]] [[+LOOP]] and used by [[?DO]] [[LEAVE]] [[?LEAVE]] to exit a `DO..LOOP` early
 #endif
 punloop
-    clc
+;punloop
+    ldy #$fc
+punloop01
     pla
-    sta zi
-    pla
-    sta zi+1
-    pla
-    sta zi+2
-    pla
-    sta zi+3
+    sta zi-$fc,y
+    iny
+    bne punloop01
+;    pla
+;    sta zi
+;    pla
+;    sta zi+1
+;    pla
+;    sta zi+2
+;    pla
+;    sta zi+3
     jmp exit
 
 ;--------------------------------------------------------------
@@ -503,12 +509,12 @@ stack=( end begin -- )
 tags=inner,nosymbol
 Loops from "begin" to "end"
 
-d;m 0 8f;m 1f0 1ff;m 6c80 6c9f;z
+d;m 0 8f;m 1f0 1ff;m 2180 21af;z
 
 #endif
 pdo
     clc
-    php
+    ror xsave               ; save C flag as sign bit of xsave
     ldy #2                  ; set up for EXIT
     lda (ip),y              ; forward branch offset
     clc
@@ -517,16 +523,14 @@ pdo
     dey
     lda ip+1
     adc #0
-    plp
     pha
     tya
     pha
-    php
     lda #0
     jsr padjust             ; skip branch offset
-    plp
-    bcc pdo01               ; (DO) vs (?DO)
-    ;sec                    ; tell subeq to exit with RTS
+    bit xsave
+    bpl pdo01               ; (DO) vs (?DO)
+    sec                     ; tell subeq to exit with RTS
     jsr subeq               ; (?DO), test loop start/limit
     bne pdo01
     inx                     ; loop indices are identical
@@ -924,7 +928,7 @@ unloop
     ldy #$fc
 unloop01
     pla
-    sta zi-$100+4,y  ; effective address wraps around
+    sta zi-$fc,y  ; effective address wraps around
     iny
     bne unloop01
 ;    pla             ; [4]
