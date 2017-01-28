@@ -97,6 +97,25 @@ _decimal
 
 ;--------------------------------------------------------------
 #if 0
+name=RP!
+stack=( -- )
+tags=fig
+Ordinarily the 6502 machine stack (aka PETTIL return stack) is
+initialized to $01ff by BASIC, but the value stored at RP0 defaults
+to $01fe instead.  This is because the PET ROM stores a line of
+input at $0200 (where TIB points) and INTERPRET will be storing a
+count of the first word on the line at $01ff
+#endif
+rpstore
+    txa
+    ldx uarea+userrp0-userarea
+    txs
+    tax
+rpstore01
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
 name=(")
 stack=( -- addr )
 tags=inner,nosymbol
@@ -112,6 +131,64 @@ pquote01
     lda #3
     adc (ip),y
     jmp pad
+
+;--------------------------------------------------------------
+#if 0
+name=?EXIT
+stack=( flag -- )
+tags=ext
+Exits the calling word if the flag is true
+
+```
+: ?exit   ( flag -- )
+    if rdrop then ;
+```
+#endif
+#include "align.i65"
+_qexit
+    jsr enter
+#include "page.i65"
+    .word qbranch
+    .byt <(qexit01-*+1)
+#include "pad.i65"
+    .word rdrop
+#include "page.i65"
+qexit01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?STACK
+stack=( -- )
+tags=inner
+Check the  data stack pointer for sanity, abort if trouble
+#endif
+qstack
+    ldy #2                          ; 2 = stack full
+    txa
+    bmi error
+    dey                             ; 1 = stack empty
+    cmp uarea+usersp0-userarea
+    bcc rpstore01
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=SYSERR
+stack=( -- )
+tags=nosymbol,inner
+General-purpose error handler, callable from primitives, used
+to print a system error message and abort
+pass in the error # in Y
+      1 stack empty
+      2 stack full
+#endif
+error
+    sty tos
+    ldy #0
+    sty tos+1
+    ldy #<(_fail+3)    ; transfer control to FAIL
+    lda #>(_fail+3)
+    jmp exit00
 
 ;--------------------------------------------------------------
 #if 0
@@ -235,6 +312,44 @@ enter01
 
 ;--------------------------------------------------------------
 #if 0
+name=(+LOOP)
+stack=( n -- )
+tags=inner,nosymbol
+Add `n` to inner loop index.  If loop index exceeds loop limit,
+then iterate back to (do), otherwise exit the loop.  PETTIL uses
+four bytes of zero page for the inner loop index/limit, for speed
+
+[[Posted question on comp.lang.forth|https://groups.google.com/d/msg/comp.lang.forth/V9evPkLwRoM/Khwons3O4QwJ]]
+#endif
+pploop
+    sec             ; [2]
+    lda zi          ; [3]
+    sbc zlim        ; [3]
+    sta n           ; [3]
+    lda zi+1        ; [3]
+    sbc zlim+1      ; [3]
+    eor #$80        ; [2]
+    tay             ; [2]
+    clc             ; [2]
+    lda n           ; [3]
+    adc tos         ; [3]
+    tya             ; [2]
+    adc tos+1       ; [3]
+    php             ; [3]
+    clc             ; [2]
+    lda tos         ; [3]
+    adc zi          ; [3]
+    sta zi          ; [3]
+    lda tos+1       ; [3]
+    adc zi+1        ; [3]
+    sta zi+1        ; [3]
+    jsr slide       ; [.]
+    plp             ; [4]
+    bvc branch      ; [2]
+    bvs unloop
+
+;--------------------------------------------------------------
+#if 0
 name=(LOOP)
 stack=( -- )
 tags=inner,nosymbol
@@ -302,89 +417,12 @@ Jump up to high-level Forth from inline 6502
 |Y|low byte|
 |A|high byte|
 #endif
-toforth
 exit00
+toforth
     sta ip+1        ; [3]
 exit03
     sty ip          ; [3]
     jmp nexto       ; [3]
-
-;--------------------------------------------------------------
-#if 0
-name=?EXIT
-stack=( flag -- )
-tags=ext
-Exits the calling word if the flag is true
-
-```
-: ?exit   ( flag -- )
-    if rdrop then ;
-```
-#endif
-#include "align.i65"
-_qexit
-    jsr enter
-#include "page.i65"
-    .word qbranch
-    .byt <(qexit01-*+1)
-#include "pad.i65"
-    .word rdrop
-#include "page.i65"
-qexit01
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?STACK
-stack=( -- )
-tags=inner
-Check the  data stack pointer for sanity, abort if trouble
-#endif
-qstack
-    ldy #2                          ; 2 = stack full
-    txa
-    bmi error
-    dey                             ; 1 = stack empty
-    cmp uarea+usersp0-userarea
-    bcc rpstore01
-    ;fall through
-;--------------------------------------------------------------
-#if 0
-name=SYSERR
-stack=( -- )
-tags=nosymbol,inner
-General-purpose error handler, callable from primitives, used
-to print a system error message and abort
-pass in the error # in Y
-      1 stack empty
-      2 stack full
-#endif
-error
-    sty tos
-    ldy #0
-    sty tos+1
-    ldy #<(_fail+3)    ; transfer control to FAIL
-    lda #>(_fail+3)
-    bne exit00      ; bra
-
-;--------------------------------------------------------------
-#if 0
-name=RP!
-stack=( -- )
-tags=fig
-Ordinarily the 6502 machine stack (aka PETTIL return stack) is
-initialized to $01ff by BASIC, but the value stored at RP0 defaults
-to $01fe instead.  This is because the PET ROM stores a line of
-input at $0200 (where TIB points) and INTERPRET will be storing a
-count of the first word on the line at $01ff
-#endif
-rpstore
-    txa
-    ldx uarea+userrp0-userarea
-    txs
-    tax
-rpstore01
-    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -523,47 +561,6 @@ branch05
     lda ip+1        ; [3]
     adc #0          ; [2]
     bcc exit00      ; [3] bra /18/
-
-;--------------------------------------------------------------
-#if 0
-name=(+LOOP)
-stack=( n -- )
-tags=inner,nosymbol
-Add `n` to inner loop index.  If loop index exceeds loop limit,
-then iterate back to (do), otherwise exit the loop.  PETTIL uses
-four bytes of zero page for the inner loop index/limit, for speed
-
-[[Posted question on comp.lang.forth|https://groups.google.com/d/msg/comp.lang.forth/V9evPkLwRoM/Khwons3O4QwJ]]
-#endif
-pploop
-    sec             ; [2]
-    lda zi          ; [3]
-    sbc zlim        ; [3]
-    sta n           ; [3]
-    lda zi+1        ; [3]
-    sbc zlim+1      ; [3]
-    eor #$80        ; [2]
-    tay             ; [2]
-    clc             ; [2]
-    lda n           ; [3]
-    adc tos         ; [3]
-    tya             ; [2]
-    adc tos+1       ; [3]
-    php             ; [3]
-    clc             ; [2]
-    lda tos         ; [3]
-    adc zi          ; [3]
-    sta zi          ; [3]
-    lda tos+1       ; [3]
-    adc zi+1        ; [3]
-    sta zi+1        ; [3]
-
-    jsr slide       ;
-    plp             ; [4]
-    bvc branch      ; [2]
-    ;bvs punloop
-wups
-    jmp wups
 
 ;--------------------------------------------------------------
 #if 0
