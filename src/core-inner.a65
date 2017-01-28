@@ -97,38 +97,6 @@ _decimal
 
 ;--------------------------------------------------------------
 #if 0
-name=(DOES)
-tags=inner,nosymbol
-stack=( -- )
-Runtime behavior of a word built with `<BUILDS ... DOES>`
-
-|before|<|after|<|h
-|^data<br/>stack|^return<br/>stack|^data<br/>stack|^return<br/>stack|h
-|||||
-#endif
-dodoes
-    jsr slip        ; [.] slip something onto the stack
-    stx z           ; [3]
-    pla             ; [4]
-    tax             ; [2]
-    pla             ; [4]
-    tay             ; [2]
-    pla             ; [4]
-    sta tos         ; [3]
-    pla             ; [4]
-    sta tos+1       ; [3] PFA to TOS
-    jsr inctos      ; [.] PFA was off by one because of what JSR pushes
-    lda ip+1        ; [3]
-    pha             ; [3]
-    lda ip          ; [3]
-    pha             ; [3] IP to return stack (for EXIT)
-    stx ip          ; [3]
-    sty ip+1        ; [3] set IP from calling child word
-    ldx z           ; [3]
-    jmp next1       ; [3] this entry point into NEXT only single-increments IP
-
-;--------------------------------------------------------------
-#if 0
 name=(")
 stack=( -- addr )
 tags=inner,nosymbol
@@ -222,47 +190,27 @@ padjust02
 
 ;--------------------------------------------------------------
 #if 0
-name=?STACK
+name=(DOES)
+tags=inner,nosymbol
 stack=( -- )
-tags=inner
-Check the  data stack pointer for sanity, abort if trouble
+Runtime behavior of a word built with `<BUILDS ... DOES>`
+
+|before|<|after|<|h
+|^data<br/>stack|^return<br/>stack|^data<br/>stack|^return<br/>stack|h
+|||||
 #endif
-qstack
-    ldy #2                          ; 2 = stack full
-    txa
-    bmi error
-    dey                             ; 1 = stack empty
-    cmp uarea+usersp0-userarea
-    bcc rpstore01
-    ;fall through
-;--------------------------------------------------------------
-#if 0
-name=SYSERR
-stack=( -- )
-tags=nosymbol,inner
-General-purpose error handler, callable from primitives, used
-to print a system error message and abort
-pass in the error # in Y
-      1 stack empty
-      2 stack full
-#endif
-error
-    sty tos
-    ldy #0
-    sty tos+1
-    lda #>(_fail+3)
-    ldy #<(_fail+3)    ; transfer control to FAIL
-;--------------------------------------------------------------
-#if 0
-name=>FORTH
-stack=( -- )
-tags=vocabulary,nosymbol
-Jump up to high-level Forth from inline 6502
-#endif
-toforth
-    sty ip          ; [3]
-    sta ip+1        ; [3]
-    jmp nexto       ; [3]
+dodoes
+    pla             ; [4]
+    tay             ; [2]
+    pla             ; [4]
+    sta z           ; [3]
+    jsr slip        ; [.]
+    pla             ; [4]
+    sta tos         ; [3]
+    pla             ; [4]
+    sta tos+1       ; [3]
+    jsr inctos      ; [.]
+jmp enter01
 
 ;--------------------------------------------------------------
 #if 0
@@ -277,15 +225,13 @@ enter
     tay             ; [2]
     pla             ; [4]
     sta z           ; [3]
+enter01
     lda ip+1        ; [3]
     pha             ; [3]
     lda ip          ; [3]
     pha             ; [3]
     lda z           ; [3]
-unloopexit
-    sta ip+1        ; [3]
-    sty ip          ; [3]
-    jmp next1       ; [3] [37]
+    bne exit01      ; [3] bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -302,10 +248,44 @@ unloop01
     sta zi-$fc,y  ; effective address wraps around
     iny
     bne unloop01
+    clc
+    .byt $29        ; AND #
+;--------------------------------------------------------------
+#if 0
+name=EXIT
+stack=( -- )
+tags=inner,nosymbol
+The runtime behavior of ;
+Exits a colon definition, unnesting to the next higher level of
+the return stack
+#endif
+exit
+    sec             ; [2]
     pla             ; [4]
+    adc #0          ; [2]
     tay             ; [2]
-    pla             ; [4]
-    bne unloopexit  ; [3] bra
+    pla             ; [3]
+
+;    iny
+exit01
+    iny             ; [2]
+
+;--------------------------------------------------------------
+#if 0
+name=>FORTH
+stack=( -- )
+tags=vocabulary,nosymbol
+Jump up to high-level Forth from inline 6502
+
+|Register|<|
+|Y|low byte|
+|A|high byte|
+#endif
+toforth
+exit00
+    sty ip          ; [3]
+    sta ip+1        ; [3]
+    jmp nexto       ; [3]
 
 ;--------------------------------------------------------------
 #if 0
@@ -345,19 +325,37 @@ qexit01
 
 ;--------------------------------------------------------------
 #if 0
-name=EXIT
+name=?STACK
 stack=( -- )
-tags=inner,nosymbol
-The runtime behavior of ;
-Exits a colon definition, unnesting to the next higher level of
-the return stack
+tags=inner
+Check the  data stack pointer for sanity, abort if trouble
 #endif
-exit
-    pla             ; [4]
-    sta ip          ; [3]
-    pla             ; [3]
-    sta ip+1        ; [3] [RP+] -> IP
-    jmp next        ; [3] NEXT
+qstack
+    ldy #2                          ; 2 = stack full
+    txa
+    bmi error
+    dey                             ; 1 = stack empty
+    cmp uarea+usersp0-userarea
+    bcc rpstore01
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=SYSERR
+stack=( -- )
+tags=nosymbol,inner
+General-purpose error handler, callable from primitives, used
+to print a system error message and abort
+pass in the error # in Y
+      1 stack empty
+      2 stack full
+#endif
+error
+    sty tos
+    ldy #0
+    sty tos+1
+    ldy #<(_fail+3)    ; transfer control to FAIL
+    lda #>(_fail+3)
+    bne exit00      ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -563,14 +561,6 @@ punloop01
     sta zi-$fc,y
     iny
     bne punloop01
-;    pla
-;    sta zi
-;    pla
-;    sta zi+1
-;    pla
-;    sta zi+2
-;    pla
-;    sta zi+3
     jmp exit
 
 ;--------------------------------------------------------------
