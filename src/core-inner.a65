@@ -101,27 +101,31 @@ name=(DOES)
 tags=inner,nosymbol
 stack=( -- )
 Runtime behavior of a word built with `<BUILDS ... DOES>`
+
+|before|<|after|<|h
+|^data<br/>stack|^return<br/>stack|^data<br/>stack|^return<br/>stack|h
+|||||
 #endif
 dodoes
-    jsr slip        ; slip something onto the stack
-    stx z    
-    pla
-    tax
-    pla
-    tay
-    pla
-    sta tos
-    pla
-    sta tos+1       ; PFA to TOS
-    jsr inctos      ; PFA was off by one because of what JSR pushes
-    lda ip+1
-    pha
-    lda ip
-    pha             ; IP to return stack (for EXIT)
-    stx ip
-    sty ip+1        ; set IP from calling child word
-    ldx z    
-    jmp next1       ; this entry point into NEXT only single-increments IP
+    jsr slip        ; [.] slip something onto the stack
+    stx z           ; [3]
+    pla             ; [4]
+    tax             ; [2]
+    pla             ; [4]
+    tay             ; [2]
+    pla             ; [4]
+    sta tos         ; [3]
+    pla             ; [4]
+    sta tos+1       ; [3] PFA to TOS
+    jsr inctos      ; [.] PFA was off by one because of what JSR pushes
+    lda ip+1        ; [3]
+    pha             ; [3]
+    lda ip          ; [3]
+    pha             ; [3] IP to return stack (for EXIT)
+    stx ip          ; [3]
+    sty ip+1        ; [3] set IP from calling child word
+    ldx z           ; [3]
+    jmp next1       ; [3] this entry point into NEXT only single-increments IP
 
 ;--------------------------------------------------------------
 #if 0
@@ -151,15 +155,15 @@ Displays an inline string
 pdq
     sec
 pdq01
-    jsr slip
-    ldy ip+1
-    sty tos+1
-    ldy ip
-    iny
-    iny
-    sty tos
-    bne pdq02
-    inc tos+1
+    jsr slip        ; [.]
+    ldy ip+1        ; [3]
+    sty tos+1       ; [3]
+    ldy ip          ; [3]
+    iny             ; [2]
+    iny             ; [2]
+    sty tos         ; [3]
+    bne pdq02       ; [3]
+    inc tos+1       ; [2]
 pdq02
     bcc pquote01
     lda #>(_stringdot-1)
@@ -246,8 +250,8 @@ error
     sty tos
     ldy #0
     sty tos+1
-    ldy #>(_fail+3)
-    lda #<(_fail+3)    ; transfer control to FAIL
+    lda #>(_fail+3)
+    ldy #<(_fail+3)    ; transfer control to FAIL
 ;--------------------------------------------------------------
 #if 0
 name=>FORTH
@@ -256,9 +260,104 @@ tags=vocabulary,nosymbol
 Jump up to high-level Forth from inline 6502
 #endif
 toforth
-    sta ip
-    sty ip+1
-    jmp nexto
+    sty ip          ; [3]
+    sta ip+1        ; [3]
+    jmp nexto       ; [3]
+
+;--------------------------------------------------------------
+#if 0
+name=ENTER
+stack=( -- )
+tags=nosymbol,inner
+The business end of colon definition words, pushes the current
+IP on the return stack and executes the word following it
+#endif
+enter
+    pla             ; [4]
+    tay             ; [2]
+    pla             ; [4]
+    sta z           ; [3]
+    lda ip+1        ; [3]
+    pha             ; [3]
+    lda ip          ; [3]
+    pha             ; [3]
+    lda z           ; [3]
+unloopexit
+    sta ip+1        ; [3]
+    sty ip          ; [3]
+    jmp next1       ; [3] [37]
+
+;--------------------------------------------------------------
+#if 0
+name=UNLOOP
+stack=( -- )
+tags=nosymbol,inner,control
+Exits from a [[DO]]-[[LOOP]], either because the index exceeded the limit, or
+early exit due to [[LEAVE]] or [[?LEAVE]]
+#endif
+unloop
+    ldy #$fc
+unloop01
+    pla
+    sta zi-$fc,y  ; effective address wraps around
+    iny
+    bne unloop01
+    pla             ; [4]
+    tay             ; [2]
+    pla             ; [4]
+    bne unloopexit  ; [3] bra
+
+;--------------------------------------------------------------
+#if 0
+name=?EXIT
+stack=( flag -- )
+tags=ext
+Exits the calling word if the flag is true
+
+```
+: ?exit   ( flag -- )
+    if rdrop then ;
+
+faster, [13] vs [10] bytes
+qexit
+    lda tos
+    ora tos+1
+    php
+    jsr slide
+    plp
+    beq exit01          ; next
+    pla
+    pla
+    ;fall through
+```
+#endif
+#include "align.i65"
+_qexit
+    jsr enter
+#include "page.i65"
+    .word qbranch
+    .byt <(qexit01-*+1)
+#include "pad.i65"
+    .word rdrop
+#include "page.i65"
+qexit01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=EXIT
+stack=( -- )
+tags=inner,nosymbol
+The runtime behavior of ;
+Exits a colon definition, unnesting to the next higher level of
+the return stack
+#endif
+exit
+    pla             ; [4]
+    sta ip          ; [3]
+    pla             ; [3]
+    sta ip+1        ; [3] [RP+] -> IP
+    jmp next        ; [3] NEXT
 
 ;--------------------------------------------------------------
 #if 0
@@ -514,30 +613,29 @@ d;m 0 8f;m 1f0 1ff;m 2180 21af;z
 #endif
 pdo
     clc
-    ror z                   ; save C flag as sign bit of z    
-    ldy #2                  ; set up for EXIT
-    lda (ip),y              ; forward branch offset
-    clc
-    adc ip
-    tay
-    dey
-    lda ip+1
-    adc #0
-    pha
-    tya
-    pha
-    lda #0
-    jsr padjust             ; skip branch offset
-    bit z    
-    bpl pdo01               ; (DO) vs (?DO)
-    sec                     ; tell subeq to exit with RTS
-    jsr subeq               ; (?DO), test loop start/limit
-    bne pdo01
-    inx                     ; loop indices are identical
-    jsr slide               ; 2drop
-    jmp exit                ; don't iterate
+    ror z           ; [5] save C flag as sign bit of z    
+    ldy #2          ; [2] set up for EXIT
+    lda (ip),y      ; [5] forward branch offset
+    clc             ; [2]
+    adc ip          ; [3]
+    tay             ; [2]
+    dey             ; [2]
+    lda ip+1        ; [3]
+    adc #0          ; [2]
+    pha             ; [3]
+    tya             ; [2]
+    pha             ; [3]
+    lda #0          ; [2]
+    jsr padjust     ; [.] skip branch offset
+    bit z           ; [3]
+    bpl pdo01       ; [2|3] (DO) vs (?DO)
+    sec             ; [2] tell subeq to exit with RTS
+    jsr subeq       ; [.] (?DO), test loop start/limit
+    bne pdo01       ; [2|3]
+    inx             ; [2] loop indices are identical
+    jsr slide       ; [.] 2drop
+    jmp exit        ; [3] don't iterate
 pdo01
-    ;ldy #2
     jsr locals2
     ldy #3
 pdo02
@@ -801,59 +899,6 @@ j
 
 ;--------------------------------------------------------------
 #if 0
-name=?EXIT
-stack=( flag -- )
-tags=ext
-Exits the calling word if the flag is true
-
-```
-: ?exit   ( flag -- )
-    if rdrop then ;
-
-faster, [13] vs [10] bytes
-qexit
-    lda tos
-    ora tos+1
-    php
-    jsr slide
-    plp
-    beq exit01          ; next
-    pla
-    pla
-    ;fall through
-```
-#endif
-#include "align.i65"
-_qexit
-    jsr enter
-#include "page.i65"
-    .word qbranch
-    .byt <(qexit01-*+1)
-#include "pad.i65"
-    .word rdrop
-#include "page.i65"
-qexit01
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EXIT
-stack=( -- )
-tags=inner,nosymbol
-The runtime behavior of ;
-Exits a colon definition, unnesting to the next higher level of
-the return stack
-#endif
-exit
-    pla
-    sta ip
-    pla
-    sta ip+1        ; [RP+] -> IP
-exit01
-    jmp next        ; NEXT
-
-;--------------------------------------------------------------
-#if 0
 name=CALLER
 stack=( -- n )
 tags=ext
@@ -892,57 +937,6 @@ docreate
     pla
     sta tos+1
     jmp oneplus
-
-;--------------------------------------------------------------
-#if 0
-name=ENTER
-stack=( -- )
-tags=nosymbol,inner
-The business end of colon definition words, pushes the current
-IP on the return stack and executes the word following it
-#endif
-enter
-    pla             ; [4]
-    tay             ; [2]
-    pla             ; [4]
-    sta z           ; [3]
-    lda ip+1        ; [3]
-    pha             ; [3]
-    lda ip          ; [3]
-    pha             ; [3]
-    lda z           ; [3]
-unloopexit
-    sta ip+1        ; [3]
-    sty ip          ; [3]
-    jmp next1       ; [3] [37]
-
-;--------------------------------------------------------------
-#if 0
-name=UNLOOP
-stack=( -- )
-tags=nosymbol,inner,control
-Exits from a [[DO]]-[[LOOP]], either because the index exceeded the limit, or
-early exit due to [[LEAVE]] or [[?LEAVE]]
-#endif
-unloop
-    ldy #$fc
-unloop01
-    pla
-    sta zi-$fc,y  ; effective address wraps around
-    iny
-    bne unloop01
-;    pla             ; [4]
-;    sta zi          ; [3]
-;    pla             ; [4]
-;    sta zi+1        ; [3]
-;    pla             ; [4]
-;    sta zi+2        ; [3]
-;    pla             ; [4]
-;    sta zi+3        ; [3]
-    pla             ; [4]
-    tay             ; [2]
-    pla             ; [4]
-    bne unloopexit  ; [3] bra
 
 ;--------------------------------------------------------------
 #if 0
