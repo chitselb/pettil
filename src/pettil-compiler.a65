@@ -169,18 +169,14 @@ _nextpage
 
 ;--------------------------------------------------------------
 #if 0
-name=?PAGE
-stack=( margin -- )
+name=PAGEMARGIN
+stack=( -- )
 tags=compiler,nosymbol
 Moves [[DP]] to the next page if it is past the margin, to
 work around the NMOS jmp ($xxFF) bug.  The value of `margin`
 is the highest usable address within a page, which is `$xxFC`
-by default.
-
-```
-: ?page   ( limit -- )
-    herelsb < if nextpage then ;
-```
+by default.  The `margin` is located in the code immediately 
+following the call to `PAGEMARGIN`.
 #endif
 pagemargin
     ldy #1
@@ -189,22 +185,6 @@ pagemargin
     cmp (ip),y
     bcs _nextpage
     jmp next
-
-;#include "align.i65"
-;_qpage
-;    jsr enter
-;#include "page.i65"
-;    .word herelsb
-;#include "page.i65"
-;    .word lt
-;#include "page.i65"
-;    .word qbranch
-;    .byt <(qpage01-*+1)
-;#include "pad.i65"
-;    .word _nextpage
-;#include "page.i65"
-;qpage01
-;    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1604,7 +1584,7 @@ tags=compiler,control,nosymbol
 Aborts compilation unless there is at least one open control structure of
 the type of the given argument
 #endif
-querypairopen
+qpairopen
     ldy tos
     lda pairs-1,y
     bne pairs02         ; OKAY
@@ -1717,30 +1697,20 @@ pairs02
 
 
 
+
 ;--------------------------------------------------------------
 #if 0
-name=(CONDITIONAL-CFA)
-stack=( addr cfa -- dp )
+name=CONDITIONAL,
+stack=( )
 tags=compiler,control,nosymbol
-Opens or closes pairs, compiles runtime CFA code for conditional word
+compiles runtime code for control word
 
-    @+ >r c@+ r> execute
-    [ $fb ] pagemargin
-    @ xt,
+```
+```
 #endif
 #include "align.i65"
-_conditionalcfa
+_conditionalcomma
     jsr enter
-#include "page.i65"
-    .word fetchplus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word cfetchplus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word execute
 #include "page.i65"
     .word pagemargin
     .byt $fb
@@ -1756,11 +1726,13 @@ _conditionalcfa
 name=(CONDITIONAL-OPEN)
 stack=( addr -- dp )
 tags=compiler,control,nosymbol
-
 compiles runtime code for LOOP or +LOOP
+
+14+21+29
+
 ```
 does>
-    ['] +pairs (conditional-cfa)
+    c@+ +pairs  [ $fb ] pagemargin  @ xt,
     0 c, here ;
 ```
 #endif
@@ -1768,13 +1740,42 @@ does>
 _conditionalopen
     jsr dodoes
 #include "page.i65"
-    .word _conditionalcfa
+    .word cfetchplus
+#include "page.i65"
+    .word pluspairs
+#include "page.i65"
+    .word _conditionalcomma
+#include "page.i65"
+    .word here
 #include "page.i65"
     .word zero
 #include "page.i65"
     .word _ccomma
 #include "page.i65"
-    .word here
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(CONDITIONAL-MIDDLE)
+stack=( addr -- dp )
+tags=compiler,control,nosymbol
+compiles runtime code for LOOP or +LOOP
+
+```
+does>
+    c@+ +pairs  [ $fb ] pagemargin  @ xt,
+    0 c, here ;
+```
+#endif
+#include "align.i65"
+_conditionalmiddle
+    jsr dodoes
+#include "page.i65"
+    .word cfetchplus
+#include "page.i65"
+    .word qpairopen
+#include "page.i65"
+    .word _conditionalcomma
 #include "page.i65"
     .word exit
 
@@ -1786,6 +1787,11 @@ tags=compiler,control,nosymbol
 
 compiles runtime code for LOOP or +LOOP
 ```
+does>
+    c@+ -pairs  [ $fb ] pagemargin  @ xt,
+    c@+ ['] -pairs (conditional-cfa)
+    0 c, here ;
+
 does>  
     ['] -pairs (conditional-cfa)
     0 c, here ;
@@ -1801,7 +1807,11 @@ does>
 _conditionalclose
     jsr dodoes
 #include "page.i65"
-    .word _conditionalcfa
+    .word cfetchplus
+#include "page.i65"
+    .word minuspairs
+#include "page.i65"
+    .word _conditionalcomma
 #include "page.i65"
     .word duptor
 #include "page.i65"
@@ -2051,29 +2061,8 @@ d;m 0 8f;m 1f0 1ff;z
 #include "align.i65"
 _do
     jsr _conditionalopen
-    .word pluspairs
     .byt 3
     .word pdo
-
-;    jsr enter
-;#include "page.i65"
-;    .word pagemargin
-;    .byt $fb
-;#include "pad.i65"
-;    .word _compile
-;    .word pdo
-;#include "pad.i65"
-;    .word three
-;#include "page.i65"
-;    .word pluspairs
-;#include "page.i65"
-;    .word here
-;#include "page.i65"
-;    .word zero
-;#include "page.i65"
-;    .word _ccomma
-;#include "page.i65"
-;    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -2090,31 +2079,8 @@ flags=immediate
 #include "align.i65"
 _qdo
     jsr _conditionalopen
-    .word pluspairs
     .byt 3
     .word pqdo
-
-;    jsr enter
-;#include "page.i65"
-;    .word pagemargin
-;    .byt $fb
-;#include "pad.i65"
-;    .word _compile
-;    .word pqdo
-;#include "pad.i65"
-;    .word zero
-;#include "page.i65"
-;    .word _qtomark
-;#include "page.i65"
-;    .word _qfrommark
-;#include "page.i65"
-;    .word drop
-;#include "page.i65"
-;    .word swap
-;#include "page.i65"
-;    .word three
-;#include "page.i65"
-;    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -2141,7 +2107,6 @@ d;m 0 8f;m 1e0 1ff;z
 #endif
 _loop
     jsr _conditionalclose
-    .word minuspairs
     .byt 3          ; word 'family'
     .word ploop     ; runtime CFA
 
@@ -2166,9 +2131,37 @@ loop index goes past the limit.
 #include "align.i65"
 _plusloop
     jsr _conditionalclose
-    .word minuspairs
     .byt 3          ; word 'family'
     .word pploop    ; runtime CFA
+
+;--------------------------------------------------------------
+#if 0
+name=LEAVE
+stack=( -- )
+tags=compiler,control
+flags=immediate
+
+#endif
+#include "align.i65"
+_leave
+    jsr _conditionalmiddle
+    .byt 3
+    .word unloop
+
+;--------------------------------------------------------------
+#if 0
+name=?LEAVE
+stack=( == ) ( flag -- )
+tags=compiler,control
+flags=immediate
+Equivalent to `IF LEAVE THEN`
+
+#endif
+#include "align.i65"
+_qleave
+    jsr _conditionalmiddle
+    .byt 3
+    .word pqleave
 
 
 
@@ -2253,55 +2246,6 @@ _then
 #include "page.i65"
     .word _qtoresolve
 #include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=LEAVE
-stack=( -- )
-tags=compiler,control
-flags=immediate
-
-```
-: leave   ( )
-    compile (leave)  3 add>mark ; immediate
-```
-#endif
-#include "align.i65"
-_leave
-    jsr enter
-#include "page.i65"
-    .word _compile
-    .word unloop
-#include "pad.i65"
-    .word one
-#include "page.i65"
-    .word _addtomark
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?LEAVE
-stack=( == ) ( flag -- )
-tags=compiler,control
-flags=immediate
-Equivalent to `IF LEAVE THEN`
-
-```
-: ?leave   ( )
-    compile (?leave)  3 add>mark ; immediate
-```
-#endif
-#include "align.i65"
-_qleave
-    jsr enter
-#include "page.i65"
-    .word _compile
-    .word pqleave
-#include "pad.i65"
-    .word one
-#include "page.i65"
-    .word _addtomark
     .word exit
 
 ;--------------------------------------------------------------
