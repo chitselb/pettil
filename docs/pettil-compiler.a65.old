@@ -255,28 +255,26 @@ _undefine
 ;--------------------------------------------------------------
 #if 0
 name=?ERROR
-stack=( flag error -- )
+stack=( flag errcode -- )
 tags=ext,compiler
-Aborts with the inline numbered error if the flag is true
+Aborts with a numbered error if the flag is true
 
 ```
-does>
-    c@ swap  ?: fail drop ;
+: ?error   ( flag errcode -- )
+    swap  ?: fail drop ;
 ```
 #endif
 #include "align.i65"
-qerror
-    lda tos
-    ora tos+1
-    beq qerror01
-    ldy #2
-    lda (ip),y
-    tay
-qerror00
-    jmp error
-qerror01
-    jsr slide
-    jmp bump
+_qerror
+    jsr enter
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word pquerycolon
+    .word _fail
+    .word drop
+#include "pad.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -293,10 +291,19 @@ error if [[STATE]] is off ([[INTERPRET]] mode)
 #endif
 #include "align.i65"
 _qcomp
-    ldy #5                      ; "COMPILATION ONLY"
-    lda uarea+userstate-userarea
-    beq qerror00
-    jmp next
+    jsr enter
+#include "page.i65"
+    .word state
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word five                      ; "COMPILATION ONLY"
+#include "page.i65"
+    .word _qerror
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1563,9 +1570,10 @@ _qpairsclosed
 #include "page.i65"
     .word orx
 #include "page.i65"
-    .word qerror
-    .byt 6
-#include "pad.i65"
+    .word six
+#include "page.i65"
+    .word _qerror
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1828,6 +1836,58 @@ _conditionalclose
     .word _ccomma
 #include "page.i65"
     .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(CONDITIONAL-ELSE)
+stack=( )
+tags=compiler,control,nosymbol
+
+compiles runtime code for ELSE
+```
+does>
+    c@+ -pairs  [ $fb ] pagemargin  @ xt,
+    c@+ ['] -pairs (conditional-cfa)
+    0 c, here ;
+
+does>  
+    ['] -pairs (conditional-cfa)
+    0 c, here ;
+
+    c@+ -pairs
+    [ $fb ] pagemargin
+    @ xt,
+    dup>r here swap - dup
+    2+ r> c! 2- negate c, ;
+```
+#endif
+#include "align.i65"
+_conditionalelse
+    jsr dodoes
+#include "page.i65"
+    .word cfetchplus
+#include "page.i65"
+    .word qpairopen
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word _conditionalcomma
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word exit
+
+
+
+
+
+
+
+
 
 
 
@@ -2155,6 +2215,55 @@ _qleave
     .byt 3
     .word pqleave
 
+;--------------------------------------------------------------
+#if 0
+name=IF
+stack=( == ) ( flag -- )
+tags=compiler,control
+flags=immediate
+
+```
+: if   ( )
+    0 0 compile ?branch  ?>mark 2 ; immediate
+```
+#endif
+#include "align.i65"
+_if
+    jsr _conditionalopen
+    .byt 2
+    .word qbranch
+
+;--------------------------------------------------------------
+#if 0
+name=ELSE
+stack=( == ) ( flag -- )
+tags=compiler,control,nosymbol
+flags=immediate
+
+#endif
+#include "align.i65"
+_else
+    jsr _conditionalelse
+    .byt 2
+    .word branch
+
+;--------------------------------------------------------------
+#if 0
+name=THEN
+stack=
+tags=compiler,control
+flags=immediate
+
+```
+: then   ( )
+    ?comp abs 8 ?pairs ?>resolve ?>resolve ; immediate
+#endif
+#include "align.i65"
+_then
+    jsr _conditionalclose
+    .byt 2
+    .word 0
+
 
 
 
@@ -2208,35 +2317,6 @@ _begin
     .word _qfrommark
 #include "page.i65"
     .word four
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=THEN
-stack=
-tags=compiler,control
-flags=immediate
-
-```
-: then   ( )
-    ?comp abs 8 ?pairs ?>resolve ?>resolve ; immediate
-#endif
-#include "align.i65"
-_then
-    jsr enter
-#include "page.i65"
-    .word _qcomp
-#include "page.i65"
-    .word abs
-#include "page.i65"
-    .word eight
-#include "page.i65"
-;    .word _qpairs
-#include "page.i65"
-    .word _qtoresolve
-#include "page.i65"
-    .word _qtoresolve
 #include "page.i65"
     .word exit
 
@@ -2304,73 +2384,6 @@ _again
 #include "pad.i65"
     .word _qltresolve
 #include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=IF
-stack=( == ) ( flag -- )
-tags=compiler,control
-flags=immediate
-
-```
-: if   ( )
-    0 0 compile ?branch  ?>mark 2 ; immediate
-```
-#endif
-#include "align.i65"
-_if
-    jsr enter
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word _compile
-    .word qbranch
-#include "pad.i65"
-    .word _qtomark
-#include "page.i65"
-    .word eight
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=ELSE
-stack=( == ) ( -- )
-tags=compiler,control
-flags=immediate
-
-```
-: else   ( )
-    2 ?pairs  compile branch  swap ?>mark ?>resolve 0 -8 ; immediate
-```
-#endif
-#include "align.i65"
-_else
-    jsr enter
-#include "page.i65"
-    .word eight
-#include "page.i65"
-;    .word _qpairs
-#include "page.i65"
-    .word _compile
-    .word branch
-#include "pad.i65"
-    .word swap
-#include "page.i65"
-    .word _qtomark
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word _qtoresolve
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word plit
-    .word -8
-#include "pad.i65"
     .word exit
 
 ;--------------------------------------------------------------

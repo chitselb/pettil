@@ -255,7 +255,7 @@ _undefine
 ;--------------------------------------------------------------
 #if 0
 name=?ERROR
-stack=( flag error -- )
+stack=( flag -- )
 tags=ext,compiler
 Aborts with the inline numbered error if the flag is true
 
@@ -266,17 +266,17 @@ does>
 #endif
 #include "align.i65"
 qerror
-    lda tos
-    ora tos+1
-    beq qerror01
-    ldy #2
-    lda (ip),y
-    tay
-qerror00
-    jmp error
-qerror01
-    jsr slide
-    jmp bump
+    jsr dodoes
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word pquerycolon
+    .word _fail
+    .word drop
+#include "pad.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -293,10 +293,18 @@ error if [[STATE]] is off ([[INTERPRET]] mode)
 #endif
 #include "align.i65"
 _qcomp
-    ldy #5                      ; "COMPILATION ONLY"
-    lda uarea+userstate-userarea
-    beq qerror00
-    jmp next
+    jsr enter
+#include "page.i65"
+    .word state
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zeq
+#include "page3.i65"
+    .word qerror
+    .byt 5                          ; "COMPILATION ONLY"
+#include "pad.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -385,7 +393,7 @@ tags=compiler,defining,fig
 _colon
     jsr enter
 #include "page.i65"
-    .word zeropairs
+    .word _zeropairs
 #include "page.i65"
     .word redefined
 #include "page.i65"
@@ -424,7 +432,7 @@ and resetting `REDEFINED`.  Used by `;` `;CODE` and `END-CODE`
 _closedefinition
     jsr enter
 #include "page.i65"
-    .word _qpairsclosed
+    .word _qnopairs
 #include "page.i65"
     .word qcsp
 #include "page.i65"
@@ -509,6 +517,7 @@ _querycolon
     .word pagemargin
     .byt $f8
 #include "pad.i65"
+#include "page.i65"
     .word _compile
     .word pquerycolon
 #include "pad.i65"
@@ -569,7 +578,7 @@ _does
 #include "page.i65"
     .word _qcomp
 #include "page.i65"
-    .word zeropairs
+    .word _zeropairs
 #include "page.i65"
     .word _compile
     .word exit
@@ -583,7 +592,7 @@ _does
     .word fetch
 #include "page.i65"
     .word gt
-#include "page.i65"
+#include "page3.i65"
     .word qbranch
     .byt <(does01-*+1)
 #include "pad.i65"
@@ -674,7 +683,7 @@ _builds
 #include "page.i65"
     .word _qcomp
 #include "page.i65"
-    .word zeropairs
+    .word _zeropairs
 #include "page.i65"
     .word dp
 #include "page.i65"
@@ -1359,18 +1368,20 @@ literal00
     .word 256
 #include "pad.i65"
     .word ult
-#include "page.i65"
+#include "page3.i65"
     .word qbranch
     .byt <(literal01-*+1)
 #include "pad.i65"
+#include "page3.i65"
     .word _compile
     .word clit
 #include "pad.i65"
     .word _ccomma
-#include "page.i65"
+#include "page3.i65"
     .word branch
     .byt <(literal02-*+1)
 #include "pad.i65"
+#include "page.i65"
 literal01
     .word _compile
     .word plit
@@ -1523,67 +1534,30 @@ Generates an error if the data stack is unbalanced when defining
 qcsp
     ldy #4              ; DEFINITION UNFINISHED
     cpx uarea+usercsp-userarea
-    bne pairs04
+    bne comperror
     ; fall through
 ;--------------------------------------------------------------
 #if 0
 name=!CSP
 tags=compiler
 #endif
-#include "align.i65"
 storecsp
     stx uarea+usercsp-userarea
     jmp next
 
 ;--------------------------------------------------------------
 #if 0
-name=?PAIRSCLOSED
-stack=( -- )
-tags=compiler,nosymbol
-Aborts compilation if any control structures are still open
-
-|ID|Open|Test|Close|h
-|^1|^BEGIN|^WHILE|^REPEAT<br/>UNTIL<br/>AGAIN|
-|^2|^IF|^ELSE|^THEN|
-|^3|^DO<br/>?DO|^LEAVE<br/>?LEAVE|^LOOP<br/>+LOOP|
-```
-: ?pairs
-    [ 'pairs ] literal  3c@ or six ?error ; 
-```
-!!! pronounced: //"query-pairs-closed"//
-#endif
-#include "align.i65"
-_qpairsclosed
-    jsr enter
-#include "page.i65"
-    .word plit
-    .word pairs
-#include "pad.i65"
-    .word threecfetch
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word qerror
-    .byt 6
-#include "pad.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?PAIROPEN
-stack=( 1|2|3 -- )
+name=PAIRS
+stack=( flag -- )
 tags=compiler,control,nosymbol
-Aborts compilation unless there is at least one open control structure of
-the type of the given argument
+Counters used by the compiler to match up conditional control words
+
+|Pair ID|Open|Test|Close|h |^1|^BEGIN|^WHILE|^REPEAT<br/>UNTIL<br/>AGAIN|
+|^2|^IF|^ELSE|^THEN| |^3|^DO<br/>?DO|^LEAVE<br/>?LEAVE|^LOOP<br/>+LOOP|
 #endif
-qpairopen
-    ldy tos
-    lda pairs-1,y
-    bne pairs02         ; OKAY
-pairs03
-    ldy #6              ; UNPAIRED CONDITIONALS
-pairs04
-    jmp error
+pairs
+    jsr docreate
+    .dsb 3,0            ; storage for counters
 
 ;--------------------------------------------------------------
 #if 0
@@ -1594,101 +1568,76 @@ clear the three [[PAIRS]] counters
 
 ```
 : 0pairs   ( -- )
-    [ 'pairs ] literal  3 erase ;
+    pairs 3 erase ;
 ```
 !!! pronounced: "query-pairs"
 #endif
 #include "align.i65"
-zeropairs
-    ldy #$fd            ; -3
-    lda #0
-zeropairs01
-    sta pairs-$fd,y
-    iny
-    bne zeropairs01
-    jmp next
+_zeropairs
+    jsr enter
+#include "page.i65"
+    .word pairs
+#include "page.i65"
+    .word threeerase
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=PAIRS
-stack=( flag -- )
-tags=compiler,control,nosymbol
-Counters for the IF/ELSE/THEN, BEGIN/WHILE/REPEAT/AGAIN/UNTIL, and DO/LEAVE/LOOP used by the compiler to match up opening and closing pairs
-of conditional control words
+name=?NOPAIRS
+stack=( -- )
+tags=compiler,nosymbol
+Aborts compilation if any control structures are still open
+
+```
+: ?pairs   ( -- )
+    [ 'pairs ] literal  3c@ or six ?error ; 
+```
+!!! pronounced: //"query-pairs-closed"//
 #endif
-pairs
-    .dsb 3,0            ; storage for counters
+#include "align.i65"
+_qnopairs
+    jsr enter
+#include "page.i65"
+    .word pairs
+#include "page.i65"
+    .word threecfetch
+#include "page.i65"
+    .word orx
+#include "page3.i65"
+    .word qerror
+    .byt 6                      ; UNPAIRED CONDITIONALS
+#include "pad.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=+PAIRS
-stack=( 1|2|3 -- )
+name=+/-PAIRS
+stack=( family -- family )
 tags=compiler,control,nosymbol
-Increments the pair counter
+Increments or decrements the pair counter for the (signed) value
+passed in `family`
 #endif
-pluspairs
-    sec
-    .byt $29            ; AND immediate
-    ; fall through
-;--------------------------------------------------------------
-#if 0
-name=-PAIRS
-stack=( 1|2|3 -- )
-tags=compiler,control,nosymbol
-Decrements the pair counter
-#endif
-minuspairs
-    clc
-    txa
+plusminuspairs
+    stx z
     ldx tos
-    bcc pairs01
-    inc pairs-1,x
-    inc pairs-1,x
-pairs01
-    dec pairs-1,x
-    php
+    bpl pluspairs
+    dex
+    txa
+    eor #$ff
+    sta tos
     tax
-    plp
-    bmi pairs03         ; UNPAIRED CONDITIONALS if counter negative
-pairs02
-    ldy #5              ; COMPILATION ONLY
-    lda uarea+userstate-userarea
-    beq pairs04
-    jmp drop
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    dec pairs-1,x
+    dec pairs-1,x
+pluspairs
+    inc pairs-1,x
+    bmi pairs03
+    ldx z
+    jmp next
+pairs03
+    ldy #6              ; UNPAIRED CONDITIONALS
+comperror
+    jmp error
 
 ;--------------------------------------------------------------
 #if 0
@@ -1696,20 +1645,62 @@ name=CONDITIONAL,
 stack=( )
 tags=compiler,control,nosymbol
 compiles runtime code for control word
-
-```
-```
 #endif
 #include "align.i65"
 _conditionalcomma
     jsr enter
 #include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word _qexit
+
+;--------------------------------------------------------------
+#if 0
+name=BRANCH,
+stack=( addr -- here )
+tags=compiler,control,nosymbol
+Takes an inline CFA argument and encloses it in the dictionary along with
+a `0` offset byte pointed to by the return argument that will be updated
+later when the pair is closed.
+
+#endif
+#include "align.i65"
+_branchcomma
+#include "page.i65"
+    .word fetch
+#include "page3.i65"
     .word pagemargin
     .byt $fb
 #include "pad.i65"
-    .word fetch
-#include "page.i65"
     .word _xtcomma
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=FORWARD-BRANCH
+stack=( -- here )
+tags=compiler,control,nosymbol
+Takes an inline CFA argument and encloses it in the dictionary along with
+a `0` offset byte pointed to by the return argument that will be updated
+later when the pair is closed.
+
+#endif
+#include "align.i65"
+_forwardbranch
+    jsr dodoes
+#include "page.i65"
+    .word _branchcomma
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word _ccomma
 #include "page.i65"
     .word exit
 
@@ -1765,7 +1756,7 @@ _conditionalmiddle
 #include "page.i65"
     .word cfetchplus
 #include "page.i65"
-    .word qpairopen
+;    .word qpairopen
 #include "page.i65"
     .word _conditionalcomma
 #include "page.i65"
@@ -1776,32 +1767,14 @@ _conditionalmiddle
 name=(CONDITIONAL-CLOSE)
 stack=( xt -- )
 tags=compiler,control,nosymbol
+Compiles runtime code for LOOP or +LOOP
 
-compiles runtime code for LOOP or +LOOP
 ```
-does>
-    c@+ -pairs  [ $fb ] pagemargin  @ xt,
-    c@+ ['] -pairs (conditional-cfa)
-    0 c, here ;
-
-does>  
-    ['] -pairs (conditional-cfa)
-    0 c, here ;
-
-    c@+ -pairs
-    [ $fb ] pagemargin
-    @ xt,
-    dup>r here swap - dup
-    2+ r> c! 2- negate c, ;
 ```
 #endif
 #include "align.i65"
 _conditionalclose
     jsr dodoes
-#include "page.i65"
-    .word cfetchplus
-#include "page.i65"
-    .word minuspairs
 #include "page.i65"
     .word _conditionalcomma
 #include "page.i65"
@@ -1829,212 +1802,82 @@ _conditionalclose
 #include "page.i65"
     .word exit
 
-
-
 ;--------------------------------------------------------------
 #if 0
-name=?>MARK
-stack=( marker -- dp )
-tags=compiler,nosymbol
+name=METHOD
+stack=( addr -- )
+tags=compiler,control,nosymbol
+Execute Forth code beginning at `addr`. Used by [[DOES>]] to return
+control to the child word.
+
+In the example below, when [[METHOD]] executes the address following 
+`word` will be on the stack               
 
 ```
-: ?>mark
-    here swap c, ;
+e.g. 
+: maker   ( word char -- )
+<builds
+    , c,
+does>
+    @+ swap c@+ swap method ;
+
+41 2000 maker foo
+    ] + . ;
+42 1492 maker bar
+    ] - . ;
 ```
 #endif
 #include "align.i65"
-_qtomark
+_method
     jsr enter
 #include "page.i65"
-    .word here
+    .word rdrop
 #include "page.i65"
-    .word swap
+    .word oneminus
 #include "page.i65"
-    .word _ccomma
+    .word tor
 #include "page.i65"
     .word exit
 
-;--------------------------------------------------------------
-#if 0
-name=?<MARK
-stack=( -- dp 0 )
-tags=compiler,nosymbol
 
-```
-: ?<mark
-    here 0 ;
-```
-#endif
-#include "align.i65"
-_qfrommark
-    jsr enter
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word exit
+
+_backbranch
+_compiledo
+
 
 ;--------------------------------------------------------------
 #if 0
-name=?>RESOLVE
-stack=
-tags=compiler,nosymbol
+name=CONTROL
+stack=( addr == dp ) ( -- )
+tags=compiler,control,nosymbol
+Runtime behavior of control words
 
 ```
-: ?>resolve
-    begin
-        ?dup
-    while
-        dup c@ here third - 1+ rot c!
-    repeat ;
+does>
+    ?comp  @+ swap c@+ family swap method ;
 ```
 #endif
 #include "align.i65"
-_qtoresolve
-    jsr enter
+docontrol
+    jsr dodoes
 #include "page.i65"
-qtoresolve01
-    .word qdup
+    .word xyzzy
 #include "page.i65"
-    .word qbranch
-    .byt <(qtoresolve02-*+1)
-#include "pad.i65"
-    .word dup
+    .word _qcomp
+#include "page.i65"
+    .word fetchplus
 #include "page.i65"
     .word cfetch
 #include "page.i65"
-    .word here
+    .word cfetch
 #include "page.i65"
-    .word third
+    .word cfetch
 #include "page.i65"
-    .word minus
+    .word cfetchplus
 #include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word branch
-    .byt <(qtoresolve01-*+1)
-#include "pad.i65"
-qtoresolve02
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?<RESOLVE
-stack=
-tags=compiler,nosymbol
-flags=immediate
-
-```
-: ?<resolve
-    swap here - 1+ c, ?>resolve ;
-```
-#endif
-#include "align.i65"
-_qltresolve
-    jsr enter
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word _ccomma
-#include "page.i65"
-    .word _qtoresolve
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=ADD>MARK
-stack=( dp marker -- ; )
-tags=compiler,nosymbol
-
-```
-: add>mark
-    true >r
-    begin
-        swap 2dup >r
-        and
-    until
-    drop ?>mark
-    begin
-        r> dup true
-        and
-    until
-    drop ;
-```
-#endif
-#include "align.i65"
-_addtomark
-    jsr enter
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word tor
-#include "page.i65"
-addtomark01
-    .word swap
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word qbranch
-    .byt <(addtomark01-*+1)
-#include "pad.i65"
-    .word drop
-#include "page.i65"
-    .word _qtomark
-#include "page.i65"
-addtomark02
-    .word rfrom
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word qbranch
-    .byt <(addtomark02-*+1)
-#include "pad.i65"
-    .word drop
+    .word plusminuspairs
 #include "page.i65"
     .word exit
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 ;--------------------------------------------------------------
 #if 0
@@ -2052,9 +1895,12 @@ d;m 0 8f;m 1f0 1ff;z
 #endif
 #include "align.i65"
 _do
-    jsr _conditionalopen
-    .byt 3
+#include "page.i65"
+    jsr _compiledo
     .word pdo
+    .byt 3
+#include "pad.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -2070,9 +1916,14 @@ flags=immediate
 #endif
 #include "align.i65"
 _qdo
-    jsr _conditionalopen
-    .byt 3
+#include "page.i65"
+    jsr docontrol
     .word pqdo
+    .byt 3
+#include "pad.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -2089,18 +1940,15 @@ both as signed integers.
 
 d;m 0 8f;m 1e0 1ff;z
 
-```
-: loop   ( )
-    3 -pairs  [ $fb ] pagemargin  compile (loop)
-    dup>r here
-    - dup r> c!
-    negate c, ; immediate
-```
 #endif
 _loop
-    jsr _conditionalclose
-    .byt 3          ; word 'family'
-    .word ploop     ; runtime CFA
+    jsr docontrol
+    .word ploop
+    .byt 3
+#include "pad.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -2115,16 +1963,16 @@ loop index goes past the limit.
 
 [[Posted question on comp.lang.forth|https://groups.google.com/d/msg/comp.lang.forth/V9evPkLwRoM/Khwons3O4QwJ]]
 
-```
-: +loop   ( )
-    3 ?pairs  compile (+loop)  ?<resolve ; immediate
-```
 #endif
 #include "align.i65"
 _plusloop
-    jsr _conditionalclose
-    .byt 3          ; word 'family'
-    .word pploop    ; runtime CFA
+    jsr docontrol
+    .word pploop
+    .byt 3
+#include "pad.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -2136,9 +1984,13 @@ flags=immediate
 #endif
 #include "align.i65"
 _leave
-    jsr _conditionalmiddle
-    .byt 3
+    jsr docontrol
     .word unloop
+    .byt 3
+#include "pad.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -2151,158 +2003,11 @@ Equivalent to `IF LEAVE THEN`
 #endif
 #include "align.i65"
 _qleave
-    jsr _conditionalmiddle
-    .byt 3
+    jsr docontrol
     .word pqleave
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-;--------------------------------------------------------------
-#if 0
-name=BEGIN
-stack=( == dp 0 4 ) ( -- )
-tags=compiler,control
-flags=immediate
-
-```
-: begin   ( == here 0 4 ) ( -- )
-    ?<mark 4 ;
-```
-#endif
-#include "align.i65"
-_begin
-    jsr enter
-#include "page.i65"
-    .word _qfrommark
-#include "page.i65"
-    .word four
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=THEN
-stack=
-tags=compiler,control
-flags=immediate
-
-```
-: then   ( )
-    ?comp abs 8 ?pairs ?>resolve ?>resolve ; immediate
-#endif
-#include "align.i65"
-_then
-    jsr enter
-#include "page.i65"
-    .word _qcomp
-#include "page.i65"
-    .word abs
-#include "page.i65"
-    .word eight
-#include "page.i65"
-;    .word _qpairs
-#include "page.i65"
-    .word _qtoresolve
-#include "page.i65"
-    .word _qtoresolve
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=UNTIL
-stack=( == ) ( flag -- )
-tags=compiler,control
-flags=immediate
-
-```
-: until   ( )
-    4 ?pairs  compile ?branch  ?<resolve ; immediate
-```
-#endif
-#include "align.i65"
-_until
-    jsr enter
-#include "page.i65"
-    .word four
-#include "page.i65"
-;    .word _qpairs
-#include "page.i65"
-    .word _compile
-    .word qbranch
+    .byt 3
 #include "pad.i65"
-    .word _qltresolve
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=REPEAT
-stack=( == ) ( -- )
-tags=compiler,control
-flags=immediate
-
-synonym for AGAIN
-#endif
-#include "align.i65"
-_repeat
-    ; fall through
-;--------------------------------------------------------------
-#if 0
-name=AGAIN
-stack=( == ) ( -- )
-tags=compiler,control
-flags=immediate
-
-```
-: again   ( )
-    4 ?pairs  compile branch  ?<resolve ; immediate
-```
-#endif
-#include "align.i65"
-_again
-    jsr enter
-#include "page.i65"
-    .word four
-#include "page.i65"
-;    .word _qpairs
-#include "page.i65"
-    .word _compile
-    .word branch
-#include "pad.i65"
-    .word _qltresolve
+    .word xyzzy
 #include "page.i65"
     .word exit
 
@@ -2320,80 +2025,138 @@ flags=immediate
 #endif
 #include "align.i65"
 _if
-    jsr enter
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word _compile
+    jsr docontrol
     .word qbranch
+    .byt 2
 #include "pad.i65"
-    .word _qtomark
-#include "page.i65"
-    .word eight
+    .word xyzzy
 #include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
 name=ELSE
-stack=( == ) ( -- )
-tags=compiler,control
+stack=( == ) ( flag -- )
+tags=compiler,control,nosymbol
 flags=immediate
 
-```
-: else   ( )
-    2 ?pairs  compile branch  swap ?>mark ?>resolve 0 -8 ; immediate
-```
 #endif
 #include "align.i65"
 _else
-    jsr enter
-#include "page.i65"
-    .word eight
-#include "page.i65"
-;    .word _qpairs
-#include "page.i65"
-    .word _compile
+    jsr docontrol
     .word branch
+    .byt 2
 #include "pad.i65"
-    .word swap
+    .word xyzzy
 #include "page.i65"
-    .word _qtomark
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word _qtoresolve
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word plit
-    .word -8
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=THEN
+stack=( )
+tags=compiler,control
+flags=immediate
+
+d;m 0 8f;m 1f0 1ff;m 2160 217f;m 7390 739f;z
+
+
+```
+: then   ( )
+    ?comp abs 8 ?pairs ?>resolve ?>resolve ; immediate
+#endif
+#include "align.i65"
+_then
+    jsr docontrol
+    .word 0
+    .byt 2
 #include "pad.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BEGIN
+stack=( )
+tags=compiler,control
+flags=immediate
+
+#endif
+#include "align.i65"
+_begin
+    jsr docontrol
+    .word 0
+    .byt 1
+#include "pad.i65"
+    .word xyzzy
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
 name=WHILE
-stack=( == ) ( flag -- )
+stack=( )
+tags=compiler,control
+flags=immediate
+
+#endif
+#include "align.i65"
+_while
+    jsr docontrol
+    .word qbranch
+    .byt 1
+#include "pad.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=UNTIL
+stack=( )
 tags=compiler,control
 flags=immediate
 
 ```
-: while   ( )
-    compile ?branch  1 add>mark ; immediate
+: until   ( )
+    4 ?pairs  compile ?branch  ?<resolve ; immediate
 ```
 #endif
 #include "align.i65"
-_while
-    jsr enter
-#include "page.i65"
-    .word _compile
+_until
+    jsr docontrol
     .word qbranch
+    .byt 1
 #include "pad.i65"
-    .word four
+    .word xyzzy
 #include "page.i65"
-    .word _addtomark
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=AGAIN
+stack=( )
+tags=compiler,control
+flags=immediate
+synonym for REPEAT
+#endif
+#include "align.i65"
+_again
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=REPEAT
+stack=( )
+tags=compiler,control
+flags=immediate
+#endif
+#include "align.i65"
+_repeat
+    jsr docontrol
+    .word branch
+    .byt 1
+#include "pad.i65"
+    .word xyzzy
 #include "page.i65"
     .word exit
