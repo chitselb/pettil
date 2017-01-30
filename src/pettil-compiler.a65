@@ -205,7 +205,7 @@ _xtcomma
     jsr enter
 #include "page.i65"
     .word pagemargin
-    .byt $fc
+    .byt $fd
 #include "pad.i65"
     .word _comma
 #include "page.i65"
@@ -1606,7 +1606,14 @@ name=+/-PAIRS
 stack=( family -- family )
 tags=compiler,control,nosymbol
 Increments or decrements the pair counter for the (signed) value
-passed in `family`
+passed in `family`.  The absolute value of `family` is returned,
+so that words like [[LEAVE]] [[?LEAVE]] [[ELSE]] and [[WHILE]]
+can decrement and increment the [[PAIRS]] counter as a check that
+the structure is open.  Words that open ([[DO]] [[?DO]] [[IF]]
+[[BEGIN]]) or close ([[LOOP]] [[+LOOP]] [[THEN]] [[UNTIL]] [[AGAIN]]
+[[REPEAT]]) the structure will [[DROP]] this returned value to 
+maintain [[PAIRS]] balance.
+
 #endif
 plusminuspairs
     stx z
@@ -1674,7 +1681,7 @@ tags=compiler,control,nosymbol
 Runtime behavior of control words
 
 
-d;m 0 8f;m 1f0 1ff;m 7390 73af;m 73c0 743f;m 2160 217f;z
+d;m 0 8f;m 1f0 1ff;m 73a0 73a2;m 1a90 1aff;z
 
 
 
@@ -1697,10 +1704,9 @@ docontrol
 #include "page.i65"
     .word plusminuspairs
 #include "page.i65"
-    .word pagemargin
-    .byt $fb
-#include "pad.i65"
     .word swap
+#include "page.i65"
+    .word xyzzy
 #include "page.i65"
     .word _method           ; transfers control to child word
 
@@ -1712,11 +1718,8 @@ tags=compiler,control,nosymbol
 compiles runtime code for control word
 
 ```
-
-
-
-
-
+; control,   ( cfa -- )
+    [ $fb ] pagemargin xt, ;
 ```
 #endif
 #include "align.i65"
@@ -1724,19 +1727,11 @@ _controlcomma
     jsr enter
 #include "page.i65"
     .word pagemargin
-    .byt $fb
+    .byt $fc
 #include "pad.i65"
-    .word fetch
-#include "page.i65"
-    .word _xtcomma
+    .word _comma
 #include "page.i65"
     .word exit
-
-
-
-
-
-
 
 ;--------------------------------------------------------------
 #if 0
@@ -1757,7 +1752,6 @@ Used by: [[DO]] [[?DO]] [[IF]] [[WHILE]]
 #endif
 #include "align.i65"
 _qtomark
-#include "page.i65"
     jsr enter
 #include "page.i65"
     .word _controlcomma
@@ -1786,24 +1780,17 @@ Used by: [[IF]] [[WHILE]]
 #endif
 #include "align.i65"
 _qtoresolve
-#include "page.i65"
     jsr enter
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word duptor
 #include "page.i65"
     .word here
 #include "page.i65"
-    .word swap
+    .word oneplus
+#include "page.i65"
+    .word over
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word dup
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word rfrom
+    .word swap
 #include "page.i65"
     .word cstore                    ; ?>RESOLVE
 #include "page.i65"
@@ -1812,9 +1799,9 @@ _qtoresolve
 ;--------------------------------------------------------------
 #if 0
 name=?<RESOLVE
-stack=( cfa start == )
+stack=( addr cfa family == start )
 tags=compiler,control,nosymbol
-Resolves a backward branch created by [[?>MARK]] or [[HERE]]
+Compiles a backward branch to an address left by [[?>MARK]] or [[HERE]]
 
 Backward branch handler used by [[LOOP]] [[+LOOP]]
 
@@ -1822,35 +1809,28 @@ Used by: [[LOOP]] [[+LOOP]] [[REPEAT]] [[AGAIN]] [[UNTIL]]
 
 ```
 ' (do) 3 control do ]
-    drop xt, 0 c, here ; immediate
+    drop control, dup>r here - c, r> ;
 ```
 #endif
 #include "align.i65"
 _qfromresolve
-#include "page.i65"
     jsr enter
 #include "page.i65"
-    .word drop
+    .word drop              ; discard PAIRS index, we are closing
 #include "page.i65"
-    .word _controlcomma
+    .word _controlcomma     ; compile the CFA of the backward branch
 #include "page.i65"
     .word duptor
 #include "page.i65"
     .word here
 #include "page.i65"
-    .word swap
+    .word twominus
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word dup
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word negate
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
     .word _ccomma                   ; ?<RESOLVE
+#include "page.i65"
+    .word rfrom
 #include "page.i65"
     .word exit
 
@@ -1932,6 +1912,8 @@ _loop
 #include "pad.i65"
     .word _qfromresolve
 #include "page.i65"
+    .word _qtoresolve
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1963,6 +1945,8 @@ _plusloop
 #include "pad.i65"
     .word _qfromresolve
 #include "page.i65"
+    .word _qtoresolve
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1992,7 +1976,7 @@ _leave
 ;--------------------------------------------------------------
 #if 0
 name=?LEAVE
-stack=( == ) ( flag -- )
+stack=( )
 tags=compiler,control
 flags=immediate
 Equivalent to `IF LEAVE THEN`
@@ -2017,7 +2001,7 @@ _qleave
 ;--------------------------------------------------------------
 #if 0
 name=IF
-stack=( == ) ( flag -- )
+stack=( )
 tags=compiler,control
 flags=immediate
 
@@ -2068,9 +2052,6 @@ name=THEN
 stack=( )
 tags=compiler,control
 flags=immediate
-
-d;m 0 8f;m 1f0 1ff;m 2160 217f;m 7390 739f;z
-
 
 ```
 ' ?branch 2 control then ]

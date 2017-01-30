@@ -480,7 +480,7 @@ _semi
                 "core-io.a65 "\
                 "core-vm.a65 "\
                 "core-extra.a65 "\
-                "../../mmm/src/mmm-nucleus.a65 " \
+#                "../../mmm/src/mmm-nucleus.a65 " \
                 "sweet16.a65 "
 #                "core-test.a65 "\
 
