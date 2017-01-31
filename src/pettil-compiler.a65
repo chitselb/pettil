@@ -1680,11 +1680,6 @@ stack=( addr == dp ) ( -- )
 tags=compiler,control,nosymbol
 Runtime behavior of control words
 
-
-d;m 0 8f;m 1f0 1ff;m 73a0 73a2;m 1a90 1aff;z
-
-
-
 ```
 does>
     ?comp  @+ swap c@+ family swap method ;
@@ -1736,7 +1731,7 @@ _controlcomma
 ;--------------------------------------------------------------
 #if 0
 name=?>MARK
-stack=( cfa == start )
+stack=( cfa family == start )
 tags=compiler,control,nosymbol
 Sets up a forward branch.  Compiles a forward-branching `cfa`
 with an unresolved offset of `0` to be handled later by the 
@@ -1753,6 +1748,8 @@ Used by: [[DO]] [[?DO]] [[IF]] [[WHILE]]
 #include "align.i65"
 _qtomark
     jsr enter
+#include "page.i65"
+    .word drop
 #include "page.i65"
     .word _controlcomma
 #include "page.i65"
@@ -1843,7 +1840,7 @@ flags=immediate
 
 ```
 ' (do) 3 control do ]
-    drop xt, 0 c, here ; immediate
+    drop ?>mark ; immediate
 ```
 #endif
 #include "align.i65"
@@ -1853,8 +1850,6 @@ _do
     .word pdo
     .byt 3
 #include "pad.i65"
-    .word drop
-#include "page.i65"
     .word _qtomark
 #include "page.i65"
     .word exit
@@ -1878,8 +1873,6 @@ _qdo
     .word pqdo
     .byt 3
 #include "pad.i65"
-    .word drop
-#include "page.i65"
     .word _qtomark
 #include "page.i65"
     .word exit
@@ -1899,10 +1892,7 @@ both as signed integers.
 
 ```
 ' (loop) -3 control loop ]
-    drop xt, 
-    dup>r  here swap - 
-    dup 2+ r> c!
-    negate 2+ c, ; immediate
+    ?<resolve ?>resolve ; immediate
 ```
 #endif
 _loop
@@ -1931,10 +1921,7 @@ loop index goes past the limit.
 
 ```
 ' (loop) -3 control loop ]
-    drop xt, 
-    dup>r  here swap - 
-    dup 2+ r> c!
-    negate 2+ c, ; immediate
+    ?<resolve ?>resolve ; immediate
 ```
 #endif
 #include "align.i65"
@@ -2007,7 +1994,7 @@ flags=immediate
 
 ```
 ' ?branch 2 control if ]
-    +/-pairs xt, ; immediate
+    drop ?>mark ; immediate
 ```
 #endif
 #include "align.i65"
@@ -2016,8 +2003,6 @@ _if
     .word qbranch
     .byt 2
 #include "pad.i65"
-    .word drop
-#include "page.i65"
     .word _qtomark
 #include "page.i65"
     .word exit
@@ -2026,12 +2011,12 @@ _if
 #if 0
 name=ELSE
 stack=( == )
-tags=compiler,control,nosymbol
+tags=compiler,control
 flags=immediate
 
 ```
 ' ?branch -2 control else ]
-    +/-pairs xt, ; immediate
+    +/-pairs ?>mark ; immediate
 ```
 #endif
 #include "align.i65"
@@ -2044,6 +2029,10 @@ _else
 #include "page.i65"
     .word _qtomark
 #include "page.i65"
+    .word swap
+#include "page.i65"
+    .word _qtoresolve
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -2055,7 +2044,7 @@ flags=immediate
 
 ```
 ' ?branch 2 control then ]
-    +/-pairs xt, ; immediate
+    drop ?>resolve ; immediate
 ```
 #endif
 #include "align.i65"
@@ -2064,7 +2053,9 @@ _then
     .word 0
     .byt <(-2)
 #include "pad.i65"
-    .word drop
+    .word twodrop
+#include "page.i65"
+    .word _qtoresolve
 #include "page.i65"
     .word exit
 
@@ -2090,6 +2081,8 @@ _begin
 #include "page.i65"
     .word here
 #include "page.i65"
+    .word oneminus
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -2098,6 +2091,11 @@ name=WHILE
 stack=( )
 tags=compiler,control
 flags=immediate
+
+
+d;m 0 8f;m 1f0 1ff;m 73a0 73a2;m 1a90 1b1f;z
+
+
 
 ```
 ' ?branch 2 control if ]
@@ -2136,6 +2134,8 @@ _until
 #include "pad.i65"
     .word _qfromresolve
 #include "page.i65"
+    .word drop
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -2168,5 +2168,7 @@ _repeat
     .byt <(-1)
 #include "pad.i65"
     .word _qfromresolve
+#include "page.i65"
+    .word _qtoresolve
 #include "page.i65"
     .word exit
