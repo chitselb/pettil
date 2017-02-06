@@ -101,24 +101,6 @@ rpstore01
 
 ;--------------------------------------------------------------
 #if 0
-name=(")
-stack=( -- addr )
-tags=inner,nosymbol,pads
-Returns the address of a string literal in the dictionary
-
-~ this is pretty ugly
-#endif
-pquote
-    clc
-    bcc pdq01
-pquote01
-    ldy #2
-    lda #3
-    adc (ip),y
-    jmp pad
-
-;--------------------------------------------------------------
-#if 0
 name=?EXIT
 stack=( flag -- )
 tags=ext
@@ -176,6 +158,19 @@ error
 
 ;--------------------------------------------------------------
 #if 0
+name=(")
+stack=( -- addr )
+tags=inner,nosymbol,pads
+Returns the address of a string literal in the dictionary
+
+~ this is pretty ugly
+#endif
+pquote
+    clc
+    .byt $29        ; AND#
+
+;--------------------------------------------------------------
+#if 0
 name=(.")
 stack=( -- )
 tags=inner,nosymbol,pads
@@ -194,7 +189,13 @@ pdq01
     bne pdq02       ; [3]
     inc tos+1       ; [2]
 pdq02
-    bcc pquote01
+    bcs pdq03
+pquote01
+    ldy #2
+    lda #3
+    adc (ip),y
+    jmp pad
+pdq03
     lda #>(_stringdot-1)
     pha
     lda #<(_stringdot-1)
@@ -298,7 +299,6 @@ yikes
     sec
     bcs exit01
 
-
 ;--------------------------------------------------------------
 #if 0
 name=(+LOOP)
@@ -385,7 +385,6 @@ tags=inner,nosymbol,pads
 The runtime behavior of ;
 Exits a colon definition, unnesting to the next higher level of
 the return stack
-
 #endif
 exit
     lda #2          ; [2]
@@ -405,19 +404,6 @@ toforth
 exit03
     sty ip          ; [3]
     jmp nexto       ; [3]
-
-
-padxyzzy
-    clc
-    adc ip
-    tay
-    iny
-    bne pad01xyzzy
-    sec
-pad01xyzzy
-    lda ip+1
-    adc #0          ; cross page boundary
-    bcc toforth      ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -439,9 +425,22 @@ tags=inner,nosymbol,pads
 stack=( -- n )
 Runtime behavior of LITERAL, puts a number "n" on the stack
 
+
+padxyzzy
+    clc
+    adc ip
+    tay
+    iny
+    bne pad01xyzzy
+    sec
+pad01xyzzy
+    lda ip+1
+    adc #0          ; cross page boundary
+    bcc toforth      ; bra
+```
 #endif
 plit
-    sec
+    sec                     ; add 2 to IP
     ldy #3
     lda (ip),y
 lit01
@@ -453,10 +452,15 @@ lit01
     sta tos
     .byt $29                ; AND # to skip CLC instruction
 bump
-    clc
-bump01
+    clc                     ; add 1 to IP
     lda #3                  ; ip+3 or ip+4 depending on Carry
-    ; fall through
+pad
+    adc ip
+    tay
+    iny
+    beq branch05
+    bne branch04
+
 ;--------------------------------------------------------------
 #if 0
 name=DOPAGE
@@ -471,23 +475,7 @@ contain inline arguments to offset IP at runtime
 
 It is important that callers to `pad` set Carry
 
-```
-pad
-    adc ip          ; pass A = offset added to IP
-    bcs branch02    ; check for page boundary crossing
-    cmp #$ff
-    bne branch03    ; check for xxFF at end of page
-page
-    lda #0
-    beq branch02    ; bra
-```
 #endif
-pad
-    adc ip
-    tay
-    iny
-    beq branch05
-    bne branch04
 page
     inc ip+1
     ldy #0
