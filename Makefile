@@ -2,6 +2,7 @@ RUBY = /home/chitselb/.rbenv/shims/ruby
 #RUBY = /usr/bin/ruby
 #RUBY = /home/chitselb/.rvm/rubies/ruby-2.2.1/bin/ruby
 SHELL = /bin/bash
+XPET = /mnt/data/chitselb/Documents/dev/vice-emu-code/vice/src/xpet
 
 all:  clean pettil launch tiddlypettil
 
@@ -17,7 +18,7 @@ clean:
 	cd ../mmm && ${RUBY} rad50.rb
 
 launch: clean pettil
-	cd ./tmp  &&  /usr/bin/xpet -verbose -1 ../tapes/tapeio.tap -warp -moncommand pettil.mon pettil.obj &
+	cd ./tmp  &&  $(XPET) -verbose -1 ../tapes/tapeio.tap -warp -moncommand pettil.mon pettil.obj &
 
 pettil:
 #	echo . Phase I
