@@ -2,7 +2,7 @@ RUBY = /home/chitselb/.rbenv/shims/ruby
 #RUBY = /usr/bin/ruby
 #RUBY = /home/chitselb/.rvm/rubies/ruby-2.2.1/bin/ruby
 SHELL = /bin/bash
-XPET = /mnt/data/chitselb/Documents/dev/vice-emu-code/vice/src/xpet
+XPET = /usr/local/bin/xpet
 
 all:  clean pettil launch tiddlypettil
 
