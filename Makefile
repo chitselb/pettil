@@ -1,8 +1,7 @@
-RUBY = /home/chitselb/.rbenv/shims/ruby
-#RUBY = /usr/bin/ruby
+#RUBY = /home/chitselb/.rbenv/shims/ruby
+RUBY = /usr/local/bin/ruby
 #RUBY = /home/chitselb/.rvm/rubies/ruby-2.2.1/bin/ruby
 SHELL = /bin/bash
-XPET = /usr/local/bin/xpet
 
 all:  clean pettil launch tiddlypettil
 
@@ -18,8 +17,7 @@ clean:
 	cd ../mmm && ${RUBY} rad50.rb
 
 launch: clean pettil
-	ls ./tmp
-	$(XPET) -verbose -1 ./tapes/tapeio.tap -warp -moncommand ./tmp/pettil.mon ./tmp/PETTIL.P00
+	cd ./tmp  &&  /usr/bin/xpet -verbose -1 ../tapes/tapeio.tap -warp -moncommand pettil.mon pettil.obj &
 
 pettil:
 #	echo . Phase I
@@ -37,13 +35,13 @@ pettil:
 	ls -la ./tmp/pettil-core.obj
 	ls -la ./tmp/pettil-tdict.obj
 	ls -la ./tmp/pettil.sym
-	cat ./tmp/pettil-core.obj ./tmp/pettil-tdict.obj ./tmp/pettil.sym > ./tmp/PETTIL.P00
-	ls -la ./tmp/PETTIL.P00
+	cat ./tmp/pettil-core.obj ./tmp/pettil-tdict.obj ./tmp/pettil.sym > ./tmp/pettil.obj
+	ls -la ./tmp/pettil.obj
 	sort ./tmp/pettil.mon > ./tmp/t.t
 	if [ -e ./pettil.dbg ]; then cat ./pettil.dbg >> ./tmp/t.t; fi
 	mv ./tmp/t.t ./tmp/pettil.mon
 #	ls -l ./tmp/*.obj ./tmp/*.sym > ./docs/sizes.txt
-	stat -c '%8s %n' tmp/*.P00 tmp/*.sym | sed -e 's/tmp\///' > docs/sizes.txt
+	stat -c '%8s %n' tmp/*.obj tmp/*.sym | sed -e 's/tmp\///' > docs/sizes.txt
 	cp -v ./tmp/sizes.csv docs/
 
 tiddlypettil:
@@ -53,7 +51,7 @@ tiddlypettil:
 	cp ./docs/statictiddlers/tiddlywiki.info ./tmp/tiddlypettil/
 	cp ./docs/statictiddlers/*.tid ./tmp/tiddlypettil/tiddlers/
 	export MMDDYY=`date +"documentation generated %Y-%m-%d"`;sed "s/datetimestamp/$${MMDDYY}/" <./docs/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
-	cd ./tmp/tiddlypettil/ && ~/.npm-packages/bin/tiddlywiki --load ../pettil.json --rendertiddler $$:/core/save/all tiddlypettil.html text/plain  1>/dev/null
+	cd ./tmp/tiddlypettil/ && ~/.npm-packages/bin/tiddlywiki --load ../pettil.json --rendertiddler $$:/core/save/all tiddlypettil.html text/plain
 	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./docs/tiddlypettil.html
 
 publish:
