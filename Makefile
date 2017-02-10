@@ -1,5 +1,5 @@
-#RUBY = /home/chitselb/.rbenv/shims/ruby
-RUBY = /usr/local/bin/ruby
+RUBY = /home/chitselb/.rbenv/shims/ruby
+#RUBY = /usr/local/bin/ruby
 #RUBY = /home/chitselb/.rvm/rubies/ruby-2.2.1/bin/ruby
 SHELL = /bin/bash
 
@@ -51,7 +51,7 @@ tiddlypettil:
 	cp ./docs/statictiddlers/tiddlywiki.info ./tmp/tiddlypettil/
 	cp ./docs/statictiddlers/*.tid ./tmp/tiddlypettil/tiddlers/
 	export MMDDYY=`date +"documentation generated %Y-%m-%d"`;sed "s/datetimestamp/$${MMDDYY}/" <./docs/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
-	cd ./tmp/tiddlypettil/ && ~/.npm-packages/bin/tiddlywiki --load ../pettil.json --rendertiddler $$:/core/save/all tiddlypettil.html text/plain
+	cd ./tmp/tiddlypettil/ && ~/.npm-packages/bin/tiddlywiki --load ../pettil.json --rendertiddler $$:/core/save/all tiddlypettil.html text/plain >/dev/null
 	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./docs/tiddlypettil.html
 
 publish:
