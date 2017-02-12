@@ -481,12 +481,13 @@ stack=( -- )
 tags=vocabulary,ext
 vocab=1
 
-d;m 0 8f;m 1f0 1ff;m 1ac0 1adf;z
+d;m 0 8f;m 1f0 1ff;m 1ad0 1aef;z
 
 
 
 ```
-: if,   c, here 0 c, 4 +/-pairs ; immediate
+: if,   ( opcode -- )
+    4 +/-pairs drop , here 1- false ;
 ```
 #endif
 #include "align.i65"
@@ -499,14 +500,14 @@ _asmif
 #include "page.i65"
     .word drop
 #include "page.i65"
-    .word _ccomma
+    .word _comma                ; enclose branch opcode, then 00
 #include "page.i65"
     .word here
 #include "page.i65"
-    .word zero
+    .word oneminus              ; point to branch offset
 #include "page.i65"
-    .word _ccomma
-#include "page.i65"
+    .word false
+#include "pass.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -516,43 +517,47 @@ stack=( -- )
 tags=vocabulary,ext
 vocab=1
 ```
-: else,   3 ?pairs here 1+   1 jmp,
-    swap here over 1+ - swap c! -3 ; immediate
+: else,   ( dp flag -- dp flag )
+    here 1+
+    -4 +/-pairs +/-pairs  jmp,
+    here 2swap [ 6 ] ?error
+    dup>r - 1- r> c! true ;
 ```
 #endif
 #include "align.i65"
 _asmelse
-    jsr doasmcontrol
-    .byt <(-4)
+    jsr enter
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word minusfour
 #include "page.i65"
     .word plusminuspairs
 #include "page.i65"
-    .word drop
-
+    .word plusminuspairs
+#include "page.i65"
+    .word ijmp                  ; jmp $0004
 #include "page.i65"
     .word here
 #include "page.i65"
-    .word oneplus
+    .word twoswap
+#include "pass.i65"
+    .word qerror
+    .byt 6                      ; UNPAIRED CONDITIONALS
 #include "page.i65"
-    .word one
-#include "page.i65"
-    .word ijmp
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word oneplus
+    .word duptor
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word swap
+    .word oneminus
+#include "page.i65"
+    .word rfrom
 #include "page.i65"
     .word cstore
 #include "page.i65"
-    .word minusthree
+    .word true
 #include "pass.i65"
     .word exit
 
@@ -563,20 +568,40 @@ stack=( -- )
 tags=vocabulary,ext
 vocab=1
 ```
-: then,   abs 3 ?pairs here over c@
-    if swap ! else over 1+ - swap c! then ; immediate
+: then,   ( -- )
+    -4 +/-pairs drop
+    if
+        here swap !
+    else
+        here over - 1- swap c!
+    then ;
 ```
 #endif
 #include "align.i65"
 _asmthen
     jsr enter
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
     .word minusfour
 #include "page.i65"
     .word plusminuspairs
 #include "page.i65"
     .word drop
+#include "pass.i65"
+    .word qbranch
+    .byt <(asmthen01-*+1)
 #include "page.i65"
+    .word here
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word store
+#include "pass.i65"
+    .word branch
+    .byt <(asmthen02-*+1)
+#include "page.i65"
+asmthen01
     .word here
 #include "page.i65"
     .word over
@@ -588,18 +613,18 @@ _asmthen
     .word swap
 #include "page.i65"
     .word cstore
-#include "page.i65"
+#include "pass.i65"
+asmthen02
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
 name=BEGIN,
 stack=( -- )
-tags=vocabulary,ext
-flags=immediate
+tags=vocabulary,ex
 vocab=1
 ```
-: begin,   here 1 ; immediate
+: begin,   here 1 ;
 ```
 #endif
 #include "align.i65"
@@ -617,10 +642,9 @@ _asmbegin
 name=WHILE,
 stack=( -- )
 tags=vocabulary,ext
-flags=immediate
 vocab=1
 ```
-: while,   >r dup 1 ?pairs r> [compile] if, 2+ ; immediate
+: while,   >r dup 1 ?pairs r> [compile] if, 2+ ;
 ```
 #endif
 #include "align.i65"
@@ -649,7 +673,6 @@ _asmwhile
 name=UNTIL,
 stack=( -- )
 tags=vocabulary,ext
-flags=immediate
 vocab=1
 ```
 : until,   >r 1 ?pairs r> c, here 1+ - c, ; immediate
@@ -672,7 +695,6 @@ _asmuntil
     .word here
 #include "page.i65"
     .word oneplus
-#include "page.i65"
     .word minus
 #include "page.i65"
     .word _ccomma
