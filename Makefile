@@ -1,4 +1,4 @@
-#RUBY = /home/chitselb/.rbenv/shims/ruby
+RUBY = /home/chitselb/.rbenv/shims/ruby
 #RUBY = /usr/local/bin/ruby
 #RUBY = /home/chitselb/.rvm/rubies/ruby-2.2.1/bin/ruby
 SHELL = /bin/bash
@@ -13,8 +13,8 @@ clean:
 	rm -rf ./tmp/
 	mkdir ./tmp/
 	cp -v ../mmm/assets/loremcommie.txt ./tmp/
-	cd ../mmm && ruby squeeze.rb
-	cd ../mmm && ruby rad50.rb
+	cd ../mmm && ${RUBY} squeeze.rb
+	cd ../mmm && ${RUBY} rad50.rb
 
 launch: clean pettil
 	cd ./tmp  &&  /usr/bin/xpet -verbose -1 ../tapes/tapeio.tap -warp -moncommand pettil.mon pettil.obj &
@@ -24,13 +24,13 @@ pettil:
 #	echo . . . . Building PETTIL core = PETTIL-CORE.OBJ
 	cd ./src/ && xa ./pettil-core.a65 -o ../tmp/pettil-core.obj -e ../tmp/pettil-core.err -l ../tmp/pettil-core.lab
 #	echo . . . . Generating core labels = PETTIL-CORE.DEF
-	ruby xap.rb
+	${RUBY} xap.rb
 #	echo . Phase II
 #	echo . . . . Building PETTIL temporary dictionary = PETTIL-TDICT.OBJ
 	cd ./src/ && xa ./pettil-tdict.a65 -o ../tmp/pettil-tdict.obj -e ../tmp/pettil-tdict.err -l ../tmp/pettil-tdict.lab
 #	echo . Phase III
 #	echo . . . . Generating combined symbol table = PETTIL.SYM
-	ruby xap.rb
+	${RUBY} xap.rb
 #	echo . . . . Packing PETTIL.OBJ binary = PETTIL-CORE.OBJ + PETTIL-TDICT.OBJ + PETTIL.SYM
 	ls -la ./tmp/pettil-core.obj
 	ls -la ./tmp/pettil-tdict.obj
