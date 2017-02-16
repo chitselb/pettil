@@ -884,7 +884,7 @@ _stringtopad
 ;--------------------------------------------------------------
 #if 0
 name=(
-stack=( text) -- )
+stack=( comment) -- )
 tags=forth-83
 flags=immediate
 Begins a Forth comment, terminated by the next ')' character in
@@ -929,12 +929,9 @@ common code for ." and "
 
 ```
 : (."")  ( cfa -- )
-    compiling?  dup>r  ?: xt, drop
-    [char] " ?char swap  r>
-    if
-        $, rdrop
-    then
-    drop ;
+    state @ ?: xt, drop 
+    [char] " ?char 
+    state @ ?: $, drop ;
 ```
 ~ gross.  doesn't handle paging properly
 #endif
@@ -945,29 +942,74 @@ _pdqq
     .word state
 #include "page.i65"
     .word fetch
-#include "page.i65"
-    .word duptor
 #include "pass.i65"
     .word pquerycolon
     .word _xtcomma
     .word drop
 #include "pass.i65"
-    .word clit
+    .word _qchar
     .byt '"'
 #include "page.i65"
-    .word _qchar
+    .word state
 #include "page.i65"
-    .word rfrom
+    .word fetch
+#include "pass.i65"
+    .word pquerycolon
+    .word _stringcomma
+    .word drop
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=>"
+stack=( text" == ) ( -- addr )
+tags=string
+flags=immediate
+State-smart common code used by [["]] and [[."]]. Either encloses a
+string in the dictionary preceded by its execution token, or performs
+a runtime operation depending on [[STATE]]
+
+
+d;m 0 8f;m 1f0 1ff;m 1ae0 1aff;z
+
+
+```
+: >"   ( text" == ) ( -- addr )
+    @+ swap @ state @ ?: nip drop  ?: xt, execute ;
+```
+!!!pronounced: "do-quote"
+#endif
+#include "align.i65"
+doquote
+    jsr dodoes
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word fetchplus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word state
+#include "page.i65"
+    .word fetch
 #include "pass.i65"
     .word qbranch
-    .byt <(pdqq01-*+1)
+    .byt <(doquote01-*+1)
 #include "page.i65"
-    .word _stringcomma
+    .word pquerycolon
+    .word nip
+    .word drop
 #include "page.i65"
-    .word rdrop
+doquote01
+    .word pquerycolon
+    .word _xtcomma
+    .word execute
 #include "pass.i65"
-pdqq01
     .word exit
+
 
 ;--------------------------------------------------------------
 #if 0
@@ -987,16 +1029,9 @@ string ([[PAD]])
 #endif
 #include "align.i65"
 _quote
-    jsr enter
-#include "pass.i65"
-    .word plit
-    .word _pquote
-#include "page.i65"
-    .word _pdqq
-#include "page.i65"
-    .word _stringtopad
-#include "pass.i65"
-    .word exit
+    jsr doquote
+    .word _pquote               ; (")       compile
+    .word _stringtopad          ; $>PAD     runtime
 
 ;--------------------------------------------------------------
 #if 0
@@ -1017,16 +1052,9 @@ encloses the string in the dictionary.
 #endif
 #include "align.i65"
 _dotq
-    jsr enter
-#include "pass.i65"
-    .word plit
-    .word _pdq
-#include "page.i65"
-    .word _pdqq
-#include "page.i65"
-    .word _stringdot
-#include "pass.i65"
-    .word exit
+    jsr doquote
+    .word _pdq                  ; (.")      compile
+    .word _stringdot            ; $.        runtime
 
 ;--------------------------------------------------------------
 #if 0
@@ -1095,10 +1123,8 @@ flags=immediate
 _dotp
     jsr enter
 #include "pass.i65"
-    .word clit
+    .word doqchar
     .asc ')'
-#include "page.i65"
-    .word _qchar
 #include "page.i65"
     .word count
 #include "page.i65"
@@ -1601,7 +1627,7 @@ _method
 
 ;--------------------------------------------------------------
 #if 0
-name=CONTROL
+name=>CONTROL
 stack=( addr == dp ) ( -- )
 tags=compiler,control,nosymbol
 Runtime behavior of control words
@@ -1738,7 +1764,7 @@ tags=compiler,control
 flags=immediate
 
 ```
-' (do) 3 control do ]
+' (do) 3 >control do ]
     drop ?>mark ; immediate
 ```
 #endif
@@ -1760,7 +1786,7 @@ tags=compiler,control
 flags=immediate
 
 ```
-' (?do) 3 control ?do ]
+' (?do) 3 >control ?do ]
     drop xt, 0 c, here ; immediate
 ```
 #endif
@@ -1788,7 +1814,7 @@ is distinct from [[+LOOP]] which treats the loop index/limit
 both as signed integers.
 
 ```
-' (loop) -3 control loop ]
+' (loop) -3 >control loop ]
     ?<resolve >resolve! ; immediate
 ```
 #endif
@@ -1818,7 +1844,7 @@ loop index goes past the limit.
 [[Posted question on comp.lang.forth|https://groups.google.com/d/msg/comp.lang.forth/V9evPkLwRoM/Khwons3O4QwJ]]
 
 ```
-' (loop) -3 control loop ]
+' (loop) -3 >control loop ]
     ?<resolve >resolve! ; immediate
 ```
 #endif
@@ -1842,7 +1868,7 @@ tags=compiler,control
 flags=immediate
 
 ```
-' unloop -3 control leave ]
+' unloop -3 >control leave ]
     +/-pairs xt, ; immediate
 ```
 #endif
@@ -1869,7 +1895,7 @@ flags=immediate
 Equivalent to `IF LEAVE THEN`
 
 ```
-' (?leave) -3 control ?leave ]
+' (?leave) -3 >control ?leave ]
     +/-pairs xt, ; immediate
 ```
 #endif
@@ -1895,7 +1921,7 @@ tags=compiler,control
 flags=immediate
 
 ```
-' ?branch 2 control if ]
+' ?branch 2 >control if ]
     drop ?>mark ; immediate
 ```
 #endif
@@ -1917,7 +1943,7 @@ tags=compiler,control
 flags=immediate
 
 ```
-' ?branch -2 control else ]
+' ?branch -2 >control else ]
     +/-pairs ?>mark ; immediate
 ```
 #endif
@@ -1945,7 +1971,7 @@ tags=compiler,control
 flags=immediate
 
 ```
-' ?branch 2 control then ]
+' ?branch 2 >control then ]
     drop ?>resolve ; immediate
 ```
 #endif
@@ -1969,7 +1995,7 @@ tags=compiler,control
 flags=immediate
 
 ```
-0 1 control begin
+0 1 >control begin
     ] 2drop here 1- ; immediate
 ```
 #endif
@@ -1995,7 +2021,7 @@ tags=compiler,control
 flags=immediate
 
 ```
-' ?branch -1 control while
+' ?branch -1 >control while
     ] +/-pairs ?>mark ; immediate
 ```
 #endif
@@ -2019,7 +2045,7 @@ tags=compiler,control
 flags=immediate
 
 ```
-' ?branch -1 control until
+' ?branch -1 >control until
     ] q<resolve drop ;
 ```
 #endif
@@ -2044,7 +2070,7 @@ flags=immediate
 synonym for REPEAT
 
 ```
-' branch -1 control again
+' branch -1 >control again
     ] ?<resolve drop ; immediate
 ```
 #endif
@@ -2068,12 +2094,8 @@ stack=( )
 tags=compiler,control
 flags=immediate
 
-
-
-d;m 0 8f;m 1f0 1ff;m 73a0 73a2;m 1a90 1b2f;z
-
 ```
-' ?branch 2 control repeat
+' ?branch 2 >control repeat
     ] 2>r swap 2r> ?<resolve drop ?>resolve ; immediate
 ```
 #endif
