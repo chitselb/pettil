@@ -70,7 +70,6 @@ while true
     }
     t = bucket.max-bucket.min
     if t <= lowest_so_far
-        print"\n"
         lowest_so_far = t
         print "\n"
         pearson.each { |x| print "#{x} " }
