@@ -70,12 +70,13 @@ while true
     }
     t = bucket.max-bucket.min
     if t <= lowest_so_far
+        print"\n"
         lowest_so_far = t
         print "\n"
         pearson.each { |x| print "#{x} " }
         print "\n"
         bucket.each { |x| print "#{x} " }
-        print "\n#{t}"
+        print "     #{t}"
     end
     if tries > 9999
         print "."
