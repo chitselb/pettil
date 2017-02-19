@@ -288,11 +288,29 @@ error if [[STATE]] is off ([[INTERPRET]] mode)
 ```
 #endif
 #include "align.i65"
-_qcomp
+qcomp
     ldy #5                      ; "COMPILATION ONLY"
     lda uarea+userstate-userarea
     beq qerror00
     jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=COMPILING?
+stack=( -- flag )
+tags=compiler,nosymbol
+Leaves [[TRUE]] if compile state, [[FALSE]] if interpret state
+
+```
+: compiling?   ( -- flag )
+    compiling? [ 5 ] ?error ;
+```
+#endif
+#include "align.i65"
+compilingq
+    lda uarea+userstate-userarea
+    ldy uarea+userstate-userarea+1
+    jmp pushya
 
 ;--------------------------------------------------------------
 #if 0
@@ -305,7 +323,7 @@ tags=compiler,nosymbol
 _compile
     jsr enter
 #include "page.i65"
-    .word _qcomp
+    .word qcomp
 #include "page.i65"
     .word rfrom
 #include "page.i65"
@@ -502,7 +520,7 @@ if this else that then
 _querycolon
     jsr enter
 #include "page.i65"
-    .word _qcomp
+    .word qcomp
 #include "pass.i65"
     .word _compile
     .word pquerycolon
@@ -562,7 +580,7 @@ commonly shared run-time (child) code into the core dictionary
 _does
     jsr enter
 #include "page.i65"
-    .word _qcomp
+    .word qcomp
 #include "page.i65"
     .word _zeropairs
 #include "pass.i65"
@@ -667,7 +685,7 @@ added to the core dictionary.
 _builds
     jsr enter
 #include "page.i65"
-    .word _qcomp
+    .word qcomp
 #include "page.i65"
     .word _zeropairs
 #include "page.i65"
@@ -818,25 +836,6 @@ stack=( addr -- )
 tags=string
 Enclose a quoted string in the dictionary
 
-e.g. `" FOO" $,`
-
-|addr|before|<|after|<|h
-|2000|here|-||3|
-|2001||-||'F'|
-|2002||-||'O'|
-|2003||-||'O'|
-|2004||-|here|-|
-|2005||-||-|
-|2006||-||-|
-||||||
-|2050|pad|3||3|
-|2051||'F'||'F'|
-|2052||'O'||'O'|
-|2053||'O'||'O'|
-|2054||-|pad|-|
-|2055||-||-|
-
-
 ```
 : $,   ( addr -- )
    count here over 1+ allot $! ;
@@ -929,9 +928,9 @@ common code for ." and "
 
 ```
 : (."")  ( cfa -- )
-    state @ ?: xt, drop 
-    [char] " ?char 
-    state @ ?: $, drop ;
+    compiling?  dup>r  ?: xt, drop
+    [char] " ?char swap  r>
+    compiling? ?: $, drop ;
 ```
 ~ gross.  doesn't handle paging properly
 #endif
@@ -939,9 +938,9 @@ common code for ." and "
 _pdqq
     jsr enter
 #include "page.i65"
-    .word state
+    .word xyzzy
 #include "page.i65"
-    .word fetch
+    .word compilingq
 #include "page.i65"
     .word duptor
 #include "pass.i65"
@@ -965,121 +964,6 @@ _pdqq
 #include "pass.i65"
 pdqq01
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=>"
-stack=( text" == ) ( -- addr )
-tags=string
-flags=immediate
-State-smart common code used by [["]] and [[."]]. Either encloses a
-string in the dictionary preceded by its execution token, or performs
-a runtime operation depending on [[STATE]]
-
-
-d;m 0 8f;m 1f0 1ff;m 1ae0 1aff;z
-
-
-```
-: >"   ( text" == ) ( -- addr )
-    @+ swap @ state @ ?: nip drop  ?: xt, execute ;
-```
-!!!pronounced: "do-quote"
-#endif
-#include "align.i65"
-doquote
-    jsr enter
-#include "page.i65"
-    .word _caller
-#include "page.i65"
-    .word cfetchplus
-#include "page.i65"
-    .word state
-#include "page.i65"
-    .word fetch
-#include "pass.i65"
-    .word duptor
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word rfetch
-#include "pass.i65"
-    .word pquerycolon
-    .word _xtcomma
-    .word drop
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word rot
-
-    .word plus
-#include "page.i65"
-    .word twostar
-#include "pass.i65"
-    .word plit
-    .word doquote01
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word execute
-#include "pass.i65"
-    .word exit
-doquote01
-    .word 
-
-;--------------------------------------------------------------
-#if 0
-name="
-stack=( text" == ) ( -- addr )
-tags=string
-flags=immediate
-
-+    jsr doquote
-+    .word _pquote               ; (")       compile
-+    .word _stringtopad          ; $>PAD     runtime
-
-State-smart string literal.  In compile mode, encloses a string
-in the dictionary.  In interpret mode, returns the address of a
-string ([[PAD]])
-
-```
-: "   ( text" == ) ( -- addr )
-    [ ' (") ] literal   (."")  $>pad ;
-```
-!!!pronounced: "quote"
-#endif
-quote
-    jsr doquote
-    .byt 1
-
-;--------------------------------------------------------------
-#if 0
-name=." ".&quot;"
-stack=( text" == ) ( -- addr )
-tags=string
-flags=immediate
-
-+    jsr doquote
-+    .word _pquote               ; (")       compile
-+    .word _stringtopad          ; $>PAD     runtime
-
-State-smart string literal.  In compile mode, encloses a string
-in the dictionary.  In interpret mode, returns the address of a
-string ([[PAD]])
-
-```
-: "   ( text" == ) ( -- addr )
-    [ ' (") ] literal   (."")  $>pad ;
-```
-!!!pronounced: "quote"
-#endif
-dotq
-    jsr doquote
-    .byt 3
 
 ;--------------------------------------------------------------
 #if 0
@@ -1243,7 +1127,7 @@ immediate words
 _brtick
     jsr enter
 #include "page.i65"
-    .word _qcomp
+    .word qcomp
 #include "page.i65"
     .word _tick
 #include "page.i65"
@@ -1373,7 +1257,7 @@ The business end of a word defined by [[VOCABULARY]].  Gets the
 vocid from the vocabulary and prepends it to [[VSTACK]]
 
 ```
-: (vocab)   ( -- )
+: >vocab   ( addr -- )
     caller vstack dup 1+ 8 cmove> c@ vstack c! dedupvocab ;
 ```
 #endif
@@ -1736,7 +1620,7 @@ does>
 docontrol
     jsr dodoes
 #include "page.i65"
-    .word _qcomp
+    .word qcomp
 #include "page.i65"
     .word fetchplus
 #include "page.i65"
