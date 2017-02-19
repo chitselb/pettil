@@ -17,7 +17,7 @@ clean:
 #	cd ../mmm && ${RUBY} rad50.rb
 
 launch: clean pettil
-	cd ./tmp  &&  /usr/bin/xpet -verbose -1 ../tapes/tapeio.tap -warp -moncommand pettil.mon pettil.obj &
+	cd ./tmp  &&  /usr/bin/xpet -verbose -1 ../tapes/2017-02.tap -warp -moncommand pettil.mon pettil.obj &
 #	cd ./tmp  &&  /home/chitselb/Documents/dev/vice-emu-code/vice/src/xpet -verbose -1 ../tapes/tapeio.tap -warp -moncommand pettil.mon pettil.obj &
 
 pettil:
