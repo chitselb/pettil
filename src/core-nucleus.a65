@@ -517,15 +517,16 @@ Leave the sum of n1+n2
 !!! pronounced: "plus"
 #endif
 plus
+    lda stackl,x
+plus01                  ; entry point from >BIT
     clc
-    lda tos
-    adc stackl,x
+    adc tos
     sta tos
-    lda tos+1
-    adc stackh,x
+    lda stackh,x
+    adc tos+1
     sta tos+1
     inx
-plus01
+plus02
     jmp next
 
 ;--------------------------------------------------------------
@@ -537,7 +538,7 @@ Leave the absolute value of n as u.
 #endif
 abs
     bit tos+1
-    bpl plus01
+    bpl plus02
     ;fall through
 ;--------------------------------------------------------------
 #if 0
@@ -2409,9 +2410,18 @@ depth
 ;--------------------------------------------------------------
 #if 0
 name=>BIT
-stack=( bit# addr -- mask addr )
+stack=( bit# base -- mask addr )
 tags=nucleus,ext
-transform an integer `bit#` into a `mask` and `addr`, suitable for
+Indexes `bit#` bits into a bit array starting at `base`, returns a `mask` and
+`addr` for [[CBIT!]] or [[CBIT@]]
+
+e.g.
+```
+0 8192 >bit . . 8192 128  ok
+7 8192 >bit . . 8192 1  ok
+19 8192 >bit . . 8194 2  ok
+```
+
 addressing a bit field
 
 mask = 2^(n%8)
@@ -2422,6 +2432,11 @@ offset = n/8
 : >bit   ( n -- mask offset )
         dup 7 and power2 + c@
         swap 2/ 2/ 2/ ;
+
+: >bit   ( bit# base -- mask offset )
+        dup 7 and power2 + c@
+        swap 2/ 2/ 2/ ;
+
 ```
 #endif
 tobit
@@ -2440,6 +2455,28 @@ tobit
     lsr tos+1
     ror tos             ; /8
     jmp next
+
+
+tobit2
+    dex
+    lda stackh+1,x
+    lsr
+    sta stackh,x
+    lda stackl+1,x
+    pha
+    and #7
+    tay
+    lda power2,y
+    sta stackl+1,x
+    pla
+    ror
+    lsr stackh,x
+    ror
+    lsr stackh,x
+    ror
+    sta stackl,x
+    jmp plus01
+
 
 ;--------------------------------------------------------------
 #if 0
