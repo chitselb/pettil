@@ -207,9 +207,8 @@ _refillscr
     .word oneplusstore
 #include "page.i65"
     .word fetch
-#include "pass.i65"
-    .word clit
-    .byt 25
+#include "page.i65"
+    .word lperscr               ; 25
 #include "page.i65"
     .word lt
 #include "pass.i65"
@@ -370,8 +369,7 @@ _eolqscr
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word clit
-    .byt 25
+    .word lperscr           ; 25
 #include "page.i65"
     .word lt
 #include "page.i65"
@@ -581,102 +579,78 @@ _nextblock
 name=SKIP
 stack=( addr1 size1 char -- addr2 count2 )
 tags=numword,nosymbol
-
- addr1 is the starting address in the input stream where up
- to size1 bytes are skipped *WHILE* they match char.  Returns
- addr2 as the address of the first non-matching character and
- count2 as the remaining number of bytes in the buffer.
+`addr1` is the starting address in the input stream where up
+to `size1` bytes are skipped *WHILE* they match `char`.  Returns
+`addr2` as the address of the first non-matching character and
+`count2` as the remaining number of bytes in the buffer.
 #endif
 skip
-    brk
-    .byt bs, <(skipscan01-*-2)      ; setup
-skip01
-    .byt bs, <(skipscan02-*-2)      ; next char
-    .byt bz, <(skip01-*-2)
-    .byt br, <(skipscan04-*-2)      ; exit
+    clc
+    .byt $29                        ; AND #
+    ;fall through
 ;--------------------------------------------------------------
 #if 0
 name=SCAN
-stack=( addr count char -- addr count )
+stack=( addr1 size1 char -- addr count )
 tags=numword,nosymbol
-
- addr1 is the starting address in the input stream where up
- to count1 bytes are skipped *UNTIL* they match char.  Returns
- addr2 as the address of the first non-matching character and
- count2 as the remaining number of bytes in the buffer.
-
+`addr1` is the starting address in the input stream where up
+to `size1` bytes are skipped *UNTIL* they match `char`.  Returns
+`addr2` as the address of the first matching character and
+`count2` as the remaining number of bytes in the buffer.
 #endif
 scan
-    brk
-    .byt bs, <(skipscan01-*-2)      ; setup
-scan01
-    .byt bs, <(skipscan02-*-2)      ; next char
-    .byt bnz, <(scan01-*-2)
-    .byt br, <(skipscan04-*-2)
-
-skipscan01
-    .byt ld | TOS   ; char
-    .byt st | N1
-    .byt pull
-    .byt st | N0
-    .byt pull       ; addr
-    .byt rs
-skipscan02
-    .byt ldi | TOS
-    .byt dcr | N0
-    .byt bm1 , <(skipscan03-*-2)    ; leave if count < 0
-    .byt sub | N1
-    .byt rs
-skipscan03
-    .byt popd | R12 ; drop the BS return
-skipscan04
-    .byt dcr | TOS
-    .byt inr | N0
-    .byt ld | N0
-    .byt push
-    .byt nxt
-
-skips
-    clc
-    .byt $29                        ; AND #
-scans
     sec
     jsr locals4                     ; TOS = char; N0 = addr1; N1 = size1
     ;ldy #0
     dey
-    bmi skipscanloop
 another
-    dec n+2
-    bne skipscanloop
-
-skipscanloop
     iny
+    dec n+2
+    beq foundmatch
+skipscanloop
     lda (n),y
     eor tos
-    bcs testscan
-testskip
-    beq another
-
+    bcc testskip                    ; looking for a match?
 testscan
     bne another
-    adc #$ff                        ; scan found match? CLC and set z flag
-
-
-
-
+    ;sec
+    adc #$00                        ; success? clear C & Z flags
+testskip
+    beq another
 foundmatch
     sty tos
     brk
-    .byt ld | TOS
-    .byt add | N0
-    .byt st | TOS
-    .byt inr | N1
+    .byt ld | N0
+    .byt add | TOS
+    .byt st | TOS                   ; addr2
     .byt ld | N1
     .byt push
     .byt nxt
 
+;--------------------------------------------------------------
+#if 0
+name=/STRING
+stack=( addr1 u1 n -- addr2 u2 )
+tags=string
+Adjust the character string at c-addr1 by n characters. The resulting
+character string, specified by c-addr2 u2, begins at c-addr1 plus n
+characters and is u1 minus n characters long.
 
-
+!!!pronounced: "slash-string"
+#endif
+#include "align.i65"
+_slashstring
+    jsr enter
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plusunder
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -712,12 +686,12 @@ _tickstream
 ;--------------------------------------------------------------
 #if 0
 name=(WORD)
-stack=( char )
+stack=( char -- base start end remaining )
 tags=interpreter
 The part of [[WORD]] that scans the input stream
 
 ```
-: (word)   ( char -- )
+: (word)   ( char -- base start end remaining )
     >r 'stream
     under r@ skip  under r> scan ;
 ```
@@ -741,28 +715,6 @@ _pword
     .word rfrom
 #include "page.i65"
     .word scan
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word toin
-#include "page.i65"
-    .word plusstore
-#include "page.i65"
-    .word rfrom
 #include "pass.i65"
     .word exit
 
@@ -795,7 +747,10 @@ See: http://forth.sourceforge.net/std/fst83/fst83-5.htm#input.stream
 
 ```
 : word   ( char -- addr )
-    (word) here $! here ;
+    (word)
+    drop 2dup swap - >r
+    rot - 1+ >in +! r>
+    here $! here ;
 ```
 #endif
 #include "align.i65"
@@ -803,6 +758,28 @@ _word
     jsr enter
 #include "page.i65"
     .word _pword
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word toin
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+    .word rfrom
 #include "page.i65"
     .word here
 #include "page.i65"
@@ -829,8 +806,6 @@ _qchar
     .word toin
 #include "page.i65"
     .word oneplusstore
-#include "pass.i65"
-    .word xyzzy
 #include "pass.i65"
     .word exit
 
