@@ -77,7 +77,7 @@ while true
         bucket.each { |x| print "#{x} " }
         print "     #{t}"
     end
-    if tries > 9999
+    if tries > 99999
         print "."
         tries = 0
     end
