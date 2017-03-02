@@ -12,9 +12,6 @@ doc: tiddlypettil publish
 clean:
 	rm -rf ./tmp/
 	mkdir ./tmp/
-	cp -v ../mmm/assets/loremcommie.txt ./tmp/
-	cd ../mmm && ${RUBY} squeeze.rb
-	cd ../mmm && ${RUBY} rad50.rb
 
 launch: clean pettil
 	cd ./tmp  &&  /usr/bin/xpet -verbose -1 ../tapes/tapeio.tap -warp -moncommand pettil.mon pettil.obj &
