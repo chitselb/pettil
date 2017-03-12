@@ -4,7 +4,7 @@
 # given a file containing Forth words, generate random pearson hash
 # tables forever, printing out each one that is more efficient than
 # the best so far.
-lowest_so_far=4
+lowest_so_far=3
 
 
 
@@ -77,7 +77,7 @@ while true
         bucket.each { |x| print "#{x} " }
         print "     #{t}"
     end
-    if tries > 9999
+    if tries > 99999
         print "."
         tries = 0
     end
