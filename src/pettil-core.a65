@@ -25,8 +25,47 @@
 #if 0
 name=~ BASIC bootstrap
 tags=system,nosymbol
+
 PETTIL loads as a BASIC program consisting of one line,
 `10 SYS1037` to kick off the cold start routine
+
+!!!//PETTIL.OBJ// image map
+|^//PETTIL.OBJ//|^description|^contents&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|^size&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|h
+|^//PETTIL-CORE.OBJ//|^load address|^`$0401`|^2 bytes|
+|~|^BASIC bootstrap|^`10 sys1037`|^12 bytes|
+|~|^pettillaunch|^` jmp cold`|^3 bytes|
+|~|^zpbuf|^sweet16 registers|^32 bytes|
+|~|~|^stackl|^48 bytes|
+|~|~|^stackh|^48 bytes|
+|~|~|^zi|^2 bytes|
+|~|~|^zlim|^2 bytes|
+|~|~|^up|^2 bytes|
+|~|~|^zpnext<br/>`inc ip`<br/>`inc ip`<br/>`jmp ($face)`|^7 bytes|
+|~|^power2|^`$80` `$40` `$20` `$10` `$08` `$04` `$02` `$01`|^2 bytes|
+|~|^[[plugh]]|`rts`|^1 byte|
+|~|^sweet16|^//rtn bp bm bz bnz bm1 bnm1 nxt push pull br ext bs rs bc bnc set ld st ld@ st@ ldd@ std@ pop stpat add sub popd cpr inr dcr//|^439 bytes|
+|~|^userarea|||
+|~|^core modules|^//user<br/>subroutines<br/>inner<br/>nucleus<br/>double<br/>io<br/>vm<br/>extra//||
+|~|^tdict modules|^//user<br/>dictionary<br/>interpreter<br/>compiler<br/>utils<br/>editor<br/>assembler//||
+|~||||
+|~||||
+
+|~||||
+|^//PETTIL-TDICT.OBJ//||||
+|~||||
+|~||||
+|~||||
+|~||||
+|~||||
+|~||||
+
+|^//PETTIL.SYM//||||
+|~||||
+|~||||
+|~||||
+|~||||
+|~||||
+|~||||
 #endif
 petbasic
     .word basic                 ; this will be the load address
@@ -101,10 +140,33 @@ zpnext
 power2
     .byt $80,$40,$20,$10,$08,$04,$02,$01
 
+;--------------------------------------------------------------
+#if 0
+name=plugh
+tags=nosymbol
+An isolated RTS instruction, useful for debugging assembler or Sweet-16 in VICE
+
+```
+    .byt ld | N0
+    .byt std | N2
+    .byt ext        ; invoking VICE debugger from Sweet16
+    .word plugh     ;
+    .byt ld | N3
+    .byt nxt
+
+    jsr something
+    jsr somethingelse
+    sta anyplace
+    jsr plugh       ; VICE debugger from 6502 assembler
+    ldx anyplace
+```
+#endif
+plugh
+    rts
+
 ;==============================================================
 ;==== ALL SWEET16 OPERATION HANDLERS MUST BE ON SAME PAGE! ====
 ;==============================================================
-    nop                         ; fine tune position of Sweet16
 
 #if (* <> $04a6)
 #echo PETTIL Build Error - Program counter is not at $04a6!
@@ -189,7 +251,7 @@ uservsource     = usercold+58
 ; User Pointer (UP) at $0002 points here
 uarea           .dsb usercold-userarea+80,0
 
-    ; test page-alignment, remove from release
+    ; grow this string to test page-alignment
     .byt ""
 
 ; xor of two vectors, to switch IRQ vector between PETTIL and BASIC
@@ -398,6 +460,21 @@ tags=system,nosymbol
 * copy the symbols to [[SYMTAB]]+32
 * [[EMPTYBUFFERS]]
 * execute [[LAUNCH]] (first word at the first address in [[TDICT]])
+
+```
+: hot   ( -- )
+    ['] there literal
+    dup 4 +under @
+    2+ dup tdict ! dup 4096 - symtab !
+    over 2- @
+    third over + @
+    bl + EAL @
+    third -
+    cmove
+    cmove
+    empty-buffers
+    tdict @ execute ;
+```
 #endif
 #include "align.i65"
 _hot
