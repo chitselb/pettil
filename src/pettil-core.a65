@@ -25,24 +25,144 @@
 #if 0
 name=~ BASIC bootstrap
 tags=system,nosymbol
-
 PETTIL loads as a BASIC program consisting of one line,
-`10 SYS1037` to kick off the cold start routine
+`10 SYS1037` to launch the system.  During the build, Core and tdict are assembled separately and concatenated, with the symbol table appended to the end.  [[LAUNCH]] is the code that moves the tdict and symbol table to their proper locations brings up the system by executing [[COLD]], which in turn executes [[WARM]] and brings up the outer interpreter.
+
+is [[LAUNCH]]
+There are five sections within
+the PETTIL object code:
+
+|^pettil-core|^load address|<|<|^`$0401`<br/><br/>|^Program load address|
+|~|^bootstrap|<|^12 bytes|^`10 sys1037`<br/><br/>|^Enter or reenter PETTIL from BASIC|
+|~|^pettillaunch|<|^3 bytes|^`jmp launch`<br/><br/>|startup vector|
+|~|^zpbuf|^sweet16 registers|^32 bytes|<|^Sweet16 registers overlapping PETTIL work area|
+|~|~|^stack|^96 bytes|<|^Data stack, split into high and low sections|
+|~|~|^zi<br/>zlim<br/>up<br/>|^6 bytes|<|^loop index<br/>loop limit<br/>user pointer<br/>|
+|~|~|^zpnext|^7 bytes|^` inc ip`<br/>` inc ip`<br/>` jmp ($FACE)`<br/><br/>|^copy of [[NEXT]] routine|
+|~|^power2|<|^8 bytes|^`$80` `$40` `$20` `$10` `$08` `$04` `$02` `$01`<br/><br/>|^powers of 2 table|
+|~|^[[plugh]]|<|^1 byte|^` rts`<br/><br/>|^enter or reenter PETTIL from BASIC|
+|~| 165 total bytes |<|<|<|<|
+|~| ''*** Sweet16 page alignment required ***''|<|<|<|`$04A6`<br/><br/>|
+|~|^sweet16|<|^438 bytes|<|^Woz' Sweet16 emulator, extended|
+|~|^user area|<|^122 bytes|<|^[[COLD]]/[[WARM]] initialization values and user variables|
+|~|^core|^//user//<br/>//subroutines//<br/>//inner//<br/>//nucleus//<br/>//double//<br/>//io//<br/>//vm//<br/>//extra//|^~20 pages|<|^Core dictionary|
+|~|^launch||^core side initialization code|<|<|
+|~|~| * aloha<br/> * aloha<br/> * aloha<br/> * aloha<br/>|z|||
+|~|~||z|||
+|~|~||z|||
+|~|~||z|||
+|~|~||z|||
+|^pettil-tdict|~||^2 bytes|^`$68EF`<br/><br/>|^load addr of tdict|
+|~|~||^2 bytes|^`$1630`<br/><br/>|^size of tdict|
+|~|~||^2 bytes|^`$1630`<br/><br/>|^|
+|~|tdict||^42 bytes|^[[LAUNCH]]<br/><br/>|^|
+||^symbols|||//cfa//<br/>//len//<br/>`name`<br/>...<br/><br/>`00` `00` `00`<br/><br/>|^for each symbol<br/><br/><br/><br/><br/>end of symbols<br/><br/>|
+
+|^bootstrap|^pettil-core|
+|^core|~|
+|~|~|
+|~|~|
+|~|~|
+|~|~|
+|~|~|
+|^launch|~|
+|~|~|
+|~|^pettil-tdict|
+|~|^load address|
+|^tdict<br/>|~|
+|^symbols|^pettil.sym|
+
+|^pettil-core|load address|`$0401`|^bootstrap|^//2 bytes//|
+|~|basic start|`10 sys1037`|~|^//12 bytes//|
+|~|A||~|^//12 bytes//|
+|~|B||^core||
+|~|C||^launch||
+|^pettil-tdict|D||~||
+|~|E||^tdict<br/>||
+|^pettil.sym|F||^symbols||
+
+# basic bootstrap
+# core
+# launch
+# tdict
+# symbols
+
 
 !!!//PETTIL.OBJ// image map
 |^//PETTIL.OBJ//|^description|^contents&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|^size&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|h
-|^//PETTIL-CORE.OBJ//|^load address|^`$0401`|^2 bytes|
-|~|^BASIC bootstrap|^`10 sys1037`|^12 bytes|
-|~|^pettillaunch|^` jmp cold`|^3 bytes|
+|^//PETTIL-CORE.OBJ//|^load address|^`$0401`<br/><br/>|^2 bytes|
+|~|^BASIC bootstrap|^`10 sys1037`<br/><br/>|^12 bytes|
+|~|^pettillaunch|^` jmp cold`<br/><br/>|^3 bytes|
 |~|^zpbuf|^sweet16 registers|^32 bytes|
-|~|~|^stackl|^48 bytes|
-|~|~|^stackh|^48 bytes|
-|~|~|^zi|^2 bytes|
-|~|~|^zlim|^2 bytes|
-|~|~|^up|^2 bytes|
-|~|~|^zpnext<br/>`inc ip`<br/>`inc ip`<br/>`jmp ($face)`|^7 bytes|
-|~|^power2|^`$80` `$40` `$20` `$10` `$08` `$04` `$02` `$01`|^2 bytes|
-|~|^[[plugh]]|`rts`|^1 byte|
+|~|~|^stackl|^96 bytes|
+|~|~|^stackh|~|
+|~|~|^zi|^6 bytes|
+|~|~|^zlim|~|
+|~|~|^up|~|
+|~|~|^zpnext<br/>`inc ip`<br/>`inc ip`<br/>`jmp ($face)`<br/><br/>|^7 bytes|
+|~|^power2|^`$80` `$40` `$20` `$10` `$08` `$04` `$02` `$01`<br/><br/>|^8 bytes|
+|~|^[[plugh]]|`rts`<br/><br/>|^1 byte|
+|~|^sweet16|^//rtn bp bm bz bnz bm1 bnm1 nxt push pull br ext bs rs bc bnc set ld st ld@ st@ ldd@ std@ pop stpat add sub popd cpr inr dcr//|^439 bytes|
+|~|^userarea|||
+|~|^core modules|^//user<br/>subroutines<br/>inner<br/>nucleus<br/>double<br/>io<br/>vm<br/>extra//||
+|~|^tdict modules|^//user<br/>dictionary<br/>interpreter<br/>compiler<br/>utils<br/>editor<br/>assembler//||
+|~||||
+|~||||
+
+|~||||
+|^//PETTIL-TDICT.OBJ//||||
+|~||||
+|~||||
+|~||||
+|~||||
+|~||||
+|~||||
+
+|^//PETTIL.SYM//||||
+|~||||
+|~||||
+|~||||
+|~||||
+|~||||
+|~||||
+
+!!!//PETTIL.OBJ// program image
+
+|//PETTIL.OBJ//|^name|^description|^contents|^size|h
+|^//PETTIL-CORE.OBJ//||^BASIC launch|^10 sys1037|^14 bytes|
+|~|^sweet16|^PETTIL Sweet16 core<br/>preceded by spacing|^pettillaunch<br/>zpbuf<br/>zpnext<br/>power2<br/>sweet16<br/>user variables|^~3 pages|
+|~|^core|^PETTIL core dictionary|user<br/>subroutines<br/>inner<br/>nucleus<br/>double<br/>io<br/>vm<br/>extra|^~20 pages|
+|~|^startup|^one time initialization|^[[COLD]]<br/>[[HOT]]<br/>[[bannermsg]]|^1 page|
+|^//PETTIL-TDICT.OBJ//|^|^tdict load address||^2 bytes|
+|~|^|^size of tdict in bytes||^2 bytes|
+|~|^tdict|^PETTIL transient dictionary|^user<br/>dictionary<br/>interpreter<br/>compiler<br/>utils<br/>editor<br/>assembler|^~22 pages|
+|^//PETTIL.SYM//|^symtab|^PETTIL symbol table|^[address]<br/>[size]<br/>`NAME`<br/>...|^~13 pages|
+|~||^end of symbol table|00 00 00|^3 bytes|
+
+
+
+
+PETTIL loads as a BASIC program consisting of one line,
+`10 SYS1037` to launch the system.  There are four parts of
+the object code:
+
+# basic bootstrap
+#
+
+!!!//PETTIL.OBJ// image map
+|^//PETTIL.OBJ//|^description|^contents&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|^size&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|h
+|^//PETTIL-CORE.OBJ//|^load address|^`$0401`<br/><br/>|^2 bytes|
+|~|^BASIC bootstrap|^`10 sys1037`<br/><br/>|^12 bytes|
+|~|^pettillaunch|^` jmp cold`<br/><br/>|^3 bytes|
+|~|^zpbuf|^sweet16 registers|^32 bytes|
+|~|~|^stackl|^96 bytes|
+|~|~|^stackh|~|
+|~|~|^zi|^6 bytes|
+|~|~|^zlim|~|
+|~|~|^up|~|
+|~|~|^zpnext<br/>`inc ip`<br/>`inc ip`<br/>`jmp ($face)`<br/><br/>|^7 bytes|
+|~|^power2|^`$80` `$40` `$20` `$10` `$08` `$04` `$02` `$01`<br/><br/>|^8 bytes|
+|~|^[[plugh]]|`rts`<br/><br/>|^1 byte|
 |~|^sweet16|^//rtn bp bm bz bnz bm1 bnm1 nxt push pull br ext bs rs bc bnc set ld st ld@ st@ ldd@ std@ pop stpat add sub popd cpr inr dcr//|^439 bytes|
 |~|^userarea|||
 |~|^core modules|^//user<br/>subroutines<br/>inner<br/>nucleus<br/>double<br/>io<br/>vm<br/>extra//||
