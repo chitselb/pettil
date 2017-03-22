@@ -23,8 +23,10 @@
 #print basic
 ;--------------------------------------------------------------
 #if 0
-name=~ BASIC bootstrap
+name=PETBASIC
 tags=system,nosymbol
+! BASIC bootstrap `$0401`
+
 PETTIL loads as a BASIC program consisting of one line,
 `10 SYS1037` to launch the system.  During the build, Core and tdict are assembled separately and concatenated, with the symbol table appended to the end.  [[LAUNCH]] is the code that moves the tdict and symbol table to their proper locations brings up the system by executing [[COLD]], which in turn executes [[WARM]] and brings up the outer interpreter.
 
@@ -209,24 +211,28 @@ petbasic
 basend
     .word 0
 pettillaunch
-    jmp cold
+    jmp xyzzycold
+    ;jmp once
+
 ;--------------------------------------------------------------
 #if 0
-name=~ Zero page buffer and NEXT routine
+name=ZPBUF
 tags=system,nosymbol
+!Zero page buffer and NEXT routine `$0410`
+
+
+PETTIL swaps the bottom half (everything from $00 up to [[TIME]]) of zero page
+with the BASIC edition of it from when PETTIL was loaded and run.  [[MON]] and
+any cassette I/O both switch BASIC back in.
+
 This buffer holds an image at load time of zero page between
-$00..$8D. PETTIL cold start calls the `zpswap` routine to
+`$00..$8C`. PETTIL start/restart will call the `aloha` routine to
 exchange it with the BASIC zero page on entry or exit.
 
-Please note that `R12` is the Sweet-16 stack pointer, used by the
-`BS` and `RS` opcodes.  It grows upward, and is initialized here to $0100
-Changing this value will move Sweet-16's stack to somewhere else.
-Any code that alters the value of `R12` will also move Sweet-16's stack
-to a new area of memory, perhaps allowing Sweet-16 to overwrite
-memory in unintended locations. Alter `R12` with care.
+''please note: this includes all Sweet16 registers, even SP!!''
 
-At $0086 is PETTIL's 15-clock inner interpreter consisting of
-just three instructions.  Whoa.  It's fast.
+PETTIL's 15-clock inner interpreter is here, consisting of
+just three instructions.  Whoa.  It's fast!
 #endif
 zpbuf
 ;==============================================================
@@ -275,7 +281,7 @@ power2
 
 ;--------------------------------------------------------------
 #if 0
-name=plugh
+name=PLUGH
 tags=nosymbol
 An isolated RTS instruction, useful for debugging assembler or Sweet-16 in VICE
 
@@ -290,21 +296,23 @@ An isolated RTS instruction, useful for debugging assembler or Sweet-16 in VICE
     jsr something
     jsr somethingelse
     sta anyplace
-    jsr plugh       ; VICE debugger from 6502 assembler
+    jsr plugh       ; invoking VICE debugger from 6502 assembler
     ldx anyplace
 ```
 #endif
 plugh
     rts
 
+; Before this point should be exactly 156($9C) bytes of code beginning at $0401
+
 ;==============================================================
 ;==== ALL SWEET16 OPERATION HANDLERS MUST BE ON SAME PAGE! ====
 ;==============================================================
 
-#if (* <> $04a6)
+#if (* <> $04A6)
 #echo PETTIL Build Error - Program counter is not at $04a6!
 #echo You moved something, didn't you?  Sweet16 is expected
-#echo to start at $04a6 (1190).  This is a problem.
+#echo to start at $04A6 (1190).  This is a problem.
 #endif (sweet16 address check)
 #echo .       program counter just before Sweet16 should be 1190, is:
 #print *
@@ -315,25 +323,40 @@ plugh
 ;==== ALL SWEET16 OPERATION HANDLERS MUST BE ON SAME PAGE! ====
 ;==============================================================
 
+;--------------------------------------------------------------
+#if 0
+name=ZPMODE
+stack=( -- )
+tags=system,uservar,nosymbol,todo
+A byte used as a semaphore to indicate whether BASIC or PETTIL are using
+the bottom half of zero page.
+
+todo: This is mostly here to align [[UAREA]] at $0670, no code has been
+implemented to modify or test this flag.
+#endif
+zpmode
+    .byt 0
 
 ;--------------------------------------------------------------
 #if 0
-name=~ User Area
+name=UAREA
 stack=( -- )
-tags=system,uservar,nosymbol
+tags=system,uservar,nosymbol,todo
+!User Area
+
 Storage for user variables and initialization data for some of them
 #endif
 userarea
 ; uarea initialization data
 ; WARM
-userup          .word uarea     ;
+userup          .word uarea     ; "todo: use the z.p. UP at $84 instead
 usersp0         .word bos+1     ;
 userrp0         .word $01fe     ;
 userwarm
 
 ; COLD
-userfence       .word cold      ;
-userdp          .word cold      ;
+userfence       .word xyzzycold ;
+userdp          .word xyzzycold ;
 userstartup     .word _hot      ;
 usermemsiz      .word 0         ; calculated at startup
                                 ; keep the next three uservars together
@@ -382,7 +405,7 @@ usercsp         = usercold+56
 uservsource     = usercold+58
 
 ; User Pointer (UP) at $0002 points here
-uarea           .dsb usercold-userarea+80,0
+uarea           .dsb usercold-userarea+60,0
 
     ; grow this string to test page-alignment
     .byt ""
@@ -392,11 +415,12 @@ irqtoggle       .word 0
 
 ;--------------------------------------------------------------
 #if 0
-name=~ Core includes
+name=COREBASE
 tags=nosymbol
-These are the source files included in [[PETTIL-CORE]].  The
-other place to modify when adding/removing source files is
-`xap.rb`
+! Core includes
+
+These are the source files included in [[PETTIL-CORE]].  When adding/removing
+these files, also modify `xap.rb`
 #endif
 corebase
 #print *
@@ -423,7 +447,7 @@ corebase
 #if 0
 name=WARM
 stack=( -- )
-tags=system,nosymbol
+tags=system,nosymbol,startup
 Dropping out to BASIC can be accomplished on purpose with MON
 (to get to TIM), then .X to get to BASIC.  It also will happen
 by mistake if cassette i/o is interrupted by the STOP key or
@@ -492,7 +516,7 @@ warm04
 #if 0
 name=COLD
 stack=( -- )
-tags=system,nosymbol
+tags=system,nosymbol,startup
 
 In the core, everything beyond [[COLD]] disappears following initial
 startup, so [[COLD]] = [[HERE]] immediately after loading PETTIL
@@ -557,7 +581,7 @@ and where the symbol table begins.  ($C9) in zero page tells the
 cold start the last address in the file load, which is the end of the
 symbol table.
 #endif
-cold
+xyzzycold
     nop                         ; make it easy to find here
     nop
     nop
@@ -590,7 +614,7 @@ cold01
 #if 0
 name=HOT
 stack=( -- )
-tags=system,nosymbol
+tags=system,nosymbol,startup
 [[COLD]] does enough to kickstart Forth, then HOT is next.
 
 * sets [[TDICT]] and [[SYMTAB]] user variables
@@ -691,8 +715,8 @@ _hot
 
 ;--------------------------------------------------------------
 #if 0
-name=bannermsg
-tags=system,nosymbol
+name=BANNERMSG
+tags=system,nosymbol,startup
 The message of the day.  In pre-beta, I like to put a "this day
 in history" in the welcome banner.  The end of this message marks
 the end of [[core]] immediately after initial load.  It is followed
