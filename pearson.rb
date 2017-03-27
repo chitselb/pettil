@@ -4,7 +4,7 @@
 # given a file containing Forth words, generate random pearson hash
 # tables forever, printing out each one that is more efficient than
 # the best so far.
-lowest_so_far=4
+lowest_so_far=5
 
 
 
