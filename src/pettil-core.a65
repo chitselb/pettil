@@ -235,6 +235,9 @@ userfilename    .word currname  ; counted string, default filename
                                 ; is "PETTILPACKETS"
 usersanum       .word 0         ; secondary address is 0, (PRG file)
 userdrvnum      .word 1         ; cassette #1 is default device
+
+usernumvoc      .word 1         ; number of additional vocabularies (ASSEMBLER)
+
 usercold
 
 ; SOFT
@@ -259,7 +262,6 @@ usernumlin      = usercold+26
 
 userscrpkt      = usercold+28
 userediting     = usercold+30
-usernumvoc      = usercold+32
 usernewest      = usercold+34
 userredefined   = usercold+36
 userwarning     = usercold+38
@@ -316,6 +318,27 @@ corebase
 
 ;--------------------------------------------------------------
 #if 0
+name=RESTART
+stack=( -- )
+tags=system,startup,nosymbol
+Performs the startup word
+
+```
+: restart   ( -- )
+    startup @  execute ;
+#endif
+#include "align.i65"
+_restart
+    jsr enter
+#include "page.i65"
+    .word startup
+#include "page.i65"
+    .word fetch
+#include "pass.i65"
+    .word execute
+
+;--------------------------------------------------------------
+#if 0
 name=COLD
 stack=( -- )
 tags=system,startup
@@ -360,7 +383,8 @@ WELCOME TO PETTIL!
 _
 ```
 
-Dropping to BASIC also occurs when cassette I/O fails or is interrupted.
+Dropping to BASIC also occurs when cassette I/O fails or is interrupted by
+the [[STOP]] key, or just sometimes when things go wrong.
 
 !!Tasks
 
@@ -370,8 +394,10 @@ Dropping to BASIC also occurs when cassette I/O fails or is interrupted.
 ** switch Sweet16<-->TIM BRK vector
 * reset Forth return stack (machine stack)
 * reset Forth data stack
+* `DECIMAL`
+* `EMPTY-BUFFERS`
 * print start message CR,"WELCOME TO PETTIL!",CR
-* STARTUP @ EXECUTE
+* `STARTUP @ EXECUTE`
 #endif
 warm
     lda #userwarm-userarea-1    ; init only warm uservariables
@@ -402,12 +428,14 @@ warm03
 #include "page.i65"
     .word decimal
 #include "page.i65"
-    .word startup
-#include "page.i65"
-    .word fetch
+    .word _emptybuffers
 #include "pass.i65"
-    .word execute
-
+    .word _pdq
+    .byt launch01-*-1
+    .asc CR,RVSON,"WELCOME TO PETTIL!",CR
+launch01
+#include "pass.i65"
+    .word _restart
 
 ;--------------------------------------------------------------
 #if 0
@@ -473,19 +501,23 @@ This code will be overwritten by user activity
 
 !!![[COLD]] tasks
 
-* print start message CR,"WELCOME TO PETTIL!",CR
-* HERE (FORGET)
+* move cold start variables to uarea
+* fall through to [[WARM]]
 
 !!![[WARM]] tasks
 
+* move warm start variables to uarea
 * reset Forth return stack (machine stack)
 * reset Forth data stack
 * STARTUP @ EXECUTE
 
+!!![[LIFTOFF]] tasks
+
+* `TDICT CMOVE`
+
 !!![[LAUNCH]] tasks
 
-* cmove TDICT
-* cmove SYMTAB
+* `HERE (FORGET)`
 
 tests:
 `HERE FENCE ! COLD`

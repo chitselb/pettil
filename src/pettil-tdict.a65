@@ -11,24 +11,21 @@
 #define SYMBOL_GROW 0
 ;
 ; this is for a 32K environment
-hitop=$6980
+hitop=$6900
     .word hitop-2           ; load address
     .word endofile-hitop    ; size of the transient dictionary in bytes
 *=hitop
 
 ;--------------------------------------------------------------
 #if 0
-name=~ LAUNCH
+name=LAUNCH
 stack=( -- )
-tags=nosymbol,todo
+tags=nosymbol
 This word must be the very first thing in the transient
 dictionary.  pettil-core has no knowledge of anything in this
 upper section, so [[LAUNCH]] must establish the linkage between
 the two dictionaries.  It does this by running FORGET to
 discard the word [[COLD]] which rebuilds the symbol table
-
-todo: eliminate this code (from  here to tdictbase) following launch,
-with tdict starting at highest available page boundary
 
 * set [[WARNING]]
 * set [[TDICT]]
@@ -45,7 +42,7 @@ d;m 0 8f;m 1f0 21f;z
    1 #voc !
    [ endofile ] literal  tdp !
    ['] abort literal  startup !
-   ['] cold (forget)  abort ;
+   ['] cold (forget)  restart ;
 ```
 #endif
 #include "align.i65"
@@ -73,12 +70,6 @@ launch
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word one
-#include "page.i65"
-    .word numvoc
-#include "page.i65"
-    .word store
-#include "page.i65"
     .word plit
     .word _abort
 #include "page.i65"
@@ -91,14 +82,76 @@ launch
     .word fetch
 #include "page.i65"
     .word _pforget
+#include "page.i65"
+    .word _deadbeef
 #include "pass.i65"
-    .word _pdq
-    .byt launch01-*-1
-    .asc CR,"WELCOME TO PETTIL!",CR
-launch01
+    .word _restart
+
+;--------------------------------------------------------------
+#if 0
+name=DEADBEEF
+stack=( -- )
+tags=startup,nosymbol
+Fill available memory with DEADBEEF . Optionally runs at [[ONCE]] startup
+after [[(FORGET)]] to assist in debugging.
+
+```
+: deadbeef   ( -- )
+   vmbuf @
+   begin
+
+   until ;
+```
+
+#endif
+#include "align.i65"
+_deadbeef
+    jsr enter
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+deadbeef01
+    .word four
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word here
 #include "pass.i65"
-    .word warm
+    .word gt
+#include "pass.i65"
+    .word qbranch
+    .byt <(deadbeef02-*+1)
+#include "pass.i65"
+    .word plit
+    .word $dead
+#include "pass.i65"
+    .word plit
+    .word $beef
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word twostore
+#include "pass.i65"
+    .word branch
+    .byt <(deadbeef01-*+1)
+#include "pass.i65"
+deadbeef02
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=TDICTBASE
+stack=( -- )
+tags=nosymbol,nosymbol
+This marks the upper fence above the symbol table.  Code below this mark
+may be overwritten by [[SYMTAB]] growth
+#endif
 tdictbase
+
 ;--------------------------------------------------------------
 #print *
 #include "pettil-user.a65"
@@ -115,4 +168,12 @@ tdictbase
 #print *
 #include "pettil-assembler.a65"
 #print *
+
+;--------------------------------------------------------------
+#if 0
+name=ENDOFILE
+stack=( -- )
+tags=nosymbol,nosymbol
+This marks the end of the transient dictionary ([[TDP]])
+#endif
 endofile
