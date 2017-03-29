@@ -867,9 +867,14 @@ _stringcomma
 ;--------------------------------------------------------------
 #if 0
 name=$>PAD $.>PAD $>PAD $>PAD
-stack=( addr -- )
+stack=( addr count -- )
 tags=string
-Move a string at `addr` to the [[PAD]]
+Move a string at `addr` to the [[PAD]] as a counted string
+
+```
+: $>pad   ( addr count -- )
+    pad under c!+
+```
 #endif
 #include "align.i65"
 _stringtopad
@@ -877,18 +882,16 @@ _stringtopad
 #include "page.i65"
     .word _pad
 #include "page.i65"
-    .word duptor
-#include "page.i65"
     .word over
 #include "page.i65"
-    .word cfetch
+    .word cstoreplus
 #include "page.i65"
-    .word oneplus
+    .word swap
 #include "page.i65"
-    .word _move         ; ~~a
-#include "page.i65"
-    .word rfrom
+    .word cmove
 #include "pass.i65"
+    .word _pad
+#include "page.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1005,31 +1008,39 @@ d;m 0 8f;m 1f0 21f;z
 doquotedotquote
     jsr dodoes
 #include "page.i65"
-    .word fetchplus
-#include "page.i65"
-    .word twotor
-#include "pass.i65"
     .word clit
     .byt '"'
 #include "page.i65"
     .word _pword
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word dup                   ; factor this out
+#include "page.i65"
+    .word oneplus               ; factor this out
+#include "page.i65"
+    .word toin                  ; factor this out
+#include "page.i65"
+    .word plusstore             ; factor this out
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word twofetch
 #include "page.i65"
     .word compilingq
 #include "pass.i65"
     .word qbranch
     .byt <(doquotedotquote01-*+1)
 #include "page.i65"
-    .word rfrom
+    .word xyzzy
+#include "page.i65"
+    .word nip
 #include "page.i65"
     .word _xtcomma
-#include "page.i65"
-    .word rdrop
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word minus
 #include "page.i65"
     .word duptor
 #include "page.i65"
@@ -1049,84 +1060,11 @@ doquotedotquote
     .byt <(doquotedotquote02-*+1)
 #include "page.i65"
 doquotedotquote01
-    .word xyzzy
-#include "page.i65"
     .word drop
 #include "page.i65"
-    .word rot
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word rdrop
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word fetch
-#include "page.i65"
     .word execute
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word xyzzy
 #include "pass.i65"
 doquotedotquote02
-    .word exit
-
-
-
-
-
-
-
-
-
-
-
-    .word drop
-#include "page.i65"
-    .word zeq
-#include "pass.i65"
-    .word qerror
-    .byt 9                      ; MISSING QUOTE
-#include "page.i65"
-    .word twodup
-#include "pass.i65"
-    .word minus
-#include "pass.i65"
-    .word not
-#include "pass.i65"
-    .word toin
-#include "pass.i65"
-    .word plusstore
-#include "pass.i65"
-    .word toin
-#include "pass.i65"
-    .word toin
-#include "pass.i65"
-    .word _caller
-#include "page.i65"
-    .word compilingq
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _xtcomma
-#include "page.i65"
-    .word _stringcomma
-#include "page.i65"
-    .word exit
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word execute
-#include "pass.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -1136,23 +1074,18 @@ stack=( text" == ) ( -- )
 tags=string,todo
 flags=immediate
 
-+    jsr doquote
-+    .word _pquote               ; (")       compile
-+    .word _stringtopad          ; $>PAD     runtime
+State-smart word to display a string literal.
 
-State-smart string literal.  In compile mode, encloses a string
-in the dictionary.  In interpret mode, returns the address of a
-string ([[PAD]])
+|Compile mode|[[(.")]]|enclose string and handler in dictionary|
+|Interpret mode|[[TYPE]]|immediately display the string|
 
 todo: rewrite, with words that use [[WORD]]
 
 ```
-: "   ( text" == ) ( -- addr )
-    [ ' (") ] literal   (."")  $>pad ;
-
-' (") ' $>pad >"." "
+: ."   ( text" == ) ( -- addr )
+    [ ' (.") ] literal   (."")  $. ;
 ```
-!!!pronounced: //"quote"//
+!!!pronounced: //"dot-quote"//
 #endif
 #include "align.i65"
 _dotquote
@@ -1167,13 +1100,13 @@ stack=( text" == ) ( -- addr )
 tags=string,todo
 flags=immediate
 
-+    jsr doquote
-+    .word _pquote               ; (")       compile
-+    .word _stringtopad          ; $>PAD     runtime
-
 State-smart string literal.  In compile mode, encloses a string
 in the dictionary.  In interpret mode, returns the address of a
 string ([[PAD]])
+
+test:
+
+`" foo" " bar" $. $. .s barbarstack empty ok`
 
 todo: rewrite, with words that use [[WORD]]
 
@@ -1193,43 +1126,9 @@ _quote
 
 ;--------------------------------------------------------------
 #if 0
-name=X"
-stack=( text" == ) ( -- addr )
-tags=string
-flags=immediate
-
-+    jsr doquote
-+    .word _pquote               ; (")       compile
-+    .word _stringtopad          ; $>PAD     runtime
-
-State-smart string literal.  In compile mode, encloses a string
-in the dictionary.  In interpret mode, returns the address of a
-string ([[PAD]])
-
-```
-: "   ( text" == ) ( -- addr )
-    [ ' (") ] literal   (."")  $>pad ;
-```
-!!!pronounced: //"quote"//
-#endif
-#include "align.i65"
-_xquote
-    jsr enter
-#include "pass.i65"
-    .word plit
-    .word _pquote
-#include "page.i65"
-    .word _pdqq
-#include "page.i65"
-    .word _stringtopad
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=X."
 stack=( text" -- )
-tags=compiler,i/o
+tags=compiler,i/o,deprecated
 flags=immediate
 
     jsr doquote
@@ -1242,11 +1141,6 @@ Output a string
 Scans ahead in the input stream for a close " character and
 encloses the string in the dictionary.
 
-```
-: ."   ( text" == ) ( -- addr )
-    [ ' (.") ] literal   (."")  $. ;
-```
-!!!pronounced: //"dot-quote"//
 #endif
 #include "align.i65"
 _xdotq
