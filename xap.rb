@@ -407,13 +407,24 @@ end
             sortedbyaddr[i][1].set_nextword nextword
         end
         sortedbyaddr.last[1].set_size 6     # assembler vocabulary
-#  # => [[:joan, 18], [:fred, 23], [:pete, 54]]
-#       forthwordhash.each do |wordname, stuff|#
-#           print stuff.addr, stuff.label
-#       end
+  # => [[:joan, 18], [:fred, 23], [:pete, 54]]
+       forthwordhash.each do |wordname, stuff|#
+           print stuff.addr, stuff.label
+       end
     end
 
     def write_symtab_file(outputfile,forthwordhash)
+
+puts forthwordhash.each
+
+forthwordhash.each do |wordname, stuff|
+    puts wordname, stuff
+end
+
+
+
+
+
         symfile = File.open("./tmp/"+outputfile,'wb')
         forthwordhash.each do |wordname, stuff|
             symfile.write stuff.symbol_table_entry   unless stuff.tags.index "nosymbol"
