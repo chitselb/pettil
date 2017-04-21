@@ -586,43 +586,40 @@ to `size1` bytes are skipped *WHILE* they match `char`.  Returns
 `count2` as the remaining number of bytes in the buffer.
 #endif
 skip
-    clc
-    .byt $29                        ; AND #
+    lda #$f0                        ; BNE instruction
+    .byt $2c                        ; BIT abs
     ;fall through
 ;--------------------------------------------------------------
 #if 0
 name=SCAN
 stack=( addr1 size1 char -- addr2 count2 )
-tags=numword,nosymbol
+tags=numword,nosymbol,self-modifying
 `addr1` is the starting address in the input stream where up
 to `size1` bytes are skipped *UNTIL* they match `char`.  Returns
 `addr2` as the address of the first matching character and
 `count2` as the remaining number of bytes in the buffer.
 #endif
 scan
-    sec
+    lda #$d0                        ; BEQ instruction
+    sta skipscan02
     jsr locals4                     ; TOS = char; N0 = addr1; N1 = size1
-    inc n+2
-    ;ldy #0
-    dey
 skipscan01
+    inc uarea+usertoin-userarea
     iny
-    dec n+2
-    beq skipscan03
+    dec n+2                         ; 8-bit, size limited to 0..255
+    bmi skipscan04
     lda (n),y
     eor tos
-    bcc skipscan02                  ; looking for a match?
-    bne skipscan01
-    ;sec
-    adc #$00                        ; success? clear C & Z flags
 skipscan02
-    beq skipscan01
-skipscan03
+    bvc skipscan01                  ; this opcode is replaced by skip or scan
+                                    ; found char !
+skipscan04
     sty tos
     brk
     .byt ld | N0
     .byt add | TOS
     .byt st | TOS                   ; addr2
+    .byt inr | N1
     .byt ld | N1
     .byt push
     .byt nxt
@@ -670,8 +667,9 @@ d;m 0 8f;m 1f0 21f;m 670 6cf;m 1a80 1a9f;z
 
 ```
 : (word)   ( char -- base start end remaining )
-    >r 'stream
-    under r@ skip  under r> scan ;
+    >r ( : 'stream ) source dup >in @ min /string ( ; )
+    under r@ skip  under r> scan
+    drop over - ;
 ```
 #endif
 #include "align.i65"
@@ -703,8 +701,25 @@ _pword
     .word rfrom
 #include "page.i65"
     .word scan
+#include "page.i65"
+    .word span              ; toin+2
 #include "pass.i65"
-    .word exit
+    .word pword02
+pword02
+    jsr locals8
+    brk
+    .byt popd | TOS
+    .byt add | N2
+    .byt sub | N0
+    .byt inr | ACC
+    .byt std | TOS
+    .byt ld | N1
+    .byt st | TOS
+    .byt ld | N2
+    .byt sub | N1
+    .byt push
+    .byt rtn
+    jmp exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -733,6 +748,13 @@ tags=interpreter,forth-83
  interpreter may also use this area.
 See: http://forth.sourceforge.net/std/fst83/fst83-5.htm#input.stream
 
+
+
+d;m 0 8f;m 1f0 20f;m 670 6cf;z
+
+d;m 0 8f;m 1f0 20f;m 670 6cf;m 1a80 1a9f;m 6680 66ff;z
+
+
 ```
 : word   ( char -- addr )
     (word) here $! here ;
@@ -742,15 +764,9 @@ See: http://forth.sourceforge.net/std/fst83/fst83-5.htm#input.stream
 _word
     jsr enter
 #include "page.i65"
-    .word xyzzy
-#include "page.i65"
     .word _pword            ; ~~9
 #include "page.i65"
-    .word nip
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word drop
+    .word xyzzy
 #include "page.i65"
     .word here
 #include "page.i65"
@@ -1006,7 +1022,7 @@ tags=interpreter,forth-83,todo
 : load   ( scr -- )
     ?dup
     if
-        blk 2@  ( >in @ ) 2>r
+        blk @  >in @ 2>r
         blk !  source! interpret
         r> >in !  r> blk !  source!
     then ;
