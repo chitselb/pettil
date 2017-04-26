@@ -133,29 +133,6 @@ _sourcetib
 
 ;--------------------------------------------------------------
 #if 0
-name=SOURCE.BLK
-stack=( -- addr size )
-tags=interpreter,nosymbol
-Target of SOURCE vector when input is from the console.  Leaves
-an address and size
-
-```
-: source.blk   ( -- addr size )
-    block b/buf ;
-```
-#endif
-#include "align.i65"
-_sourceblk
-    jsr enter
-#include "page.i65"
-    .word _block
-#include "page.i65"
-    .word bperbuf
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=REFILL.SCR
 stack=( -- flag )
 tags=interpreter,nosymbol,todo
@@ -421,27 +398,17 @@ sourcescr02
 
 ;--------------------------------------------------------------
 #if 0
-name=SOURCE
-stack=( -- addr size )
-tags=interpret,nosymbol
-Returns the base address of the buffer that [[INTERPRET]] is
-reading from, and the buffer size.
-
-|tib|span|
-
-
-#endif
-source
-    jmp (uarea+uservsource-userarea)
-
-;--------------------------------------------------------------
-#if 0
-name=SOURCE!
+name=STREAM!
 stack=( -- )
 tags=vm,interpreter,nosymbol
 Sets the input source to TIB, BLK, or SCR
 
 ```
+: stream!   ( -- )
+    ['] source.scr ['] source.tib
+    >in off  blk @  ?: nip drop
+    vsource ! ;
+
 : source!   ( -- )
     blk @  ?dup
     if
@@ -459,8 +426,14 @@ Sets the input source to TIB, BLK, or SCR
 ~ something here so that LOAD can restore position on a screen #41
 #endif
 #include "align.i65"
-_sourcestore
+_streamstore
     jsr enter
+#include "pass.i65"
+    .word plit
+    .word _sourcescr
+#include "pass.i65"
+    .word plit
+    .word _sourcetib
 #include "page.i65"
     .word toin
 #include "page.i65"
@@ -469,58 +442,11 @@ _sourcestore
     .word blk
 #include "page.i65"
     .word fetch
-#include "page.i65"
-    .word qdup
 #include "pass.i65"
-    .word qbranch
-    .byt <(sourcestore02-*+1)
-#include "page.i65"
-    .word _block
-#include "page.i65"
-    .word isscrq
-#include "pass.i65"
-    .word qbranch
-    .byt <(sourcestore01-*+1)
-#include "page.i65"
-    .word threeplus
-#include "page.i65"
-    .word atlin
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word lin
-#include "page.i65"
-    .word on
-#include "page.i65"
-    .word numlin
-#include "page.i65"
-    .word off
-#include "pass.i65"
-    .word plit
-    .word _sourcescr
-#include "pass.i65"
-    .word branch
-    .byt <(sourcestore03-*+1)
-#include "page.i65"
-sourcestore01
+    .word pquerycolon
+    .word nip
     .word drop
-#include "pass.i65"
-    .word plit
-    .word _sourceblk
-#include "pass.i65"
-    .word branch
-    .byt <(sourcestore03-*+1)
-#include "pass.i65"
-sourcestore02
-    .word clit
-    .byt DFLTN
 #include "page.i65"
-    .word coff
-#include "pass.i65"
-    .word plit
-    .word _sourcetib
-#include "page.i65"
-sourcestore03
     .word psource
 #include "page.i65"
     .word store
@@ -539,7 +465,7 @@ An immediate word which loads the next screen of Forth source
 
 ```
 : -->   ( -- )
-    blk 1+!  >in off  source! ; immediate
+    blk 1+!  stream! ; immediate
 ```
 : -->
     ?loading 0 in !
@@ -572,7 +498,7 @@ _nextblock
 #include "page.i65"
     .word oneplusstore
 #include "page.i65"
-    .word _sourcestore
+    .word _streamstore
 #include "pass.i65"
     .word exit
 
@@ -653,6 +579,27 @@ _slashstring
 
 ;--------------------------------------------------------------
 #if 0
+name='STREAM
+stack=( -- addr size )
+tags=interpret
+Returns the base address of the buffer that [[INTERPRET]] is
+reading from, and the buffer size.
+
+||source|addr|size|h
+|0|keyboard|tib|span|
+|1|screen|cas2buf|#lin|
+|2|block|//unimplemented//|<|
+
+```
+: source   ( -- addr size )
+    blk @ ?: ;
+```
+#endif
+scrozzix
+    jmp (uarea+uservsource-userarea)
+
+;--------------------------------------------------------------
+#if 0
 name=(WORD)
 stack=( char -- addr size )
 tags=interpreter,todo
@@ -680,7 +627,7 @@ _pword
 #include "page.i65"
     .word tor
 #include "page.i65"
-    .word source            ; ( bufaddr bufsize )
+    .word scrozzix          ; ( bufaddr bufsize )
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -894,7 +841,7 @@ interpret06
 
 ;--------------------------------------------------------------
 #if 0
-name=QUERY
+name=REFILL.TIB
 stack=( -- )
 tags=forth-83,fig
 Accept a line of input from the user
@@ -906,7 +853,7 @@ Accept a line of input from the user
 ```
 #endif
 #include "align.i65"
-_query
+_refilltib
     jsr enter
 #include "page.i65"
     .word tib
@@ -958,12 +905,12 @@ _quit
 #include "page.i65"
     .word off
 #include "page.i65"
-    .word _sourcestore          ; set input source
-#include "page.i65"
+    .word _streamstore          ; set input source
+;#include "page.i65"
 quit01                          ; BEGIN
-    .word cr
-#include "page.i65"
-    .word _query
+;    .word cr
+;#include "page.i65"
+;    .word _query
 #include "page.i65"
     .word _interpret
 #include "page.i65"
@@ -1022,6 +969,15 @@ tags=interpreter,forth-83,todo
 : load   ( scr -- )
     ?dup
     if
+        blk 2@ 2>r
+        blk !  stream! interpret
+        2r> blk 2!  stream!
+    then ;
+
+
+: load   ( scr -- )
+    ?dup
+    if
         blk @  >in @ 2>r
         blk !  source! interpret
         r> >in !  r> blk !  source!
@@ -1041,33 +997,23 @@ _load
 #include "page.i65"
     .word twofetch
 #include "page.i65"
-;    .word toin
-#include "page.i65"
-;    .word fetch
-#include "page.i65"
     .word twotor
 #include "page.i65"
     .word blk
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word _sourcestore
-#include "page.i65"
-    .word xyzzy
+    .word _streamstore
 #include "page.i65"
     .word _interpret
 #include "page.i65"
     .word tworfrom
 #include "page.i65"
-    .word toin              ; todo - make toin adjacent to blk and 2! here
+    .word blk              ; todo - make toin adjacent to blk and 2! here
 #include "page.i65"
-    .word store
+    .word twostore
 #include "page.i65"
-    .word blk
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word _sourcestore
+    .word _streamstore
 #include "pass.i65"
 load01
     .word exit
