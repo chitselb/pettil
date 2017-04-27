@@ -108,19 +108,143 @@ _tick
 
 ;--------------------------------------------------------------
 #if 0
-name=SOURCE.TIB
+name=-->
+stack=( -- )
+tags=interpreter,todo
+flags=immediate
+An immediate word which loads the next screen of Forth source
+
+!!! pronounced: "next-block"
+
+```
+: -->   ( -- )
+    blk 1+!  stream! ; immediate
+```
+: -->
+    ?loading 0 in !
+    b/scr blk @ over mod -
+    blk +! ;
+L18be .byt 3 | bit7 | bit6
+ .byt "--",">"|bit7
+ .word L1885
+DASHDASHGT
+ .word DOCOL
+ .word QLOADING
+ .word ZERO
+ .word IN
+ .word STORE
+ .word BSCR
+ .word BLK
+ .word FETCH
+ .word OVER
+ .word MOD
+ .word NEGATE
+ .word BLK
+ .word PSTORE
+ .word SEMIS
+#endif
+#include "align.i65"
+_nextblock
+    jsr enter
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word _streamstore
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SKIP
+stack=( addr1 size1 char -- addr2 count2 )
+tags=numword,nosymbol
+`addr1` is the starting address in the input stream where up
+to `size1` bytes are skipped *WHILE* they match `char`.  Returns
+`addr2` as the address of the first non-matching character and
+`count2` as the remaining number of bytes in the buffer.
+#endif
+skip
+    lda #$f0                        ; BNE instruction
+    .byt $2c                        ; BIT abs
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=SCAN
+stack=( addr1 size1 char -- addr2 count2 )
+tags=numword,nosymbol,self-modifying
+`addr1` is the starting address in the input stream where up
+to `size1` bytes are skipped *UNTIL* they match `char`.  Returns
+`addr2` as the address of the first matching character and
+`count2` as the remaining number of bytes in the buffer.
+#endif
+scan
+    lda #$d0                        ; BEQ instruction
+    sta skipscan02
+    jsr locals4                     ; TOS = char; N0 = addr1; N1 = size1
+    inc n+2
+    ;ldy #0
+    dey
+skipscan01
+    iny
+    dec n+2                         ; 8-bit, size limited to 0..255
+    beq skipscan04
+    lda (n),y
+    eor tos
+skipscan02
+    bvc skipscan01                  ; this opcode is replaced by skip or scan
+                                    ; found char !
+skipscan04
+    sty tos
+    brk
+    .byt ld | N0
+    .byt add | TOS
+    .byt st | TOS                   ; addr2
+    .byt ld | N1
+    .byt push
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=/STRING
+stack=( addr1 u1 n -- addr2 u2 )
+tags=string
+Adjust the character string at c-addr1 by n characters. The resulting
+character string, specified by c-addr2 u2, begins at c-addr1 plus n
+characters and is u1 minus n characters long.
+
+!!!pronounced: "slash-string"
+#endif
+#include "align.i65"
+_slashstring
+    jsr enter
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plusunder
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name='STREAM.TIB
 stack=( -- addr size )
 tags=interpreter,nosymbol
 Target of SOURCE vector when input is from the console.  Leaves
 an address
 
 ```
-: source.tib   ( -- addr size )
+: 'stream.tib   ( -- addr size )
     tib #tib @ ;
 ```
 #endif
 #include "align.i65"
-_sourcetib
+_tickstreamtib
     jsr enter
 #include "page.i65"
     .word tib
@@ -310,59 +434,49 @@ refillscr03
 
 ;--------------------------------------------------------------
 #if 0
-name=EOL?.SCR
-stack=( -- flag )
-tags=interpreter,nosymbol,todo
-Leaves true when, while parsing a screen, the cursor is at the end of
-a line.  This test triggers a refill event.
-
-todo: revisit this section
-
-```
-: eol?.scr   ( -- flag )
-    #lin @  >in @  over min  =
-    lin @ 25 < and ;
-```
-#endif
-#include "align.i65"
-_eolqscr
-    jsr enter
-#include "page.i65"
-    .word numlin
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word toin              ; todo - rewrite this section
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word _min
-#include "page.i65"
-    .word eq
-#include "page.i65"
-    .word lin
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word lperscr           ; 25
-#include "page.i65"
-    .word lt
-#include "page.i65"
-    .word andx
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=SOURCE.SCR
 stack=( -- addr size )
 tags=interpreter,nosymbol
 Target of SOURCE vector when input is from a screen.  Leaves
 an address pointing to the beginning of a line and line size 40|80
 
+
+end of line?
+yes:  refill
+no:
+
+end of screen?
+
+
+
+
+Leaves true when, while parsing a screen, the cursor is at the end of
+a line.  This test triggers a refill event.
+
 ```
+: eol?.scr   ( -- flag )
+    #lin @  >in @  over min  =
+    lin @ 25 < and ;
+
+_eolqscr
+    jsr enter
+    .word numlin
+    .word fetch
+    .word toin              ; todo - rewrite this section
+    .word fetch
+    .word over
+    .word _min
+    .word eq
+    .word lin
+    .word fetch
+    .word lperscr           ; 25
+    .word lt
+    .word andx
+    .word exit
+
+
+
+
 : source.scr   ( -- addr size )
     begin
         eol?.scr
@@ -373,11 +487,11 @@ an address pointing to the beginning of a line and line size 40|80
 ```
 #endif
 #include "align.i65"
-_sourcescr
+_tickstreamscr
     jsr enter
 #include "page.i65"
 sourcescr01
-    .word _eolqscr
+;    .word _eolqscr
 #include "pass.i65"
     .word qbranch
     .byt <(sourcescr02-*+1)
@@ -405,9 +519,9 @@ Sets the input source to TIB, BLK, or SCR
 
 ```
 : stream!   ( -- )
-    ['] source.scr ['] source.tib
+    ['] 'stream.scr ['] 'stream.tib
     >in off  blk @  ?: nip drop
-    vsource ! ;
+    (source) ! ;
 
 : source!   ( -- )
     blk @  ?dup
@@ -430,10 +544,10 @@ _streamstore
     jsr enter
 #include "pass.i65"
     .word plit
-    .word _sourcescr
+    .word _tickstreamscr
 #include "pass.i65"
     .word plit
-    .word _sourcetib
+    .word _tickstreamtib
 #include "page.i65"
     .word toin
 #include "page.i65"
@@ -455,144 +569,21 @@ _streamstore
 
 ;--------------------------------------------------------------
 #if 0
-name=-->
-stack=( -- )
-tags=interpreter,todo
-flags=immediate
-An immediate word which loads the next screen of Forth source
-
-!!! pronounced: "next-block"
-
-```
-: -->   ( -- )
-    blk 1+!  stream! ; immediate
-```
-: -->
-    ?loading 0 in !
-    b/scr blk @ over mod -
-    blk +! ;
-L18be .byt 3 | bit7 | bit6
- .byt "--",">"|bit7
- .word L1885
-DASHDASHGT
- .word DOCOL
- .word QLOADING
- .word ZERO
- .word IN
- .word STORE
- .word BSCR
- .word BLK
- .word FETCH
- .word OVER
- .word MOD
- .word NEGATE
- .word BLK
- .word PSTORE
- .word SEMIS
-#endif
-#include "align.i65"
-_nextblock
-    jsr enter
-#include "page.i65"
-    .word blk
-#include "page.i65"
-    .word oneplusstore
-#include "page.i65"
-    .word _streamstore
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=SKIP
-stack=( addr1 size1 char -- addr2 count2 )
-tags=numword,nosymbol
-`addr1` is the starting address in the input stream where up
-to `size1` bytes are skipped *WHILE* they match `char`.  Returns
-`addr2` as the address of the first non-matching character and
-`count2` as the remaining number of bytes in the buffer.
-#endif
-skip
-    lda #$f0                        ; BNE instruction
-    .byt $2c                        ; BIT abs
-    ;fall through
-;--------------------------------------------------------------
-#if 0
-name=SCAN
-stack=( addr1 size1 char -- addr2 count2 )
-tags=numword,nosymbol,self-modifying
-`addr1` is the starting address in the input stream where up
-to `size1` bytes are skipped *UNTIL* they match `char`.  Returns
-`addr2` as the address of the first matching character and
-`count2` as the remaining number of bytes in the buffer.
-#endif
-scan
-    lda #$d0                        ; BEQ instruction
-    sta skipscan02
-    jsr locals4                     ; TOS = char; N0 = addr1; N1 = size1
-    inc n+2
-    ;ldy #0
-    dey
-skipscan01
-    iny
-    dec n+2                         ; 8-bit, size limited to 0..255
-    beq skipscan04
-    lda (n),y
-    eor tos
-skipscan02
-    bvc skipscan01                  ; this opcode is replaced by skip or scan
-                                    ; found char !
-skipscan04
-    sty tos
-    brk
-    .byt ld | N0
-    .byt add | TOS
-    .byt st | TOS                   ; addr2
-    .byt ld | N1
-    .byt push
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=/STRING
-stack=( addr1 u1 n -- addr2 u2 )
-tags=string
-Adjust the character string at c-addr1 by n characters. The resulting
-character string, specified by c-addr2 u2, begins at c-addr1 plus n
-characters and is u1 minus n characters long.
-
-!!!pronounced: "slash-string"
-#endif
-#include "align.i65"
-_slashstring
-    jsr enter
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word plusunder
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name='STREAM
 stack=( -- addr size )
 tags=interpret
 Returns the base address of the buffer that [[INTERPRET]] is
 reading from, and the buffer size.
 
-||source|addr|size|h
-|0|keyboard|tib|span|
-|1|screen|cas2buf|#lin|
-|2|block|//unimplemented//|<|
+||source|addr|size|blk=|h
+|0|keyboard|tib|span|0|
+|1|screen|cas2buf|#lin|non-0|
+|2|block|//unimplemented//|<|<|
 
 ```
-: source   ( -- addr size )
-    blk @ ?: ;
+: 'stream   ( -- addr size )
+    blk @ ?:
+    ;
 ```
 #endif
 scrozzix
@@ -616,7 +607,7 @@ d;m 0 8f;m 1f0 21f;m 670 6cf;m 1a80 1a9f;z
 
 ```
 : (word)   ( char -- base start end remaining )
-    >r ( : 'stream ) source dup >in @ min /string ( ; )
+    >r ( : 'stream ) 'stream dup >in @ min /string ( ; )
     under r@ skip  under r> scan
     drop over - ;
 ```
