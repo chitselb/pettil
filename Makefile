@@ -1,5 +1,5 @@
-RUBY = /home/chitselb/.rbenv/shims/ruby
-#RUBY = /usr/bin/ruby
+#RUBY = /home/chitselb/.rbenv/shims/ruby
+RUBY = /usr/bin/ruby
 #RUBY = /usr/local/bin/ruby
 #RUBY = /home/chitselb/.rvm/rubies/ruby-2.2.1/bin/ruby
 SHELL = /bin/bash
