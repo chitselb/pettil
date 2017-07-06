@@ -1,0 +1,2655 @@
+; core-nucleus.a65
+#echo .       core-nucleus.a65          Nucleus
+
+;--------------------------------------------------------------
+#if 0
+name=UM*
+stack=( u1 u2 -- ud )
+tags=nucleus,math,forth-83
+"ud" is the unsigned product of "u1" times "u2".  All values and
+arithmetic are unsigned.
+
+A proper 6502 assembler solution.
+
+Features
+
+* multiplies two 8-bit numbers with 16 bit result
+* inner loop of only 17 clock cycles per iteration
+* worst case behaviour of 40 clock cycles per iteration
+* minimizes number of iterations
+* total execution time 25 - 320 cycles
+
+(i.e. only 3x slower (worst case) than MUL on Intel 8088)
+
+* 43 bytes size
+* relocatable to about anywhere in address space
+* uses C64-friendly memory locations
+
+ INPUT  = op1 in A, op2 in X
+
+ OUTPUT = low byte in X, high byte in Y
+
+ memory locations used as temp space = $fb, $fc, $fd
+
+```
+;You beat me to the punch, but there is some unnecessary code in there (you don't need to clear the carry before a LSR). And trashing X is unnecessary since you can test for zero just as fast with LDA $02. Or with some crazy jujitsu to save a byte...
+;Here's my version, handles 8-bit operands:
+;--$00 holds operand 1
+;--$01 (low byte) and $02 (high byte) hold operand 2
+;--$03 (low byte) and $04 (high byte) hold product
+;       cld
+;Loop
+;    lsr $00
+;    bcc NoAdd
+;    clc
+;    lda $03
+;    adc $01
+;    sta $03
+;    lda $04
+;    adc $02
+;    sta $04
+;    .byte $2C
+;NoAdd
+;    beq Done
+;    asl $01
+;    rol $02
+;    bcc Loop        ;this assumes that operand 2 is 8-bit
+;Done
+;
+;A proper 6502 assembler solution.
+;
+;Features
+;- multiplies two 8-bit numbers with 16 bit result
+;- inner loop of only 17 clock cycles per iteration
+;- worst case behaviour of 40 clock cycles per iteration
+;- minimizes number of iterations
+;- total execution time 25 - 320 cycles
+;(i.e. only 3x slower (worst case) than MUL on Intel 8088)
+;- 43 bytes size
+;- relocatable to about anywhere in address space
+;- uses C64-friendly memory locations
+; INPUT  = op1 in A, op2 in X
+; OUTPUT = low byte in X, high byte in Y
+; memory locations used as temp space = $fb, $fc, $fd
+;    stx $fc    ; save op2
+;    cmp $fc    ; compare both operands
+;    bcc noswap ; swap them unless op1 < op2
+;    sta $fc    ; save op1 instead of op2
+;    txa        ; swap op2 for op1
+;noswap
+;    ldx #$00   ; prepare result low byte
+;    stx $fd    ; clear high byte of op2
+;    ldy #$00   ; prepare result high byte
+;    beq begin  ; skip shift of op2 for first iteration
+;loop
+;    asl $fc    ; multiply op2 by 2, low byte
+;    rol $fd    ; multiply op2 by 2, high byte
+;begin
+;    lsr        ; divide op1 by 2
+;    bcs add    ; if op1 was odd before division, add op2
+;    bne loop   ; if op1 is not zero repeat loop
+;    rts        ; otherwise return result
+;add
+;    sta $fb    ; save current value of op1
+;    clc        ; prepare addition
+;    txa        ; fetch low byte
+;    adc $fc    ; add op2, low byte
+;    tax        ; store low byte
+;    tya        ; fetch high byte
+;    adc $fd    ; add op2, high byte
+;    tay        ; store high byte
+;    lda $fb    ; restore op1
+;    bne loop   ; if op1 is not zero repeat loop
+;    rts        ; otherwise return result
+;
+
+    stx $fc    ; save op2
+    cmp $fc    ; compare both operands
+    bcc noswap ; swap them unless op1 < op2
+    sta $fc    ; save op1 instead of op2
+    txa        ; swap op2 for op1
+noswap
+    ldx #$00   ; prepare result low byte
+    stx $fd    ; clear high byte of op2
+    ldy #$00   ; prepare result high byte
+    beq begin  ; skip shift of op2 for first iteration
+loop
+    asl $fc    ; multiply op2 by 2, low byte
+    rol $fd    ; multiply op2 by 2, high byte
+begin
+    lsr        ; divide op1 by 2
+    bcs add    ; if op1 was odd before division, add op2
+    bne loop   ; if op1 is not zero repeat loop
+    rts        ; otherwise return result
+add
+    sta $fb    ; save current value of op1
+    clc        ; prepare addition
+    txa        ; fetch low byte
+    adc $fc    ; add op2, low byte
+    tax        ; store low byte
+    tya        ; fetch high byte
+    adc $fd    ; add op2, high byte
+    tay        ; store high byte
+    lda $fb    ; restore op1
+    bne loop   ; if op1 is not zero repeat loop
+    rts        ; otherwise return result
+
+```
+check http://6502.org/source/ for multiply and divide and stuff
+#endif
+umstar
+    lda stackl,x
+    sta n+4
+    lda stackh,x            ;multiplicand in tos
+    sta n+5                 ;multiplier in N2
+    jsr multiply            ;16 bit unsigned multiply
+    lda n
+    sta stackl,x
+    lda n+1
+    sta stackh,x
+    lda n+2
+    ldy n+3
+    jmp put
+
+multiply
+    lda #0                  ; unsigned multiply tos*N2 destroys tos
+    sta n+2                 ;clear upper half of product
+    sta n+3
+    ldy #16
+rshift
+    lsr tos+1
+    ror tos
+    bcc rrot                ;Go rotate right if c = 0
+    clc                     ; and add multiplicand to
+    lda n+2                 ;Get upper half of product
+    adc n+4                 ; it
+    sta n+2
+    lda n+3
+    adc n+5
+rrot
+    ror                     ;shift partial product right
+    sta n+3
+    ror n+2
+    ror n+1
+    ror n
+    dey                     ;Decrement bit count and
+    bne rshift
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=UD/MOD
+stack=( ud1 u2 -- u3 ud4 )
+tags=numword
+
+http://www.bradrodriguez.com/papers/camel09.txt
+\   High level: numeric output                   (c) 31mar95 bjr
+: UD/MOD      \ ud1 u2 -- u3 ud4     32/16->32 divide
+    >R 0 R@ UM/MOD  ROT ROT R> UM/MOD ROT ;
+
+#endif
+udslashmod
+        stx z         ; saves a dex;dex later
+        ;ldy #4
+        jsr locals4       ; dividend to n0..n3
+        clc
+        ;ldy #0           ; locals does this for us
+        ldx #33
+        tya
+        beq udslashmodb   ; bra to initialization code
+udslashmoda
+        rol n+4           ; [5] I don't know what this 2-bytes is called
+        rol n+5           ; [5] trial minuend or something like that
+        sec               ; [2]
+        lda n+4           ; [3]
+        sbc tos           ; [3]
+        tay               ; [2]
+        lda n+5           ; [3]
+        sbc tos+1         ; [3]
+        bcc udslashmodc   ; save or abandon the trial subtraction
+udslashmodb
+        sty n+4           ; [2+3+3] or [3]?
+        sta n+5           ; treating this as [~6] clocks on average
+udslashmodc
+        rol n+0           ; [5]
+        rol n+1           ; [5]
+        rol n+2           ; [5]
+        rol n+3           ; [5]
+        dex               ; [2]
+        bne udslashmoda   ; [3]
+                ; [54] or [59] clocks for 33x main loop = [1839]
+        ldx z
+        lda n+5
+        sta stackh+1,x
+        lda n+4
+        sta stackl+1,x
+        lda n+1
+        sta stackh,x
+        lda n
+        sta stackl,x
+        ldy n+3
+        lda n+2
+        jmp put        ; push quotient(hi) on stack
+
+;--------------------------------------------------------------
+#if 0
+name=UM/MOD
+stack=( ud u -- rem quot )
+tags=forth-83,nucleus
+Perform an unsigned division of the 16-bit "u" into the double
+"ud", leaving the 16-bit unsigned remainder and quotient on
+the stack
+
+      http://6502.org/source/integers/ummodfix/ummodfix.htm
+
+!!! pronounced: "u-m slash mod"
+#endif
+umslashmod
+    lda stackl,x
+    cmp tos
+    lda stackh,x
+    sbc tos+1
+    bcs umslashmodx
+umslashmoda
+    lda #17
+    sta n       ; counter
+umslashmodb
+    rol stackl+1,x
+    rol stackh+1,x
+    dec n
+    beq umslashmodz
+    rol stackl,x
+    rol stackh,x
+    lda #$80
+    rol
+    sta n+1         ; carry
+    ;sec
+    lda stackl,x
+    sbc tos
+    sta n+2
+    lda stackh,x
+    sbc tos+1
+    tay
+    lda n+1
+    sbc #0
+    bcc umslashmodb
+
+    lda n+2
+    sta stackl,x
+    sty stackh,x
+    bcs umslashmodb
+
+umslashmodx
+    lda #$ff
+    sta stackl,x
+    sta stackh,x
+    sta stackh+1,x
+    sta stackl+1,x
+umslashmodz
+    jsr slide                   ; ~
+    jmp swap
+
+;--------------------------------------------------------------
+#if 0
+name=AND
+stack=( n1 n2 -- n1&n2 )
+tags=forth-83,nucleus,boolean
+#endif
+andx
+    lda tos+1
+    and stackh,x
+    tay
+    lda tos
+    and stackl,x
+    inx
+    bne not01       ; [3] bra
+
+;--------------------------------------------------------------
+#if 0
+name=OR
+stack=( n1 n2 -- n1|n2 )
+tags=forth-83,nucleus,boolean
+#endif
+orx
+    lda tos+1
+    ora stackh,x
+    tay
+    lda tos
+    ora stackl,x
+    inx
+    bne not01       ; [3] bra
+
+;--------------------------------------------------------------
+#if 0
+name=XOR
+stack=( n1 n2 -- n1^n2 )
+tags=forth-83,nucleus,boolean
+#endif
+xor
+    lda tos+1       ; [3]
+    eor stackh,x    ; [4]
+    tay             ; [2]
+    lda tos         ; [3]
+    eor stackl,x    ; [4]
+    inx             ; [2]
+    bne not01       ; [3] bra
+
+;--------------------------------------------------------------
+#if 0
+name=NOT
+stack=( n -- !n )
+tags=forth-83,nucleus,boolean
+#endif
+not
+    lda tos+1
+    eor #$ff
+    tay
+    lda tos
+    eor #$ff
+not01
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=2>R
+stack=( x1 x2 -- ) ( R; -- x1 x2 )
+tags=double,stack,ext
+
+Transfer cell pair x1 x2 to the return stack. Semantically equivalent to `SWAP >R >R` .
+#endif
+twotor
+    lda stackh,x
+    pha
+    lda stackl,x
+    pha
+    inx
+;    jmp tor
+
+;--------------------------------------------------------------
+#if 0
+name=>R
+stack=( n -- ) ( R; -- n )
+tags=forth-83,nucleus,stack
+Move the top element of the data stack to the return stack
+
+!!! pronounced: "to-r"
+#endif
+tor
+    sec
+    .byt $29    ; AND #
+                ; fall through
+;--------------------------------------------------------------
+#if 0
+name=DUP>R
+stack=( n -- n ) ( R; -- n )
+tags=nucleus,stack
+Copy the top of the data stack to the return stack
+
+!!! pronounced: "dupe to-r"
+#endif
+duptor
+    clc
+    lda tos+1
+    pha
+    lda tos
+    pha
+    bcc rdrop01
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=RSWAP
+stack=( -- ) ( R; a b -- b a )
+tags=nucleus,stack
+Swap the top two items on the return stack
+
+!!! pronounced: "r-swap"
+
+```
+: rswap   ( ; r1 r2 -- ; r2 r1)
+   2r> >r >r ;
+```
+#endif
+#include "align.i65"
+_rswap
+    jsr enter
+#include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word tor
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=RDROP
+stack=( -- ) ( R; a -- )
+tags=nucleus,stack
+Drop the top item on the return stack
+
+!!! pronounced: "r-drop"
+#endif
+rdrop
+    pla
+    pla
+rdrop01
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=0>
+stack=( n -- flag )
+tags=forth-83,nucleus,relational
+
+
+#endif
+zgt
+    ldy #0
+    lda tos+1
+    bmi zgt01                   ; check the sign
+    ora tos                     ; check for nonzero
+    beq zgt01
+    dey
+zgt01
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=3ERASE
+stack=( addr -- )
+tags=nucleus,memory
+Erase three bytes starting at `addr`
+#endif
+threeerase
+    ldy #2
+    bne off00
+
+;--------------------------------------------------------------
+#if 0
+name=COFF
+stack=( addr -- )
+tags=nucleus,memory
+Store 0 char at `addr`
+#endif
+coff
+    ldy #0
+    beq off00
+
+;--------------------------------------------------------------
+#if 0
+name=ON
+stack=( addr -- )
+tags=nucleus,memory
+Store -1 at `addr`
+#endif
+on
+    ldy #1
+    lda #$ff
+    bne off01
+
+;--------------------------------------------------------------
+#if 0
+name=OFF
+stack=( addr -- )
+tags=nucleus,memory
+Store 0 word at `addr`
+#endif
+off
+    ldy #1
+off00
+    lda #$00
+off01
+    sta (tos),y
+    dey
+    bpl off01
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=+
+stack=( n1 n2 -- sum )
+tags=forth-83,nucleus,math,fig,forth-79
+Leave the sum of n1+n2
+
+!!! pronounced: "plus"
+#endif
+plus
+    lda stackl,x
+plus01                  ; entry point from >BIT
+    clc
+    adc tos
+    sta tos
+    lda stackh,x
+    adc tos+1
+    sta tos+1
+    inx
+plus02
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=ABS
+stack=( n -- u )
+tags=forth-83,nucleus,math,fig,forth-79
+Leave the absolute value of n as u.
+#endif
+abs
+    bit tos+1
+    bpl plus02
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=NEGATE
+stack=( n -- -n )
+tags=forth-83,nucleus,math
+
+#endif
+negate
+    lda #>(next-1)
+    pha
+    lda #<(next-1)
+    pha
+donegate
+    sec
+neg2
+    lda #0
+    sbc tos
+    sta tos
+    lda #0
+    sbc tos+1
+    sta tos+1
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=OVER
+stack=( n1 n2 -- n1 n2 n1 )
+tags=forth-83,nucleus,stack
+
+#endif
+over
+    ldy stackh,x
+    lda stackl,x
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=SWAP
+stack=( n1 n2 -- n2 n1 )
+tags=forth-83,nucleus,stack,fig,forth-79
+Exchange the top two values on the stack.
+#endif
+swap
+    ldy tos+1
+    lda stackh,x
+    sta tos+1
+    sty stackh,x
+    ldy tos
+    lda stackl,x
+    sta tos
+    sty stackl,x
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=TUCK
+stack=( n1 n2 -- n2 n1 n2 )
+tags=forth-83,nucleus,stack
+Insert the top item on the stack beneath the second.
+#endif
+tuck
+    dex
+    jsr tuckdashrot
+    jmp next
+
+tuckdashrot
+    lda stackh+1,x
+    sta stackh,x
+    lda stackl+1,x
+    sta stackl,x
+    lda tos+1
+    sta stackh+1,x
+    lda tos
+    sta stackl+1,x
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=-ROT
+stack=( a b c -- c a b )
+tags=nucleus,stack
+
+#endif
+dashrot
+    ldy stackh,x
+    lda stackl,x        ; b
+    pha
+    jsr tuckdashrot
+    pla
+    jmp put             ; b -> c
+
+;--------------------------------------------------------------
+#if 0
+name=NIP
+stack=( n1 n2 -- n2 )
+tags=nucleus,stack
+Remove the second item from the stack
+#endif
+nip
+    inx
+qdup01
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=?DUP
+stack=( 0 -- 0 | n -- n n )
+tags=forth-83,nucleus
+ DUP if top of stack is nonzero
+#endif
+qdup
+    lda tos
+    ora tos+1
+    beq qdup01
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=DUP
+stack=( n -- n n )
+tags=forth-83,nucleus,stack,forth-79,fig
+Duplicate the value on the stack.
+
+!!! pronounced: "dupe"
+#endif
+dup
+    lda #>(next-1)
+    pha
+    lda #<(next-1)
+    pha
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=slip
+stack=( n -- n n )
+tags=nosymbol
+Push TOS to the stack (DUP)
+#endif
+slip
+    dex                         ; slip something onto the stack
+    lda tos+1
+    sta stackh,x
+    lda tos
+    sta stackl,x
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=+!
+stack=( n addr -- )
+tags=forth-83,nucleus,fig,forth-79
+Add "n" to the value at "addr"
+
+!!! pronounced: "plus-store"
+#endif
+plusstore
+    ldy #0
+    clc
+    lda stackl,x
+    adc (tos),y
+    sta (tos),y
+    iny
+    lda stackh,x
+    adc (tos),y
+    sta (tos),y
+    jmp twodrop
+
+;--------------------------------------------------------------
+#if 0
+name=TOGGLE
+stack=( addr bitmask -- )
+tags=nucleus,boolean,fig
+Complement the contents of addr by the bit pattern b.
+#endif
+toggle
+    lda stackl,x
+    sta n
+    lda stackh,x
+    sta n+1
+    ldy #0
+    lda (n),y
+    eor tos
+    sta (n),y
+    jmp twodrop
+
+;--------------------------------------------------------------
+#if 0
+name=COUNT
+stack=( addr1 -- addr2 n1 )
+tags=forth-83
+Leaves the address, addr2 and the character count +n of text
+beginning at addr1.  addr2 is addr1+1 and n1 is the length of
+the counted string at addr1.  The byte at addr1 contains the
+byte count +n.  Range of +n is {0...255}.
+#endif
+count
+    ; synonym for C@+, fall through
+;--------------------------------------------------------------
+#if 0
+name=C@+
+stack=( addr -- addr+1 c )
+tags=nucleus,memory,primitive
+Fetches the byte at addr, increments addr
+
+!!!pronounced: "c-fetch-plus"
+#endif
+cfetchplus
+    ldy #0
+    lda (tos),y
+    jsr inctos
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=@+
+stack=( addr -- addr+2 w )
+tags=nucleus,memory,primitive
+Fetches word `w` at `addr`, increments addr by 2
+
+!!!pronounced: "c-fetch-plus"
+#endif
+fetchplus
+    ldy #1
+fetchplus01
+    lda (tos),y
+    pha
+    dey
+    bpl fetchplus01
+    jsr inctos
+    jsr inctos
+    jmp rfrom
+
+;--------------------------------------------------------------
+#if 0
+name=CBIT!
+stack=( mask addr -- )
+tags=nucleus,boolean,memory
+
+ turn on the mask bits in the byte at address
+
+!!! pronounced: "c-bit-store"
+#endif
+cbitstore
+    ldy #0
+    lda (tos),y
+    ora stackl,x
+    sta (tos),y
+    jmp twodrop
+
+;--------------------------------------------------------------
+#if 0
+name=CBIT@
+stack=( mask addr -- flag )
+tags=nucleus
+
+ test the mask bits in the byte at address
+
+#endif
+cbitfetch
+    ldy #0
+    lda (tos),y
+    and stackl,x
+    inx
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=TIB
+stack=( -- addr )
+tags=nucleus,const
+The address of the text input buffer.  This buffer is used
+to hold characters when the input stream is coming from the
+current input device.  The minimum capacity of TIB is 80
+characters.
+
+!!!pronounced: "t-i-b"
+#endif
+tib
+    jsr doconst
+    .word BUF       ; $0200
+
+;--------------------------------------------------------------
+#if 0
+name=-5
+stack=( -- -5 )
+tags=nucleus,const
+
+#endif
+minusfive
+    jsr doconst
+    .word -5
+
+;--------------------------------------------------------------
+#if 0
+name=-4
+stack=( -- -4 )
+tags=nucleus,const
+
+#endif
+minusfour
+    jsr doconst
+    .word -4
+
+;--------------------------------------------------------------
+#if 0
+name=-3
+stack=( -- -3 )
+tags=nucleus,const
+
+#endif
+minusthree
+    jsr doconst
+    .word -3
+
+;--------------------------------------------------------------
+#if 0
+name=-2
+stack=( -- -2 )
+tags=nucleus,const
+
+#endif
+minustwo
+    jsr doconst
+    .word -2
+
+;--------------------------------------------------------------
+#if 0
+name=9
+stack=( -- 9 )
+tags=nucleus
+
+#endif
+nine
+    lda #9
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=8
+stack=( -- 8 )
+tags=nucleus
+
+#endif
+eight
+    lda #8
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=7
+stack=( -- 7 )
+tags=nucleus
+
+#endif
+seven
+    lda #7
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=6
+stack=( -- 6 )
+tags=nucleus
+
+#endif
+six
+    lda #6
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=EIGHTY
+stack=( -- 80 )
+tags=nucleus,const
+
+#endif
+eighty
+    lda #80
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=FORTY
+stack=( -- 40 )
+tags=nucleus,const
+
+#endif
+forty
+    lda #40
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=BL
+stack=( -- n )
+tags=nucleus,const
+
+#endif
+bl
+    lda #' '
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=L/SCR
+stack=( -- n )
+tags=nucleus,const
+Lines per screen, 25
+#endif
+lperscr
+    lda #25
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=5
+stack=( -- 5 )
+tags=nucleus
+
+#endif
+five
+    lda #5
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=4
+stack=( -- 4 )
+tags=nucleus
+
+#endif
+four
+    lda #4
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=3
+stack=( -- 3 )
+tags=nucleus
+
+#endif
+three
+    lda #3
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=2
+stack=( -- 2 )
+tags=nucleus
+
+#endif
+two
+    lda #2
+    .byt $2c            ; BIT abs instruction
+;--------------------------------------------------------------
+#if 0
+name=1
+stack=( -- 1 )
+tags=nucleus,const
+
+#endif
+one
+    lda #1
+    jmp push0a
+
+;--------------------------------------------------------------
+#if 0
+name=-1
+stack=( -- -1 )
+tags=nucleus
+
+#endif
+minusone
+                ; fall through to true
+;--------------------------------------------------------------
+#if 0
+name=TRUE
+stack=( -- -1 )
+tags=nucleus
+
+#endif
+true
+    lda #$ff
+true01
+    tay
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=0
+stack=( -- 0 )
+tags=nucleus
+Put a 0 on the stack
+#endif
+zero
+                ; fall through to false
+;--------------------------------------------------------------
+#if 0
+name=FALSE
+stack=( -- 0 )
+tags=nucleus
+Put a 0 (false flag) on the stack
+#endif
+false
+    lda #0
+    beq true01
+
+;--------------------------------------------------------------
+#if 0
+name=0=
+stack=( n -- flag )
+tags=forth-83,nucleus
+
+
+#endif
+zeq
+    ldy #$00
+    lda tos
+    ora tos+1
+    bne zeq02
+zeq01
+    dey
+zeq02
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=0<
+stack=( n -- flag )
+tags=forth-83,nucleus
+
+
+#endif
+zlt
+    ldy #0
+    bit tos+1
+    bmi zeq01
+    bpl zeq02
+
+;--------------------------------------------------------------
+#if 0
+name=0<>
+stack=( n -- flag )
+tags=nucleus
+Leave `FALSE` if `n` is 0, `TRUE` otherwise
+#endif
+zne
+    ldy #0
+    lda tos
+    ora tos+1
+    bne zeq01
+    beq zeq02
+
+;--------------------------------------------------------------
+#if 0
+name=1-
+stack=( n -- n-1 )
+tags=forth-83,nucleus
+Subtract 1 from top of stack
+#endif
+oneminus
+    lda #$ff
+    bne oneminus01
+
+;--------------------------------------------------------------
+#if 0
+name=3-
+stack=( n -- n-3 )
+tags=nucleus
+
+#endif
+threeminus
+    lda #$fd
+    .byt $2c ; BIT absolute instruction, fall through to twominus
+;--------------------------------------------------------------
+#if 0
+name=2-
+stack=( n -- n-2 )
+tags=nucleus
+
+#endif
+twominus
+    lda #$fe
+oneminus01
+    dec tos+1
+    .byt $2c ; BIT absolute instruction, fall through to twoplus
+;--------------------------------------------------------------
+#if 0
+name=2+
+stack=( n -- n+2 )
+tags=nucleus,math,todo
+Increment top of stack by 2
+
+todo: code golf this together with slower tos2plus subroutine?
+#endif
+twoplus
+    lda #2
+nplus
+    clc
+    adc tos
+    sta tos
+    bcc twoplus01
+    inc tos+1
+twoplus01
+    jmp next
+;--------------------------------------------------------------
+#if 0
+name=3+
+stack=( n -- n+3 )
+tags=nucleus
+
+#endif
+threeplus
+    lda #3
+    bne nplus                   ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=2/
+stack=( n -- n/2 )
+tags=forth-83,nucleus
+
+
+#endif
+twoslash
+    lsr tos+1
+    ror tos
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=2*
+stack=( n -- n*2 )
+tags=nucleus
+
+#endif
+twostar
+    asl tos
+    rol tos+1
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=-
+stack=( a b -- a-b )
+tags=forth-83,nucleus
+
+
+#endif
+minus
+    jsr donegate
+    jmp plus
+
+;--------------------------------------------------------------
+#if 0
+name=<>
+stack=( n1 n2 -- flag )
+tags=nucleus,relational
+Leave a true flag if "n1" does not equal "n2".
+#endif
+ne
+    clc
+    ldy #$ff                    ; assume inequality
+    bne ne01                    ; bra
+
+;--------------------------------------------------------------
+#if 0
+name==
+stack=( n1 n2 -- flag )
+tags=forth-83,nucleus,relational
+Leave a true flag if "n1" does is equal to "n2".
+#endif
+eq
+    clc
+    ;not a subroutine
+;--------------------------------------------------------------
+#if 0
+name=subeq
+stack=( n1 n2 -- n1 n2 ; returns Z flag )
+tags=nucleus,relational,nosymbol
+Alternate entry point to [[=]] primitive
+
+* Compares the TOS with 2OS
+* returns the Z flag
+* doesn't alter the stack
+
+#endif
+subeq
+    ;sec                    ; Caller must SEC prior to calling here
+    ldy #0
+ne01
+    lda tos
+    eor stackl,x
+    sta n
+    lda tos+1
+    eor stackh,x
+    ora n
+    bcs subeq99             ; return when called as a subroutine
+    bne cmpout02
+cmpout01
+    tya
+    eor #$ff
+    tay
+cmpout02
+    tya
+    inx
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=U<
+stack=( n1 n2 -- flag )
+tags=forth-83,nucleus
+
+
+#endif
+ult
+    jsr cmp16
+    bcs cmpout02
+    bcc cmpout01            ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=<
+stack=( n1 n2 -- flag )
+tags=forth-83,nucleus
+Perform a signed comparison and return `true` if `n1` is less
+than `n2`
+
+#endif
+lt
+    jsr cmp16
+sgntst
+    bvc lt01
+    eor #bit7
+lt01
+    bpl cmpout02
+    bmi cmpout01
+
+cmp16
+    ldy #0
+    lda stackl,x
+    cmp tos
+    lda stackh,x
+    sbc tos+1
+subeq99
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=>
+stack=( n1 n2 -- flag )
+tags=forth-83,nucleus
+
+ V is the exclusive or of the carrys out of bits 6 and 7 - Bogax
+#endif
+gt
+    ldy #0
+    lda tos
+    cmp stackl,x
+    lda tos+1
+    sbc stackh,x
+    jmp sgntst
+
+;--------------------------------------------------------------
+#if 0
+name=ROT
+stack=( a b c -- b c a )
+tags=forth-83,nucleus
+
+
+#endif
+rot
+    ldy stackh+1,x
+    lda stackh,x
+    sta stackh+1,x
+    lda tos+1
+    sta stackh,x
+    sty tos+1
+    ldy stackl+1,x
+    lda stackl,x
+    sta stackl+1,x
+    lda tos
+    sta stackl,x
+    sty tos
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=THIRD
+stack=( n1 n2 n3 -- n1 n2 n3 n1 )
+tags=forth-83,nucleus
+
+
+#endif
+third
+    lda stackl+1,x
+    ldy stackh+1,x
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=3DUP
+stack=( n1 n2 n3 -- n1 n2 n3 n1 n2 n3 )
+tags=nucleus
+
+ Copy top three elements on the stack onto top of stack.
+
+```
+: 3dup
+    2dup 4 pick -rot ;
+```
+code version runs in about half the time for more than
+twice the memory
+
+```
+threedup
+    dex
+    dex
+    dex
+    lda tos+1
+    sta stackh+2,x
+    lda tos
+    sta stackl+2,x
+    lda stackh+4,x
+    sta stackh+1,x
+    lda stackl+4,x
+    sta stackl+1,x
+    lda stackh+3,x
+    sta stackh,x
+    lda stackl+3,x
+    sta stackl,x
+    jmp next
+```
+#endif
+#include "align.i65"
+_threedup
+    jsr enter
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word four
+#include "page.i65"
+    .word pick
+#include "page.i65"
+    .word dashrot
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=UNDER
+stack=( n1 n2 -- n1 n1 n2 )
+tags=nucleus
+
+ Make a duplicate of the second stack element beneath `TOS`
+
+#endif
+under
+    dex
+    lda stackh+1,x
+    sta stackh,x
+    lda stackl+1,x
+    sta stackl,x
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=+UNDER
+stack=( n1 n2 n3 -- n1+n3 n2 )
+tags=nucleus
+
+ Add the top of stack to item underneath the second on stack
+
+#endif
+plusunder
+    clc
+    lda tos
+    adc stackl+1,x
+    sta stackl+1,x
+    lda tos+1
+    adc stackh+1,x
+    sta stackh+1,x
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=3C@
+stack=( addr -- d )
+tags=nucleus
+
+ fetches three bytes as a double.  Useful for retrieving screen
+ linewrap bits from the beginning of the block buffer or the jiffy
+ clock
+
+ msb addr+0
+
+ 2sb addr+1
+
+ lsb addr+2
+
+```
+: 3c@   ( addr -- d )
+     dup 1+ @ swap c@ ;
+
+```
+#endif
+threecfetch
+    jsr slip
+    ldy #2
+    jsr fetchunders
+    jmp cfetch
+
+fetchunders
+    lda (tos),y         ; msb
+    sta stackl,x
+    dey
+    lda (tos),y
+    sta stackh,x
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=3C!
+stack=( d addr -- )
+tags=nucleus
+ store low 3 bytes of d at addr in jiffy clock order
+
+|msb|addr|
+|2sb|addr+1|
+|lsb|addr+2|
+
+Order inverted to write timer last for EVENTS
+
+```
+: 3c!    ( d addr -- )
+    2dup c!  nip 1+ ! ;
+
+```
+#endif
+threecstore
+    ldy #2
+    lda stackl+1,x              ; lsb
+    sta (tos),y
+    dey
+    lda stackh+1,x              ; 2sb
+    sta (tos),y
+    dey
+    lda stackl,x                ; msb
+    sta (tos),y
+    jmp threedrop               ; discard 3 cells
+
+;    ldy #0
+;    lda stackl,x                ; msb
+;    sta (tos),y
+;    iny
+;    lda stackh+1,x              ; 2sb
+;    sta (tos),y
+;    iny
+;    lda stackl+1,x              ; lsb
+;    sta (tos),y
+;    inx                         ; discard 3 cells
+;    jmp twodrop
+
+;--------------------------------------------------------------
+#if 0
+name=FILL
+stack=( addr howmany value -- )
+tags=forth-83,nucleus
+
+
+ howmany has an upper limit of 32K bytes
+
+#endif
+fill
+    ;ldy #4
+    jsr locals4      ; addr -> N0; howmany -> N1
+    lda #>(drop-1)
+    pha
+    lda #<(drop-1)
+    pha
+fills
+    clc
+    ;ldy #0
+    lda tos
+fill01
+    dec n+3
+    bpl fill02
+    sec             ; fill a partial page then exit
+    ldy n+2
+    beq fill03      ; nothing to do?
+fill02
+    dey
+    sta (n),y
+    bne fill02
+    inc n+1
+    bcc fill01
+fill03
+    rts
+    ;jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=ERASE
+stack=( addr howmany -- )
+tags=nucleus
+
+#endif
+#include "align.i65"
+_erase
+    jsr enter
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word fill
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BLANK
+stack=( addr howmany -- )
+tags=nucleus
+
+#endif
+#include "align.i65"
+_blank
+    jsr enter
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word fill
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=-NULLS
+stack=( addr +n1 -- addr +n2 )
+tags=nucleus
+
+ The character count +n1 of a text string beginning at addr
+ is adjusted to exclude trailing nulls.  If +n1 is zero,
+ then +n2 is also zero.  If the entire string consists of
+ nulls, then +n2 is zero.
+
+```
+: -nulls   ( addr n1 -- addr n2 )
+     dup 0
+     ?do
+         2dup + 1- c@
+         0 <>
+     ?leave
+         1-
+     loop ;
+```
+#endif
+dashnulls
+    lda #$00
+    .byt $2c        ; BIT xxxx
+                    ; fall through
+
+;--------------------------------------------------------------
+#if 0
+name=-TRAILING
+stack=( addr +n1 -- addr +n2 )
+tags=nucleus
+
+ The character count +n1 of a text string beginning at addr
+ is adjusted to exclude trailing spaces.  If +n1 is zero,
+ then +n2 is also zero.  If the entire string consists of
+ spaces, then +n2 is zero.
+
+```
+: -trailing   ( addr n1 -- addr n2 )
+     dup 0
+     ?do
+         2dup + 1- c@
+         bl <>
+     ?leave
+         1-
+     loop ;
+```
+#endif
+dashtrailing
+    lda #$20
+    sta n+2
+    lda stackl,x
+    sta n
+    lda stackh,x
+    clc
+    adc tos+1
+    sta n+1
+    lda #>(put-1)
+    pha
+    lda #<(put-1)
+    pha
+dashtrailings
+    ldy tos
+dashtrailing01
+    dey
+    cpy #$ff
+    bne dashtrailing02
+    dec n+1
+    lda tos+1
+    beq dashtrailing03
+    dec tos+1
+dashtrailing02
+    lda (n),y
+    eor n+2
+    beq dashtrailing01
+dashtrailing03
+    iny
+    tya
+    ldy tos+1
+    rts
+    ;jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=CMOVE
+stack=( from to howmany -- )
+tags=forth-83,nucleus,memory
+
+
+"~ see http://6502.org/source/general/memory_move.html
+#endif
+cmove
+    sec
+    .byt $29
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=CMOVE>
+stack=( from to howmany -- )
+tags=forth-83,nucleus,memory
+ Move the u bytes beginning at address addr1 to
+ addr2.  The move begins by moving the byte at
+ (addr1 plus u minus 1) to (addr2 plus u minus 1)
+ and proceeds to successively lower addresses
+ for u bytes.  If u is zero nothing is moved.
+ Useful for sliding a string towards higher addresses.
+
+#endif
+cmovegt
+    clc
+    jsr locals4
+    lda #>(drop-1)
+    pha
+    lda #<(drop-1)
+    pha
+    bcs cmoves
+cmovegts
+    stx z
+    ldx tos+1
+    clc
+    txa
+    adc n+1
+    sta n+1
+    clc
+    txa
+    adc n+3
+    sta n+3
+    inx
+    ldy tos
+    beq cmovegt03
+    dey
+    beq cmovegt02
+cmovegt01
+    lda (n),y
+    sta (n+2),y
+    dey
+    bne cmovegt01
+cmovegt02
+    lda (n),y
+    sta (n+2),y
+cmovegt03
+    dey
+    dec n+1
+    dec n+3
+    dex
+    bne cmovegt01
+    beq cmove03     ; bra
+
+cmoves
+    clc
+    ldy #0          ; locals returns Y=0 C=0
+    stx z       ; stash the data stack pointer
+    ldx #0          ; X,Y=0
+cmove01
+    dec tos+1
+    bpl cmove02     ; do a whole page
+    ldx tos         ; last page
+    beq cmove03     ; none at all?
+    sec             ; exit after this iteration
+cmove02
+    lda (n),y
+    sta (n+2),y
+    iny
+    dex
+    bne cmove02
+    inc n+1
+    inc n+3
+    bcc cmove01
+cmove03
+    ldx z       ; revive the data stack pointer
+    rts
+    ;jmp drop    ; [37]
+
+;--------------------------------------------------------------
+#if 0
+name=MOVE
+stack=( from to howmany -- )
+tags=nucleus,memory
+ Move the `howmany` bytes beginning at `from` to
+ `to`.  Designed to prevent clobber if both memory regions
+ overlap.
+
+```
+: move   ( from to howmany -- )
+     >r 2dup u< r> swap
+     ?: cmove> cmove ;
+
+
+     dup 2over u< nip  ?: cmove> cmove ;
+```
+#endif
+#include "align.i65"
+_move
+    jsr enter
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word twoover
+#include "page.i65"
+    .word ult
+#include "page.i65"
+    .word nip
+#include "pass.i65"
+    .word pquerycolon
+    .word cmovegt
+    .word cmove
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=+MOVE
+stack=( start end delta -- )
+tags=nucleus
+
+ Move a block of memory between start and end (inclusive) to
+ a new address calculated by adding the signed delta to start
+
+```
+ for example, x = (5 of each letter)     AAAAABBBBBCCCCCDDDDD
+ after  x 8 + x 11 + -7 +move, x becomes ABBCCBBBBBCCCCCDDDDD
+ vidram dup 3+ 3+ 12 +move
+
+: +move   ( start end delta -- )
+    ?dup
+    if
+        >r over - 1+
+        over r> + swap move
+    else
+        2drop
+    then ;
+```
+#endif
+#include "align.i65"
+_plusmove
+    jsr enter
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word qbranch
+    .byt <(plusmove01-*+1)
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneplus               ; ( from howmany ) ( R; delta )
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word swap                  ; ( from to howmany )
+#include "page.i65"
+    .word _move
+#include "pass.i65"
+    .word branch
+    .byt <(plusmove02-*+1)
+#include "page.i65"
+plusmove01
+    .word twodrop
+#include "pass.i65"
+plusmove02
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=HERE
+stack=( -- addr )
+tags=nucleus
+
+#endif
+here
+    lda uarea+userdp-userarea
+    ldy uarea+userdp-userarea+1
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=PAD
+stack=( -- addr )
+tags=nucleus
+
+ The lower address of a scratch area used to hold data for
+ intermediate processing.  The address or contents of PAD may
+ change and the data lost if the address of the next
+ available dictionary location is changed.  The minimum
+ capacity of PAD is 84 characters.
+
+#endif
+#include "align.i65"
+_pad
+    jsr enter
+#include "page.i65"
+    .word here
+#include "pass.i65"
+    .word clit
+    .byt 80
+#include "page.i65"
+    .word plus
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=S>D
+stack=( s -- d )
+tags=nucleus
+sign-extends a single into a double
+#endif
+#include "align.i65"
+_stod
+    jsr enter
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word zlt
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=C>S
+stack=( c -- s )
+tags=nucleus
+sign-extends a character into a single
+#endif
+ctos
+    ldy #0
+    lda tos
+    bpl ctos01
+    dey
+ctos01
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=SGN
+stack=( n -- -1|0|1 )
+tags=nucleus
+
+ return the sign of n
+
+#endif
+sgn
+    ldy #$ff
+    lda tos+1
+    bmi sgn01       ; negative
+    iny
+    ora tos
+    beq sgn01       ; zero
+    lda #1          ; positive
+    .byt $24        ; BIT zp to skip over tya
+sgn01
+    tya
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=RANDU
+stack=( -- r )
+tags=nucleus
+
+ return a random byte in the range 0..255
+ from the [[First Book of KIM-1|http://users.telenet.be/kim1-6502/6502/fbok.html]]. Also see [[RND]] and [[RANDOM]]
+
+#endif
+randuc
+    ldy #0
+    beq randu2
+
+randu
+    stx z
+    sec
+    lda randbuff+1
+    adc randbuff+4
+    adc randbuff+5
+    sta randbuff
+    ldx #4
+rpl
+    lda randbuff,x
+    sta randbuff+1,x
+    dex
+    bpl rpl
+    ldx z
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=RND
+stack=( -- r )
+tags=nucleus
+
+ return a random number in the range 0..65535
+ from the [[First Book of KIM-1|http://users.telenet.be/kim1-6502/6502/fbok.html]]
+
+#endif
+rnd
+    jsr randu
+    tay
+randu2
+    jsr randu
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=RANDOM
+stack=( -- a )
+tags=nucleus
+
+ Returns the address of the 6-byte random number buffer
+
+#endif
+random
+    jsr docreate
+randbuff
+    .byt $08,$12,$b3,$16,$29,$62        ; random number seed
+
+;--------------------------------------------------------------
+#if 0
+name=1+!
+stack=( n -- )
+tags=nucleus
+
+ increments the word addressed by n
+
+#endif
+oneplusstore
+    ldy #$FF
+    lda #0
+    sec
+oneplusstore01
+    iny
+    adc (tos),y
+    sta (tos),y
+    tya
+    beq oneplusstore01
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=1-!
+stack=( n -- )
+tags=nucleus
+
+ decrements the word addressed by n
+
+#endif
+oneminusstore
+    ldy #$ff
+    clc
+oneminusstore01
+    iny
+    lda (tos),y
+    sbc #0
+    sta (tos),y
+    tya
+    beq oneminusstore01
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=MIN
+stack=( n1 n2 -- n )
+tags=forth-83,nucleus
+Returns the lesser of the two arguments
+
+```
+: min   ( n1 n2 -- n )
+    2dup >  ?: nip drop ;
+```
+#endif
+#include "align.i65"
+_min
+    jsr enter
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word gt
+#include "pass.i65"
+    .word pquerycolon
+    .word nip
+    .word drop
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=MAX
+stack=( n1 n2 -- n )
+tags=forth-83,nucleus
+
+
+#endif
+#include "align.i65"
+_max
+    jsr enter
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word lt
+#include "pass.i65"
+    .word qbranch
+    .byt <(max01-*+1)
+#include "page.i65"
+    .word swap
+#include "page.i65"
+max01
+    .word drop
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=M*
+stack=( n1 n2 -- d )
+tags=nucleus
+
+ multiply two signed words, leaving the double product on the stack
+#endif
+mstar
+    jsr mult
+    jmp next
+mult
+    lda stackl,x
+    sta n+4
+    lda stackh,x
+    sta n+5
+    eor tos+1
+    php                     ; we only care about the sign bit
+    bit tos+1
+    bpl mult01
+    jsr donegate
+mult01
+    bit n+5
+    bpl mult02
+    sec
+    lda #0
+    sbc n+4
+    sta n+4
+    lda #0
+    sbc n+5
+    sta n+5
+mult02
+    jsr multiply
+    lda n+1
+    sta stackh,x
+    lda n
+    sta stackl,x
+    lda n+3
+    sta tos+1
+    lda n+2
+    sta tos
+    plp
+    bpl mult03
+    jmp dodnegate
+mult03
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=M*/
+stack=( n1 n2 n3 -- d )
+tags=nucleus
+
+ multiplies n1*n2 giving an intermediate 16-bit value, and divides
+ that by n3 yielding a 16-bit quotient.  Remainder is ignored,
+ all values are signed.
+
+#endif
+mstarslash
+
+;--------------------------------------------------------------
+#if 0
+name=*
+stack=( n1 n2 -- n1*n2 )
+tags=forth-83,nucleus
+
+ multiply two signed words
+#endif
+star
+    jsr mult
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=/MOD
+stack=( n1 n2 -- n3 n4 )
+tags=forth-83,nucleus,todo
+
+ n3 is the remainder and n4 the floor of the
+ quotient of n1 divided by the divisor n2.  n3
+ has the same sign as n2 or is zero.  An error
+ condition results if the divisor is zero or if
+ the quotient falls outside the range {-32,768
+ ... 32,676}.
+~todo: should probably use ud/mod and then set signs
+~todo: division/modulo/multiplication words are kind of a mess
+
+```
+          division, floored
+               Integer division in which the remainder carries the sign of
+               the divisor or is zero, and the quotient is rounded to its
+               arithmetic floor.  Note that, except for error conditions,
+               n1 n2 SWAP OVER /MOD ROT * + is identical to n1.
+               See: "floor, arithmetic"
+               Examples:
+                    dividend  divisor  remainder  quotient
+                      10        7        3          1
+                     -10        7        4         -2
+                      10       -7       -4         -2
+                     -10       -7       -3          1
+```
+#endif
+slashmod
+    jsr doslashmod
+    jmp next
+doslashmod
+    ;       lda stack+1,x
+    pha
+    ;       lda stack,x
+    pha
+    ;       lda stack+3,x
+    bpl doslashmod01
+    dey
+doslashmod01
+    ;       sty stack,x
+    ;       sty stack+1,x
+    dex
+    dex
+    pla
+    ;       sta stack,x
+    pla
+    ;       sta stack+1,x
+    ldy #0
+;    jmp domslash
+
+;--------------------------------------------------------------
+#if 0
+name=/
+stack=( n1 n2 -- n3 )
+tags=forth-83,nucleus
+
+ n3 is the floor of the quotient of n1 divided
+ by the divisor n2.  An error condition results
+ if the divisor is zero or if the quotient falls
+ outside the range {-32,768 ... 32,767}.
+#endif
+slash
+    jsr doslashmod
+    ;       lda stack,x
+    ;       sta stack+2,x
+    ;       lda stack+1,x
+    ;       sta stack+3,x
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=MOD
+stack=( n1 n2 -- n3 )
+tags=forth-83,nucleus
+
+ n3 is the remainder after dividing n1 by the
+ divisor n2.  n3 has the same sign as n2 or is
+ zero.  An error condition results if the
+ divisor is zero or if the quotient falls out-
+ side the range {32,768...32,768}.
+
+#endif
+mod
+    jsr doslashmod
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=*/MOD
+stack=( n1 n2 n3 -- n4 n5 )
+tags=forth-83,nucleus
+
+ n1 is first multiplied by n2 producing an inter-
+ mediate 32 bit result.  n4 is the remainder and
+ n5 is the floor of the quotient of the inter-
+ mediate 32-bit result divided by the divisor
+ n3.  A 32-bit intermediate product is used for
+ */ .  n4 has the same sign as n3 or is zero.
+ An error condition results if the divisor is
+ zero or if the quotient falls outside of the
+ range {-32,768...32,767}.
+
+#endif
+starslashmod
+    jsr dostarslashmod
+    jmp next
+dostarslashmod
+    ;       lda stack+1,x
+    pha
+    ;       lda stack,x
+    pha
+    inx
+    inx
+    jsr mult
+    dex
+    dex
+    pla
+    ;       sta stack,x
+    pla
+    ;       sta stack+1,x
+;    jmp domslash
+
+;--------------------------------------------------------------
+#if 0
+name=*/
+stack=( n1 n2 n3 -- n4 )
+tags=forth-83,nucleus
+
+ n1 is first multiplied by n2 producing an inter-
+ mediate 32-bit result.  n4 is the floor of the
+ quotient of the intermediate 32-bit result
+ divided by the divisor n3.  The product of n1
+ times n2 is maintained as an intermediate 32-
+ bit result for greater precision than the other-
+ wise equivalent sequence n1 n2 * n3 / .  An
+ error condition results if the divisor is zero
+ or if the quotient falls outside the range
+ {-32,768...32,767}.
+
+#endif
+starslash
+    jsr dostarslashmod
+    ;       lda stack,x
+    ;       sta stack+2,x
+    ;       lda stack+1,x
+    ;       sta stack+3,x
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=PICK
+stack=( an ... a3 a2 a1 n -- an ... a3 a2 a1 an )
+tags=forth-83,nucleus
+
+
+ 0 pick = same as dup
+ 1 pick = same as over
+#endif
+pick
+    txa
+    clc
+    adc tos
+    tay
+    lda stackh,y
+    sta tos+1
+    lda stackl,y
+    sta tos
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=ROLL
+stack=( an ... a3 a2 a1 n -- an-1 ... a3 a2 a1 an )
+tags=forth-83,nucleus
+Remove the nth stack element (excluding n itself) to TOS, dropping n
+
+ 2 roll = rot
+ 1 roll = swap
+ 0 roll has no effect
+
+#endif
+roll
+    txa
+    clc
+    adc tos
+    tax
+    lda stackh,x
+    pha
+    lda stackl,x
+    pha
+roll01
+    inx
+    dec tos
+    bmi rput
+    dex
+    lda stackh-1,x
+    sta stackh,x
+    lda stackl-1,x
+    sta stackl,x
+    dex
+    bne roll01          ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=R>
+stack=( -- n ) ( R; n -- )
+tags=forth-83,nucleus,stack
+Remove the top value from the return stack and leave it on the
+        computation stack. See >R and R@
+
+!!! pronounced: "r-from"
+
+#endif
+rfrom
+    jsr slip
+rput
+    pla
+    sta tos
+    pla
+    sta tos+1
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=R2D2
+stack=( an ... a3 a2 a1 n -- an-1 ... a3 a2 a1 an )
+tags=forth-83,nucleus
+
+
+ remove the nth stack element (excluding n itself) to TOS, dropping n
+
+ 2 roll = rot
+ 1 roll = swap
+ 0 roll has no effect
+
+#endif
+r2d2
+    stx z
+    txa
+    clc
+    adc tos
+    tax
+    lda stackh,x
+    sta tos+1
+    lda stackl,x
+    sta tos
+r2d201
+    cpx z
+    beq r2d202
+    lda stackh-1,x
+    sta stackh,x
+    lda stackl-1,x
+    sta stackl,x
+    dex
+    bne r2d201
+r2d202
+    inx
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=DEPTH
+stack=( -- n )
+tags=forth-83,nucleus
+Returns the depth of the data stack
+#endif
+depth
+    txa
+    eor #$ff
+    sec
+    adc #<bos
+    jmp push0a
+
+;--------------------------------------------------------------
+#if 0
+name=>BIT
+stack=( bit# base -- mask addr )
+tags=nucleus,ext
+Indexes `bit#` bits into a bit array starting at `base`, returns a `mask` and
+`addr` for [[CBIT!]] or [[CBIT@]]
+
+addressing a bit field
+
+mask = 2^(n%8)
+
+offset = n/8
+
+e.g.
+
+```
+0 8192 >bit . . 8192 128  ok
+7 8192 >bit . . 8192 1  ok
+19 8192 >bit . . 8194 16  ok
+```
+
+
+```
+: >bit   ( bit# base -- mask offset )
+        over 7 and power2 + c@ -rot
+        swap 2/ 2/ 2/ + ;
+
+```
+#endif
+tobit
+    dex
+    lda stackh+1,x
+    lsr
+    sta stackh,x
+    lda stackl+1,x
+    pha
+    and #7
+    tay
+    lda power2,y
+    sta stackl+1,x
+    pla
+    ror
+    lsr stackh,x
+    ror
+    lsr stackh,x
+    ror
+    sta stackl,x
+    jmp plus01
+
+
+;--------------------------------------------------------------
+#if 0
+name=$!
+stack=( addr1 size addr2 -- )
+tags=string,nucleus,ext
+Copies `size` bytes from `addr1` to `addr2+1` as a counted string, storing
+`size` at `addr2`
+
+e.g. `2000 COUNT 2008 $!`
+
+|addr|before|after|h
+|2000|3|3|
+|2001|'F'|'F'|
+|2002|'O'|'O'|
+|2003|'O'|'O'|
+|2004|-|-|
+|2005|-|-|
+|2006|-|-|
+|2007|-|-|
+|2008|-|3|
+|2009|-|'F'|
+|200A|-|'O'|
+|200B|-|'O'|
+|200C|-|-|
+
+```
+: $!   ( addr1 size addr2 -- )
+    over c!+ swap move ;
+```
+#endif
+#include "align.i65"
+_dolstore
+    jsr enter
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word cstoreplus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word _move
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=!+
+stack=( addr n -- addr+2 )
+tags=nucleus
+
+Stores n at addr, returns the following address
+
+note: Does an inverted store operation!
+
+!!! pronounced: "store-plus"
+
+`PAD 4096 0 DO I !+ LOOP DROP`
+
+* 109 jiffies, 11 bytes (Forth)
+* 245 jiffies, 7 bytes (Sweet16)
+* 65 jiffies, 25 bytes (6502)
+#endif
+#include "align.i65"
+_storeplus
+    jsr enter
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word twoplus
+#include "pass.i65"
+    .word exit
+
+;storeplus
+;    lda tos
+;    sta n
+;    lda tos+1
+;    sta n+1
+;    jsr slide
+;    ldy #0
+;    lda n
+;    sta (tos),y
+;    iny
+;    lda n+1
+;    sta (tos),y
+;    jmp twoplus
+
+;storeplus
+;    brk
+;    .byt ld | TOS
+;    .byt st | N0
+;    .byt pull
+;    .byt ld | N0
+;    .byt std | TOS
+;    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=C!+
+stack=( addr c -- addr+1 )
+tags=nucleus,memory,primitive
+The least-significant 8 bits of c are stored into the byte
+at addr, and addr is incremented by one
+
+!!!pronounced: "c-store-plus"
+#endif
+cstoreplus
+    ldy tos
+    jsr slide
+    tya
+    ldy #0
+    sta (tos),y
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=1+
+stack=( n -- n+1 )
+tags=forth-83,nucleus
+Add 1 to top of stack
+#endif
+oneplus
+    lda #>(next-1)
+    pha
+    lda #<(next-1)
+    pha
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=inctos
+stack=( n -- n+1 )
+tags=nosymbol
+increment TOS; sets the Z flag
+#endif
+inctos
+    inc tos
+    bne inctos01
+    inc tos+1
+inctos01
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=BETWEEN?
+stack=( x a b -- flag )
+tags=nucleus
+
+ returns true iff a < x < b, unsigned
+
+#endif
+betweenq
+    inx
+    jsr cmp16
+    dex
+;    ldy #0
+;    lda stackl+1,x
+;    cmp tos
+;    lda stackh+1,x
+;    sbc tos+1
+    bcs betweenq01
+    lda stackl,x
+    cmp stackl+1,x
+    lda stackh,x
+    sbc stackh+1,x
+    bcs betweenq01
+    dey
+betweenq01
+    inx
+    inx
+    tya
+    jmp put
