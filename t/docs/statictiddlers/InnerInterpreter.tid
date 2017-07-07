@@ -1,0 +1,107 @@
+tags: static
+title: Inner Interpreter
+
+`NEXT ENTER EXIT EXECUTE`
+
+Here are the classical implementation of both the 
+[[direct-threaded|http://www.forthfreak.net/index.cgi?DirectThreadedCodePseudoCode]] 
+and [[indirect-threaded|http://www.forthfreak.net/index.cgi?IndirectThreadedCodePseudoCode]] 
+inner interpreter.
+
+```
+Direct                         Indirect
+NEXT:                          NEXT:
+    [IP]+ -> W                     [IP+] -> W
+    W+    -> PC                    [W]+  -> PC
+
+NEST:                          NEST:
+    IP    -> -[RP]                 IP    -> -[RP]
+    W     -> IP                    W     -> IP
+    NEXT                           NEXT
+
+UNNEST:                        UNNEST:
+    [RP]+ -> IP                    [RP]+ -> IP
+    NEXT                           NEXT
+```
+
+PETTIL takes a few left turns from the classic indirect-threaded model, but it 
+runs fast. Props to M. Anton Ertl on comp.lang.forth for the design idea and 
+to others on the Forth board at [[6502.org|http://forum.6502.org/viewforum.php?f=9]] for tweaks.  
+After reading Brad Rodriguez' excellent 
+[["Moving Forth"|http://www.bradrodriguez.com/papers/moving1.htm]] paper, I 
+chose the direct-threaded model for PETTIL, due to its greater efficiency and  
+for its novelty.
+
+NEXT is the heart and soul of a Forth interpreter.  It executes more than any 
+other routine, so let's optimize.
+
+```
+classic                        pettil
+NEXT:                          NEXT:
+    [IP]+ -> W                     +IP
+    W+    -> PC                    [IP]   -> PC
+```
+15 cycles.  Not bad.  You might have some questions.
+
+''Q'' Where did "W" go?  
+
+''A'' When Obama took office, W retired and moved back to Texas.  In this 
+implementation of NEXT, the W exists only in a fleeting and transient way 
+on the 6502 address buss during the indirect JMP.  Or somewhere.  But it's 
+not in the code. There actually is a W in the code, but I called it `W1` to 
+conserve my sanity.  Have you ever tried googling the letter "E"?  Take a 
+look inside the code at  the word [[EXECUTE]] to see where I needed it.  
+
+''Q'' What about paging?
+
+''A'' In 6502-land, a page is 256 bytes of memory and there are 256 of them 
+in the 16-bit (64K) address space.  The bottom two pages are special, the 
+zero page and the stack page.  Unless all your code fits inside 256 bytes, 
+at some point it will be necesary for the instruction pointer (IP) to cross 
+a page boundary.  PETTIL does "paging by hand."  The compiler is responsible 
+to insert a call to the paging primitive at the top of each page of memory.  
+It takes a few clock cycles but they aren't spent every time through NEXT.  
+This technique increases compiler complexity.
+
+[[The elephant in the room|http://en.wikipedia.org/wiki/Elephant_in_the_room]]
+ is the [[JMP ($xxFF) bug|http://en.wikipedia.org/wiki/MOS_Technology_6502#Bugs_and_quirks]]
+
+Here's more detail on code paging in PETTIL
+
+''1) A very short, very fast NEXT that works within the confines of a page''
+
+```
+next
+    inc ip                  ; 5
+    inc ip                  ; 5
+;ip = *+1
+    jmp ($cafe)             ; 5
+
+                            ;15 cycles total
+```
+
+''2) code for IP to cross a page boundary ("paging by hand" strategy)''
+
+```
+pad
+    clc                     ; pass A = offset added to IP
+    adc ip
+    bcs pagen               ; check for page boundary crossing
+    cmp #$ff
+    bne pado                ; check for xxFF at end of page
+page
+    lda #0
+pagen
+    inc ip+1                ; cross the page
+pado
+    sta ip
+    jmp nexto
+```
+
+''3) The compiler must ensure that a word within a colon definition never straddles a page boundary''
+
+Within the compiler, instead of `,` (the Forth word "comma"),  PETTIL uses the words 
+
+`,XT` (which could be pronounced either "comma-~X-T" or "compile execution token") to insert page-aligned tokens
+
+`,CFA` (pronounced "comma-~C-F-A" or "compile code field address") which lays down a page-aligned three-byte JSR call at the start of a word.

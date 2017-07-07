@@ -1,0 +1,462 @@
+; core-stack.a65
+#echo .       core-stack.a65            Stack
+
+
+An untested rewrite of the inner interpreter stack jazz
+
+```
+pdo
+    ;ldy #2
+    jsr locals2
+    ldy #3
+pdo01
+    lda zi,y
+    pha
+    lda tos,y
+    sta zi,y
+    dey
+    bpl pdo01
+    dex
+    ; fall through
+twodrop
+    inx                         ; fall through
+    bne drop                    ; bra
+i
+    ldy zi+1
+    lda zi
+    ; pass YA = value to push/put on stack
+pushya
+    dex
+    pha
+    tya
+pushsa
+    sta stackh,x
+pushs
+    pla
+    sta stackl,x
+drop
+    ldy stackh,x
+    lda stackl,x
+    inx
+put
+    sty tos+1
+    sta tos
+    jmp next
+push0a
+    ldy #0
+    beq pushya
+
+cfetch
+    clc
+    .byt $29
+fetch
+    sec
+    ldy #0
+    lda (tos),y
+    bcc put
+    pha
+    iny
+    lda (tos),y
+    ;bcs pushsa     ; is [2] shorter
+    tay
+    pla
+    bcs put
+```
+clit
+    lda #0
+    pha
+    clc
+    .byt $29
+plit
+    sec
+    ldy #2
+    lda (ip),y
+    pha
+    bcc gotit
+    iny
+    lda (ip),y
+    pha
+gotit
+    dex
+    lda tos
+    sta stackl,x
+    lda tos+1
+    sta stackh,x
+    pla
+    sta tos
+    pla
+    sta tos+1
+
+
+;--------------------------------------------------------------
+#if 0
+name=CLIT
+stack=( -- b )
+tags=nosymbol
+#endif
+clit
+    clc
+    lda #0
+    beq lit01               ; bra
+;
+plit
+    sec
+    ldy #3
+    lda (ip),y
+lit01
+    tay
+    jsr slip
+    sty tos+1
+    ldy #2
+    lda (ip),y
+    sta tos
+bump01
+    lda #3                  ; ip+3 or ip+4 depending on Carry
+pad
+    adc ip                  ; pass A = offset added to IP
+    bcs branch02            ; check for page boundary crossing
+    cmp #$ff
+    bne branch03            ; check for xxFF at end of page
+page
+    lda #0
+    beq branch02            ; bra
+;
+pqleave
+    lda tos
+    ora tos+1
+    php
+    jsr slide
+    plp
+    bne pleave
+    beq bump
+qbranch
+    lda tos
+    ora tos+1       ; check the flag
+    ldy stackl,x
+    sty tos
+    ldy stackh,x
+    sty tos+1
+    inx             ; drop
+    tay             ; to set the Z flag
+    beq branch
+bump
+    ;lda #3         ; bump01 does this for us
+    clc
+    bcc bump01      ; bra
+;
+pqdo
+    inc ip              ; skip past branch byte
+    jsr subeq
+    bne pdo
+pqdo02
+    inx
+    jsr slide
+    dec ip              ; we need the branch byte
+branch
+    ldy #2          ; [2]
+    lda (ip),y      ; [5]   get the offset
+    bpl branch01    ; [2|3]
+    dec ip+1        ; [5]
+branch01
+    sec             ; [2]
+    adc ip          ; [3]
+    bcc branch03    ; [2|3]
+branch02
+    inc ip+1        ; [5]
+branch03
+    sta ip          ; [3]
+    jmp nexto       ; [3]
+ploop
+    inc zi
+    bne ploop01
+    inc zi+1
+ploop01
+    lda zi
+    eor zlim
+    bne branch
+    lda zi+1
+    eor zlim+1
+    bne branch
+    beq ploop02
+;
+pploop
+    sec
+    lda zi
+    sbc zlim
+    sta n
+    lda zi+1
+    sbc zlim+1
+    eor #$80
+    tay
+    clc
+    lda n
+    adc tos
+    tya
+    adc tos+1
+    php
+    clc
+    lda tos
+    adc zi
+    sta zi
+    lda tos+1
+    adc zi+1
+    sta zi+1
+
+    jsr slide
+    plp
+    bvc branch
+ploop02
+    sec
+    .byt $29            ; AND #
+pleave
+    clc
+    pla
+    sta zi
+    pla
+    sta zi+1
+    pla
+    sta zi+2
+    pla
+    sta zi+3
+    bcs bump
+    bcc branch
+pdo
+    ;ldy #2
+    jsr locals2
+    ldy #3
+pdo01
+    lda zi,y
+    pha
+    lda tos,y
+    sta zi,y
+    dey
+    bpl pdo01
+    bne drop                    ; bra
+
+fourdrop
+    inx                         ; fall through
+threedrop
+    inx
+twodrop
+    inx                         ; fall through
+;
+;
+;
+drop
+    lda stackh,x
+    pha
+    lda stackl,x
+    inx
+put
+    sta tos
+    pla
+    sta tos+1
+    jmp next
+;
+;
+;
+spfetch
+    txa
+push0a
+    ldy #0
+    beq pushya
+cstore
+    clc
+    .byt $29            ; AND #
+store
+    sec
+    ldy #0      ; [2]
+    lda stackl,x    ; [4]
+    sta (tos),y ; [6]
+    bcc twodrop
+    lda stackh,x    ; [4]
+    iny         ; [2]       ; clear Z flag
+    sta (tos),y ; [6]       ; MSB is stored last, this is important to EVENTS
+    bne twodrop ; [3]       ; bra
+i
+    ldy zi+1
+    lda zi
+
+pushya
+    dex
+    pha
+    lda #>(put-1)
+    pha
+    lda #<(put-1)
+    pha
+    lda tos+1
+    sta stackh,x
+    lda tos
+    sta stackl,x
+    pla
+    jmp put
+
+qdup
+    lda tos
+    ora tos+1
+    beq qdup01
+dup
+    lda #>(next-1)
+    pha
+    lda #<(next-1)
+    pha
+    bne slip
+slip
+    dex                         ; slip something onto the stack
+    lda tos+1
+    sta stackh,x
+    lda tos
+    sta stackl,x
+    rts
+
+
+
+doconst
+    sec
+    .byt $29                ; AND # to skip the CLC
+docconst
+    clc
+    jsr slip
+    pla
+    sta tos
+    pla
+    sta tos+1
+    ldy #1
+    lda (tos),y
+    bcc push0a
+    bcs fetchya            ; bra
+cfetch
+    clc
+    .byt $29        ; AND #
+fetch
+    sec
+fetch0a
+    ldy #0
+    lda (tos),y
+    bcc put
+fetchya
+    pha
+    iny
+    lda (tos),y
+    tay
+    pla
+    bcs put
+    rts
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;--------------------------------------------------------------
+roll
+    txa
+    clc
+    adc tos
+    tax
+    lda stackh,x
+    pha
+    lda stackl,x
+    pha
+roll01
+    inx
+    dec tos
+    bmi rput
+    dex
+    lda stackh-1,x
+    sta stackh,x
+    lda stackl-1,x
+    sta stackl,x
+    dex
+    bne roll01          ; bra
+rfrom
+    jsr slip
+rput
+    pla
+    sta tos
+    pla
+    sta tos+1
+qdup01
+    jmp next
+;--------------------------------------------------------------
+
+;--------------------------------------------------------------
+
+slide
+    ldy stackh,x                ; slide something off of the stack
+    lda stackl,x
+    inx
+    sty tos+1
+    sta tos
+    rts
+
+cstoreplus
+    lda tos
+    pha
+    jsr slide
+    ldy #0
+    pla
+    sta (tos),y
+oneplus
+    lda #>(next-1)
+    pha
+    lda #<(next-1)
+    pha
+inctos
+    inc tos
+    bne inctos01
+    inc tos+1
+inctos01
+    rts
+;--------------------------------------------------------------
+twofetch
+    ldy #3
+twofetch01
+    lda (tos),y
+    pha
+    dey
+    bpl twofetch01
+    jsr slide
+tworfrom
+    jsr slip
+    dex
+    pla
+    sta tos
+    pla
+    sta tos+1
+    pla
+    sta stackl,x
+    pla
+    sta stackh,x
+    jmp next
+;--------------------------------------------------------------
+tworfetch
+    jsr slip
+    dex
+    stx xsave
+    tsx
+    txa
+    tay
+    ldx xsave
+    lda $0104,y
+    sta stackh,x
+    lda $0103,y
+    sta stackl,x
+    lda $0102,y
+    sta n
+    lda $0101,y
+    ldy n
+    jmp put
