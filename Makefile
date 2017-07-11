@@ -57,6 +57,7 @@ tiddlypettil:
 	echo . Phase IV
 	echo . . . . Building docs/tiddlypettil.html
 	mkdir -p ./tmp/tiddlypettil/tiddlers
+	cd ./docs/images/ && for a in *.png;do echo $${a};echo title: $${a} > ../statictiddlers/$${a}.tid && echo type: image/png >> ../statictiddlers/$${a}.tid&& echo  >> ../statictiddlers/$${a}.tid && base64 -w0 $$a >> ../statictiddlers/$${a}.tid;done && cd ../../
 	cp ./docs/statictiddlers/tiddlywiki.info ./tmp/tiddlypettil/
 	cp ./docs/statictiddlers/*.tid ./tmp/tiddlypettil/tiddlers/
 	export MMDDYY=`date +"documentation generated %Y-%m-%d"`;sed "s/datetimestamp/$${MMDDYY}/" <./docs/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
