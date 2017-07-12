@@ -15,13 +15,13 @@ clean:
 	mkdir ./tmp/
 
 launch: clean pettil
-	cd ./tmp  &&  /usr/local/bin/xpet \
+#	cd ./tmp  &&  /usr/local/bin/xpet \
 		-verbose \
 		-1 ../tapes/2017-02.tap \
 		-warp \
 		-moncommand pettil.mon \
 	pettil.obj &
-#	cd ./tmp  &&  /usr/bin/xpet       \
+	cd ./tmp  &&  /usr/bin/xpet       \
 		-verbose \
 		-1 ../tapes/2017-02.tap \
 		-warp \

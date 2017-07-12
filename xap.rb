@@ -415,11 +415,11 @@ end
 
     def write_symtab_file(outputfile,forthwordhash)
 
-puts forthwordhash.each
+#puts forthwordhash.each
 
-forthwordhash.each do |wordname, stuff|
-    puts wordname, stuff
-end
+#forthwordhash.each do |wordname, stuff|
+#    puts wordname, stuff
+#end
 
 
 
