@@ -1,0 +1,1189 @@
+;core-inner.a65
+#echo .       core-inner.a65            Inner Interpreter
+
+;--------------------------------------------------------------
+#if 0
+name=C!
+stack=( 8b addr -- )
+tags=forth-83,nucleus,memory
+ The least-significant 8 bits of 16b are stored into the byte
+ at addr.
+
+!!! pronounced: "c-store"
+#endif
+cstore
+    clc
+    .byt $29                    ; AND #
+
+;--------------------------------------------------------------
+#if 0
+name=!
+stack=( n addr -- )
+tags=forth-83,nucleus,fig,memory
+
+Store 16 bits of n at address.
+
+!!! pronounced "store"
+#endif
+store
+    sec                 ; [2]
+    ldy #0              ; [2]
+    lda stackl,x        ; [4]
+    sta (tos),y         ; [6]
+    bcc twodrop         ; [2/3]
+    lda stackh,x        ; [4]
+    iny                 ; [2]
+    sta (tos),y         ; [6]   ; MSB is stored last, important to EVENTS
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=2DROP
+stack=( d -- )
+tags=stack,forth-83
+Discard the top two items on the stack
+#endif
+twodrop
+    inx
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=DROP
+stack=( n -- )
+tags=stack,forth-83
+Discard the top item on the stack
+#endif
+drop
+    ldy stackh,x
+    lda stackl,x
+    inx
+put
+    sty tos+1
+    sta tos
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=SLIDE
+stack=( n -- )
+tags=nosymbol
+!!!Subroutine
+Drop the top stack item
+
+Always clears Z flag on return
+#endif
+slide
+    lda stackh,x                ;[10]{4 {=22}}    [bytes]{clocks {=total}}
+            ;{4}
+    sta tos+1                   ;{3} slide something off of the stack
+    lda stackl,x                ;{4}
+    sta tos                     ;{3}
+    inx                         ;{2} stack pointer is never 0, clear Z
+    rts                         ;{6}
+
+;--------------------------------------------------------------
+#if 0
+name=4DROP
+stack=( a b c d -- )
+tags=stack,ext
+Discard the top four stack items
+#endif
+fourdrop
+    inx
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=3DROP
+stack=( a b c -- )
+tags=stack,ext
+Discard the top three stack items
+#endif
+threedrop
+    inx
+    bne twodrop                 ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=C@
+stack=( addr -- 8b )
+tags=forth-79,nucleus,memory,forth-83
+
+!!! pronounced: "c-fetch"
+ 8b is the contents of the byte at addr.
+
+#endif
+cfetch
+    clc
+    .byt $29                    ; AND #
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=@
+stack=( addr -- 16b )
+tags=forth-79,nucleus,memory,fig,forth-83
+Leave the 16 bit contents of address.
+
+!!! pronounced:"fetch"
+  16b is the value at addr.
+#endif
+fetch
+    sec
+    ldy #0
+    lda (tos),y
+    bcc put
+
+; out; YA = (tos),Y+1 (tos),Y
+; in; Y = offset
+; C = clear
+; A = low byte
+fetchya
+    pha
+    iny
+    lda (tos),y
+    tay
+    pla
+    bcs put         ; bra
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=DO2CONST
+stack=( -- c )
+tags=nosymbol,inner
+Runtime behavior of a word defined by 2CONSTANT
+#endif
+dotwoconst
+    pla
+    sta n
+    pla
+    sta n+1
+    ldy #4
+dotwoconst01
+    lda (n),y
+    pha
+    dey
+    bne dotwoconst01
+    jmp tworfrom
+
+;--------------------------------------------------------------
+#if 0
+name=DOCONST
+stack=( -- c )
+tags=nosymbol,inner
+Runtime behavior of a word defined by CONSTANT
+#endif
+doconst
+    sec
+    .byt $29                    ; AND #
+;--------------------------------------------------------------
+#if 0
+name=DOCCONST
+stack=( -- n )
+tags=nosymbol,inner,primitive
+Runtime behavior of a word defined by CCONSTANT
+#endif
+docconst
+    clc
+    jsr slip
+    pla
+    sta tos
+    pla
+    sta tos+1
+    ldy #1
+    lda (tos),y
+    bcs fetchya
+    dey
+    bcc put
+
+;--------------------------------------------------------------
+#if 0
+name=(?:)
+stack=( flag -- )
+tags=inner,nosymbol,pads
+The runtime of [[?:]], invokes one of the two high-level Forth words
+following this word
+#endif
+pquerycolon
+    ldy #3
+    lda tos
+    ora tos+1                   ; evaluate the flag
+    bne pquerycolon01           ; true?
+    ldy #5                      ; false.
+pquerycolon01
+    lda (ip),y
+    sta tos+1
+    dey
+    lda (ip),y
+    sta tos
+    lda #3
+    jsr padjust                 ; move IP past CFA pair
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=EXECUTE
+tags=inner,forth-83
+stack=( cfa -- )
+Executes the word whose code field address is on the stack.
+
+#endif
+execute
+    lda tos+1       ;{3}
+    pha             ;{4}
+    lda tos         ;{3}
+    pha             ;{4}
+    jsr slide       ;{*}   ; (slide will clear Z flag)
+    php             ;{4}
+    rti             ;{7}
+
+;--------------------------------------------------------------
+#if 0
+name=SP!
+stack=( -- )
+tags=fig
+Initializes the data stack pointer to the value in user
+variable SP0
+#endif
+spstore
+    ldx usersp0
+    dex             ; because it's 1> to make ?stack faster
+spstoreo
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=HEX
+stack=( -- )
+tags=forth-83,number,i/o
+Sets the system number base to hexadecimal
+#endif
+#include "align.i65"
+hex
+    lda #$10
+    .byt $2c            ; BIT addr to skip next two bytes
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=DECIMAL
+stack=( -- )
+tags=number,i/o,forth-83
+Sets the system number base to decimal
+#endif
+#include "align.i65"
+decimal
+    lda #10
+    sta userbase
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=RP!
+stack=( -- )
+tags=fig
+Ordinarily the 6502 machine stack (aka PETTIL return stack) is
+initialized to $01FF by BASIC, but the value stored at RP0 defaults
+to $01fe instead.  This is because the PET ROM stores a line of
+input at $0200 (where TIB points) and INTERPRET will be storing a
+count of the first word on the line at $01ff
+#endif
+rpstore
+    txa
+    ldx userrp0
+    txs
+    tax
+rpstore01
+    jmp next
+
+;--------------------------------------------------------------
+;#if 0
+;name=(;CODE)
+;stack=( -- )
+;tags=assembler,extension
+;Transfer control from a secondary to 6502, inline primitive instructions.
+;You can't `NEXT` your way out at the end, best to use `JMP EXIT` or some other
+;means of leaving
+;#endif
+;pscode
+;    lda ip+1
+;    pha
+;    inc ip
+;    lda ip
+;    pha
+;    rts
+
+;--------------------------------------------------------------
+#if 0
+name=?EXIT
+stack=( flag -- )
+tags=extension
+Exits the calling word if the flag is true
+
+```
+: ?exit   ( flag -- )
+    if rdrop then ;
+```
+#endif
+#include "align.i65"
+_qexit
+    jsr enter
+#include "pass.i65"
+    .word qbranch
+    .byt <(qexit01-*+1)
+#include "page.i65"
+    .word rdrop
+#include "pass.i65"
+qexit01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(?ERROR)
+stack=( error# == ; flag -- )
+tags=compiler,extension
+Aborts with the inline numbered error if the flag is true
+
+( [[?ERROR]] is a primitive, but in high-level Forth it would look like: )
+
+```
+: foo <builds c, does>
+    c@ swap  ?: fail drop ;
+foo ?error
+```
+#endif
+#include "align.i65"
+qerror
+    lda tos
+    ora tos+1
+    beq qerror01
+    ldy #2
+    lda (ip),y
+    inc ip                      ; ~wut?
+    tay
+qerror00
+    bne error                   ; bra
+qerror01
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=?STACK
+stack=( -- )
+tags=inner
+Check the  data stack pointer for sanity, abort if trouble
+#endif
+qstack
+    ldy #2                          ; 2 = stack full
+    txa
+    bmi error
+    dey                             ; 1 = stack empty
+    cpx usersp0
+    bcc rpstore01
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=SYSERR
+stack=( -- )
+tags=nosymbol,inner
+General-purpose error handler, callable from primitives, used
+to print a system error message and abort
+pass in the error # in Y
+      1 stack empty
+      2 stack full
+#endif
+error
+    sty tos
+    ldy #0
+    sty tos+1
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=FAIL
+stack=( error -- )
+tags=inner
+Outputs an [[error message|Error messages]], then [[ABORT]]
+
+```
+: fail   ( err# -- )
+    warning @ ?dup
+    ?: execute .err
+```
+
+_fail
+    jsr enter
+#include "page.i65"
+    .word warning
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word pquerycolon
+    .word execute
+    .word _doterr               ; try to be rational if WARNING is off
+
+#endif
+#include "align.i65"
+fail
+    lda userwarning+1
+    beq _doterr
+    jmp (userwarning)
+
+;--------------------------------------------------------------
+#if 0
+name=.ERR
+stack=( err# -- ; performs `restart` )
+tags=system,startup,nosymbol
+`pettil-core` has no texty error messages.  This simplified error
+handler will print the error number, followed by a `pause` before `restart`
+
+`pettil-studio` replaces this handler with `error.msg`
+
+```
+: .err   ( err# -- )
+    . ." ?err" restart ;
+```
+#endif
+#include "align.i65"
+_doterr
+    jsr enter
+#include "page.i65"
+    .word _dot
+#include "pass.i65"
+    .word _pdq
+    .byt (fail02-*-1)
+    .asc "?ERR"
+fail02
+#include "page.i65"
+    .word true
+#include "page.i65"
+    .word _pause
+#include "pass.i65"
+    .word restart               ; "My baby drove up in a brand new Cadillac
+                                ; She said, 'Hey, come here, Daddy!'
+                                ; 'I ain't never comin' back!'" -- The Clash
+
+;--------------------------------------------------------------
+#if 0
+name=(")
+stack=( -- addr )
+tags=inner,nosymbol,pads
+Returns the address of an inline string
+#endif
+#include "align.i65"
+_pquote
+    jsr enter
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word twoplus
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(.")
+stack=( -- )
+tags=inner,nosymbol,pads
+Displays an inline string
+
+```
+: (.")
+    r> 2+ count 2dup type  >6502
+    stackl ,x   lda,
+    ip          sta,
+    stackh ,x   lda,
+    ip 1+       sta,
+                inx,
+    tos         ldy,
+                dey,
+    plits02     jmp,
+```
+#endif
+#include "align.i65"
+_pdq
+    jsr enter
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word type
+#include "pass.i65"
+    .word *+2
+    lda stackl,x
+    sta ip
+    lda stackh,x
+    sta ip+1
+    inx
+    ldy tos
+    dey
+    jmp plits02
+
+;--------------------------------------------------------------
+#if 0
+name=padjust
+stack=( -- )
+tags=nosymbol,pads
+!!!Subroutine
+Allows primitives to adjust `IP` when there are inline arguments,
+to properly cross a page boundary.
+
+|IP+A lo|IP lo|IP hi|
+| C set| IP+A| +1|
+||||
+| < FD| IP+A| IP+A|
+| FD| FE| +1|
+| FE| FE| +1|
+| FF| FE| +1|
+
+There is probably a worst-case scenario where it is possible to
+cross two page boundaries, e.g. with [[(.")]] printing a 255-byte
+string, where the [[(.")]] was compiled at the very top of the page.
+
+|$42FC-$42FD| [[(.")]] cfa |
+|$42FE| $FF(length) |
+|$42FF-$43FE| the string |
+|$43FF| `NOP` |
+
+In this worst-case scenarios, `IP` would be set after `padjust` to
+$44FE and the next execution of [[NEXT|Zero page buffer and NEXT routine]]
+would use $4400 as the address of the following instruction.
+#endif
+padjust
+    sec                         ; A = offset to be added to IP
+    adc ip
+    bcs padjust05               ; wrap the page?
+    cmp #$FD                    ; IP $xxFE $xxFF will not blend
+    bcc padjust06               ; same page?
+    lda #$FE                    ; tail.  will it blend?
+padjust05
+    inc ip+1
+padjust06
+    sta ip
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=(DOES)
+tags=inner,nosymbol
+stack=( -- )
+Runtime behavior of a word built with `<BUILDS ... DOES>`
+
+|before|<|after|<|h
+|^data<br/>stack|^return<br/>stack|^data<br/>stack|^return<br/>stack|h
+|||||
+#endif
+dodoes
+    pla             ;[4]
+    tay             ;[2]
+    pla             ;[4]
+    sta z           ;[3]
+    jsr slip        ;[.]
+    pla             ;[4]
+    sta tos         ;[3]
+    pla             ;[4]
+    sta tos+1       ;[3]
+    jsr inctos      ;[.]
+    jmp enter01
+
+;--------------------------------------------------------------
+#if 0
+name=ENTER
+stack=( -- )
+tags=nosymbol,inner,pads
+The business end of colon definition words, pushes the current
+IP on the return stack and executes the word following it
+#endif
+enter
+    pla             ; [4]
+    tay             ; [2]
+    pla             ; [4]
+    sta z           ; [3]
+enter01
+    lda ip+1        ; [3]
+    pha             ; [3]
+    lda ip          ; [3]
+    pha             ; [3]
+    lda z           ; [3]
+    iny
+    bne jumpay      ; [3] bra `jsr enter` never goes at $xxFD
+yikes
+    sec
+    bcs exit01
+
+;--------------------------------------------------------------
+#if 0
+name=(+LOOP)
+stack=( n -- )
+tags=inner,nosymbol
+Add `n` to inner loop index.  If loop index exceeds loop limit,
+then iterate back to (do), otherwise exit the loop.  PETTIL uses
+four bytes of zero page for the inner loop index/limit, for speed
+
+[[Posted question on comp.lang.forth|https://groups.google.com/d/msg/comp.lang.forth/V9evPkLwRoM/Khwons3O4QwJ]]
+#endif
+pploop
+    sec             ; [2]
+    lda zi          ; [3]
+    sbc zlim        ; [3]
+    sta n           ; [3]
+    lda zi+1        ; [3]
+    sbc zlim+1      ; [3]
+    eor #$80        ; [2]
+    tay             ; [2]
+    clc             ; [2]
+    lda n           ; [3]
+    adc tos         ; [3]
+    tya             ; [2]
+    adc tos+1       ; [3]
+    php             ; [3]
+    clc             ; [2]
+    lda tos         ; [3]
+    adc zi          ; [3]
+    sta zi          ; [3]
+    lda tos+1       ; [3]
+    adc zi+1        ; [3]
+    sta zi+1        ; [3]
+    jsr slide       ; [.]
+    plp             ; [4]
+    bvc branch      ; [2]
+    bvs unloop
+
+;--------------------------------------------------------------
+#if 0
+name=(LOOP)
+stack=( -- )
+tags=inner,nosymbol
+Compiled by [[LOOP]], this is the runtime routine to increment
+the inner loop index `zi`.  If loop index exceeds loop limit
+`zlim`, iterate back to (do), otherwise exit the loop.
+
+PETTIL uses four bytes of [[zero page|PETTIL Zero page memory map]] for the inner loop
+index/limit (`zi` `zlim`), for speed
+#endif
+ploop
+    inc zi
+    bne ploop01
+    inc zi+1
+ploop01
+    lda zi
+    eor zlim
+    bne branch
+    lda zi+1
+    eor zlim+1
+    bne branch
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=UNLOOP
+stack=( -- )
+tags=nosymbol,inner,control
+Exits from a [[DO]]-[[LOOP]], either because the index exceeded the limit, or
+early exit due to [[LEAVE]] or [[?LEAVE]]
+#endif
+unloop
+    ldy #$fc
+unloop01
+    pla
+    sta zi-$fc,y  ; effective address wraps around
+    iny
+    bne unloop01
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=EXIT
+stack=( -- )
+tags=inner,nosymbol,pads,forth-83
+The runtime behavior of ;
+Exits a colon definition, unnesting to the next higher level of
+the return stack
+#endif
+exit
+    lda #2          ; [2]
+exit04
+    clc             ; [2]
+exit05
+    sta ip          ; [3]       ; entry A is added to IP
+    pla             ; [4]
+    adc ip          ; [3]
+    tay             ; [2]
+    pla             ; [4]
+exit01
+    adc #0          ; [2] = [12]
+                    ; pass AY = new IP
+                    ; >FORTH -- Sets IP <- AY then NEXT, essentially a GOTO AY
+                    ; transition from 6502 Assembly back up to to Forth
+jumpay
+    sta ip+1        ; [3]
+exit03
+    sty ip          ; [3]
+    jmp nexto       ; [3]
+
+
+;--------------------------------------------------------------
+#if 0
+name=TOFORTH
+tags=inner,nosymbol,pads
+stack=( -- )
+Passes control from 6502 assembly to high level Forth following the
+`jsr toforth` instruction.
+
+here is how using it might look in xa65 assembly source...
+
+```
+    dey
+    bpl warm02
+    nop                         ; and blah blah blah
+    nop
+#include "align.i65"
+   jsr toforth                 ; Assembly-to-Forth bridge `toforth`
+#include "page.i65"             ; make sure target word is page-aligned
+    .word rpstore               ; and we're off...
+#include "page.i65"
+    .word spstore
+#include "page.i65"
+```
+#endif
+toforth
+    pla
+    cmp #$FF
+    tay
+    pla
+    iny
+    adc #0
+    jmp jumpay
+
+;--------------------------------------------------------------
+#if 0
+name=(CLIT)
+tags=inner,nosymbol,pads
+stack=( -- n )
+Runtime behavior of `literal`. Pushes the single byte following IP
+on the stack
+#endif
+clit
+    clc
+    lda #0
+    beq lit01                   ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=(LIT)
+tags=inner,nosymbol,pads
+stack=( -- n )
+Runtime behavior of `literal`, puts a number `n` on the stack
+#endif
+plit
+    sec                         ; add 2 to IP
+    ldy #3
+    lda (ip),y
+lit01
+    tay
+    jsr slip
+    sty tos+1
+    ldy #2
+    lda (ip),y
+    sta tos
+    .byt $29                    ; AND # opcode to skip CLC
+bump
+    clc                         ; add 1 to IP
+    lda #3                      ; ip+3 or ip+4 depending on Carry
+    bne branch02                ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=DOPAGE
+stack=( -- )
+tags=nosymbol,pads
+Page boundary crossing is handled by the compiler inserting 'page'
+when the DP gets to $xxFD or $xxFE.  IP = $xxFF is never supposed
+to occur, and indicates an error in the compiler.
+
+pad is also used by LITERAL, string, and other words which
+contain inline arguments to offset IP at runtime
+
+It is important that callers to `pad` set Carry
+
+#endif
+page
+    inc ip+1
+    ldy #0
+    beq exit03      ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=?BRANCH
+stack=( flag -- )
+tags=inner,nosymbol
+If the flag is zero, take the branch
+#endif
+qbranch
+    lda tos
+    ldy stackl,x
+    sty tos
+    ldy stackh,x
+    inx
+    ora tos+1
+    sty tos+1
+    bne bump
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=BRANCH
+stack=( -- )
+tags=inner,nosymbol,pads
+Compiles an unconditional branch operation. When used in the form:
+[[COMPILE]] [[BRANCH]] , an unconditional branch operation is compiled.
+A one-byte signed offset follows the pointer to `BRANCH`.  These branch
+offset values are typically generated with [[<RESOLVE]] or [[>MARK]] .
+
+`IP` points to address of `BRANCH`
+(`IP`)+2 = the offset to `IP`,  calculated the same as for 6502 branches.
+#endif
+branch
+    ldy #2          ; [2]
+    lda (ip),y      ; [5]
+    bpl pad         ; [2|3]
+    dec ip+1        ; [5]
+pad
+    sec             ; [2]
+branch02
+    adc ip          ; [3]
+    tay             ; [2]
+    iny
+    bne branch05
+    inc ip+1
+    .byt $29
+branch05
+    tay
+    lda #0          ;[2]
+    adc ip+1        ;[3]
+    bcc jumpay      ;[3] bra /18/
+
+;--------------------------------------------------------------
+#if 0
+name=(?LEAVE)
+stack=( flag -- )
+tags=inner,nosymbol
+If flag is nonzero, exit the do loop early
+#endif
+pqleave
+    lda tos
+    ora tos+1
+    php
+    jsr slide
+    plp
+    bne unloop
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=(?DO)
+stack=( end begin -- )
+tags=inner,nosymbol,pads
+Performs a do-loop if end<>begin
+
+#endif
+pqdo
+    sec
+    .byt $29                    ; AND# to skip CLC instruction
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=(DO)
+stack=( end begin -- )
+tags=inner,nosymbol,pads
+runtime code for [[DO]] [[LOOP]]
+#endif
+pdo
+    clc
+    rol z
+    ldy #2          ; {2}       ; set up for EXIT
+    lda (ip),y      ; {5}       ; forward branch offset
+    clc             ; {2}
+    adc ip          ; {3}
+    tay             ; {2}
+    dey             ; {2}
+    lda ip+1        ; {3}
+    adc #0          ; {2}
+    pha             ; {3}
+    tya             ; {2}
+    pha             ; {3}
+    lsr z           ; {3}
+    bcc pdo01       ; {2|3}     ; (DO) vs (?DO)
+    jsr peq         ; {*}      ; (?DO), test equality loop start/limit
+    bne pdo01       ; {2|3}
+    inx             ; {2}       ; loop indices are identical, so ` 2DROP ; `
+    jsr slide
+    jmp exit
+pdo01
+    jsr harvests2
+    ldy #3
+pdo02
+    lda zi,y
+    pha
+    lda tos,y
+    sta zi,y
+    dey
+    bpl pdo02
+pdo03
+    jsr slide
+    bne bump                    ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=I
+tags=inner,forth-83
+stack=( -- index )
+Push the inner loop index of a DO LOOP to the stack
+#endif
+i
+    ldy zi+1
+    lda zi
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=PUSHYA
+stack=( --  n )
+tags=stack,nosymbol
+pass YA = value to push on stack
+#endif
+pushya
+    pha
+    dex
+    lda tos+1
+    sta stackh,x
+    lda tos
+    sta stackl,x
+    pla
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=SP@
+stack=( -- sp )
+tags=fig
+Fetches the current data stack pointer
+#endif
+spfetch
+    txa
+push0a
+    ldy #0
+    beq pushya                  ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=DLIT
+stack=( -- d )
+tags=nosymbol,inner
+Runtime behavior of DLITERAL
+
+    jsr slip
+    dex
+    pla
+    sta n
+    pla
+    sta n+1
+    ldy #4
+    lda (n),y
+    sta tos+1
+    dey
+    lda (n),y
+    sta tos
+    dey
+    lda (n),y
+    sta stackh,x
+    dey
+    lda (n),y
+    sta stackl,x
+    jmp next
+
+#endif
+dlit
+    ldy #5
+dlit01
+    lda (ip),y
+    pha
+    dey
+    bne dlit01
+    pla
+    lda #3
+    jsr padjust                 ; ~wut? untested changes 2017-09-18
+    jmp tworfrom                ; move IP past double constant, `2r>`
+
+;--------------------------------------------------------------
+#if 0
+name=R@
+stack=( -- n ) ( R; n -- n )
+tags=forth-83,nucleus,stack
+Copy the top of the return stack to the data stack
+
+!!! pronounced: "r-fetch"
+#endif
+rfetch
+                                ; you can call me r@, or you can call me j,
+                                ; but you doesn't have to call me johnson
+;--------------------------------------------------------------
+#if 0
+name=J
+stack=( -- index )
+tags=inner,forth-83
+Push the outer loop index of a DO LOOP to the stack (alias for [[R@]])
+#endif
+j
+    stx z           ; {3}
+    tsx             ; {2}
+    ldy $0102,x     ; {4}
+    lda $0101,x     ; {4}
+    ldx z           ; {3}
+    jmp pushya      ; {14|15}
+
+;--------------------------------------------------------------
+#if 0
+name=CALLER
+stack=( -- n )
+tags=ext
+Used by the business end of defining words to retrieve the address of the child
+word from the return stack.
+
+```
+: caller   ( ;r a -- a ;r a )
+    2r> r> -rot 2>r 1+ ; [15]
+
+caller
+    pla
+    sta n
+
+
+caller
+    pla
+    tay
+    pla
+    sta n+3
+    pla
+    sta n
+    pla
+    sta n+1
+    lda n+3
+    pha
+    lda n+2
+    pha
+    jmp next
+;[21]
+
+
+caller
+    pla
+    tay
+    pla
+    sta n
+    dex
+    pla
+    sta stackl,x
+    pla
+    sta stackh,x
+    lda n
+    pha
+    tya
+    pha
+    jmp swap
+;[20]
+
+
+caller
+    jsr slip
+    pla
+    tay
+    pla
+    sta n
+    pla
+    sta tos
+    pla
+    sta tos+1
+    lda n
+    pha
+    tya
+    pha
+    jmp next
+;[22]
+
+caller
+    jsr slip
+    stx z
+    tsx
+    ldy $0104,x
+    sty tos+1
+    ldy $0103,x
+    sty tos
+    pla
+    sta $0102,x
+    pla
+    sta $0101,x
+    ldx z
+    jmp next
+;[29]
+
+caller
+    jsr slip
+    pla
+    sta n+2
+    pla
+    sta n+3
+    pla
+    sta n
+    pla
+    sta n+1
+    lda n+3
+    pha
+    lda n+2
+    pha
+    jmp next
+
+_caller
+    jsr enter
+    .word tworfrom
+    .word rfrom
+    .word dashrot
+    .word twotor
+    .word oneplus
+    .word exit
+;[15]
+```
+#endif
+caller
+    jsr slip
+    pla
+    tay
+    pla
+    sta n
+    pla
+    sta tos
+    pla
+    sta tos+1
+    lda n
+    pha
+    tya
+    pha
+    jmp next
+;[22]
+
+;--------------------------------------------------------------
+#if 0
+name=DOCREATE
+stack=( -- addr )
+tags=nosymbol,inner
+The business end of words created by CREATE, returns the address
+of the calling word plus 1
+#endif
+#include "align.i65"
+docreate
+    jsr slip
+    pla
+    sta tos
+    pla
+    sta tos+1
+    jmp oneplus
+
+#print (*-cstore)

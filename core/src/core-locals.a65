@@ -1,0 +1,382 @@
+; core-locals.a65
+#echo .       core-locals.a65           Local variables N0..N8 R0..R15 etc
+
+
+;--------------------------------------------------------------
+#if 0
+name=HARVESTS10
+tags=nosymbol
+Sets up five locals in the N area
+
+#endif
+harvests10
+    ldy #10
+    .byt $2c                    ; BIT abs opcode
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=HARVESTS8
+tags=nosymbol
+Sets up four locals in the N area
+
+#endif
+harvests8
+    ldy #8
+    .byt $2c                    ; BIT abs opcode
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=HARVESTS6
+tags=nosymbol
+Sets up three locals in the N area
+
+#endif
+harvests6
+    ldy #6
+    .byt $2c                    ; BIT abs opcode
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=HARVESTS4
+tags=nosymbol
+Sets up two locals in the N area
+
+#endif
+harvests4
+    ldy #4
+    .byt $2c                    ; BIT abs opcode
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=HARVESTS2
+tags=nosymbol
+Sets up one local in the N area
+
+#endif
+harvests2
+    ldy #2
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=HARVESTS
+tags=nosymbol,subroutine
+Pops cells from the split stack to N area, working backwards.
+Used for setting up primitives that consume multiple arguments
+
+Input
+
+* Y = how many words *2 to pop from the stack, e.g. Y=6 pops 3 words
+
+Returns
+
+* Y = 0
+* TOS unchanged
+* Z flag set
+* C flag unchanged
+
+|^Y|R1<br>TOS|R2<br>N0|R3<br>N1|R4<br>N2|R5<br>N3|R6<br>N4|R7<br>N5|R8<br>N6|R9<br>N7|R10<br>N8|h
+|1|TOS|2OS|||||||||
+|2|TOS|3OS|2OS||||||||
+|3|TOS|4OS|3OS|2OS|||||||
+|4|TOS|5OS|4OS|3OS|2OS||||||
+|5|TOS|6OS|5OS|4OS|3OS|2OS|||||
+|6|TOS|7OS|6OS|5OS|4OS|3OS|2OS||||
+|7|TOS|8OS|7OS|6OS|5OS|4OS|3OS|2OS|||
+|8|TOS|9OS|8OS|7OS|6OS|5OS|4OS|3OS|2OS||
+|9|TOS|10OS|9OS|8OS|7OS|6OS|5OS|4OS|3OS|2OS|
+|>|>|>|>|>|>|>| stack area and N area order is inverted |<|<|<|f
+
+|Y: 0|Z: set|TOS: unchanged|C: unchanged|
+#endif
+harvests
+    lda stackh,x        ; [4]
+    dey                 ; [2]
+    sta n,y             ; [5]
+    lda stackl,x        ; [4]
+    inx                 ; [2]
+    dey                 ; [2]
+    sta n,y             ; [5]
+    bne harvests        ; [3]
+                        ; [-1]  ; on last iteration
+    rts                 ; [6]               [17]+[27y]
+
+;--------------------------------------------------------------
+#if 0
+name=HARVEST
+tags=extra,locals
+Remove one or more stack entries from `2os` upward, copying
+them to `n0` upward
+
+Another way to restack Y/2 things
+
+#endif
+harvest
+    sec
+    .byt $29                    ; AND # opcode skips `clc`
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=PLANT
+tags=extra,locals
+Antonym of `harvest` to push things back underneath `tos`
+Think of this as a supertuck.
+
+
+Another way to restack Y/2 things
+
+#endif
+plant
+    clc
+    lda #>(next-1)
+    pha
+    lda #<(next-1)
+    pha
+    bcs harvests
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=PLANTS
+tags=nosymbol,subroutine
+Pushes N area back onto stack ~ untested
+
+Input
+
+* Y = how many words *2 to push to the stack, e.g. Y=6 pushes 3 words
+
+Returns
+
+* Y = 0
+* TOS unchanged
+* Z flag set
+* C flag unchanged
+
+|Y: 0|Z: set|TOS: unchanged|C: unchanged|
+#endif
+plants
+    dex
+    lda n,y
+    sta stackh,x
+    lda n-1,y
+    sta stackl,x
+    dey
+    dey
+    bne plants
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=>ZP
+stack=( n -- n )
+tags=nosymbol
+!!!Subroutine
+copies TOS to any zero page address (provided inline) without altering TOS
+#endif
+tozp
+    ldy #2
+    lda (ip),y
+    tay                         ; do we want distributed IP++?
+                                ; for now, it is better than crashing 2017-08-28
+tozp01
+    lda tos+1
+    sta 1,y
+    lda tos
+    sta 0,y
+    lda #2
+    jmp pad
+
+;--------------------------------------------------------------
+#if 0
+name=>.ZP
+stack=( n -- n )
+tags=nosymbol
+!!!Subroutine
+copies TOS to an address provided inline
+#endif
+todotzp
+    ldy #2
+    lda (ip),y
+    inc ip                      ; ~wut? is this really safe?
+                                ; do we want distributed IP++?
+                                ; for now, it is better than crashing 2017-08-28
+    tay
+    lda tos
+    sta 0,y
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=<ZP
+stack=( <n == ; -- @n )
+tags=nosymbol
+Replaces TOS with 16-bit fetch from inline z.p. address
+#endif
+zpfrom
+    jsr slip
+    ldy #2                      ; Squeaky's little sister
+    lda (ip),y
+    inc ip                      ; ~wut? is this really safe?
+    tay                         ; Y = the actual address
+    lda 1,y
+    sta tos+1
+    lda 0,y
+    sta tos                     ; we'd like 16 bits, please
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=<.ZP
+stack=( n -- c@zp )
+tags=nosymbol
+Replaces TOS with LSB C@ from inline z.p. address
+#endif
+fromdotzp
+    ldy #2
+    lda (ip),y
+    inc ip                      ; ~wut? is this really safe?
+    tay                         ; Y = the actual address
+    lda 0,y                     ; just the LSB because dot modifier is on
+    jmp put0a
+
+;--------------------------------------------------------------
+#if 0
+name=>MEM
+stack=( n -- n )
+tags=nosymbol
+
+it would be generally useful
+
+    lda ip+1
+    pha
+    lda ip
+    pha
+; now we can use IP as a temporary store
+
+
+`: someword  doo dahh doo dahh >32768 doo wahh ditty ;`
+
+when someword executes, the value at TOS will be stored to VIDRAM
+without dropping or altering it
+
+This is the doer to/from NUMBERS that don't fit in a single byte
+
+'doer' word for direct memory access
+
+copies TOS to an address provided inline
+tricky part: without overwriting any registers
+
+~wut?   this is more code than I imagined it would be ...
+
+;use it like this:
+    .word tomem
+    .word someaddr
+
+tos is saved to the stack
+tos is replaced by someaddr
+value from stack is stored to (someaddr)
+
+#endif
+tomem
+    jsr slip
+    inc ip
+    inc ip
+    ldy #0
+    lda (ip),y
+    sta tos
+    iny
+    lda (ip),y
+    sta tos+1
+    lda stackh,x
+    sta (tos),y
+    dey
+    lda stackl,x
+    sta (tos),y
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=>.MEM
+stack=( n -- n )
+tags=nosymbol
+Doer word for direct memory access
+
+copies TOS LSB to an address provided inline
+tricky part: without overwriting any registers
+
+~wut?   AAARRRRGGGHH! the code bloat ...
+
+Example: `>.32768` compiles
+here:      .word todotmem
+here+2:    .word $8000
+
+copies `tosl` to screen, upper left corner
+replaces TOS with the target
+
+#endif
+todotmem
+    lda tos+1
+    sta z                       ;high byte
+    lda tos
+    pha                         ;low byte
+    ldy #3                      ;3
+    lda (ip),y
+    sta tos+1
+    dey                         ;2
+    lda (ip),y
+    sta tos
+    pla                         ; low, high, done
+    pha
+    dey                         ;1, 0
+    sta (tos),y
+    lda z
+    iny                         ;2
+    sta (tos),y
+    tay
+    pla
+    jmp put
+
+
+;--------------------------------------------------------------
+#if 0
+name=<MEM
+stack=( offset -- addr )
+tags=nosymbol
+Move a counted string (inline, following call address) from memory to N area
+exits to next
+modifies TOS in-place
+#endif
+frommem
+    pla
+    sta tos
+    pla
+    sta tos+1
+    jsr inctos
+    ldy #0
+    lda (tos),y
+    sta z
+    tay
+frommem01
+    lda (tos),y
+    pha
+    dey
+    bne frommem01
+
+    ldy #(ACC+2*N0)             ; the offset, could even be LDY R14H
+frommem02
+    pla
+    sta 0,y
+    iny
+    dec z
+    bne frommem02
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=<.MEM
+stack=( n -- n )
+tags=nosymbol
+!!!Subroutine
+copies TOS to an address provided inline
+#endif
+fromdotmem
+
+#print (*-tozp)

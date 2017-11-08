@@ -1,0 +1,1134 @@
+; core-io.a65
+#echo .       core-io.a65               I/O
+
+;--------------------------------------------------------------
+#if 0
+name=EMIT
+stack=( c -- )
+tags=forth-83,i/o
+#endif
+emit
+    inc usernumout
+    bne emit01
+    inc usernumout+1
+emit01
+    lda tos
+    jsr CHROUT
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=?KEY
+stack=( -- c )
+tags=i/o
+Get a character from the keyboard, or 0 if no key pressed
+#endif
+qkey
+    clc
+    .byt $29                    ; AND # opcode to skip SEC
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=KEY
+stack=( -- c )
+tags=forth-83,i/o
+Wait for a keypress by the user
+#endif
+key
+    sec
+    stx z
+key01
+    php
+    jsr GETIN
+    bne key02
+    plp
+    bcs key01
+    php
+key02
+    plp
+    ldx z
+    jmp push0a
+
+;--------------------------------------------------------------
+#if 0
+name=CR
+stack=( -- )
+tags=forth-83,i/o
+Output a carriage return, uses machine-specific ROM address
+
+```
+cr
+    [ CROUT ] literal jsr
+    #out off #line 1+! ;  ( 17 )
+
+cr
+    jsr CROUT                   ; $D534
+    lda #0
+    sta usernumout
+    sta usernumout+1
+    inc usernumline
+    bne cr01
+    inc usernumline+1
+cr01
+    jmp next
+
+(docall)
+lets us call 6502 subroutines as forth primitives terminating in [[NEXT]]
+when RTS executes
+
+: jsr ( -- ; pronounced: "j-s-r" )
+    r> 2+ @ ['] next >r execute ;
+```
+#endif
+cr
+    brk
+    .byt ext
+    .word CROUT                 ; ROM routine prints a carriage return
+    .byt set | N0
+    .word usernumline+2
+    .byt popd | N0
+    .byt inr | ACC
+    .byt std | N0
+;    .byt set | N0
+;    .word usernumout
+    .byt sub | ACC
+    .byt std | N0
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=EXPECT
+stack=( addr +n -- )
+tags=forth-83,i/o
+''Forth-83:''//  EXPECT       addr +n --                    M,83
+       Receive characters and store each into memory.  The transfer
+       begins at addr proceeding towards higher addresses one byte
+       per character until either a "return" is received or until
+       +n characters have been transferred.  No more than +n
+       characters will be stored.  The "return" is not stored into
+       memory.  No characters are received or transferred if +n is
+       zero.  All characters actually received and stored into
+       memory will be displayed, with the "return" displaying as a
+       space.  See:  SPAN  "9.5.2 EXPECT"//
+
+|Receive characters and store each into memory.|check.|
+|The transfer begins at `addr` proceeding towards higher addresses|check.|
+|one byte per character|check.|
+|until either a "return" is received|check.|
+|or until +n characters have been transferred.|and double check.|
+|No more than +n characters will be stored.|check.|
+|The "return" is not stored into memory.|check.|
+|No characters are received or transferred if +n is zero.|uhhhh... I didn't check that, sorry|
+|All characters actually received and stored into memory will be displayed|check.|
+|with the "return" displaying as a space.|check.|
+
+#endif
+expect
+    jsr harvests2               ; `addr` to `n0`
+;   sty userspan+1              ; always off
+    stx z
+;   ldy #0                      ; thanks, `harvests`
+expect01
+    jsr CHRIN
+    cmp #$0d
+    beq expect02
+    sta (n),y
+    iny
+    cpy tos
+    bcc expect01
+expect02
+    ldx z
+    jsr dashtrailings
+    ;lda tos                    ; thanks, `-trailing`
+    sta userspan                ; set `span`
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name='STREAM
+stack=( -- buf siz )
+tags=extra,todo
+flags=immediate,locals
+Provide the line buffer address and buffer size of the input stream
+
+```
+: 'stream
+blk@  ?: SIB TIB  80 ;
+```
+#endif
+#include "align.i65"
+_tickstream
+    jsr enter
+#include "page.i65"
+    .word tib
+#include "page.i65"
+    .word eighty
+#include "page.i65"
+    .word blkfetch
+#include "pass.i65"
+    .word qbranch
+    .byt <(tickstream01-*+1)
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word plusunder
+;#include "page.i65"
+;    .word mumbojumbo           ; redirect input from `blkbuf`
+#include "pass.i65"
+tickstream01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=QUERY
+stack=( -- )
+tags=forth-83,interpreter
+QUERY        --                            M,83
+   Characters are received and transferred into the memory area
+   addressed by TIB .  The transfer terminates when either a
+   "return" is received or the number of characters transferred
+   reaches the size of the area addressed by TIB .  The values
+   of >IN and BLK are set to zero and the value of #TIB is set
+   to the value of SPAN .  WORD may be used to accept text from
+   this buffer.  See:  EXPECT  "input stream"
+
+PETTIL differs from the Forth-83 standard here, because it uses
+a lazy loading scheme with all kinds of goodies sprinkled around
+on the zero page. This version is provided in core so programs can
+invoke `query` to acquire keyboard input from the user.
+
+* Simply does `tib 80 expect`
+* No `#tib`
+* Does not reset `blk` or `in`
+* `expect` will set `span`
+```
+: query   ( buf len -- )
+    tib 80 expect ;
+```
+#endif
+#include "align.i65"
+_query
+    jsr enter
+#include "page.i65"
+    .word _tickstream
+#include "page.i65"
+    .word expect
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SPACE
+stack=( -- )
+tags=forth-83,i/o
+Emits a space character
+
+```
+: space   ( -- )
+   bl emit ;
+```
+#endif
+#include "align.i65"
+_space
+    jsr enter
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word emit
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SPACES
+stack=( n -- )
+tags=forth-83,i/o
+Emits "n" spaces
+
+```
+: spaces   ( n -- )
+    0 max 0
+    ?do
+        space
+    loop ;
+```
+#endif
+#include "align.i65"
+_spaces
+    jsr enter
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word max
+#include "page.i65"
+    .word zero
+#include "pass.i65"
+    .word pqdo
+    .byt <(spaces02-*+1)
+#include "page.i65"
+spaces01
+    .word _space
+#include "pass.i65"
+    .word ploop
+    .byt <(spaces01-*+1)
+spaces02
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=TYPE
+stack=( addr count -- )
+tags=forth-83,i/o
+#endif
+type
+    jsr harvests2
+    clc
+    lda tos
+    adc usernumout
+    sta usernumout
+    lda tos+1
+    adc usernumout+1
+    sta usernumout+1
+    ;ldy #0
+type01
+    cpy tos
+    bne type02
+    dec tos+1
+    bpl type02
+    jmp drop
+type02
+    lda (n),y
+    jsr CHROUT
+    iny
+    bne type01
+    inc n+1
+    bne type01                  ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=$.
+stack=( addr -- )
+tags=string
+Outputs a string
+
+#endif
+#include "align.i65"
+_stringdot
+    jsr enter
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word type
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DIGIT
+stack=( char base -- digit true | false )
+tags=numword
+
+ Converts a single character to a digit using the current number
+ base.  A flag on TOS indicates whether the conversion succeeded.
+todo: possible to code golf this down with BCD tricks?
+"http://www.6502.org/tutorials/decimal_mode.html
+#endif
+digit
+    ldy #$ff                    ; assume success
+    lda stackl,x                ; get the character
+    sec
+    sbc #'0'
+    bcc digit02                 ; char was < '0'? not a digit, fail
+    cmp #10
+    bcc digit01                 ; digit is in the range 00-09
+    sbc #7                      ; no? alphabet adjust 'A' --> $0a
+digit01
+    cmp tos                     ; compare to current number base
+    bcs digit02                 ; not in current number base? fail
+    sta stackl,x                ; digit in the current number base
+    .byt $2c                    ; BIT xxyy, skip the next two bytes
+digit02
+    iny                         ; fail, set flag to 0
+    inx                         ; drop the stack
+    tya                         ; ya = flag word $0000 or $ffff
+    jmp put                     ; next!
+
+;--------------------------------------------------------------
+#if 0
+name=HOLD
+stack=( char -- )
+tags=numword,forth-83
+
+
+ Inserts  character into a pictured numeric out-
+ put string.
+ char is inserted into a pictured numeric output
+ string.  Typically used between  [[<#]] and [[#>]] .
+
+```
+: hold   ( char -- )
+    hld 1-!  hld @  c! ;
+```
+#endif
+#include "align.i65"
+_hold
+    jsr enter
+#include "page.i65"
+    .word hld
+#include "page.i65"
+    .word oneminusstore
+#include "page.i65"
+    .word hld
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word cstore
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NUMBER
+stack=( addr -- d )
+tags=numword,forth-83
+
+ Convert the counted string at addr, to a signed
+ 32-bit integer, using the value of BASE .  If numeric
+ conversion is not possible, an error condition exists.  The
+ string may contain a preceding minus sign.
+
+```
+ \ There is a string that is probably a number stored from addrlow..addrhigh
+ \ convert a counted string to a signed double, keeping track of the decimal
+: number  ( addr -- d )
+  ( addr )
+     0 0 rot count
+  ( 0 0 addr+1 len )
+     over c@ [ ascii - ] literal  =
+  ( 0 0 addr+1 len negative? )
+     dup>r
+  ( 0 0 addr+1 len negative? ) ( R; -- negative? )
+     +
+  ( 0 0 addr+1 lenadj ; adjust length for sign char )
+     over + r@ -
+  ( 0 0 addr+1 addrhigh+1 )
+     swap  r@ -
+  ( 0 0 addrhigh+1 addrlow )
+     dpl on
+     ?do
+  ( d )
+         base @ >r
+  ( d ) ( R; base negative? )
+         i c@  r@  digit
+  ( -- d currdigit~?~ flag )
+         if
+             swap r@ um*
+             drop rot
+             r@ um* d+
+             dpl @ 1+  0= negate dpl +!
+         else
+             i c@ [ ascii . ] literal  =
+             dpl @ 0<  and
+             if
+                 dpl off
+             else
+                 3 fail ( abort" not found" )
+             then
+         then
+         r> drop
+  ( R; negative? ; discard base )
+     loop
+     r>  if  dnegate  then ;
+
+```
+#endif
+#include "align.i65"
+_number
+    jsr enter
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word cfetch
+#include "pass.i65"
+    .word clit
+    .byt '-'
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word on
+#include "pass.i65"
+    .word pqdo
+    .byt <(number05-*+1)
+#include "page.i65"
+number01
+    .word base
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word digit
+#include "pass.i65"
+    .word qbranch
+    .byt <(number02-*+1)
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word umstar
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word umstar
+#include "page.i65"
+    .word dplus
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word plusstore
+#include "pass.i65"
+    .word branch
+    .byt <(number04-*+1)
+#include "page.i65"
+number02
+    .word i
+#include "page.i65"
+    .word cfetch
+#include "pass.i65"
+    .word clit
+    .byt '.'
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word andx
+#include "pass.i65"
+    .word qbranch
+    .byt <(number03-*+1)
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word off
+#include "pass.i65"
+    .word branch
+    .byt <(number04-*+1)
+#include "page.i65"
+number03
+    .word three
+#include "page.i65"
+;    .word _fail
+#include "page.i65"
+number04                        ; then then
+    .word rfrom
+#include "page.i65"
+    .word drop
+#include "pass.i65"
+    .word ploop
+    .byt <(number01-*+1)
+#include "page.i65"
+number05
+    .word rfrom
+#include "pass.i65"
+    .word qbranch
+    .byt <(number07-*+1)
+#include "page.i65"
+    .word dnegate
+#include "pass.i65"
+number07
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=<#
+stack=( -- )
+tags=numword,forth-83
+
+see also: [[HOLD]] [[HLD]]
+
+pronounced: 'less-than-sharp'
+
+```
+: <#   ( -- )
+    pad hld ! ;
+```
+#endif
+#include "align.i65"
+_ltsharp
+    jsr enter
+#include "page.i65"
+    .word _pad                  ; ( pad )
+#include "page.i65"
+    .word hld                   ; ( pad hld )
+#include "page.i65"
+    .word store                 ; ( )
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=#>
+stack=( d -- hld size )
+tags=numword,forth-83
+Terminates pictured numeric output, discarding the double `d` and returning
+the starting address and size of the output string.
+
+see also: [[<#]] [[#]] [[#S]] [[HOLD]] [[HLD]] [[SIGN]]
+
+pronounced: 'sharp-greater'
+
+```
+: #>   ( d -- hld size )
+    2drop hld @ pad over - ;
+```
+#endif
+#include "align.i65"
+_sharpgt
+    jsr enter
+#include "page.i65"
+    .word twodrop
+#include "page.i65"
+    .word hld
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SIGN
+stack=( n -- )
+tags=numword,forth-83
+
+ If n is negative, an ASCII "-" (minus sign) is appended to the
+ pictured numeric output string.  Typically used between <# and #> .
+
+```
+: sign   ( n -- )
+    0< if '-' hold then ;
+```
+#endif
+#include "align.i65"
+_sign
+    jsr enter
+#include "page.i65"
+    .word zlt
+#include "pass.i65"
+    .word qbranch
+    .byt <(sign01-*+1)
+#include "pass.i65"
+    .word clit
+    .byt '-'
+#include "page.i65"
+    .word _hold
+#include "pass.i65"
+sign01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(#)
+stack=( +d1 -- +d2 )
+tags=numword,nosymbol
+base is the current system number base, which must be between 2 and 36.
+This helper primitive divides d1 by BASE, returning the quotient d2
+and the remainder (as an ascii digit).  Called by '#'
+
+pronounced: 'paren-sharp'
+#endif
+psharp
+        lda  #0                 ; partial remainder
+        ldy  #32                ; loop counter
+psharp2
+        asl  stackl,x           ; Dividend
+        rol  stackh,x           ; is gradually replaced
+        rol  tos                ; with the quotient
+        rol  tos+1              ; A is gradually replaced
+        rol                     ; with the remainder
+        cmp  userbase           ; partial remainder < BASE?
+        bcc  psharp3            ; no: update the partial
+        sbc  userbase           ; remainder and partial
+        inc  stackl,x           ;  quotient
+psharp3
+        dey
+        bne  psharp2            ; loop 32 times
+        cmp  #10
+        sed
+        adc  #'0'               ; adjust remainder to ASCII
+        cld
+        jmp  pushya             ; actually need to do a HOLD
+
+;--------------------------------------------------------------
+#if 0
+name=(DIGIT)
+stack=( n -- c )
+tags=numword,nosymbol
+
+pronounced: 'paren-digit'
+#endif
+pdigit
+    lda tos
+    sed
+    cmp #10
+    adc #'0'
+    cld
+    sta tos
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=#
+stack=( +d1 -- +d2 )
+tags=numword,forth-83
+
+ +d1 is divided by BASE and the quotient is
+ placed onto the stack.  The remainder is con-
+ verted to an ASCII character and appended to
+ the output string toward lower memory ad-
+ dresses.
+ The remainder of +d1 divided by the value of
+ BASE is converted to an ASCII character and ap-
+ pended to the output string toward lower memory
+ addresses.  +d2 is the quotient and is main-
+ tained for further processing.  Typically used
+ between <# and #> .
+
+pronounced: 'sharp'
+#endif
+#include "align.i65"
+_sharp
+    jsr enter
+#include "page.i65"
+    .word base                  ; ( d base )
+#include "page.i65"
+    .word fetch                 ; ( d @base )
+#include "page.i65"
+
+; psharp will replace the following block of code
+;    .word psharp
+
+    .word udslashmod            ; ( rem d )
+#include "page.i65"
+    .word rot                   ; ( d rem )
+#include "page.i65"
+    .word pdigit
+#include "page.i65"
+    .word _hold                 ; ( d )
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=#S
+stack=( d -- )
+tags=numword,forth-83
+
+pronounced: 'sharp-s'
+#endif
+#include "align.i65"
+_sharps
+    jsr enter
+#include "page.i65"
+sharps01
+    .word _sharp                ; ( d )
+#include "page.i65"
+    .word twodup                ; ( d d )
+#include "page.i65"
+    .word _dzeq                 ; ( d flag )
+#include "pass.i65"
+    .word qbranch
+    .byt <(sharps01-*+1)
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(UD.)
+stack=( d -- )
+tags=numword,nosymbol
+Print an unsigned double
+
+pronounced: 'paren-u-d-dot'
+
+```
+: (ud.)
+    <# #s #> ;
+```
+#endif
+#include "align.i65"
+_puddot
+    jsr enter
+#include "page.i65"
+    .word _ltsharp
+#include "page.i65"
+    .word _sharps
+#include "page.i65"
+    .word _sharpgt
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(D.)
+stack=( d -- )
+tags=numword,nosymbol
+Print a signed double
+
+```
+: (d.)
+    dup>r  dabs  <# #s r> sign #> ;
+```
+#endif
+#include "align.i65"
+_pddot
+    jsr enter
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word dabs
+#include "page.i65"
+    .word _ltsharp
+#include "page.i65"
+    .word _sharps
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word _sign
+#include "page.i65"
+    .word _sharpgt
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(U.)
+stack=( u -- )
+tags=numword,nosymbol
+Print an unsigned number
+
+```
+: (u.)
+    0 (ud.) ;
+```
+#endif
+#include "align.i65"
+_pudot
+    jsr enter
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word _puddot
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(.)
+stack=( n -- )
+tags=nosymbol,i/o,inner
+Print a signed number
+
+```
+: (.)
+    s->d (d.) ;
+```
+#endif
+#include "align.i65"
+_pdot
+    jsr enter
+#include "page.i65"
+    .word _stod
+#include "page.i65"
+    .word _pddot
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=UD.
+stack=( ud -- )
+tags=numword
+
+#endif
+#include "align.i65"
+_uddot
+    jsr enter
+#include "page.i65"
+    .word _puddot
+#include "pass.i65"
+    .word branch
+    .byt <(tse-*+1)
+;--------------------------------------------------------------
+#if 0
+name=D.
+stack=( d -- )
+tags=numword
+
+#endif
+#include "align.i65"
+_ddot
+    jsr enter
+#include "page.i65"
+    .word _pddot
+#include "pass.i65"
+    .word branch
+    .byt <(tse-*+1)
+;--------------------------------------------------------------
+#if 0
+name=U.
+stack=( n -- )
+tags=numword,forth-83
+
+#endif
+#include "align.i65"
+_udot
+    jsr enter
+#include "page.i65"
+    .word _pudot
+#include "pass.i65"
+    .word branch
+    .byt <(tse-*+1)
+;--------------------------------------------------------------
+#if 0
+name=.
+stack=( n -- )
+tags=numword,forth-83
+
+
+ The value of n is displayed in a free field for-
+ mat with a leading minus sign if n is negative.
+#endif
+#include "align.i65"
+_dot
+    jsr enter
+#include "page.i65"
+    .word _pdot                 ; ( addr count )
+#include "page.i65"
+tse                             ; type, space, exit
+    .word type                  ; ( )
+#include "page.i65"
+    .word _space                ; ( )
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=U.R
+stack=( u w -- )
+tags=numword
+
+ u is converted using the value of BASE and then
+ displayed as an unsigned number right-aligned
+ in a field +n characters wide.  If the number
+ of characters required to display u is greater
+ than +n, an error condition exists.
+
+#endif
+#include "align.i65"
+_udotr
+    jsr enter
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _pudot
+#include "pass.i65"
+    .word branch
+    .byt <(rjustify-*+1)
+;--------------------------------------------------------------
+#if 0
+name=.R
+stack=( n1 w -- )
+tags=numword
+
+#endif
+#include "align.i65"
+_dotr
+    jsr enter
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _pdot
+#include "pass.i65"
+    .word branch
+    .byt <(rjustify-*+1)
+;--------------------------------------------------------------
+#if 0
+name=UD.R
+stack=( d w -- )
+tags=numword
+
+#endif
+#include "align.i65"
+_uddotr
+    jsr enter
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _puddot
+#include "pass.i65"
+    .word branch
+    .byt <(rjustify-*+1)
+;--------------------------------------------------------------
+#if 0
+name=D.R
+stack=( d n -- )
+tags=numword
+
+#endif
+#include "align.i65"
+_ddotr
+    jsr enter
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _pddot
+#include "page.i65"
+rjustify
+    .word rfrom
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _spaces
+#include "page.i65"
+    .word type
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?
+stack=( addr -- )
+tags=i/o,memory
+Fetches the value at `addr` and outputs it via [[.]]
+
+#endif
+#include "align.i65"
+_question
+    jsr enter
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _dot
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=IRQ!
+stack=( irqhandler -- )
+tags=device
+Called by the editor (and anything else) to flip the IRQ vector
+on and off between two different values
+#endif
+irqstore
+    lda tos
+    ldy tos+1
+    sei
+    sta CINV
+    sty CINV+1
+    cli
+    jmp drop
+
+irqoff
+    sei
+    jmp next
+
+irqon
+    cli
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=^IRQS
+tags=nosymbol,subroutine
+Toggle the BRK vector between Sweet16 <--> TIM
+
+Y=2; replace just IRQ
+Y=4; replace BRK and IRQ
+
+#endif
+toggleirqs
+    ldy #2
+    .byt $2C
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=^IRQBRK
+tags=startup,nosymbol
+* toggle Sweet16 BRK vector at ($0090)
+
+#endif
+toggleirqbrk
+    ldy #4                      ; set both IRQ and BRK vectors
+    ;
+    sei
+toggleib01
+    lda userirqtoggle-1,y
+    eor CINV-1,y
+    sta CINV-1,y
+    dey
+    bne toggleib01
+    cli
+    rts
+
+#print (*-emit)

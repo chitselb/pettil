@@ -1,0 +1,153 @@
+tags: static design
+title: Design Dictionary
+
+Each word in the dictionary is split into two pieces, the 'symbol' and the 'code'.  Further, the 'code' dictionary is itself divided into two sections, 'core' and 'tdict'. The dictionary is segmented into three areas of memory.
+
+|^address|^contents||h
+|^$0000|^zero page||
+|^$0100|^return stack||
+|^$0200|^kernel, tape buffers||
+|^!$0400<br/>$1A8E |^//''CORE''//|{{Design Dictionary tdict}}|
+|~|,dp|~|
+|>| <br/>free memory<br/><br/>||
+|^$5600|^blkbuf||
+|^!$5A00<br/>$66FE<br/>$6952<br/> |^//''SYMTAB''//|{{Design Dictionary symtab}}|
+|~|^symnew|~|
+|~|^symtail|~|
+|^!$6952<br/>$7F0A |//''TDICT''//<br/>tdp|{{Design Dictionary tdict}}|
+||||
+|$8000|Video RAM||
+|$B000|BASIC ROM||
+|$E800|Kernel ROM||
+
+
+
+* ''CORE'' (core dictionary)
+** As the name implies, the baseline of the dictionary.
+** under 6K, leaving 25K free RAM for application code!
+** this is the only piece required by standalone PETTIL applications
+** loads like a BASIC program (`10 SYS1037`) at bottom of memory
+** includes Wozniak's Sweet-16 emulator
+** includes virtual memory on cassette tape
+** since this is nothing but executable code,
+*** really helps out with code golf
+*** local branching among words is more likely to be in +/-127 range
+*** falling through to the next word
+
+* ''SYMTAB'' (symbol table)
+** Just names and addresses
+** about 3K in size
+** [[Pearson hashing|https://en.wikipedia.org/wiki/Pearson_hashing]] to eliminate 93%  of the dictionary from all searches
+** [[Bloom filter|https://en.wikipedia.org/wiki/Bloom_filter]] to eliminate searching the dictionary entirely for most numbers
+** floats in the area of memory below TDICT
+
+* ''TDICT'' (transient dictionary)
+** The code that turns PETTIL into a development system
+** resides at top of RAM
+** also fits less than 6K
+** compiler
+** interpreter
+** assembler
+** editor
+** utils
+** dictionary (e.g. [[FIND]], [[CREATE]])
+
+!!Improvements
+For each and every word in the input stream, the other leading brand of 6502 Forth searches every single word in the entire dictionary.After all of that, still not found?  Let's try converting it to a number.
+
+{{About WORD}}
+{{loadrun.png}}
+
+|^address|^contents|h
+|^$0000|^zero page|
+|^$0100|^return stack|
+|^$0200|^kernel, tape buffers|
+|^!$0400<br/>$1A8E |^//''CORE''//|
+|~|,dp|
+|>| <br/>free memory<br/><br/>|
+|^$5600|^blkbuf|
+|^!$5A00<br/>$66FE<br/>$6952<br/> |^//''SYMTAB''//|
+|~|^symnew|
+|~|^symtail|
+|^!$6952<br/>$7F0A |//''TDICT''//<br/>tdp|
+|||
+|$8000|Video RAM|
+|$B000|BASIC ROM|
+|$E800|Kernel ROM|
+
+!!
+!!Structure
+Each entry in the dictionary has several elements.
+
+Consider the dictionary entry for the word such as `: ldump   fff8 and 10 dump ;`
+[img width=100% [ldump.png]]
+The symbol table entry begins at ($6275) with the two-byte code field address ''($0C7A)'', the name field length/flag byte ''($05)'', and at ''$6276'' is the word name itself, ''RSWAP'', a very simple structure that can be traversed sequentially by adding length+3 to skip to the next word in the list.  The end of the symbol table is signaled by a CFA of ''$0000''
+
+
+Those are the name field address (NFA), and the code field address (CFA),
+respectively.5b
+
+|^address|contents|example|h
+|^symtab|^16 thread addresses|`5A20 5B18 5C03 5CBA`<br/>`5D66 5E30 5EEA 5FB2`<br/>`6075 6151 623A 632E`<br/>`6414 64CC 6586 6658`<br/><br/>|
+|^NFA|code field address (''CFA'') |`0C7A`|
+|^NFA+2|length/flags byte |`05`|
+|^NFA+3|name field |`52 53 57 41 50` "RSWAP"|
+|^NFA+3+length|//next symbol...//<br/><br/>|<|
+|symnew|end of symbol table|`0000`|
+|symtail|end of symbol table|`0000`|
+[[REHASH]] rebuilds the symbol table by first copying all symbols to [[PAD]] in Pearson hash order, then copying them all back to [[SYMTAB]] in order of ascending size.  This [[rehash|REHASH]] mechanism is also used at [[startup|COLD]] and after [[FORGET]] to organize the dictionary.
+
+!!Searches
+After rebuild, new symbols are appended sequentially to the symbol table until it fills up and crashes into [[TDICT]].  Sea
+
+
+
+
+
+
+
+
+
+The dictionary is segmented into three areas of memory:  The 'core' dictionary
+occupies less than 6K and is required to run PETTIL application code.  The
+'tdict' (transient dictionary) is located at the top of RAM, and the 'symtab'
+(symbol table) floats below it.  This is typical
+
+|address|contents|h
+|$0400|''core''|
+|$1a8e //(or so)//|free memory|
+|$5a00|''symtab''|
+|$8000|video memory|
+
+Each entry in the dictionary has several elements.  Consider the dictionary
+entry for the word [[RSWAP]]
+`  : rswap    2r> >r >r ;  `[img width=100% [rswapdump.png]]
+The symbol table entry begins at ($6275) with the two-byte code field address ''($0C7A)'', the name field length/flag byte ''($05)'', and at ''$6276'' is the word name itself, ''RSWAP'', a very simple structure that can be traversed sequentially by adding length+3 to skip to the next word in the list.  The end of the symbol table is signaled by a CFA of ''$0000''
+
+
+
+CFA ($0c7a)
+
+```
+hex ' 2dup   dup >name . . 5b75 120e  ok
+5b70 cr 10 dump
+1208 cr
+```
+
+Those are the name field address (NFA), and the code field address (CFA),
+respectively.5b
+
+|!name field|"DUP"|
+|!code field|"DUP' "|
+|!name field|"DUP"|
+|!name field|"DUP"|
+|!name field|"DUP"|
+[[REHASH]] rebuilds the symbol table by first copying all symbols to [[PAD]] in Pearson hash
+order, then copying it back to [[SYMTAB]] in order of ascending size.  This [[rehash|REHASH]] mechanism is also used at [[startup|COLD]] to organize the dictionary.
+
+Following such a rebuild, new symbols are appended sequentially to the symbol table until it fills up and crashes into
+[[TDICT]]
+
+hex : ldump  fff8 and 10 dump ;
+cr symtab @ 20 dump ' ldump dup >name 3- ldump ldump info
+

@@ -1,0 +1,867 @@
+; pettil-interpreter.a65
+#echo .       pettil-interpreter.a65    Outer Interpreter
+
+;--------------------------------------------------------------
+#if 0
+name=~ Error messages
+tags=general,nosymbol
+PETTIL system messages, output by [[FAIL]]
+#endif
+errptr
+    .word msg00,msg01,msg02,msg03,msg04,msg05,msg06,msg07
+    .word msg08,msg09,msg10,msg11
+msg00
+    .byt msg01-*-1
+    .asc CR,"WELCOME TO PETTIL"
+#ifdef ROM_PET_4
+    .asc " (4.0 ROM)",CR
+#endif
+#ifdef ROM_PET_UPGRADE
+    .asc " (UPGRADE ROM)",CR
+#endif
+#ifdef ROM_PET_ORIGINAL
+    .asc " (ORIGINAL ROM)",CR   -- good luck on this
+#endif
+#ifdef ROM_VIC20
+    .asc " FOR VIC-20!",CR
+#endif
+#ifdef ROM_C64
+    .asc " C=64!",CR
+#endif
+msg01
+    .byt msg02-*-1
+    .asc "STACK UNDERFLOW"
+msg02
+    .byt msg03-*-1
+    .asc "STACK OVERFLOW"
+msg03
+    .byt msg04-*-1
+    .asc "NOT FOUND"
+msg04
+    .byt msg05-*-1
+    .asc "DEFINITION UNFINISHED"
+msg05
+    .byt msg06-*-1
+    .asc "COMPILATION ONLY"
+msg06
+    .byt msg07-*-1
+    .asc "UNPAIRED CONDITIONALS"
+msg07
+    .byt msg08-*-1
+    .asc "CAN'T FORGET BELOW FENCE"
+msg08
+    .byt msg09-*-1
+    .asc "BLOCK OUT OF RANGE"
+msg09
+    .byt msg10-*-1
+    .asc "UNCLOSED QUOTES"
+msg10
+    .byt msg11-*-1
+    .byt "CORRUPT VIRTUAL MEMORY"
+msg11
+    .byt msg12-*-1
+    .byt "BAD ADDRESSING MODE"
+msg12
+
+;--------------------------------------------------------------
+#if 0
+name=ERROR.MSG
+stack=( -- addr flag )
+tags=interpreter,ext,nosymbol
+Instead of RESTART performing an ABORT at the end to start the
+QUIT-INTERPRET loop, it does a FENCE @ (FORGET) and sends us here.
+
+If WARNING is non-zero, FAIL executes it, which also points here.
+When WARNING is 0, FAIL will perform
+
+WARNING @  ?: WARNING STARTUP  @ EXECUTE
+
+* Prints an error message
+* performs ABORT
+```
+```
+#endif
+#include "align.i65"
+_errormsg
+    jsr enter
+#include "page.i65"
+    .word twostar
+#include "pass.i65"
+    .word plit
+    .word errptr
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _stringdot
+#include "pass.i65"
+    .word _abort
+
+;--------------------------------------------------------------
+#if 0
+name=-->
+stack=( -- )
+tags=interpreter
+flags=immediate
+An immediate word which loads the next screen of Forth source
+
+!!! pronounced: "next-block"
+
+```
+: -->   ( -- )
+    blk 1+!  >in off  source! ; immediate
+```
+: -->
+    ?loading 0 in !
+    b/scr blk @ over mod -
+    blk +! ;
+L18be .byt 3 | bit7 | bit6
+ .byt "--",">"|bit7
+ .word L1885
+DASHDASHGT
+ .word DOCOL
+ .word QLOADING
+ .word ZERO
+ .word IN
+ .word STORE
+ .word BSCR
+ .word BLK
+ .word FETCH
+ .word OVER
+ .word MOD
+ .word NEGATE
+ .word BLK
+ .word PSTORE
+ .word SEMIS
+#endif
+#include "align.i65"
+_nextblock
+    jsr enter
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word backslash
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SKIP
+stack=( delim -- offset )
+tags=nosymbol
+`addr1` is the starting address in the input stream where up
+to `size1` bytes are skipped *WHILE* they match `delim`.  Returns
+`addr2` as the address of the first non-matching character and
+`count2` as the remaining number of bytes in the buffer.
+#endif
+skip
+    lda #$F0                    ; BNE opcode
+    .byt $2C                    ; BIT abs
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=SCAN
+stack=( delim -- offset )
+tags=self-modifying,nosymbol
+Pass through the input stream until `delim` either matches (or
+for `skip`, does not match).  Leave the `offset` into the line
+buffer on the stack.
+#endif
+scan
+    lda #$D0                    ; BEQ opcode
+    sta skipscan03              ; #selfmodifying
+    ldy ACC+2*N3                ; `in`
+    dey
+skipscan01
+    iny
+    cpy userspan                ; Carry true at end of line
+    bcc skipscan02
+    lda #0                      ; oh, we done
+    sta userspan
+    beq skipscan04
+skipscan02
+    lda (ACC+2*N6),y            ; get char from buffer
+    eor tos                     ; compare to character we seek
+skipscan03
+    bvc skipscan01              ; dummy opcode, replaced by BNE or BEQ
+skipscan04
+    sty ACC+2*N3                ; found char !, move `in`
+    tya
+    jmp put0a
+
+;--------------------------------------------------------------
+#if 0
+name=\
+stack=( "text$ -- )
+tags=extra,todo
+flags=immediate,locals
+set SPAN to 0
+set N8 to 0
+
+An immediate word that ignores all text following `\` on the current line
+
+Begins a Forth comment, terminated by the end of the current logical line
+
+When the entered line contains `\`, [[INTERPRET]] will not echo ` ok`
+
+[[\]] also signals empty line buffer to outer interpreter
+
+```
+: \   ( -- )
+   span off ; immediate
+```
+#endif
+backslash
+    lda #0
+    sta userspan                ; ~wut? does not bother with high byte of SPAN
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=?REFILL.SETUP
+stack=( blk -- buf )
+tags=interpreter,nosymbol
+* 'force refill' check first -- exit to outer caller ( of INTERPRET )
+* 'end of line/buffer' check next
+* 'processing' do nothing else, exit
+
+* `TRUE` refilled
+* `FALSE` did not refill
+
+* set things up BLK IN SPAN (n5 n6 n7)
+* blk=0 ? TIB : TIB+80 (n4)
+
+: refill?   ( -- flag )
+    #out \ aka span 2+
+    refillq09
+
+
+$C4 PNT 16-bit address of current line
+$C6 PNTR position of cursor along line
+$D4 DFLTN current device# (set to 3)
+$D5 LNMX length of current line
+
+    lin dup 1+! @
+    25 <
+    if
+        lin @                   ( lin )
+        dup >bit blkbuf + cbit@ ( lin flag )
+        swap 24 = or            ( flag )
+        if
+            forty
+        else
+            lin 1+! eighty
+        then                    ( 40|80 )
+        dup    LNMX c!
+        3      DFLTN c!
+        @lin @ PNT dup dup>r 3c@ >r >r !
+        0      PNTR c!          ( 40|80 )
+        cas2buf over 2dup expect -trailing
+        r> r> r> 3c!            ( restore screen cursor )
+        @lin +!
+        span @  #lin !
+    then ;
+
+LNMX
+
+This word relies on user variables `blk` `in` and `span` being adjacent and
+in the right order in the userarea block #userorder
+
+
+
+```
+\ ?refill - reloads either TIB or SIB when SPAN = 0
+: ?refill.setup   ( span+2 buf -- flag )
+    blk @  ?: sib tib
+    span @  0=
+    if
+        refill
+        exit
+    then
+
+    span @  >in @  >
+    if
+        \ end of line
+    then ;
+```
+#endif
+qrefillsetup
+    brk
+    .byt ld | TOS               ; buf
+    .byt st | N6                ; where the REFILL is going, if there is one
+    .byt pull                   ; 80
+    .byt st | N5                ; number of chars to EXPECT, if we REFILL
+    .byt pull                   ; span
+    .byt popd | TOS             ; @span
+    .byt st | N4
+    .byt popd | TOS             ; @in
+    .byt st | N3
+    .byt popd | TOS             ; @blk
+    .byt st | N2
+    .byt st | TOS
+    .byt rtn
+    lda userspan
+    jmp nplus
+
+                                ; Screen input happens here.
+                                ; Now is the time on Sprockets when we set up
+                                ; a fake screen somewhere in the `blkbuf` and
+                                ; point CHRIN to that, with the same `80 expect`
+                                ; that keyboard uses. `N5` points to SIB
+
+;--------------------------------------------------------------
+#if 0
+name=?REFILL
+stack=( -- )
+tags=interpreter,nosymbol
+|Three possible states coming in|<|<|h
+|1|span is 0||
+|2|||
+|3|||
+
+* 'force refill' check first -- exit to outer caller ( of INTERPRET )
+* 'end of line/buffer' check next
+* 'processing' do nothing else, exit
+
+
+* TIB Terminal Input Buffer
+** aka 'user I/O from the PET keyboard'
+* PETSCII screens
+** extracted from virtual memory buffer as screen `packets`
+** `interpret` processes one 40 or 80 byte `logical line` at a time
+** line-wrap is treated as whitespace
+* Forth blocks
+** 16x64 ASCII blocks //(future support planned)//
+* SEQ ASCII file //(future support planned)//
+** continuous text stream from SEQ file //(future support planned)//
+
+```
+: ?refill   ( -- )
+    span @ ?exit
+    query ;
+```
+#endif
+#include "align.i65"
+_qrefill
+    jsr enter
+#include "page.i65"
+    .word span
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _qexit
+#include "pass.i65"
+    .word _query
+#include "pass.i65"
+qrefill01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NAME
+stack=( char -- nfa | false )
+tags=outer,extra
+Parse the next `word` from the `input stream`.  Return `false` if the
+`input stream` is exhausted, or the `nfa` of the found word, built
+directly within the input stream.  Advance `in` past the parsed `word`.
+
+Leading delimiters are ignored.   If the delimiter is not found the value of
+IN is the size of the input stream.  If the delimiter is found IN is
+ adjusted to indicate the offset to the character following
+ the delimiter.  `span` is unmodified.
+
+In PETTIL `name` replaces the function of Forth-83 //required// reserved
+word `word`, which is //omitted//.
+
+As much of the `ugly` as I could for the `blk` conspiracy goes in here.
+Isolating conspiracy support in as few words as possible will hopefully
+reduce overall system complexity and present clear transitions between the
+phases of the outer interpreter.
+
+```
+: name   ( nfa -- xfa flag )
+    dup skip dup>r 1- <n6 +
+    swap scan r> - >n8 dup
+    if  over <n3 1+ in ! c!
+    else
+        nip
+    then ;
+
+: name
+    ?refill
+    dup skip dup>r 1- <n6 +
+    swap scan r> - >n8 dup
+    if
+        over <n3 1+ in ! c!
+    else
+        nip
+    then
+```
+#endif
+#include "align.i65"
+_name
+#include "align.i65"
+    jsr enter
+#include "page.i65"
+    .word _qrefill
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word skip
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word oneminus
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N6
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word scan
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word minus
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N8               ; set `len` (for `bloom#`)
+#include "page.i65"
+    .word dup
+#include "pass.i65"
+    .word qbranch
+    .byt <(name01-*+1)
+#include "page.i65"
+    .word over
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N3               ; get `in`
+#include "page.i65"
+    .word oneplus               ; bump `in` past the ' ' that ended the token.
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word cstore
+#include "pass.i65"
+    .word branch
+    .byt <(name02-*+1)
+#include "page.i65"
+name01
+    .word nip
+#include "pass.i65"
+name02
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=INTERPRET
+stack=( -- )
+tags=fig,forth-83,interpreter
+The Forth interpreter loop
+
+Interpret only exits (without flags) when the one-line input buffer is empty
+
+
+consistent eager-loaded approach
+[[TIB]] source comes already loaded from [[QUIT]]
+[[BLK]] source comes already loaded from [[BLOCK]]
+[[SCR]] source will eager-load each line from the block buffer, already loaded
+by [[BLOCK]]
+
+```
+create jumptable  next ,   dlit ,  drop ,  droplit ,
+                \ double  double,  single    single,
+: interpret   ( -- )
+    begin
+        ?stack                  \ make sure things are okay
+        blk 'n2 6 cmove
+        \ refill? leaves false when we're loading a screen
+        \ refill? leaves true right after it does : QUERY  TIB 80 EXPECT ;
+        <.N8 ( flag ) ?: exit query  ?exit  \ get out if we refilled TIB buffer
+                                \ get something in the line buffer
+                                \ N8 contains SPAN after REFILL?
+        bl name   ( addr )
+        dup c@    ( addr len )  \ WORD returns both zeroes zero when EOT
+    while
+        found ?dup
+        if        ( cfa findflag )
+            \               find -1    find +1
+            \             ____________________
+            \ state -1   | compile     execute
+            \ state 0    | execute     execute
+            compiling? <>  ?: execute ,xt
+        else      ( here )
+            number
+            jumptable  dpl @ 0< 2*  compiling? + 2* -
+            @ execute
+        then
+    repeat
+    drop ;
+
+: interpret
+    begin
+        ?stack  ?refill
+        bl name  ?dup           ( nfa true | 0(eob) false )
+    while
+        found ?dup              ( nfa -1|0|1 [ -1|1 ])
+        if  compiling? <>  ?:  execute ,xt
+        else
+            number
+            jumptable
+            dpl @ 0< 2*
+            compiling? + 2* -
+            @ execute
+        then
+    repeat  [compile] \ ;       \ span off
+
+: interpret   ( -- )
+    begin
+        ?stack  ?refill
+        bl name  ?dup           ( nfa true | 0(eob) false )
+    while
+        found ?dup              ( cfa -1|0|1 [ -1|1 ])
+        if  compiling?  <>      \ compiling & normal            ,xt
+                                \ interpret & normal            execute
+                                \ compiling & immediate         execute
+                                \ interpret & immediate         execute
+            ?: execute ,xt      ( -- )
+        else
+            number
+            jumptable           \ $%-<>nr., prefixes will be handled by `number`
+            dpl @ 0< 2*         \ this will be another world, s/b okay for now
+            compiling? + 2* -
+            @ execute
+        then
+    repeat  [compile] \ ;       \ span off
+```
+#endif
+#include "align.i65"
+_interpret
+    jsr enter
+#include "page.i65"
+    .word _tickstream
+#include "pass.i65"
+    .word clit
+    .byt ACC+2*N5
+#include "page.i65"
+    .word twostore              ; `n6` = buf; `n5` = size
+interpret01
+    .word qstack
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word _name                 ;( nfa | 0 )
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word qbranch
+    .byt <(interpret04-*+1)
+#include "page.i65"
+    .word _foundq               ;( nfa 0 ; not found )
+                                ;( cfa -1 ; found, normal )
+                                ;( cfa 1 ; found, immediate )
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word qbranch
+    .byt <(interpret02-*+1)
+#include "page.i65"
+    .word compilingq
+#include "page.i65"
+    .word ne
+#include "pass.i65"
+    .word pquerycolon
+    .word execute
+    .word _xtcomma
+#include "pass.i65"
+    .word branch
+    .byt <(interpret03-*+1)
+#include "page.i65"
+interpret02
+    .word _number
+#include "pass.i65"
+    .word plit
+    .word interpret06           ; case table
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zlt
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word compilingq
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word execute
+#include "pass.i65"
+interpret03
+    .word branch
+    .byt <(interpret01-*+1)
+#include "pass.i65"
+interpret04
+    .word exit
+interpret06
+    .word next
+    .word _dliteral
+    .word drop
+    .word _droplit
+
+;--------------------------------------------------------------
+#if 0
+name=QUIT
+stack=( -- )
+tags=forth-83,interpreter
+This is the infinite outer interpreter loop:
+      - resets the return stack (RP!)
+      - outputs a carriage return (CR)
+      - waits for a line of input (QUERY)
+      - interprets that line
+
+```
+: quit
+    rp! blk 12 erase            \ erases line editing uservars
+    begin                       \ `interpret` will get new line from keyboard
+        interpret
+        compiling? 0=
+        if  ." OK" then
+    again ;
+```
+#endif
+#include "align.i65"
+_quit
+    jsr enter
+#include "page.i65"
+    .word rpstore               ; reset return stack pointer
+#include "page.i65"
+    .word blk
+#include "pass.i65"
+    .word clit
+    .byt 12                     ; `blk` `in` `span` `#out` `#line` `editing`
+#include "page.i65"
+    .word _erase
+#include "page.i65"
+quit01                          ; BEGIN
+    .word _interpret            ; outer interpreter main loop
+#include "page.i65"
+    .word compilingq
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word qbranch               ; IF
+    .byt <(quit01-*+1)
+#include "pass.i65"
+    .word _pdq                  ; both blk and state must be 0 to see this
+    .byt (quit02-*-1)
+    .asc    " OK",CR
+quit02
+#include "pass.i65"             ; THEN AGAIN
+    .word branch
+    .byt <(quit01-*+1)
+;#include "pass.i65"            ; you can check out any time you like
+;    .word exit                 ; but you can never leave
+
+;--------------------------------------------------------------
+#if 0
+name=ABORT
+stack=( -- )
+tags=fig,forth-79,forth-83,interpreter,startup
+* Clears data stack
+* Resets vocabulary to [[CORE]]
+* performs a [[QUIT]]
+
+Pretty standard fare, this is where things begin in the outer interpreter.
+Errors display as either a numbered error (CORE) or a message (TDICT)
+
+```
+    ldx usersp0
+    dex
+
+```
+#endif
+#include "align.i65"
+_abort
+    jsr enter
+#include "page.i65"
+    .word spstore               ; reset data stack
+#include "page.i65"
+    .word forth                 ; set `vocabs`
+#include "page.i65"
+    .word definitions           ; set `current`
+#include "pass.i65"
+    .word _quit
+
+;--------------------------------------------------------------
+#if 0
+name=LOAD
+stack=( u -- )
+tags=interpreter,forth-83
+
+ The contents of >IN and BLK , which locate the current input
+ stream, are saved.  The input stream is then redirected to
+ the beginning of screen u by setting >IN to zero and BLK to
+ u.  The screen is then interpreted.  If interpretation from
+ screen u is not terminated explicitly it will be terminated
+ when the input stream is exhausted and then the contents of
+ >IN and BLK will be restored.  An error condition exists if
+ u is zero.  See  [[>IN]] [[BLK]] [[BLOCK]]
+
+
+
+```
+: load   ( scr -- )
+    ?dup
+    if
+    dup #blk @ > ?exit
+        blk 2@ ( >in @ ) 2>r
+        blk !  source! interpret
+        2r> ( >in ! ) blk 2!  source!
+    then ;
+
+: load   ( blk -- )
+  \ checks requested block within range 0 .. #blk or error message
+  \ pushes >in and blk to return stack
+  \ resets >in
+  \ interpret
+  \ restores blk and >in from return stack
+  0 2dup  #blk @  between? 0=
+  8 ?error
+  blk 2@ ( >in @ )  2>r
+  blk 2! ( >in off )
+  interpret
+  2r>  blk 2! ( >in ! ) ;
+```
+#endif
+#include "align.i65"
+_load
+    jsr enter
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word numblk
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+;    .word betweenq             ; use `within` instead ~wut?
+#include "page.i65"
+    .word zeq
+#include "pass.i65"
+    .word qerror
+    .byt 8
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word twofetch
+#include "page.i65"
+    .word twotor
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word twostore
+#include "page.i65"
+    .word _interpret            ; interpret has two clients, LOAD and QUIT
+#include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word twostore
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?CHAR
+stack=( char -- addr )
+tags=compiler,nosymbol
+Scans ahead in the input stream until `char` is found.  Moves >IN beyond
+that character.
+#endif
+#include "align.i65"
+_qchar
+    jsr enter
+#include "page.i65"
+    .word _name
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word oneplusstore
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=EXISTS?
+stack=( -- addr flag )
+tags=interpreter,ext,nosymbol
+parses the next token in the input stream.  Returns either the
+address of the (unfound) token at HERE and a 0, or the code
+field address of the word and -1 for normal, +1 for immediate
+words
+
+```
+: exists?
+   bl word dup c@ ?: find 0 ;
+```
+#endif
+#include "align.i65"
+_existsq
+    jsr enter
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word _name            ; ~~2
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "pass.i65"
+    .word pquerycolon
+    .word _foundq
+    .word zero
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name='
+stack=( -- cfa )
+tags=forth-83
+Parse the next token in the input stream and search for it,
+returning the CFA if successful.  Otherwise aborts with the
+message "NOT FOUND"
+
+```
+: '   ( "name" -- cfa )
+    exists? 0=  3 ?error ;
+```
+#endif
+#include "align.i65"
+_tick
+    jsr enter
+#include "page.i65"
+    .word _existsq
+#include "page.i65"
+    .word zeq
+#include "pass.i65"
+    .word qerror
+    .byt 3                      ; NOT FOUND
+#include "pass.i65"
+    .word exit
+
+#print (*-errptr)

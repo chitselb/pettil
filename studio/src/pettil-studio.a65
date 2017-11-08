@@ -1,0 +1,391 @@
+; pettil-studio.a65
+#echo .       pettil-studio.a65
+#echo .       PETTIL Developer Studio (intepreter, compiler, editor, assembler)
+
+#include "../../core/src/options.def"
+#include "../../core/src/inc/sweet16.def"
+#include "../../core/src/inc/cbm.def"
+#include "../../tmp/pettil-core.def"
+#include "inc/pettil-studio.def"
+
+; see core/src/options.def
+
+hitop=VIDRAM-$1600              ; <--- #ResizeTdict here, also lower down
+
+    .word hitop-2               ; load address
+    .word tdictend-hitop        ; size of the transient dictionary in bytes
+                                ; startup CFA (LIFTOFF) from `pettil-core` COLD
+*=hitop
+#echo Transient Dictionary
+#print *
+
+;--------------------------------------------------------------
+#if 0
+name=STUDIO
+stack=( -- )
+tags=system,startup,throwaway,nosymbol
+First time startup code
+
+```
+<0400> core
+<1B68> fence
+{ disappearing banner startup code }
+<1F6F> there
+hitop-2
+tdict.size
+<
+{ deadbeef }
+<56FE> vmbuf
+
+<00> zeropage
+<01> stack
+<0200> buffers
+<0400> core
+<1B80> here
+{ disappearing banner startup code }
+{ deadbeef }
+<56FE> vmbuf
+<5700> blkbuf
+<5B00> symtab
+<6900> init & deadbeef
+<6A00> studio
+<8000> VIDRAM
+
+: studio
+    ['] there+2 @+ + 32 - symtab !
+    chilly cmove
+    ." banner message"
+    cold
+```
+#endif
+_studio
+    jsr enter
+#include "pass.i65"
+    .word plit
+    .word there+2
+#include "page.i65"
+    .word fetchplus
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word symtab                ; points to unindexed symbol list
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word _splash
+#include "pass.i65"
+    .word plits
+    .byt 9
+    .word _warm                 ; !
+    .word userstartup
+    .word _mackinac             ; !
+    .word userwarning
+    .word _rehash               ; !
+    .word coldpatch
+    .word user0tdict            ; cmove
+    .word usertdict
+    .word utdict-user0tdict
+#include "page.i65"
+    .word cmove                 ; reset `tdict` `tdp` `#voc`
+#include "page.i65"
+    .word store                 ; patch `cold` to invoke `rehash`
+#include "page.i65"
+    .word store                 ; set `warning` to `mackinac`
+#include "page.i65"
+    .word store                 ; set `startup` to `warm`
+#include "pass.i65"
+    .word restart               ; and bounce it (#3) (fake)`warm`
+
+;--------------------------------------------------------------
+#if 0
+name=MACKINAC
+stack=( -- )
+tags=system,startup,nosymbol
+final bridge between lower `core` and upper `tdict` dictionaries
+
+6976
+5C20
+d56
+
+41CF
+347A
+d55
+
+gross trick: the error path out of `warm` gets us here.  Once here,
+fix the error handler (`warning`) and `warm` now kicks out to `abort`
+
+other gross trick:  `(forget)`
+#endif
+#include "align.i65"
+_mackinac
+    jsr enter
+#include "page.i65"
+    .word drop                  ; `warm` sent us an error #
+#include "page.i65"
+    .word here                  ; `here` now points to `there`
+#include "page.i65"
+    .word _pforget
+#include "pass.i65"
+    .word plits
+    .byt 9
+    .word userdp
+    .word userfence             ; @ swap !
+    .word pforgetpass2
+    .word pfpatchb              ; !
+    .word pforgetpass1
+    .word pfpatcha              ; !
+    .word _errormsg
+    .word userwarning           ; !
+    .word MAINIRQ               ; irq!
+#include "page.i65"
+    .word irqstore              ; restore default IRQ handler
+#include "page.i65"
+    .word store                 ; set `warning` to `error.msg`
+#include "page.i65"
+    .word store                 ; patch `(forget)` pass1
+#include "page.i65"
+    .word store                 ; patch `(forget)` pass2
+#include "page.i65"
+    .word fetch                 ; fix DP to reclaim startup code area
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word _deadbeef
+#include "pass.i65"
+    .word restart               ; restart #4 -> `warm`
+
+;--------------------------------------------------------------
+#if 0
+name=(FORGET).PASS
+stack=( -- )
+tags=system,startup,nosymbol
+
+```
+    .word splotch
+    .word cfetch
+    .word qbranch
+    .byt <(pfpass01-*+1)
+    .word splotch
+    .word coff
+    .word _doletter
+```
+#endif
+#include "align.i65"
+_pfpass
+    jsr enter
+#include "page.i65"
+    .word _qtrigger
+#include "pass.i65"
+pfpass01
+    .word zpfrom
+    .byt ACC+2*N4
+#include "pass.i65"
+    .word pquerycolon
+    .word pforgetpass1
+    .word pforgetpass2
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DEADBEEF
+stack=( -- )
+tags=startup,nosymbol
+Fill available memory with the 32-bit value `$DEADBEEF` . Discarded after
+running once at startup.  Used to assist in debugging.
+
+#endif
+#include "align.i65"
+_deadbeef
+    jsr enter
+;#include "pass.i65"
+;    .word clit
+;    .byt <(next-1)
+;#include "page.i65"
+;    .word tor
+#include "pass.i65"
+    .word _pdq
+    .byt deadbeef00-*-1
+    .asc HOME,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN
+    .asc CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN
+    .asc CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRLEFT,CRSRLEFT,CRSRLEFT
+    .asc CRSRLEFT,CRSRLEFT,RVSON,"DEAD",CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT
+deadbeef00
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "pass.i65"
+deadbeef01
+    .word dlit
+    .word $dead,$beef
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word four
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word lt
+#include "pass.i65"
+    .word qbranch
+    .byt <(deadbeef02-*+1)
+#include "page.i65"
+    .word dashrot
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word twostore
+#include "pass.i65"
+    .word branch
+    .byt <(deadbeef01-*+1)
+#include "page.i65"
+deadbeef02
+    .word drop
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word twostore
+#include "pass.i65"
+    .word _pdq
+    .byt deadbeef03-*-1
+    .asc    RVSOFF,"BEEF",CR,CR,CR,CR
+deadbeef03
+#include "pass.i65"
+    .word exit
+
+#print *
+    .dsb hitop+$100-*,$EA       ; #ResizeTdict
+#print *
+
+;
+;
+;
+;
+;
+;
+;         .     .              .            .
+;                        .             .                   .
+;   .     .        .             .              .     .
+;   .        .        .        .        .        .        .
+;.     .     .     .     .     .     .     .     .     .     .
+;   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .
+; .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .
+;. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+;.. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. ..
+;... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ..
+;..............................................................
+;-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.
+;--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--
+;---.---.---.---.---.---.---.---.---.---.---.---.---.---.---.--
+;--------------------------------------------------------------
+;---=---=---=---=---=---=---=---=---=---=---=---=---=---=---=--
+;=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=-
+;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
+;===-===-===-===-===-===-===-===-===-===-===-===-===-===-===-==
+;==============================================================
+;==============================================================
+;XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+;==============================================================
+; code above this point is void memory after startup
+#print *
+
+#if 0
+name=TDICTBASE
+stack=( -- )
+tags=nosymbol
+Bottom edge of PETTIL Studio.  [[TDICT]] contains this address.
+#endif
+tdictbase
+
+;--------------------------------------------------------------
+user0tdict      .word tdictbase
+user0tdp        .word tdictend
+user0numvoc     .word 2         ; `editor` & `assembler`
+utdict
+
+; ---- copy from initialization values
+usertdict       = uendcore+0    ;1
+usertdp         = uendcore+2    ;2
+usernumvoc      = uendcore+4    ;3
+
+; ---- WARM will set to 0
+usercsp         = uendcore+6
+usercurrent     = uendcore+8
+userredefined   = uendcore+10   ; ~wut? eliminate
+usernewest      = uendcore+12
+userstate       = uendcore+14
+uservocabs      = uendcore+16   ; 10 bytes
+
+; ---- RESTART does not mess with these
+usersymnew      = uendcore+26   ;1  keep.
+usersymtail     = uendcore+28   ;2  adjacent. [[SYMTAIL!]]
+userbloom       = uendcore+30   ; 8 bytes (64 bits)
+userpassbits    = uendcore+38   ; 4 bytes (32 bits)
+                                ;+42
+utend = uendcore+42
+
+;--------------------------------------------------------------
+#if 0
+name=WARM
+stack=( -- )
+tags=startup
+
+#endif
+#include "align.i65"
+_warm
+    jsr enter
+#include "pass.i65"
+    .word plits
+    .byt 5
+    .word usercsp               ; erase
+    .word usersymnew-usercsp
+    .word user0tdict            ; cmove
+    .word usertdict
+    .word utdict-tdictbase
+#include "page.i65"
+    .word cmove                 ; reset `tdict` `tdp` `#voc`
+#include "page.i65"
+    .word _erase                ; reset
+#include "page.i65"             ; so it only happens one time, at startup.
+    .word zero
+#include "pass.i65"
+    .word fail
+
+;==============================================================
+#include "pettil-user.a65"
+#print *
+#include "pettil-dictionary.a65"
+#print *
+#include "pettil-interpreter.a65"
+#print *
+#include "pettil-compiler.a65"
+#print *
+#include "pettil-utils.a65"
+#print *
+#include "pettil-editor.a65"
+#print *
+#include "pettil-assembler.a65"
+#print *
+
+;--------------------------------------------------------------
+#if 0
+name=TDICTEND
+stack=( -- )
+tags=nosymbol,nosymbol
+This label marks the upper boundary of the transient dictionary ([[TDP]])
+#endif
+tdictend
+;==============================================================
+
