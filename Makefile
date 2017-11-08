@@ -1,7 +1,4 @@
-RUBY = /home/chitselb/.rbenv/shims/ruby
-#RUBY = /usr/bin/ruby
-#RUBY = /usr/local/bin/ruby
-#RUBY = /home/chitselb/.rvm/rubies/ruby-2.2.1/bin/ruby
+
 SHELL = /bin/bash
 
 all:  clean pettil launch tiddlypettil
@@ -15,37 +12,48 @@ clean:
 	mkdir ./tmp/
 
 launch: clean pettil
-	cd ./tmp  &&  /usr/local/bin/xpet \
+#	cd ./tmp  &&  /usr/local/bin/xpet \
 		-verbose \
 		-1 ../tapes/2017-02.tap \
-		-warp \
 		-moncommand pettil.mon \
-	pettil.obj &
-#	cd ./tmp  &&  /usr/bin/xpet       \
+	pettil.prg &
+#		-warp
+	cd ./tmp  &&  /usr/bin/xpet       \
 		-verbose \
 		-1 ../tapes/2017-02.tap \
-		-warp \
 		-moncommand pettil.mon \
-	pettil.obj &
+		-warp \
+	pettil.prg &
 
 pettil:
 #	echo . Phase I
 #	echo . . . . Building PETTIL core = PETTIL-CORE.OBJ
-	cd ./src/ && xa ./pettil-core.a65 -o ../tmp/pettil-core.obj -e ../tmp/pettil-core.err -l ../tmp/pettil-core.lab
+	cd ./core/src/ && xa ./pettil-core.a65 \
+		-o ../../tmp/pettil-core.obj \
+		-e ../../tmp/pettil-core.err \
+		-l ../../tmp/pettil-core.lab
 #	echo . . . . Generating core labels = PETTIL-CORE.DEF
-	${RUBY} xap.rb
+	ruby ./tools/xap.rb
+	ls -la ./tmp/
 #	echo . Phase II
 #	echo . . . . Building PETTIL temporary dictionary = PETTIL-TDICT.OBJ
-	cd ./src/ && xa ./pettil-tdict.a65 -o ../tmp/pettil-tdict.obj -e ../tmp/pettil-tdict.err -l ../tmp/pettil-tdict.lab
+	pwd && \
+	cd ./studio/src/ && \
+	xa ./pettil-studio.a65 \
+	  -o ../../tmp/pettil-studio.obj \
+	  -e ../../tmp/pettil-studio.err \
+	  -l ../../tmp/pettil-studio.lab
 #	echo . Phase III
 #	echo . . . . Generating combined symbol table = PETTIL.SYM
-	${RUBY} xap.rb
-#	echo . . . . Packing PETTIL.OBJ binary = PETTIL-CORE.OBJ + PETTIL-TDICT.OBJ + PETTIL.SYM
-	ls -la ./tmp/pettil-core.obj
-	ls -la ./tmp/pettil-tdict.obj
-	ls -la ./tmp/pettil.sym
-	cat ./tmp/pettil-core.obj ./tmp/pettil-tdict.obj ./tmp/pettil.sym > ./tmp/pettil.obj
-	ls -la ./tmp/pettil.obj
+	ruby ./tools/xap.rb
+#	echo . . . . Packing PETTIL.PRG binary = PETTIL-CORE.OBJ + PETTIL-TDICT.OBJ + PETTIL.SYM
+	ls -la ./tmp/pettil-core.obj ./tmp/pettil-studio.obj ./tmp/pettil.sym
+	cat \
+		./tmp/pettil-core.obj \
+		./tmp/pettil-studio.obj \
+		./tmp/pettil.sym \
+		> ./tmp/pettil.prg
+	ls -la ./tmp/pettil.prg
 	sort ./tmp/pettil.mon > ./tmp/t.t
 	if [ -e ./pettil.dbg ]; then cat ./pettil.dbg >> ./tmp/t.t; fi
 	mv ./tmp/t.t ./tmp/pettil.mon
@@ -65,4 +73,5 @@ tiddlypettil:
 	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./docs/tiddlypettil.html
 
 publish:
-	scp ./docs/tiddlypettil.html www-puri:chitselb.com/current/public/files/
+	scp ./docs/tiddlypettil.html www-data@puri.chitselb.com:chitselb.com/current/public/files/
+#	scp ./docs/tiddlypettil.html www-puri:chitselb.com/current/public/files/
