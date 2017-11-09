@@ -805,6 +805,15 @@ found
 not found
     vocabs+ false
 
+`n4l` seeking length
+`n4h` flag: dictionary segment is sorted by size (or not)
+`n3` current nfa
+`n5l` seeking vocab
+`n5h` vocabs index
+`n6` buf
+`n7` seeking name
+`n8l` current length
+`n8h`
 #endif
 pseek
     lda ACC+2*N4+1              ; toggle sorted/unsorted flag in `n4h`
@@ -820,7 +829,7 @@ pseek00
     jsr symlens
     beq pseek08                 ; not found!
     tay
-    ror                         ; save the vocab flag for later
+    ror                         ; save the C (vocab) flag for later
     cpy ACC+2*N4                ; compare curr vs seek lengths
     beq pseek02                 ; same length? check it
     bcc pseek01                 ; curr length is shorter, keep try
@@ -828,10 +837,10 @@ pseek00
     bpl pseek08
 pseek01
     lda #3
-    jsr sympluss
+    jsr sympluss                ; next!
     bne pseek00                 ; bra
 pseek02
-    asl
+    asl                         ; restore C (vocab) flag from before
     bcc pseek03
     lda ACC+2*N5                ; vocab we are looking for
     iny
@@ -853,34 +862,56 @@ pseek09
 
 ;--------------------------------------------------------------
 #if 0
-name=NEXTVOCAB
-stack=( -- flag )
+name=>THREAD
+stack=( symtab -- thread )
 tags=interpreter,forth-83,conspiracy,nosymbol
-
-nextvocab
-    brk
-    .byt ldi | N6
-    .byt st | N5                ; current vocab
-    .byt nxt
-
-nextvocab
-    ldy ACC+2*N5+1
-    lda (ACC+2*N6),y
-    sta ACC+2*N5
-    sty ACC+2*N5+1
+Returns `true` if there is a next vocabulary
+#endif
+tothread
+    ldy #1
+    lda (ACC+2*N7),y            ; use `nfa` in `n7`, get first character
+    and #$0F                    ; simplified replacement for Pearson hash
+    asl                         ; *2
+    sta tos                     ; `symtab` always at a page boundary
     jmp next
 
+;--------------------------------------------------------------
+#if 0
+name=IMMEDORNOT
+stack=( true -- -1|+1 )
+tags=interpreter,forth-83,conspiracy,nosymbol
+Returns +1 if the immediate bit is set on current `nfa`
+Otherwise returns -1
+#endif
+immedornot
+    ldy #0
+    lda (ACC+2*N3),y            ; length/flags of curr `nfa`
+    and #$20                    ; immediate?
+    lsr
+    lsr
+    lsr
+    lsr                         ; divide by 16, $02 when immediate
+    jmp nplus                   ; add 0 or 2 to tos
+
+;--------------------------------------------------------------
+#if 0
+name=NEXTVOCAB?
+stack=( -- flag )
+tags=interpreter,forth-83,conspiracy,nosymbol
+Returns `true` if there is a next vocabulary
 #endif
 nextvocab
     jsr slip                    ; leave room for the flag
-    ldy ACC+2*N5
-    beq pseek08                 ; true -- last vocab
-    ldy ACC+2*N5+1
-    lda (ACC+2*N6),y
-    sta ACC+2*N5
+    ldy ACC+2*N5                ; `n5` is current vocabulary
+    beq nextvocab01             ; true -- last vocab
+    ldy ACC+2*N5+1              ; `n5h` is vocabs index
+    lda uservocabs,y
+    sta ACC+2*N5                ; new current vocabulary
     iny
-    sty ACC+2*N5+1
-    bne pseek07                 ; false -- another vocab here
+nextvocab01
+    sty ACC+2*N5+1              ; bump vocabs index, or reset it
+    bne pseek07                 ; we got another vocab here!           false
+    beq pseek08                 ; bra                                  true
 
 ;--------------------------------------------------------------
 #if 0
@@ -894,33 +925,6 @@ tags=interpreter,forth-83,conspiracy,nosymbol
     or the `cfa` of (found) `nfa`.
         Flag is +1 for immediate,
         -1 for not so much
-
-addr1 is the address of a counted string, which is the word we are looking  for
-to look
-up in the dictionary.
-
-if not found, addr2 is the original addr1, and flag = 0
-if found, addr2 is the code field address of the word,
-and flag = -1 for normal words, +1 for immediate words
-
-! outer interpreter
-
-name is the address of a counted string we are searching for.
-fflag is the find mode.  False means NFAs are sorted, True means check them all
-nfa is the first nfa in the hash list
-
-vocabid identifies which vocabulary to search.  Vocabularies may be
-nested.  FIND walks up the CONTEXT tree and leaves a set of hashed
-NFAs (with the vocabid appended to the name before hashing) on the stack.
-The final vocabulary searched will be core, and (FIND) will exit afterward.
-
-  0 = corelist
-
-  1 = assembler
-
-  2 = editor
-
-  3+ user vocabularies
 
 (FIND) first searches all unsorted names beginning at SYMTAIL, without regard
 to name length.  If it fails to find the word there,
@@ -954,7 +958,15 @@ if still not found, 0
     search for the nfa(n7) in `sym
 
 : found?   ( nfa -- xfa flag )
-    '(seek) init.411
+    vocabs (found?) bloomfilter cbit@
+    if
+        symnew (seek)
+        if
+            symtab @ >thread (seek)
+        if
+            nextvocab
+        repeat
+        '(seek) init.411
     bloomfilter cbit@
     if  vocabs c@+ symnew @
         set.76 swap73
@@ -965,24 +977,39 @@ if still not found, 0
 #include "align.i65"
 _foundq
     jsr enter
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N7               ; local copy of seek name
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N3               ; and another local copy of seek name
 #include "page.i65"
-    .word vocabs
+    .word one
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N5               ; `n5l` curr vocab != 0; `n5h` vocabs index = 0
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N8               ; `n5l` curr vocab != 0; `n5h` vocabs index = 0
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N4               ; `n5l` curr vocab != 0; `n5h` vocabs index = 0
 #include "page.i65"
-    .word pfoundq               ; `found?` initialization
+    .word threedrop
 #include "page.i65"
     .word _bloomfilter          ; sum of decimal digits in name % 64
 #include "page.i65"
     .word cbitfetch
 #include "pass.i65"
-    .word qbranch
+    .word qbranch               ; if
     .byt <(found04-*+1)
 #include "page.i65"
-foundq01                        ; begin
+foundq01                        ;     begin (loop through vocabs)
     .word symnew
 #include "page.i65"
     .word pseek                 ; returns inverted found? flag
 #include "pass.i65"
-    .word qbranch               ; not found? try the veal
+    .word qbranch               ;     while (branches if found)
     .byt <(foundq03-*+1)
 #include "page.i65"
     .word symtab
@@ -1001,11 +1028,11 @@ foundq01                        ; begin
     .word qbranch               ; loop if more vocabs
     .byt <(foundq01-*+1)
 #include "page.i65"
-found04
+found04                         ; then
     .word zpfrom
-    .byt ACC+2*N7
+    .byt ACC+2*N7               ; original `nfa`
 #include "page.i65"
-    .word false
+    .word false                 ; and nope, this name was not found
 #include "pass.i65"
     .word exit
 #include "pass.i65"
@@ -1020,38 +1047,6 @@ foundq03                        ; found it
     .word immedornot            ; maybe add 2 if it's immediate
 #include "page.i65"
     .word exit
-
-pfoundq
-    brk
-    .byt ldi | TOS              ; get first vocab
-    .byt st | N5                ; 1st vocab `n5l` ; 0 vocabs offset `n5h`
-    .byt ld | TOS
-    .byt st | N6                ; vocabs+1 `n6`
-    .byt ld | N8
-    .byt st | N4                ; search length `n4l`; 0 sorted/unsorted `n4h`
-    .byt pull
-    .byt st | N7                ; search NFA
-    .byt st | N3                ; search NFA
-    .byt pull
-    .byt nxt
-
-tothread
-    ldy #1
-    lda (ACC+2*N7),y
-    and #$0F
-    asl
-    sta tos                     ; `symtab` is at a page boundary
-    jmp next
-
-immedornot
-    ldy #0
-    lda (ACC+2*N3),y
-    and #$20                    ; immediate?
-    lsr
-    lsr
-    lsr
-    lsr                         ; $20 -> $02
-    jmp nplus
 
 ;--------------------------------------------------------------
 #if 0
@@ -1148,7 +1143,7 @@ _pcreate
 #include "page.i65"
     .word bl
 #include "page.i65"
-    .word _name ; _word            ; ~~1
+    .word _name
 #include "page.i65"
     .word dup
 #include "page.i65"
