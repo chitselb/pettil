@@ -135,7 +135,7 @@ fetch
 ; in; Y = offset
 ; C = clear
 ; A = low byte
-fetchya
+fetchyax
     pha
     iny
     lda (tos),y
@@ -150,9 +150,28 @@ name=DO2CONST
 stack=( -- c )
 tags=nosymbol,inner
 Runtime behavior of a word defined by 2CONSTANT
+
+; retrieve the second item on the stack, callable from a primitive
+; ( the thing that called the thing that called `callers`)
+callers
+    pla
+    sta z
+    pla
+    tay
+    pla
+    sta n
+    pla
+    sta n+1
+    tya
+    pha
+    lda z
+    pha
+    ldy #1
+    rts                 ;[19]   #callers
+
 #endif
 dotwoconst
-    pla
+    pla                         ; ~ #callers
     sta n
     pla
     sta n+1
@@ -180,19 +199,38 @@ name=DOCCONST
 stack=( -- n )
 tags=nosymbol,inner,primitive
 Runtime behavior of a word defined by CCONSTANT
+
+docconst
+    clc
+    jsr callers
+    lda (tos),y
+    bcs fetchyax
+    dey
+    bcc put                     ; bra
+
+    jsr slip
+    pla
+    sta tos
+    pla                         ; ~ #callers
+    sta tos+1
+    ldy #1
+    lda (tos),y
+    bcs fetchyax
+    dey
+    bcc put
 #endif
 docconst
     clc
     jsr slip
     pla
     sta tos
-    pla
+    pla                         ; ~ #callers
     sta tos+1
     ldy #1
     lda (tos),y
-    bcs fetchya
+    bcs fetchyax
     dey
-    bcc put
+    bcc put                     ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -597,18 +635,18 @@ The business end of colon definition words, pushes the current
 IP on the return stack and executes the word following it
 #endif
 enter
-    pla             ; [4]
-    tay             ; [2]
-    pla             ; [4]
-    sta z           ; [3]
+    pla             ;[4]
+    tay             ;[2]
+    pla             ;[4]
+    sta z           ;[3]
 enter01
-    lda ip+1        ; [3]
-    pha             ; [3]
-    lda ip          ; [3]
-    pha             ; [3]
-    lda z           ; [3]
+    lda ip+1        ;[3]
+    pha             ;[3]
+    lda ip          ;[3]
+    pha             ;[3]
+    lda z           ;[3]
     iny
-    bne jumpay      ; [3] bra `jsr enter` never goes at $xxFD
+    bne jumpay      ;[3] bra `jsr enter` never goes at $xxFD
 yikes
     sec
     bcs exit01
