@@ -14,19 +14,19 @@ msg00
     .byt msg01-*-1
     .asc CR,"WELCOME TO PETTIL"
 #ifdef ROM_PET_4
-    .asc " (4.0 ROM)",CR
+    .asc " (4.0 ROM)"
 #endif
 #ifdef ROM_PET_UPGRADE
-    .asc " (UPGRADE ROM)",CR
+    .asc " (UPGRADE ROM)"
 #endif
 #ifdef ROM_PET_ORIGINAL
-    .asc " (ORIGINAL ROM)",CR   -- good luck on this
+    .asc " (ORIGINAL ROM)"      -- good luck on this
 #endif
 #ifdef ROM_VIC20
-    .asc " FOR VIC-20!",CR
+    .asc " FOR VIC-20!"
 #endif
 #ifdef ROM_C64
-    .asc " C=64!",CR
+    .asc " C=64!"
 #endif
 msg01
     .byt msg02-*-1
@@ -272,7 +272,7 @@ $D5 LNMX length of current line
 LNMX
 
 This word relies on user variables `blk` `in` and `span` being adjacent and
-in the right order in the userarea block #userorder
+in the right order in the userarea block ~#userorder
 
 
 
@@ -469,6 +469,160 @@ name02
 
 ;--------------------------------------------------------------
 #if 0
+name=DEVNUMBER
+stack=( addr -- d )
+tags=numword,nosymbol
+
+Upper dictionary variant of `number` to support local registers and
+temporary `base` conversions in `interpret`
+
+
+>                               `>acc`   read ACC
+                                `>$8D`   write high, middle bytes of TIME
+                                `>$9D`   write $9D-9E
+                                            load/verify flag(lsb)
+                                            keyboard buffer pending #char(msb)
+>                               `>r0`   read ACC
+                                `>n5`   write high byte of TIME
+
+<                               `<r11`   read R11
+                                `<$8F`   read low byte of TIME
+
+R0 - R15
+N0 - N8
+
+
+$                               hex
+#                               decimal
+%                               binary
+
+
+```
+\ There is a string that is probably a number stored from addrlow..addrhigh
+\ convert a counted string to a signed double, keeping track of the decimal
+: number   ( addr -- d )
+                                ( addr )
+     0 0 rot count
+                                ( 0 0 addr+1 len )
+     over c@ [ ascii - ] literal  =
+                                ( 0 0 addr+1 len negative? )
+     dup>r
+                                ( 0 0 addr+1 len negative? )  ( R; negative? )
+     +                          \ adjust length for sign char )
+                                ( 0 0 addr+1 lenadj )
+     over + r@ -
+                                ( 0 0 addr+1 addrhigh+1 )
+     swap  r@ -
+                                ( 0 0 addrhigh+1 addrlow )
+     dpl on                     \ -1 means no decimal place
+     ?do
+                                ( d )
+         base @ >r
+                                ( d ) ( R; base negative? )
+         i c@  r@
+                                ( )
+         digit
+                                ( -- d currdigit~?~ flag )
+         if
+             swap r@ um*
+             drop rot
+             r@ um* d+
+             dpl @ 1+  0= negate dpl +!
+         else
+             i c@ [ ascii . ] literal  =
+             dpl @ 0<  and
+             if
+                 dpl off
+             else
+                 3 fail ( abort" not found" )
+             then
+         then
+         r> drop
+                                ( R; negative? ; discard base )
+     loop
+     r>  if  dnegate  then ;
+
+\ There is a string that is probably a number stored from addrlow..addrhigh
+\ convert a counted string to a signed double, keeping track of the decimal
+\ hook to hi-mem address to process programmer prefix characters
+
+\   -   negate
+\   +   positive
+
+\   $   temporarily set `base` to hex
+\   #   temporarily set `base` to decimal
+
+: number   ( addr -- d )
+                                ( addr )
+    prefix?
+                                \ addr -> n7
+                                ( flag )
+
+
+
+
+     0 0 rot count
+                                ( 0 0 addr+1 len )
+     over c@ [ ascii - ] literal  =
+                                ( 0 0 addr+1 len negative? )
+     dup>r
+                                ( 0 0 addr+1 len negative? )  ( R; negative? )
+     +                          \ adjust length for sign char )
+                                ( 0 0 addr+1 lenadj )
+     over + r@ -
+                                ( 0 0 addr+1 addrhigh+1 )
+     swap  r@ -
+                                ( 0 0 addrhigh+1 addrlow )
+     dpl on                     \ -1 means no decimal place
+     ?do
+                                ( d )
+         base @ >r
+                                ( d ) ( R; base negative? )
+         i c@  r@
+                                ( )
+         digit
+                                ( -- d currdigit~?~ flag )
+         if
+             swap r@ um*
+             drop rot
+             r@ um* d+
+             dpl @ 1+  0= negate dpl +!
+         else
+             i c@ [ ascii . ] literal  =
+             dpl @ 0<  and
+             if
+                 dpl off
+             else
+                 3 fail ( abort" not found" )
+             then
+         then
+         r> drop
+                                ( R; negative? ; discard base )
+     loop
+     r>  if  dnegate  then ;
+
+Inspired by what I read about PLASMA, another 6502 retro language targeting very similar Apple II hardware, I thought, well here's 32 bytes of Sweet16 register space just sitting around while Forth spins itself dizzy at the tip of the stack. Why not put in something like local variables which map to the Sweet16 register space, and have certain sets of primitives like the outer interpreter share information there? A place to spread out some of the work and speed things up, reduce code size, maybe other goodness too.
+
+In traditional Forth, `number` leaves a signed `d` on the stack and sets `dpl`.
+
+
+
+For implementation, I'm hooking it into NUMBER so that R0 >R0 <R0 >N8 N8 <N0 >R15 etc... won't have to be in the dictionary. While I'm at it, e.g. $BEEF will momentarily switch BASE to hexadecimal and switch back after converting the NUMBER after the leading dollar-sign, #31415 for decimal constants, %1001100 for binary
+
+
+```
+~#comfortablynumber
+#endif
+#include "align.i65"
+_devnumber
+    jsr enter
+#include "page.i65"
+    .word _corenumber
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=INTERPRET
 stack=( -- )
 tags=fig,forth-83,interpreter
@@ -595,7 +749,7 @@ interpret01
     .byt <(interpret01-*+1)
 #include "page.i65"
 interpret02
-    .word _number
+    .word numbervector
     ; is it a number?           ; yes, or we would have errored
     ; is it a double?           ; yes, see if it's DPL >= 0 or not
     ; are we compiling?         , or 2,
