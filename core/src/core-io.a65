@@ -78,6 +78,7 @@ cr
     inc usernumline+1
 cr01
     jmp next
+
 #endif
 cr
     brk
@@ -87,12 +88,13 @@ cr
     .word usernumline+2
     .byt popd | N0
     .byt inr | ACC
-    .byt std | N0
+    .byt std | N0               ; `#line 1+!`
 ;    .byt set | N0
 ;    .word usernumout
     .byt sub | ACC
-    .byt std | N0
+    .byt std | N0               ; `#out off`
     .byt nxt
+;[13]
 
 ;--------------------------------------------------------------
 #if 0
@@ -392,35 +394,37 @@ name=NUMBER
 stack=( addr -- d )
 tags=numword,forth-83
 
- Convert the counted string at addr, to a signed
- 32-bit integer, using the value of BASE .  If numeric
- conversion is not possible, an error condition exists.  The
- string may contain a preceding minus sign.
+Convert the counted string at `addr`, to a signed
+32-bit integer, using the value of `base` .  If numeric
+conversion is not possible, an error condition exists.  The
+string may contain a preceding minus sign.
 
 ```
- \ There is a string that is probably a number stored from addrlow..addrhigh
- \ convert a counted string to a signed double, keeping track of the decimal
-: number  ( addr -- d )
-  ( addr )
+\ There is a string that is probably a number stored from addrlow..addrhigh
+\ convert a counted string to a signed double, keeping track of the decimal
+: number   ( addr -- d )
+                                ( addr )
      0 0 rot count
-  ( 0 0 addr+1 len )
+                                ( 0 0 addr+1 len )
      over c@ [ ascii - ] literal  =
-  ( 0 0 addr+1 len negative? )
+                                ( 0 0 addr+1 len negative? )
      dup>r
-  ( 0 0 addr+1 len negative? ) ( R; -- negative? )
-     +
-  ( 0 0 addr+1 lenadj ; adjust length for sign char )
+                                ( 0 0 addr+1 len negative? )  ( R; negative? )
+     +                          \ adjust length for sign char )
+                                ( 0 0 addr+1 lenadj )
      over + r@ -
-  ( 0 0 addr+1 addrhigh+1 )
+                                ( 0 0 addr+1 addrhigh+1 )
      swap  r@ -
-  ( 0 0 addrhigh+1 addrlow )
-     dpl on
+                                ( 0 0 addrhigh+1 addrlow )
+     dpl on                     \ -1 means no decimal place
      ?do
-  ( d )
+                                ( d )
          base @ >r
-  ( d ) ( R; base negative? )
-         i c@  r@  digit
-  ( -- d currdigit~?~ flag )
+                                ( d ) ( R; base negative? )
+         i c@  r@
+                                ( )
+         digit
+                                ( -- d currdigit~?~ flag )
          if
              swap r@ um*
              drop rot
@@ -436,11 +440,81 @@ tags=numword,forth-83
              then
          then
          r> drop
-  ( R; negative? ; discard base )
+                                ( R; negative? ; discard base )
      loop
      r>  if  dnegate  then ;
 
+\ There is a string that is probably a number stored from addrlow..addrhigh
+\ convert a counted string to a signed double, keeping track of the decimal
+\ hook to hi-mem address to process programmer prefix characters
+
+\   -   negate
+\   +   positive
+
+\   $   temporarily set `base` to hex
+\   #   temporarily set `base` to decimal
+
+: number   ( addr -- d )
+                                ( addr )
+    prefix?
+                                \ addr -> n7
+                                ( flag )
+
+
+
+
+     0 0 rot count
+                                ( 0 0 addr+1 len )
+     over c@ [ ascii - ] literal  =
+                                ( 0 0 addr+1 len negative? )
+     dup>r
+                                ( 0 0 addr+1 len negative? )  ( R; negative? )
+     +                          \ adjust length for sign char )
+                                ( 0 0 addr+1 lenadj )
+     over + r@ -
+                                ( 0 0 addr+1 addrhigh+1 )
+     swap  r@ -
+                                ( 0 0 addrhigh+1 addrlow )
+     dpl on                     \ -1 means no decimal place
+     ?do
+                                ( d )
+         base @ >r
+                                ( d ) ( R; base negative? )
+         i c@  r@
+                                ( )
+         digit
+                                ( -- d currdigit~?~ flag )
+         if
+             swap r@ um*
+             drop rot
+             r@ um* d+
+             dpl @ 1+  0= negate dpl +!
+         else
+             i c@ [ ascii . ] literal  =
+             dpl @ 0<  and
+             if
+                 dpl off
+             else
+                 3 fail ( abort" not found" )
+             then
+         then
+         r> drop
+                                ( R; negative? ; discard base )
+     loop
+     r>  if  dnegate  then ;
+
+Inspired by what I read about PLASMA, another 6502 retro language targeting very similar Apple II hardware, I thought, well here's 32 bytes of Sweet16 register space just sitting around while Forth spins itself dizzy at the tip of the stack. Why not put in something like local variables which map to the Sweet16 register space, and have certain sets of primitives like the outer interpreter share information there? A place to spread out some of the work and speed things up, reduce code size, maybe other goodness too.
+
+In traditional Forth, `number` leaves a signed `d` on the stack and sets `dpl`.
+
+
+
+For implementation, I'm hooking it into NUMBER so that R0 >R0 <R0 >N8 N8 <N0 >R15 etc... won't have to be in the dictionary. While I'm at it, e.g. $BEEF will momentarily switch BASE to hexadecimal and switch back after converting the NUMBER after the leading dollar-sign, #31415 for decimal constants, %1001100 for binary
+
+
 ```
+#supernumber
+
 #endif
 #include "align.i65"
 _number
@@ -568,7 +642,7 @@ number02
 number03
     .word three
 #include "page.i65"
-;    .word _fail
+    .word fail
 #include "page.i65"
 number04                        ; then then
     .word rfrom
