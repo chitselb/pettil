@@ -1277,11 +1277,38 @@ tags=compiler,nosymbol
 The business end of a word defined by [[VOCABULARY]].  Gets the
 vocid from the vocabulary and prepends it to [[VOCABS]]
 
+New vocabularies compile a call to `>vocab` followed by an inline
+byte parameter (the vocabulary id).  This routine puts the vocab id
+at the front of the `vocabs` list (max 10).  Duplicates are removed.
+
 ```
 : >vocab   ( addr -- )
     caller vocabs dup 1+ 8 cmove> c@ vocabs c! dedupvocab ;
 ```
 dovocab
+    lda #<(uservocabs+1)        ; #selfmodifying
+    sta dovocab03+1             ; reset low byte of destination
+    jsr callers                 ; ~ #callers
+    lda (n),y                   ; this vocabulary id
+    sta z
+    ldy #9                      ; bytes to move
+dovocab01
+    lda uservocabs-1,y
+    beq dovocab03                   ; ~wut? is this unnecessary?
+    eor z                       ; I just like pronouncing this opcode
+    bne dovocab02
+                                ; we have a dup!
+    inc dovocab03+1             ; skip this one
+
+dovocab02
+    eor z                       ; put it back
+dovocab03
+    sta uservocabs,y            ; slide everything forward 1 byte
+    dey
+    bne dovocab01
+    lda z
+    sta uservocabs              ; `context`
+
     pla
     sta n
     pla
@@ -1289,9 +1316,8 @@ dovocab
     ldy #1
     lda (n),y
 
-#endif
-#include "align.i65"
-dovocab
+
+dovocabx
     jsr enter
 #include "page.i65"
     .word caller
@@ -1317,6 +1343,68 @@ dovocab
     .word vocabdedup
 #include "pass.i65"
     .word exit
+
+
+
+
+
+    jsr callers                 ; ~ #callers
+    lda (n),y                   ; this vocabulary id
+    sta z
+    ldy #10                     ; bytes to move +1
+    lda #0
+    pha
+dovocab01
+    dey
+    bmi dovocab03
+    lda uservocabs,y
+    beq dovocab01
+    cmp z
+    beq dovocab01
+dovocab02
+    pha
+    bne dovocab01               ; bra
+dovocab03
+    lda z
+    pha
+dovocab04
+    iny
+    pla
+    sta uservocabs,y
+    bne dovocab04
+    lda z
+    sta uservocabs              ; `context`
+    jmp next
+
+#endif
+#include "align.i65"
+dovocab
+    jsr callers                 ; ~ #callers
+    lda (n),y                   ; this vocabulary id
+    sta z
+    lda #0
+    pha                         ; sentinel value
+    ldy #10                     ; bytes to move +1
+dovocab01
+    dey
+    bmi dovocab03
+    lda uservocabs,y
+    beq dovocab01
+    cmp z
+    beq dovocab01
+dovocab02
+    pha
+    bne dovocab01               ; bra
+dovocab03
+    lda z
+    pha
+    ;ldy #$FF
+dovocab04
+    iny
+    pla
+    sta uservocabs,y
+    bne dovocab04
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
