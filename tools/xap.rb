@@ -345,7 +345,13 @@ puts @label   if @label == "STUDIO"
     end
 
     def hex4out(addr)
+# puts addr.to_s(16).rjust(4,'0')
         return addr.to_s(16).rjust(4,'0')
+    end
+
+    def hex2out(byte)
+        puts byte  if byte != 0
+        return byte
     end
 
     # read an assembler-generated label file in:  label, address
@@ -438,6 +444,21 @@ puts @label   if @label == "STUDIO"
             symfile.write stuff.symbol_table_entry   unless stuff.tags.index "nosymbol"
         end
         symfile.write [0,0,0].pack("C*")        # null length ends pettil.sym
+    end
+
+    def write_symtab_dump(outputfile,forthwordhash)
+        symfile = File.open("./tmp/"+outputfile,'wb')
+        forthwordhash.each do |wordname, stuff|
+            t=stuff.symbol
+            if t[-1] < ' '
+                vocab = t[-1].ord
+                t.chop!
+            else
+                vocab = 0
+            end
+            symfile.write("#{t},#{vocab}\n")
+            symfile.write("#{stuff.tags.to_json}\n")
+        end
     end
 
     def write_json_file(outputfile,forthwordhash)
@@ -546,6 +567,9 @@ puts "finis"
 
     # output symbol table file
     write_symtab_file "pettil.sym",all_words
+
+    # output symbol table file in CSV, for metrics
+    write_symtab_dump "symtab.csv",all_words
 
     # output tiddlers for tiddlypettil
     write_json_file "pettil.json",all_words

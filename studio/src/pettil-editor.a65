@@ -1162,15 +1162,11 @@ editspace03
 ;--------------------------------------------------------------
 #if 0
 name=EDITMENU
-stack=( -- addr )
 tags=editor,nosymbol
-
- returns the address of a counted string of menu commands
-
+editor menu commands (no `cfa`)
 #endif
 editmenu
-     jsr docreate
-     .byt editmenu01-*-1        ; number of menu items = 16
+     .byt editmenu01-*-1        ; number of menu items
      .asc "_QISLVZRDCP ?"        ; command keys
      .byt DELETE, INSERT, HOME, CLR, CRSRDOWN, CRSRUP
 editmenu01
@@ -1197,9 +1193,9 @@ editmenu01
 ;--------------------------------------------------------------
 #if 0
 name=$INDEX
-stack=( addr char -- index|0 )
+stack=( addr char -- +index|0 )
 tags=string,ext,primitive
-returns the position of char within the counted string at addr
+returns the 1-based position of char within the counted string at addr
 otherwise returns 0
 #endif
 dolindex
@@ -1213,10 +1209,67 @@ dolindex01
     dey
     bne dolindex01
 dolindex02
-    sty tos
-    ;ldy #0                     ; we started with a char at tos
-    ;sty tos+1                  ; so high byte is already 0
-    jmp next
+    tya
+    jmp put0a
+
+;--------------------------------------------------------------
+#if 0
+name=>IDX
+stack=( addr char -- )
+tags=nosymbol
+Computed branch based on a counted string of characters followed by
+the same number of branch target `cfa`s
+
+Lookup the character in the counted string at `addr`
+If found, `execute` the corresponding word, then `exit`
+if not found, just `exit`
+
+: >idx   ( addr char -- )
+    under $index
+                                ( addr index )
+    ?dup
+                                ( addr 0 )              \ not found
+                                ( addr index index )    \ found
+    if
+                                ( addr index )
+        2* 2- over c@+ + +
+                                ( x cfa )
+        @ execute
+    then drop ;
+#endif
+#include "align.i65"
+_toidx
+    jsr enter
+#include "page.i65"
+    .word under
+#include "page.i65"
+    .word dolindex
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word qbranch
+    .byt <(toidx01-*+1)
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word cfetchplus
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word execute
+#include "page.i65"
+toidx01
+    .word drop
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1230,7 +1283,8 @@ tags=editor,nosymbol
 #include "align.i65"
 _editcmd
     jsr enter
-#include "page.i65"
+#include "pass.i65"
+    .word plit
     .word editmenu              ; ( editmenu )
 #include "page.i65"
     .word flipscr
@@ -1239,32 +1293,8 @@ _editcmd
 #include "page.i65"
     .word flipscr
 #include "page.i65"
-    .word dolindex              ; ( index|0 )
-#include "page.i65"
-    .word qdup                  ; ( index index | 0 )
+    .word _toidx
 #include "pass.i65"
-    .word qbranch               ; IF
-    .byt <(editcmd01-*+1)
-#include "page.i65"
-    .word twostar               ; ( 2*index )
-#include "page.i65"
-    .word editmenu              ; ( 2*index editmenu )
-#include "page.i65"
-    .word dup                   ; ( 2*index editmenu editmenu )
-#include "page.i65"
-    .word cfetch                ; ( 2*index editmenu #items )
-#include "page.i65"
-    .word plus                  ; ( 2*index editmenu+#items )
-#include "page.i65"
-    .word plus                  ; ( 2*index+editmenu+#items )
-#include "page.i65"
-    .word oneminus              ; ( 2*index+editmenu+#items-1 )
-#include "page.i65"
-    .word fetch                 ; ( editcmdcfa )
-#include "page.i65"
-    .word execute               ; ( )
-#include "pass.i65"
-editcmd01                       ; THEN
     .word exit
 
 ;--------------------------------------------------------------
@@ -1354,11 +1384,13 @@ edit00                          ; reentry to editor here
 name=LIST
 stack=( scr -- )
 tags=editor
-List the specified screen and set [[SCR]]
+List the specified screen and set `scr`; Invoke `editor` vocabulary
 #endif
 #include "align.i65"
 _list
     jsr enter
+#include "page.i65"
+    .word editor
 #include "page.i65"
     .word editing
 #include "page.i65"
@@ -1380,7 +1412,7 @@ name=L
 stack=( -- )
 tags=editor
 vocab=2
-List the specified screen and set [[SCR]]
+List the current screen and set `scr`
 #endif
 #include "align.i65"
 _l

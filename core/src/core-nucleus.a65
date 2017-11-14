@@ -6,140 +6,15 @@
 name=UM*
 stack=( u1 u2 -- ud )
 tags=nucleus,math,forth-83
-"ud" is the unsigned product of "u1" times "u2".  All values and
+`ud` is the unsigned product of `u1` times `u2`.  All values and
 arithmetic are unsigned.
 
-A proper 6502 assembly solution.
-
-Features
-
-* multiplies two 8-bit numbers with 16 bit result
-* inner loop of only 17 clock cycles per iteration
-* worst case behaviour of 40 clock cycles per iteration
-* minimizes number of iterations
-* total execution time 25 - 320 cycles
-
-(i.e. only 3x slower (worst case) than MUL on Intel 8088)
-
-* 43 bytes size
-* relocatable to about anywhere in address space
-* uses C64-friendly memory locations
-
- INPUT  = op1 in A, op2 in X
-
- OUTPUT = low byte in X, high byte in Y
-
- memory locations used as temp space = $fb, $fc, $fd
-
-```
-;You beat me to the punch, but there is some unnecessary code in there
-;(you don't need to clear the carry before a LSR). And trashing X is
-;unnecessary since you can test for zero just as fast with LDA $02.
-;Or with some crazy jujitsu to save a byte...
-;
-;Here's my version, handles 8-bit operands:
-;--$00 holds operand 1
-;--$01 (low byte) and $02 (high byte) hold operand 2
-;--$03 (low byte) and $04 (high byte) hold product
-;       cld
-;Loop
-;    lsr $00
-;    bcc NoAdd
-;    clc
-;    lda $03
-;    adc $01
-;    sta $03
-;    lda $04
-;    adc $02
-;    sta $04
-;    .byte $2C
-;NoAdd
-;    beq Done
-;    asl $01
-;    rol $02
-;    bcc Loop                   ; this assumes that operand 2 is 8-bit
-;Done
-;
-;A proper 6502 assembly solution.
-;
-;Features
-;- multiplies two 8-bit numbers with 16 bit result
-;- inner loop of only 17 clock cycles per iteration
-;- worst case behaviour of 40 clock cycles per iteration
-;- minimizes number of iterations
-;- total execution time 25 - 320 cycles
-;(i.e. only 3x slower (worst case) than MUL on Intel 8088)
-;- 43 bytes size
-;- relocatable to about anywhere in address space
-;- uses C64-friendly memory locations
-; INPUT  = op1 in A, op2 in X
-; OUTPUT = low byte in X, high byte in Y
-; memory locations used as temp space = $fb, $fc, $fd
-;    stx $fc    ; save op2
-;    cmp $fc    ; compare both operands
-;    bcc noswap ; swap them unless op1 < op2
-;    sta $fc    ; save op1 instead of op2
-;    txa        ; swap op2 for op1
-;noswap
-;    ldx #$00   ; prepare result low byte
-;    stx $fd    ; clear high byte of op2
-;    ldy #$00   ; prepare result high byte
-;    beq begin  ; skip shift of op2 for first iteration
-;loop
-;    asl $fc    ; multiply op2 by 2, low byte
-;    rol $fd    ; multiply op2 by 2, high byte
-;begin
-;    lsr        ; divide op1 by 2
-;    bcs add    ; if op1 was odd before division, add op2
-;    bne loop   ; if op1 is not zero repeat loop
-;    rts        ; otherwise return result
-;add
-;    sta $fb    ; save current value of op1
-;    clc        ; prepare addition
-;    txa        ; fetch low byte
-;    adc $fc    ; add op2, low byte
-;    tax        ; store low byte
-;    tya        ; fetch high byte
-;    adc $fd    ; add op2, high byte
-;    tay        ; store high byte
-;    lda $fb    ; restore op1
-;    bne loop   ; if op1 is not zero repeat loop
-;    rts        ; otherwise return result
-;
-
-    stx $fc    ; save op2
-    cmp $fc    ; compare both operands
-    bcc noswap ; swap them unless op1 < op2
-    sta $fc    ; save op1 instead of op2
-    txa        ; swap op2 for op1
-noswap
-    ldx #$00   ; prepare result low byte
-    stx $fd    ; clear high byte of op2
-    ldy #$00   ; prepare result high byte
-    beq begin  ; skip shift of op2 for first iteration
-loop
-    asl $fc    ; multiply op2 by 2, low byte
-    rol $fd    ; multiply op2 by 2, high byte
-begin
-    lsr        ; divide op1 by 2
-    bcs add    ; if op1 was odd before division, add op2
-    bne loop   ; if op1 is not zero repeat loop
-    rts        ; otherwise return result
-add
-    sta $fb    ; save current value of op1
-    clc        ; prepare addition
-    txa        ; fetch low byte
-    adc $fc    ; add op2, low byte
-    tax        ; store low byte
-    tya        ; fetch high byte
-    adc $fd    ; add op2, high byte
-    tay        ; store high byte
-    lda $fb    ; restore op1
-    bne loop   ; if op1 is not zero repeat loop
-    rts        ; otherwise return result
-
-```
 check http://6502.org/source/ for multiply and divide and stuff
+
+`tos`     multiplicand
+`n0`      multiplier
+`n1..n2`  product
+
 #endif
 umstar
     lda stackl,x
@@ -193,9 +68,14 @@ http://www.bradrodriguez.com/papers/camel09.txt
 
 #endif
 udslashmod
+        lda #>(put-1)
+        pha
+        lda #<(put-1)
+        pha
         stx z                   ; saves a dex;dex later
         ;ldy #4
         jsr harvests4           ; dividend to n0..n3
+udslashmods
         clc
         ;ldy #0                 ; harvests does this for us
         ldx #33
@@ -215,7 +95,7 @@ udslashmodb
         sty n+4         ; [2+3+3] or [3]?
         sta n+5         ; treating this as [~6] clocks on average
 udslashmodc
-        rol n+0         ; [5]
+        rol n           ; [5]
         rol n+1         ; [5]
         rol n+2         ; [5]
         rol n+3         ; [5]
@@ -233,7 +113,7 @@ udslashmodc
         sta stackl,x
         ldy n+3
         lda n+2
-        jmp put                 ; push quotient(hi) on stack
+        rts                     ; `put` if called as a Forth word
 
 ;--------------------------------------------------------------
 #if 0

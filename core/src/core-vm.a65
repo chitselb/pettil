@@ -776,17 +776,18 @@ _scr0
 #if 0
 name=#BLK!
 stack=( -- )
-tags=vm
+tags=vm,nosymbol
 Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
 
 ~ It should also validate flags and max-lengths, error out on corrupt VMBUF
-
+~wut?  throw a `bad vm packet` error if a length/flag is off the reservation
 ```
 : #blk!   ( -- )
     #blk off  blkbuf 2-
     begin
         pkt.size ?dup
     while
+        b/buf under > 12 ?error    "BAD VM PACKET"
         #blk 1+!
         -
     repeat
@@ -814,6 +815,15 @@ numblkstore01
 #include "pass.i65"
     .word qbranch
     .byt <(numblkstore02-*+1)
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word under
+#include "page.i65"
+    .word _gt
+#include "pass.i65"
+    .word qerror                ;"BAD VM PACKET"
+    .byt 12
 #include "page.i65"
     .word numblk
 #include "page.i65"
@@ -861,8 +871,6 @@ _emptybuffers
     .word exit
 
 
-stashforth01 .byt 0             ; temp storage for X register during tape I/O
-
 ;--------------------------------------------------------------
 #if 0
 name=STASH-FORTH
@@ -873,11 +881,13 @@ other Forth zero page during a BASIC system call
 
 #endif
 stashforth
-    stx 2                       ; $FF (z) gets messed up by save!  Use $02
-    jsr aloha2
+    stx stashforth01
+    jsr aufwiedersehen
     lda #2                      ; set direct mode in CHRGET routine
     sta $78                     ; so we get prompts during i/o
     rts
+stashforth01 .byt 0             ; temp storage for X register during tape I/O
+
 ;--------------------------------------------------------------
 #if 0
 name=RESTORE-FORTH
@@ -888,7 +898,7 @@ Restore Forth stack after BASIC system call
 #endif
 restoreforth
     jsr aloha2
-    ldx 2                       ; this messes up BASIC's USR() function
+    ldx stashforth01            ; this messes up BASIC's USR() function
     jmp exit
 
 ;--------------------------------------------------------------
@@ -896,16 +906,16 @@ restoreforth
 name=DOTAPEIO
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
-Perform a ROM call framed between calls to [[Aloha]]. This is
+Perform a ROM call framed between calls to `aloha`. This is
 needed in particular for tape I/O, which might error out to a
 Commodore BASIC `ready.` prompt.
 
-Like [[EXECUTE]] and the Sweet-16 interpreter, this word
+Like `execute` and the Sweet-16 interpreter, this word
 uses the machine stack ($0100-$01ff) and RTS trick to transfer
 control from one subroutine to the next, so that code executes
 in this order:
 
-todo: this is a little crashy returning from hitting the [[STOP]] key
+~wut?  this is a little crashy returning from hitting the [[STOP]] key
 
 ```
 stashforth
@@ -1685,9 +1695,9 @@ name=UPDATE
 stack=( -- )
 tags=forth-83,vm
 Copies and compresses the current block buffer to the [[virtual memory
-packet buffer|PETTIL system memory map]].  Analogous to [[BLOCK]] which
+packet buffer|PETTIL system memory map]].  Analogous to `block` which
 reads packets, this is PETTIL's single point of responsibility for
-writing packets in the [[VMBUF]] region.
+writing packets in the `vmbuf` region.
 
 ```
 : update   ( -- )
@@ -1708,7 +1718,55 @@ writing packets in the [[VMBUF]] region.
     (upd3)
     +move #blk! ;
 ```
+scenario 1 - most typical, editing a code screen
+    editing?        true
+    isscr?          true
+                                vidram
+                                scr >pkt
+                                b/scr
+
+                                wrap! -trailing ?rlencode
+
+
+scenario 2 - editing a data packet (read-only)
+    editing?        true
+    isscr?          false
+                                exit
+
+scenario 3 - not editing, `update` from blkbuf
+    editing?        false
+    isscr?          true
+scenario 4 - user typed `update` (`editing? true` is the only other cause)
+scenario 4
+    !editing?
+    isscr?
+
+
+
 ~#packrat
+: update   ( -- )
+    editing? 0=
+    editing? isscr? and or      \ `data` packets are read-only in the editor
+    #blk @ and                  \ there would have to be some blocks
+    if
+        >pkt
+        cmove
+        +move
+        #blk!
+    then ;
+
+    editing? isscr? 0= blk @ and 0= ?exit
+    #blk @
+    editing?
+    if isscr? xor
+    then
+
+     0=: screen blkbuf
+    editing?
+
+    if
+        drop
+;
 #endif
 #include "align.i65"
 _update
