@@ -958,7 +958,7 @@ pdqq01
 #include "align.i65"
 doqdq
     jsr dodoes
-#include "page.i65"
+#include "pass.i65"
     .word clit
     .byt '"'
 #include "page.i65"
@@ -1176,6 +1176,107 @@ _immediate
 
 ;--------------------------------------------------------------
 #if 0
+name=DEDUPVOCAB
+stack=( -- )
+tags=compiler,primitive,nosymbol
+remove duplicates from [[VOCABS]]
+#endif
+vocabdedup
+    ldy #0                      ; start after JSR DOVOCAB and new vocabid
+vdedup02
+    lda uservocabs+1,y
+    beq vdedup04                ; all done when we hit FORTH vocab
+    eor uservocabs              ; compare to new vocabid
+    beq vdedup03                ; this vocabulary is a duplicate?
+    iny
+    bne vdedup02                ; bra
+vdedup03
+    iny
+    lda uservocabs,y
+    sta uservocabs-1,y
+    bne vdedup03
+vdedup04
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=>VOCAB
+stack=( -- )
+tags=compiler,nosymbol
+The business end of a word defined by `vocabulary`.  Gets the
+vocid from the vocabulary and prepends it to `vocabs`
+
+New vocabularies compile a call to `>vocab` followed by an inline
+byte parameter (the vocabulary id).  This routine puts the vocab id
+at the front of the `vocabs` list (max 10).  Duplicates are removed.
+
+```
+: >vocab   ( addr -- )
+    caller vocabs dup 1+ 8 cmove> c@ vocabs c! dedupvocab ;
+```
+#endif
+#include "align.i65"
+dovocabmosh
+    jsr callers                 ; ~ #callers
+    lda (ACC),y                 ; this vocabulary id
+    sta z
+    lda #0
+    pha                         ; sentinel value
+    ldy #10                     ; bytes to move +1
+dovocabm01
+    dey
+    bmi dovocabm03
+    lda uservocabs,y
+    beq dovocabm01
+    cmp z
+    beq dovocabm01
+dovocabm02
+    pha
+    bne dovocabm01               ; bra
+dovocabm03
+    lda z
+    pha
+    ;ldy #$FF
+dovocabm04
+    iny
+    pla
+    sta uservocabs,y
+    bne dovocabm04
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=VDROP
+stack=( -- )
+vocab=1
+tags=vocabulary,ext
+Remove the first vocabulary from `vocabs`.  Invoking a vocabulary moves it to
+the first position.  e.g. `assembler vdrop` removes the assembler vocabulary
+from the search order.
+
+```
+: vdrop   ( -- )
+    vocabs 1+ vocabs 9 cmove ;
+```
+#endif
+#include "align.i65"
+_vdrop
+    jsr enter
+#include "page.i65"
+    .word vocabs
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word vocabs
+#include "page.i65"
+    .word nine
+#include "page.i65"
+    .word cmove
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=VOCABULARY
 stack=( "name" -- )
 tags=compiler,forth-83
@@ -1208,7 +1309,7 @@ _vocabulary
     .word off
 #include "pass.i65"
     .word plit
-    .word dovocab
+    .word dovocabmosh
 #include "page.i65"
     .word _pcreate
 #include "page.i65"
@@ -1240,196 +1341,6 @@ _vocabulary
     .word tworfrom
 #include "page.i65"
     .word store
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=DEDUPVOCAB
-stack=( -- )
-tags=compiler,primitive,nosymbol
-remove duplicates from [[VOCABS]]
-#endif
-vocabdedup
-    ldy #0                      ; start after JSR DOVOCAB and new vocabid
-vdedup02
-    lda uservocabs+1,y
-    beq vdedup04                ; all done when we hit FORTH vocab
-    eor uservocabs              ; compare to new vocabid
-    beq vdedup03                ; this vocabulary is a duplicate?
-    iny
-    bne vdedup02                ; bra
-vdedup03
-    iny
-    lda uservocabs,y
-    sta uservocabs-1,y
-    bne vdedup03
-vdedup04
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=>VOCAB
-stack=( -- )
-tags=compiler,nosymbol
-The business end of a word defined by [[VOCABULARY]].  Gets the
-vocid from the vocabulary and prepends it to [[VOCABS]]
-
-New vocabularies compile a call to `>vocab` followed by an inline
-byte parameter (the vocabulary id).  This routine puts the vocab id
-at the front of the `vocabs` list (max 10).  Duplicates are removed.
-
-```
-: >vocab   ( addr -- )
-    caller vocabs dup 1+ 8 cmove> c@ vocabs c! dedupvocab ;
-```
-dovocab
-    lda #<(uservocabs+1)        ; #selfmodifying
-    sta dovocab03+1             ; reset low byte of destination
-    jsr callers                 ; ~ #callers
-    lda (n),y                   ; this vocabulary id
-    sta z
-    ldy #9                      ; bytes to move
-dovocab01
-    lda uservocabs-1,y
-    beq dovocab03                   ; ~wut? is this unnecessary?
-    eor z                       ; I just like pronouncing this opcode
-    bne dovocab02
-                                ; we have a dup!
-    inc dovocab03+1             ; skip this one
-
-dovocab02
-    eor z                       ; put it back
-dovocab03
-    sta uservocabs,y            ; slide everything forward 1 byte
-    dey
-    bne dovocab01
-    lda z
-    sta uservocabs              ; `context`
-
-    pla
-    sta n
-    pla
-    sta n+1
-    ldy #1
-    lda (n),y
-
-
-dovocabx
-    jsr enter
-#include "page.i65"
-    .word caller
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word vocabs
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word eight
-#include "page.i65"
-    .word cmovegt
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word vocabdedup
-#include "pass.i65"
-    .word exit
-
-
-
-
-
-    jsr callers                 ; ~ #callers
-    lda (n),y                   ; this vocabulary id
-    sta z
-    ldy #10                     ; bytes to move +1
-    lda #0
-    pha
-dovocab01
-    dey
-    bmi dovocab03
-    lda uservocabs,y
-    beq dovocab01
-    cmp z
-    beq dovocab01
-dovocab02
-    pha
-    bne dovocab01               ; bra
-dovocab03
-    lda z
-    pha
-dovocab04
-    iny
-    pla
-    sta uservocabs,y
-    bne dovocab04
-    lda z
-    sta uservocabs              ; `context`
-    jmp next
-
-#endif
-#include "align.i65"
-dovocab
-    jsr callers                 ; ~ #callers
-    lda (ACC),y                 ; this vocabulary id
-    sta z
-    lda #0
-    pha                         ; sentinel value
-    ldy #10                     ; bytes to move +1
-dovocab01
-    dey
-    bmi dovocab03
-    lda uservocabs,y
-    beq dovocab01
-    cmp z
-    beq dovocab01
-dovocab02
-    pha
-    bne dovocab01               ; bra
-dovocab03
-    lda z
-    pha
-    ;ldy #$FF
-dovocab04
-    iny
-    pla
-    sta uservocabs,y
-    bne dovocab04
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=VDROP
-stack=( -- )
-vocab=1
-tags=vocabulary,ext,nosymbol
-Remove the first vocabulary from [[VOCABS]].
-
-```
-: vdrop   ( -- )
-    vocabs 1+ vocabs 9 cmove ;
-```
-#endif
-#include "align.i65"
-_vdrop
-    jsr enter
-#include "page.i65"
-    .word vocabs
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word vocabs
-#include "page.i65"
-    .word nine
-#include "page.i65"
-    .word cmove
 #include "pass.i65"
     .word exit
 
