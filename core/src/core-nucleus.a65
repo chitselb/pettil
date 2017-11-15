@@ -281,62 +281,6 @@ duptor
 
 ;--------------------------------------------------------------
 #if 0
-name=RDUP
-stack=( -- ) ( R; n -- n n )
-tags=nucleus,stack
-Duplicate the top of the return stack
-
-I can't think of any use for this yet
-
-!!! pronounced: "r-dupe"
-```
-rdup
-    pla
-    sta z
-    pla
-    tay
-rtwoput
-    lda z
-    pha
-    tya
-    pha
-    lda z
-    pha
-    tya
-    pha
-    jmp next
-```
-#endif
-rdup
-
-;--------------------------------------------------------------
-#if 0
-name=RSWAP
-stack=( -- ) ( R; a b -- b a )
-tags=nucleus,stack
-Swap the top two items on the return stack
-
-!!! pronounced: "r-swap"
-
-```
-: rswap   ( ; r1 r2 -- ; r2 r1)
-   2r> >r >r ;
-```
-#endif
-#include "align.i65"
-_rswap
-    jsr enter
-#include "page.i65"
-    .word tworfrom
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word tor
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=RDROP
 stack=( -- ) ( R; a -- )
 tags=nucleus,stack
@@ -352,15 +296,29 @@ rdrop01
 
 ;--------------------------------------------------------------
 #if 0
-name=3OFF
+name=2OFF
+stack=( addr -- )
+tags=nucleus,memory
+Erase four bytes starting at `addr`
+
+#endif
+twooff
+    ldy #4
+    .byt $2C                    ; BIT abs opcode skips `ldy #1`
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=3COFF
 stack=( addr -- )
 tags=nucleus,memory
 Erase three bytes starting at `addr`
+
 #endif
-threeoff
+threecoff
     ldy #3
+    ;
     .byt $2C                    ; BIT abs opcode skips `ldy #1`
-                                ; fall through
+    ; fall through
 ;--------------------------------------------------------------
 #if 0
 name=COFF
@@ -370,8 +328,35 @@ Store 0 char at `addr`
 #endif
 coff
     ldy #1
+    ;
+    .byt $2C                    ; BIT abs opcode skips `clc $29`
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=OFF
+stack=( addr -- )
+tags=nucleus,memory
+Store 0 at `addr`
+
+#endif
+off
+    ldy #2
+    ;
     sec
-    bcs twooff01                ; bra
+off02
+    lda #>(drop-1)
+    pha
+    lda #<(drop-1)
+    pha
+
+    jsr dectos                  ; alters A, not C
+    lda #0
+    sbc #0
+erases02
+    sta (tos),y
+    dey
+    bne erases02
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -381,51 +366,9 @@ tags=nucleus,memory
 Store -1 at `addr`
 #endif
 on
-    clc
-    .byt $29                    ; AND # opcode skips sec
-;--------------------------------------------------------------
-#if 0
-name=OFF
-stack=( addr -- )
-tags=nucleus,memory
-Store 0 word at `addr`
-#endif
-off
-    sec
     ldy #2
-    .byt $2C                    ; BIT abs opcode skips `ldy #4`
-                                ; fall through
-;--------------------------------------------------------------
-#if 0
-name=2OFF
-stack=( addr -- )
-tags=nucleus,memory
-Store 0 word at `addr`
-#endif
-twooff
-    ldy #4
-twooff01
-    lda #>(drop-1)
-    pha
-    lda #<(drop-1)
-    pha
-                                ; fall through
-;--------------------------------------------------------------
-#if 0
-name=ERASES
-stack=( addr -- )
-tags=nucleus,memory
-Store 0 word at `addr`
-#endif
-erases
-    jsr dectos                  ; alters A, not C
-    lda #0
-    sbc #0
-erases02
-    sta (tos),y
-    dey
-    bne erases02
-    rts
+    clc
+    bcs off02                   ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -2936,6 +2879,23 @@ cstoreplus
     tya
     ldy #0
     sta (tos),y
+    beq oneplus                 ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=DOCREATE
+stack=( -- addr )
+tags=nosymbol,inner
+The business end of words created by CREATE, returns the address
+of the calling word plus 1
+#endif
+#include "align.i65"
+docreate
+    jsr slip
+    pla
+    sta tos
+    pla
+    sta tos+1
     ; fall through
 ;--------------------------------------------------------------
 #if 0
