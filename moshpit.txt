@@ -1,7 +1,65 @@
 moshpit
+2r> @ (2const) >(const) >(cconst) caller callers r> rput >(create) >(does)
+enter dlit uservar >(vocab)
+^\ \ \ \ pla(.*)\n\ \ \ \ (sta|ta)
 
+dovocabmosh
+    jsr callers                 ; ~ #callers
+    lda (ACC),y                 ; this vocabulary id
+    sta z
+    lda #0
+    pha                         ; sentinel value
+    ldy #10                     ; bytes to move +1
+dovocabm01
+    dey
+    bmi dovocabm03
+    lda uservocabs,y
+    beq dovocabm01
+    cmp z
+    beq dovocabm01
+dovocabm02
+    pha
+    bne dovocabm01               ; bra
+dovocabm03
+    lda z
+    pha
+    ;ldy #$FF
+dovocabm04
+    iny
+    pla
+    sta uservocabs,y
+    bne dovocabm04
+    jmp next
+[40]
 
+vocabdedup
+    ldy #0                      ; start after JSR DOVOCAB and new vocabid
+vdedup02
+    lda uservocabs+1,y
+    beq vdedup04                ; all done when we hit FORTH vocab
+    eor uservocabs              ; compare to new vocabid
+    beq vdedup03                ; this vocabulary is a duplicate?
+    iny
+    bne vdedup02                ; bra
+vdedup03
+    iny
+    lda uservocabs,y
+    sta uservocabs-1,y
+    bne vdedup03
+vdedup04
+    jmp next
+[27]
 
+_vdrop
+    jsr enter
+    .word vocabs
+    .word oneplus
+    .word vocabs
+    .word nine
+    .word cmove
+    .word exit
+[15]
+[82]
 
 : name
      ?refill 'stream swap >n6 2drop
@@ -653,229 +711,3 @@ index 62eba05..d7d78a2 100644
 -    .word exit
 -
  #endif
- docconst
-     clc
-     jsr slip
-     pla
-     sta tos
--    pla                         ; ~#callers
-+    pla
-     sta tos+1
-     ldy #1
-     lda (tos),y
-@@ -593,9 +545,9 @@ Runtime behavior of a word built with `<BUILDS ... DOES>`
- #endif
- dodoes
-     pla             ;[4]
--    tay             ;[2]
-+    tay
-     pla             ;[4]
--    sta z           ;[3]
-+    sta z
-     jsr slip        ;[.]
-     pla             ;[4]
-     sta tos         ;[3]
-@@ -1084,7 +1036,7 @@ caller
- ;[22]
- ; retrieve the second item on the stack, callable from a primitive
- ; ( the thing that called the thing that called `callers`)
--callers                         ; ~#callers
-+callers
-     pla
-     tay
-     pla
-diff --git a/core/src/core-nucleus.a65 b/core/src/core-nucleus.a65
-index b57b05f..acff93c 100644
---- a/core/src/core-nucleus.a65
-+++ b/core/src/core-nucleus.a65
-@@ -2290,32 +2290,6 @@ onemin01
-
- ;--------------------------------------------------------------
- #if 0
--name=CHOOSE
--stack=( n1 n2 flag -- n )
--tags=nucleus,nosymbol
--Returns `n2` if `flag` is true, `n1` if false
--
--This word is only here because I was using it in a few places,
--`choose` seemed like a good thing to name it.  Feel free to undo
--any of that.
--
--```
--: choose   ( n1 n2 flag -- n )
--    ?: nip drop ;
--```
--#endif
--#include "align.i65"
--_choose
--    jsr enter
--#include "pass.i65"
--    .word pquerycolon
--    .word nip
--    .word drop
--#include "pass.i65"
--    .word exit
--
--;--------------------------------------------------------------
--#if 0
- name=>MINMAX
- stack=( n1 n2 -- n )
- tags=nucleus,nosymbol
-@@ -2340,8 +2314,10 @@ dominmax
-     .word rot
- #include "page.i65"
-     .word execute
--#include "page.i65"
--    .word _choose
-+#include "pass.i65"
-+    .word pquerycolon
-+    .word nip
-+    .word drop
- #include "pass.i65"
-     .word exit
-
-
-
-studio diffs
-
-
-diff --git a/studio/src/pettil-assembler.a65 b/studio/src/pettil-assembler.a65
-index 245cb7e..9f88da7 100644
---- a/studio/src/pettil-assembler.a65
-+++ b/studio/src/pettil-assembler.a65
-@@ -9,7 +9,7 @@ tags=assembler,vocabulary,extension
- Sets context to the ASSEMBLER vocabulary
- #endif
- assembler
--    jsr dovocabmosh
-+    jsr dovocab
-     .byt 1                      ; vocabulary identifier
-
- ;--------------------------------------------------------------
-diff --git a/studio/src/pettil-compiler.a65 b/studio/src/pettil-compiler.a65
-index 71c6e6a..2e4715c 100644
---- a/studio/src/pettil-compiler.a65
-+++ b/studio/src/pettil-compiler.a65
-@@ -1214,12 +1214,6 @@ at the front of the `vocabs` list (max 10).  Duplicates are removed.
- : >vocab   ( addr -- )
-     caller vocabs dup 1+ 8 cmove> c@ vocabs c! dedupvocab ;
- ```
--#endif
--#include "align.i65"
--dovocabmosh
--    jsr callers                 ; ~ #callers
--    lda (ACC),y                 ; this vocabulary id
--    sta z
-     lda #0
-     pha                         ; sentinel value
-     ldy #10                     ; bytes to move +1
-@@ -1228,13 +1222,13 @@ dovocabm01
-     bmi dovocabm03
-     lda uservocabs,y
-     beq dovocabm01
--    cmp z
-+    cmp tos
-     beq dovocabm01
- dovocabm02
-     pha
-     bne dovocabm01               ; bra
- dovocabm03
--    lda z
-+    lda tos
-     pha
-     ;ldy #$FF
- dovocabm04
-@@ -1242,7 +1236,61 @@ dovocabm04
-     pla
-     sta uservocabs,y
-     bne dovocabm04
--    jmp next
-+    jmp drop
-+
-+
-+addvoc
-+    brk
-+    .byt set | N2
-+    .word uservocabs
-+    .byt set | N1
-+    .word uservocabs+10
-+
-+    .byt ld | TOS
-+    .byt st | N2
-+    .byt pull
-+    .byt add | N2
-+    .byt st | N1
-+    .byt pull
-+    .byt st | N0
-+avoc1
-+    .byt dcr | N2
-+    .byt bm1 , <(avoc2-*-2)
-+    .byt pop | N1
-+    .byt bz , <(avoc1-*-2)
-+    .byt cpr | N0
-+    .byt bz , <(avoc1-*-2)
-+    .byt inr | N1
-+    .byt sti | N1
-+    .byt dcr | N1
-+    .byt br , <(avoc1-*-2)
-+avoc2
-+    .byt ld | N0
-+    .byt sti | N1
-+    .byt nxt
-+
-+#endif
-+#include "align.i65"
-+dovocab
-+    jsr dodoes
-+#include "page.i65"
-+    .word cfetch
-+#include "page.i65"
-+    .word vocabs
-+#include "page.i65"
-+    .word dup
-+#include "page.i65"
-+    .word dup
-+#include "page.i65"
-+    .word oneplus
-+#include "page.i65"
-+    .word nine
-+#include "page.i65"
-+    .word cmovegt
-+#include "page.i65"
-+    .word cstore
-+#include "pass.i65"
-+    .word exit
-
- ;--------------------------------------------------------------
- #if 0
-@@ -1269,7 +1317,7 @@ _vdrop
- #include "page.i65"
-     .word vocabs
- #include "page.i65"
--    .word nine
-+    .word ten
- #include "page.i65"
-     .word cmove
- #include "pass.i65"
-@@ -1309,7 +1357,7 @@ _vocabulary
-     .word off
- #include "pass.i65"
-     .word plit
--    .word dovocabmosh
-+    .word dovocab
- #include "page.i65"
-     .word _pcreate
- #include "page.i65"
-diff --git a/studio/src/pettil-editor.a65 b/studio/src/pettil-editor.a65
-index a32b736..e01e426 100644
---- a/studio/src/pettil-editor.a65
-+++ b/studio/src/pettil-editor.a65
-@@ -9,7 +9,7 @@ tags=assembler,vocabulary,extension
- Sets context to the EDITOR vocabulary
- #endif
- editor
--    jsr dovocabmosh
-+    jsr dovocab
-     .byt 2                      ; vocabulary identifier
-
- ;--------------------------------------------------------------
