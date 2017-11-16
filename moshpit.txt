@@ -1,0 +1,677 @@
+moshpit
+
+tworfrom
+    jsr slip
+    dex
+    pla
+    sta tos
+    pla
+    sta tos+1
+    pla
+    sta stackl,x
+    pla
+    sta stackh,x
+    jmp next
+
+fetch
+    sec
+    ldy #0
+    lda (tos),y
+    bcc put
+
+; out; YA = (tos),Y+1 (tos),Y
+; in; Y = offset
+; C = clear
+; A = low byte
+fetchyax
+    pha
+    iny
+    lda (tos),y
+    tay
+    pla
+    bcs put         ; bra
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=DO2CONST
+stack=( -- d )
+tags=nosymbol,inner
+Runtime behavior of a word defined by 2CONSTANT
+#endif
+dotwoconst
+    pla
+    sta n
+    pla
+    sta n+1
+    ldy #4
+dotwoconst01
+    lda (n),y
+    pha
+    dey
+    bne dotwoconst01
+    jmp tworfrom
+
+
+doconst
+    sec
+    .byt $29                    ; AND #
+;--------------------------------------------------------------
+#if 0
+name=DOCCONST
+stack=( -- n )
+tags=nosymbol,inner,primitive
+Runtime behavior of a word defined by CCONSTANT
+
+docconst
+    clc
+    jsr callers
+    lda (ACC),y
+    bcs fetchyax
+    ;ldy #1                     ; thanks, `callers`
+    dey
+    bcc put                     ; bra
+
+    jsr slip
+    pla
+    sta tos
+    pla                         ; ~#callers
+    sta tos+1
+    ldy #1
+    lda (tos),y
+    bcs fetchyax
+    dey
+    bcc put
+#endif
+
+[7]
+_docconst
+#include "align.i65"
+    jsr dodoes
+#include "page.i65"
+    .word cfetch
+#include "pass.i65"
+    .word exit
+
+~[19]
+docconst
+    clc
+    jsr slip
+    pla
+    sta tos
+    pla                         ; ~#callers
+    sta tos+1
+    ldy #1
+    lda (tos),y
+    bcs fetchyax
+    dey
+    bcc put                     ; bra
+
+
+fetchyax
+    pha
+    iny
+    lda (tos),y
+    tay
+    pla
+    bcs put         ; bra
+    rts
+
+dotwoconst
+    pla                         ; ~#callers
+    sta n
+    pla
+    sta n+1
+    ldy #4
+dotwoconst01
+    lda (n),y
+    pha
+    dey
+    bne dotwoconst01
+    jmp tworfrom
+
+caller
+    jsr slip
+    pla
+    tay
+    pla
+    sta z
+    pla
+    sta tos
+    pla
+    sta tos+1
+    lda z
+    pha
+    tya
+    pha
+    jmp next
+
+: addvocab   ( voc -- ) 		\ prepend to `vocab` list, without duplicates
+	vocabs 10
+
+	ld TOS
+	st N2 						; counter
+	pull
+	add N2
+	st N1 						; last vocab
+	pull
+	st N0 						; voc to add
+	pull
+avoc1
+	dcr N2 						; countdown
+	bz , avoc2
+	pop N1 						; pointer
+	bz , avoc1
+	cpr N0
+	bz , avoc1
+	inr N1
+	sti N1
+	dcr N1
+	br , avoc1
+avoc2
+	ld N0
+	sti N1
+	nxt
+
+new
+callers                         ; ~#callers
+    pla
+    sta ACC
+    pla
+    sta ACC+1
+    pla
+    sta ACC
+    pla
+    sta ACC+1
+    lda z
+    pha
+    tya
+    pha
+    ldy #1
+    rts
+
+callers                         ; ~#callers
+    pla
+    tay
+    pla
+    sta z
+    pla
+    sta ACC
+    pla
+    sta ACC+1
+    lda z
+    pha
+    tya
+    pha
+    ldy #1
+    rts
+
+rfrom
+    jsr slip
+rput
+    pla
+    sta tos
+    pla
+    sta tos+1
+    jmp next
+
+xxxdocreate
+    jsr slip
+    pla
+    sta tos
+    pla
+    sta tos+1
+    jmp oneplus
+
+xxxdodoes
+    pla             ;[4]
+    tay             ;[2]
+    pla             ;[4]
+    sta z           ;[3]
+    jsr slip        ;[.]
+    pla             ;[4]
+    sta tos         ;[3]
+    pla             ;[4]
+    sta tos+1       ;[3]
+    jsr inctos      ;[.]
+    jmp enter01
+
+docreate
+	ldy #<next
+	lda #>next
+	bne dodoes01
+
+    jsr slip
+    pla
+    sta tos
+    pla
+    sta tos+1
+    jmp oneplus
+
+dodoes
+	ldy #<(enter01-1)
+	lda #>(enter01-1)
+	sty ACC
+	sta ACC+1
+    pla             ;[4]
+    tay 			;[2]
+    pla             ;[4]
+dodoes01
+    sty ACC         ;[3]
+    sta ACC+1       ;[3]
+    jsr slip        ;[.]
+    pla             ;[4]
+    sta tos         ;[3]
+    pla             ;[4]
+    sta tos+1       ;[3]
+    jsr inctos      ;[.]
+    inc ACC
+    bne dodoes02
+    inc ACC+1
+dodoes02
+	jmp (ACC)
+
+enter
+    pla             ;[4]
+    tay
+    pla             ;[4]
+    sta ACC+1       ;[2]
+enter01
+    lda ip+1        ;[3]
+    pha             ;[3]
+    lda ip          ;[3]
+    pha             ;[3]
+    lda ACC+1       ;[3]
+    iny
+    bne jumpay      ;[3] bra `jsr enter` never goes at $xxFD
+yikes
+    sec
+    bcs exit01
+
+dlit
+    ldy #5
+dlit01
+    lda (ip),y
+    pha
+    dey
+    bne dlit01
+    pla
+    lda #3
+    jsr padjust
+    jmp tworfrom                ; move IP past double constant, `2r>`
+
+uservar
+    clc
+    ldy #1
+    pla
+    sta n
+    pla
+    sta n+1
+    lda (n),y
+    adc up
+    ldy up+1
+    bcc uservar02
+    iny
+uservar02
+    jmp pushya
+
+dovocab
+    jsr callers                 ; ~ #callers
+    lda (ACC),y                 ; this vocabulary id
+    sta z
+    lda #0
+    pha                         ; sentinel value
+    ldy #10                     ; bytes to move +1
+dovocab01
+    dey
+    bmi dovocab03
+    lda uservocabs,y
+    beq dovocab01
+    cmp z
+    beq dovocab01
+dovocab02
+    pha
+    bne dovocab01               ; bra
+dovocab03
+    lda z
+    pha
+    ;ldy #$FF
+dovocab04
+    iny
+    pla
+    sta uservocabs,y
+    bne dovocab04
+    jmp next
+
+diff --git a/core/src/core-double.a65 b/core/src/core-double.a65
+index f61d733..bfee3c7 100644
+--- a/core/src/core-double.a65
++++ b/core/src/core-double.a65
+@@ -355,27 +355,26 @@ twofetch01
+     dey
+     bpl twofetch01
+     jsr slide
+-    ; fall through
++    bne tworfrom
++
+ ;--------------------------------------------------------------
+ #if 0
+-name=2R>
+-stack=( -- x1 x2 ) ( R; x1 x2 -- )
+-tags=double,stack,ext
+-
+-Transfer cell pair x1 x2 from the return stack. Semantically equivalent to `R> R> SWAP`
++name=DO2CONST
++stack=( -- d )
++tags=nosymbol,inner
++Runtime behavior of a word defined by 2CONSTANT
+ #endif
+-tworfrom
+-    jsr slip
+-    dex
+-    pla
+-    sta tos
++dotwoconst
+     pla
+-    sta tos+1
+-    pla
+-    sta stackl,x
++    sta n
+     pla
+-    sta stackh,x
+-    jmp next
++    sta n+1
++    ldy #4
++dotwoconst01
++    lda (n),y
++    pha
++    dey
++    bne dotwoconst01
+ 
+ ;--------------------------------------------------------------
+ #if 0
+diff --git a/core/src/core-inner.a65 b/core/src/core-inner.a65
+index 62eba05..d7d78a2 100644
+--- a/core/src/core-inner.a65
++++ b/core/src/core-inner.a65
+@@ -146,26 +146,6 @@ fetchyax
+ 
+ ;--------------------------------------------------------------
+ #if 0
+-name=DO2CONST
+-stack=( -- d )
+-tags=nosymbol,inner
+-Runtime behavior of a word defined by 2CONSTANT
+-#endif
+-dotwoconst
+-    pla                         ; ~#callers
+-    sta n
+-    pla
+-    sta n+1
+-    ldy #4
+-dotwoconst01
+-    lda (n),y
+-    pha
+-    dey
+-    bne dotwoconst01
+-    jmp tworfrom
+-
+-;--------------------------------------------------------------
+-#if 0
+ name=DOCONST
+ stack=( -- c )
+ tags=nosymbol,inner
+@@ -181,41 +161,13 @@ stack=( -- n )
+ tags=nosymbol,inner,primitive
+ Runtime behavior of a word defined by CCONSTANT
+ 
+-docconst
+-    clc
+-    jsr callers
+-    lda (ACC),y
+-    bcs fetchyax
+-    ;ldy #1                     ; thanks, `callers`
+-    dey
+-    bcc put                     ; bra
+-
+-    jsr slip
+-    pla
+-    sta tos
+-    pla                         ; ~#callers
+-    sta tos+1
+-    ldy #1
+-    lda (tos),y
+-    bcs fetchyax
+-    dey
+-    bcc put
+-
+-_docconst
+-#include "align.i65"
+-    jsr dodoes
+-#include "page.i65"
+-    .word cfetch
+-#include "pass.i65"
+-    .word exit
+-
+ #endif
+ docconst
+     clc
+     jsr slip
+     pla
+     sta tos
+-    pla                         ; ~#callers
++    pla
+     sta tos+1
+     ldy #1
+     lda (tos),y
+@@ -593,9 +545,9 @@ Runtime behavior of a word built with `<BUILDS ... DOES>`
+ #endif
+ dodoes
+     pla             ;[4]
+-    tay             ;[2]
++    tay
+     pla             ;[4]
+-    sta z           ;[3]
++    sta z
+     jsr slip        ;[.]
+     pla             ;[4]
+     sta tos         ;[3]
+@@ -1084,7 +1036,7 @@ caller
+ ;[22]
+ ; retrieve the second item on the stack, callable from a primitive
+ ; ( the thing that called the thing that called `callers`)
+-callers                         ; ~#callers
++callers
+     pla
+     tay
+     pla
+diff --git a/core/src/core-nucleus.a65 b/core/src/core-nucleus.a65
+index b57b05f..acff93c 100644
+--- a/core/src/core-nucleus.a65
++++ b/core/src/core-nucleus.a65
+@@ -2290,32 +2290,6 @@ onemin01
+ 
+ ;--------------------------------------------------------------
+ #if 0
+-name=CHOOSE
+-stack=( n1 n2 flag -- n )
+-tags=nucleus,nosymbol
+-Returns `n2` if `flag` is true, `n1` if false
+-
+-This word is only here because I was using it in a few places,
+-`choose` seemed like a good thing to name it.  Feel free to undo
+-any of that.
+-
+-```
+-: choose   ( n1 n2 flag -- n )
+-    ?: nip drop ;
+-```
+-#endif
+-#include "align.i65"
+-_choose
+-    jsr enter
+-#include "pass.i65"
+-    .word pquerycolon
+-    .word nip
+-    .word drop
+-#include "pass.i65"
+-    .word exit
+-
+-;--------------------------------------------------------------
+-#if 0
+ name=>MINMAX
+ stack=( n1 n2 -- n )
+ tags=nucleus,nosymbol
+@@ -2340,8 +2314,10 @@ dominmax
+     .word rot
+ #include "page.i65"
+     .word execute
+-#include "page.i65"
+-    .word _choose
++#include "pass.i65"
++    .word pquerycolon
++    .word nip
++    .word drop
+ #include "pass.i65"
+     .word exit
+ 
+diff --git a/studio/src/pettil-assembler.a65 b/studio/src/pettil-assembler.a65
+index 245cb7e..9f88da7 100644
+--- a/studio/src/pettil-assembler.a65
++++ b/studio/src/pettil-assembler.a65
+@@ -9,7 +9,7 @@ tags=assembler,vocabulary,extension
+ Sets context to the ASSEMBLER vocabulary
+ #endif
+ assembler
+-    jsr dovocabmosh
++    jsr dovocab
+     .byt 1                      ; vocabulary identifier
+ 
+ ;--------------------------------------------------------------
+diff --git a/studio/src/pettil-compiler.a65 b/studio/src/pettil-compiler.a65
+index 71c6e6a..2e4715c 100644
+--- a/studio/src/pettil-compiler.a65
++++ b/studio/src/pettil-compiler.a65
+@@ -1214,12 +1214,6 @@ at the front of the `vocabs` list (max 10).  Duplicates are removed.
+ : >vocab   ( addr -- )
+     caller vocabs dup 1+ 8 cmove> c@ vocabs c! dedupvocab ;
+ ```
+-#endif
+-#include "align.i65"
+-dovocabmosh
+-    jsr callers                 ; ~ #callers
+-    lda (ACC),y                 ; this vocabulary id
+-    sta z
+     lda #0
+     pha                         ; sentinel value
+     ldy #10                     ; bytes to move +1
+@@ -1228,13 +1222,13 @@ dovocabm01
+     bmi dovocabm03
+     lda uservocabs,y
+     beq dovocabm01
+-    cmp z
++    cmp tos
+     beq dovocabm01
+ dovocabm02
+     pha
+     bne dovocabm01               ; bra
+ dovocabm03
+-    lda z
++    lda tos
+     pha
+     ;ldy #$FF
+ dovocabm04
+@@ -1242,7 +1236,61 @@ dovocabm04
+     pla
+     sta uservocabs,y
+     bne dovocabm04
+-    jmp next
++    jmp drop
++
++
++addvoc
++    brk
++    .byt set | N2
++    .word uservocabs
++    .byt set | N1
++    .word uservocabs+10
++
++    .byt ld | TOS
++    .byt st | N2
++    .byt pull
++    .byt add | N2
++    .byt st | N1
++    .byt pull
++    .byt st | N0
++avoc1
++    .byt dcr | N2
++    .byt bm1 , <(avoc2-*-2)
++    .byt pop | N1
++    .byt bz , <(avoc1-*-2)
++    .byt cpr | N0
++    .byt bz , <(avoc1-*-2)
++    .byt inr | N1
++    .byt sti | N1
++    .byt dcr | N1
++    .byt br , <(avoc1-*-2)
++avoc2
++    .byt ld | N0
++    .byt sti | N1
++    .byt nxt
++
++#endif
++#include "align.i65"
++dovocab
++    jsr dodoes
++#include "page.i65"
++    .word cfetch
++#include "page.i65"
++    .word vocabs
++#include "page.i65"
++    .word dup
++#include "page.i65"
++    .word dup
++#include "page.i65"
++    .word oneplus
++#include "page.i65"
++    .word nine
++#include "page.i65"
++    .word cmovegt
++#include "page.i65"
++    .word cstore
++#include "pass.i65"
++    .word exit
+ 
+ ;--------------------------------------------------------------
+ #if 0
+@@ -1269,7 +1317,7 @@ _vdrop
+ #include "page.i65"
+     .word vocabs
+ #include "page.i65"
+-    .word nine
++    .word ten
+ #include "page.i65"
+     .word cmove
+ #include "pass.i65"
+@@ -1309,7 +1357,7 @@ _vocabulary
+     .word off
+ #include "pass.i65"
+     .word plit
+-    .word dovocabmosh
++    .word dovocab
+ #include "page.i65"
+     .word _pcreate
+ #include "page.i65"
+diff --git a/studio/src/pettil-editor.a65 b/studio/src/pettil-editor.a65
+index a32b736..e01e426 100644
+--- a/studio/src/pettil-editor.a65
++++ b/studio/src/pettil-editor.a65
+@@ -9,7 +9,7 @@ tags=assembler,vocabulary,extension
+ Sets context to the EDITOR vocabulary
+ #endif
+ editor
+-    jsr dovocabmosh
++    jsr dovocab
+     .byt 2                      ; vocabulary identifier
+ 
+ ;--------------------------------------------------------------
