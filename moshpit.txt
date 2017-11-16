@@ -1,5 +1,198 @@
 moshpit
 
+
+
+
+: name
+     ?refill 'stream swap >n6 2drop
+     dup skip dup>r 1- <n6 +
+     swap scan r> - >n8 dup
+     if  over c! in 1+!
+     else
+          nip
+     then ;
+
+     if  over c! in 1+!
+     dup \ something for nip
+     then nip ;
+
+_name
+    jsr enter
+    .word _qrefill
+    .word _tickstream
+    .word swap
+    .word tozp
+    .byt ACC+2*N6               ; set up buffer pointer `n6`
+    .word twodrop
+    .word dup
+    .word skip
+    .word duptor
+    .word oneminus
+    .word zpfrom
+    .byt ACC+2*N6               ; buf
+    .word plus
+    .word swap
+    .word scan
+    .word rfrom
+    .word minus
+    .word tozp
+    .byt ACC+2*N8
+    .word dup
+    .word qbranch
+    .byt <(name01-*+1)
+    .word over
+    .word cstore
+    .word in
+    .word oneplusstore
+    .word branch
+    .byt <(name02-*+1)
+name01
+    .word nip
+name02
+    .word exit
+
+
+_prefixzpfrom
+    jsr enter
+    .word exit
+
+_prefixtozp
+    jsr enter
+    .word exit
+
+
+_prefixs16reg
+    jsr enter
+    .word exit
+
+: prefixnreg
+     ?comp <n6 msb ;
+_prefixnreg
+    jsr enter
+    .word _qcomp                ; must be compiling
+    .word zpfrom
+    .byt ACC+2*N6
+    .word msb                   ; the flags
+    .word exit
+
+_prefixescopy
+    jsr enter
+    .word _qcomp                ; compilation only
+
+
+    lda ACC+2*N6+1              ; flags ->N$
+    lsr                         ; check `base` flag
+    bcc notfound
+    sec
+    rol                         ; turn on `base` flag
+    sta ACC+2*N6+1              ; flags ->N$
+_prefixesregister
+    jsr enter
+    .word _qcomp
+    .word caller
+    .word
+
+_prefixesbase
+    jsr enter
+    .word caller
+    .word firstchar
+
+_prefixdecimal
+    jsr _prefixesbase
+    .byt 10
+
+_prefixhex
+    jsr _prefixesbase
+    .byt 16
+
+_prefixboolean
+    jsr _prefixesbase
+    .byt 2
+
+; set the negation flag in `r?h`
+;
+prefixnegate
+    lda ACC+2*N6+1              ; no other flags can be on yet
+    ;and #$FF
+    beq pfneg01
+numfail
+    ldy #3
+    jmp error                   ; abort" not found"
+pfneg01
+    lda #%11110000              ; $87
+    sta ACC+2*N6+1
+    jmp next
+
+prefixes
+     .byt prefixes01-*-1        ; number of prefixes
+     .asc "-<>RN#$%"
+prefixes01
+    .word prefixnegate
+    .word _prefixzpfrom
+    .word _prefixtozp
+    .word _prefixs16reg
+    .word _prefixnreg
+    .word _prefixdecimal
+    .word _prefixhex
+    .word _prefixboolean
+
+firstchar
+    ldy #0
+    sty ACC+2*N6+1              ; negate, tofrom, reg, base flags--init all off
+    sty ACC+2*N8+1              ; pointer to this prefix char
+    lda (ACC+2*N7),y
+    sta ACC+2*N8                ; length of number
+
+nextchar
+    inc ACC+2*N8+1
+    ldy ACC+2*N8+1              ; pointer to next char
+    lda (ACC+2*N7),y            ; get char
+    jmp push0a
+
+
+: prefix?   ( -- )
+    'prefixes 1stchar >$15 ( n8h ) 2dup >idx ;
+_prefixq
+    jsr enter
+    .word plit
+    .word prefixes
+    .word firstchar
+    .word tozp
+    .byt ACC+2*N8+1             ; n8h = the character under consideration
+    .word twodup
+    .word _toidx
+    .word exit
+
+pnumber
+    brk
+    .byt sub | ACC
+    .byt st | N0
+    .byt st | N1                ; zero out quotient
+    .byt ldd | TOS
+    .byt st | N6                ; set default `base` and flags to 0
+    .byt pull
+    .byt st | N7
+    .byt pull
+    .byt nxt
+
+
+: number   ( addr -- d )
+     base (number) prefix? ;
+_devnumber
+    jsr enter
+    .word base
+    .word xyzzy
+    .word pnumber               ; more setup
+    .word _prefixq              ; handle prefix characters
+    .word exit
+
+
+
+pla / sta / pla / sta pattern
+
+
+
+
 tworfrom
     jsr slip
     dex
@@ -343,6 +536,12 @@ dovocab04
     bne dovocab04
     jmp next
 
+
+
+core diffs
+
+
+
 diff --git a/core/src/core-double.a65 b/core/src/core-double.a65
 index f61d733..bfee3c7 100644
 --- a/core/src/core-double.a65
@@ -387,7 +586,7 @@ index f61d733..bfee3c7 100644
 +    pha
 +    dey
 +    bne dotwoconst01
- 
+
  ;--------------------------------------------------------------
  #if 0
 diff --git a/core/src/core-inner.a65 b/core/src/core-inner.a65
@@ -395,7 +594,7 @@ index 62eba05..d7d78a2 100644
 --- a/core/src/core-inner.a65
 +++ b/core/src/core-inner.a65
 @@ -146,26 +146,6 @@ fetchyax
- 
+
  ;--------------------------------------------------------------
  #if 0
 -name=DO2CONST
@@ -424,7 +623,7 @@ index 62eba05..d7d78a2 100644
 @@ -181,41 +161,13 @@ stack=( -- n )
  tags=nosymbol,inner,primitive
  Runtime behavior of a word defined by CCONSTANT
- 
+
 -docconst
 -    clc
 -    jsr callers
@@ -490,7 +689,7 @@ index b57b05f..acff93c 100644
 --- a/core/src/core-nucleus.a65
 +++ b/core/src/core-nucleus.a65
 @@ -2290,32 +2290,6 @@ onemin01
- 
+
  ;--------------------------------------------------------------
  #if 0
 -name=CHOOSE
@@ -534,7 +733,12 @@ index b57b05f..acff93c 100644
 +    .word drop
  #include "pass.i65"
      .word exit
- 
+
+
+
+studio diffs
+
+
 diff --git a/studio/src/pettil-assembler.a65 b/studio/src/pettil-assembler.a65
 index 245cb7e..9f88da7 100644
 --- a/studio/src/pettil-assembler.a65
@@ -546,7 +750,7 @@ index 245cb7e..9f88da7 100644
 -    jsr dovocabmosh
 +    jsr dovocab
      .byt 1                      ; vocabulary identifier
- 
+
  ;--------------------------------------------------------------
 diff --git a/studio/src/pettil-compiler.a65 b/studio/src/pettil-compiler.a65
 index 71c6e6a..2e4715c 100644
@@ -641,7 +845,7 @@ index 71c6e6a..2e4715c 100644
 +    .word cstore
 +#include "pass.i65"
 +    .word exit
- 
+
  ;--------------------------------------------------------------
  #if 0
 @@ -1269,7 +1317,7 @@ _vdrop
@@ -673,5 +877,5 @@ index a32b736..e01e426 100644
 -    jsr dovocabmosh
 +    jsr dovocab
      .byt 2                      ; vocabulary identifier
- 
+
  ;--------------------------------------------------------------
