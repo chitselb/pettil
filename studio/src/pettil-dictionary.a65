@@ -174,52 +174,6 @@ tags=ext,primitive,nfa,nosymbol
 compiled with an inline value following the CFA
 to specify a constant per-symbol offset
 
-codegolf=
-
-[24]
-symplus
-    ldy #2
-    lda (ip),y
-    inc ip                      ; ~wut? dangerous? probably
-    pha
-    jsr symlens
-    pla                         ; + length/flags + cfa
-    adc ACC+2*N8
-    adc ACC+2*N3
-    sta ACC+2*N3
-    bcc symplus01
-    inc ACC+2*N3+1
-symplus01
-    jmp next
-[28] played around with this approach, which works but [28] was bigger
-    stx z
-    ldx #ACC+2*N3
-    jsr ADD
-    jsr ST
-    ldx z
-[19]                            2017-09-17 chitselb *5* bytes
-
-```
-     3 sym+                     compiles to
-    .word symplus
-    .byt 3                      ; skip symbol + cfa word + flag/len byte
-
-    .word symplus
-    .byt 0                      ;skip just the symbol
-```
-
-symplus
-    jsr symlens         ;{*}
-    ldy #2              ;{2}
-    adc (ip),y          ;{5}    ; + length/flags + cfa
-    adc ACC+2*N3        ;{3}
-    sta ACC+2*N3        ;{3}
-    bcc symplus02       ;{3}
-    inc ACC+2*N3+1
-symplus02
-    ldy #2              ;{2}
-    jmp pad             ;{3 {=21}}
-
 #endif
 symplus
     ldy #2
@@ -237,73 +191,6 @@ sympluss
     bcc symplus01
     inc ACC+2*N3+1
 symplus01
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=SYM.COMP
-tags=nosymbol
-Compares two symbols at N3 and N4
-#endif
-symcomps
-    jsr symlens
-    bne symcomp01
-symcomp00
-    jmp true
-symcomp01
-    tay
-    bcc symcomp03
-    iny
-    lda (ACC+2*N3),y
-    dey
-    eor ACC+2*N4                ; compare to context
-    beq symcomp03
-symcomp02
-    jmp false
-symcomp03
-    lda (ACC+2*N3),y
-    eor (ACC+2*N7),y
-    bne symcomp00
-    dey
-    bne symcomp01
-
-    lda (ACC+2*N3),y
-    bne symcomp01
-    dey
-    rts
-    eor (n),y
-    and #%11011111
-    bne strcomp02               ; length, vocab bit or smudge?
-    jsr symlens
-    adc #0
-    ;clc
-    tay
-    ; fall through
-;--------------------------------------------------------------
-#if 0
-name=STRCOMP
-tags=nosymbol
-Compares two strings known to be the same length pointed to by
-`TOS` and `N0`.
-
-|<br><i>inputs</i>|<|
-|<b>TOS</b>|NFA|
-|<b>N0</b>|NFA being sought|
-|<b>Y</b>|length|
-|<br><i>returns</i>|<|
-|<b>TOS</b>|unchanged|
-|<b>N0</b>|unchanged|
-|^<b>Y</b>|index of mismatch<br><b>0</b> if success|
-|<b>Z</b>|strings match?|
-|<b>C</b>|unchanged|
-#endif
-strcomp
-    lda (tos),y
-    eor (n),y
-    bne strcomp02
-    dey
-    bne strcomp
-strcomp02
     rts
 
 ;--------------------------------------------------------------
@@ -1597,12 +1484,10 @@ pforgetpostcfa
 name=SYM.NEXT
 stack=( -- flag )
 tags=interpreter,nfa,nosymbol
+no `jsr enter` -- code fragment,
+tail of the word that branches here
 
 #endif
-#include "align.i65"
-_symnext
-    jsr enter
-#include "pass.i65"
 symnext01
     .word symplus
     .byt 3
@@ -1688,7 +1573,7 @@ the word is copied to PAD as is, smudged.
 ```
 #endif
 #include "align.i65"
-pforgetpass1
+_pforgetpass1
     jsr enter
 #include "page.i65"
     .word i
@@ -1710,7 +1595,6 @@ pforgetpass1
     .byt ACC+2*N3
 #include "page.i65"
     .word namefrom              ; nfa>cfa
-;
 #include "page.i65"
     .word twodup
 #include "page.i65"
@@ -1729,17 +1613,16 @@ pforgetpass1a
 #include "pass.i65"
     .word branch
     .byt <(symnext01-*+1)       ; next!
-
 #include "page.i65"
 pforgetpass1b                   ; pass 0 only, set passbits and bloomfilter
     .word symlen
 #include "page.i65"
     .word _passbitsstore         ; if ((i-1) = 0) set `passbits` for all lengths
 #include "page.i65"
-    .word _bloomfilter          ; doing this here speeds things up (slightly)
-#include "page.i65"             ; with a low risk of setting inconsequential
-    .word cbitstore             ; false positives in bloom#
-#include "pass.i65"
+    .word _bloomfilter          ; doing this here speeds things up slightly,
+#include "page.i65"             ; with a low risk of setting (inconsequential)
+    .word cbitstore             ; false positives in `bloom#` for forgotten
+#include "pass.i65"             ; words.
     .word branch
     .byt <(symnext01-*+1)       ; next!
 
@@ -1763,7 +1646,7 @@ Retrieves the pearson hash value for this word, stored on pass 1
 ```
 #endif
 #include "align.i65"
-pforgetpass2
+_pforgetpass2
     jsr enter
 #include "pass.i65"
     .word zpfrom                ; nfa
