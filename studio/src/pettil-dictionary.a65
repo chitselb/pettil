@@ -102,6 +102,27 @@ tosyms01
 
 ;--------------------------------------------------------------
 #if 0
+name=SYM.REWIND
+stack=( -- )
+tags=nfa,nosymbol
+set `n3` to the first symbol in the (sequential) `symtab`
+
+#endif
+#include "align.i65"
+_symrewind
+    jsr enter
+#include "page.i65"
+    .word tosyms
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N3
+#include "page.i65"
+    .word drop
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=SYM.LEN
 stack=( -- len )
 tags=nfa,nosymbol
@@ -122,13 +143,17 @@ symlen
 ;--------------------------------------------------------------
 #if 0
 name=SYMLENS
-effects=A:len;Y:0;C:vocab?
+effects=A:len;Y:0;C:vocab?;Z:len
 tags=nfa,nosymbol
+return the length of the current `nfa` stored in `n3`
 
 #endif
 symlens
     ldy #0              ;{2 {=23}}
-    lda (ACC+2*N3),y    ;{5}
+    lda ACC+2*N3+1              ; length = 0 if `n3` is 0
+    beq symlens01
+    lda (ACC+2*N3),y    ;{5}    ; length/flags
+symlens01
     pha                 ;{3}    ; not using tay/tya preserves Y=0
     asl                 ;{2}
     asl                 ;{2}    ; Vocab bit to C flag
@@ -166,6 +191,7 @@ symcopy01
 name=SYM+
 stack=( -- )
 tags=ext,primitive,nfa,nosymbol
+registers=Z:false
 * move N3 to the next symbol
 compiled with an inline value following the CFA
 to specify a constant per-symbol offset
@@ -402,58 +428,38 @@ smudgeclone16
 ;--------------------------------------------------------------
 #if 0
 name=(>NAME)
-stack=( cfa -- xfa flag )
+stack=( cfa -- nfa|0 )
 tags=compiler,nosymbol
-This is the IoC (inversion of control) design pattern in PETTIL.  R11 has the
-CFA of this word, called by `ext.until` (~wut? I dislike that name) until
-either the symbol table is exhausted or the lost CFA is found.  To continue
-our analogy (from the next word `>name`), this is like showing the milk carton
-to one person and asking them if they are the CFA we are looking for.
 
 Compare the provided CFA(N4) vs. CFA of current NFA in (N3)
-If equal, return the NFA (twice)
-else return 0
 
 ```
-: (>name)   ( cfa -- xfa flag )
-    <n3 name>                   ( cfa currcfa )
-    2dup =                      ( cfa currcfa flag )
+: (>name)   ( cfa -- nfa|0 )
 
-    brk
-    .byt popd | N3
-    .byt cpr | N4
-    .byt bz , ptoname02
-    .byt sub | ACC
-ptoname02
-    .byt push
-    .byt nxt
 ```
 #endif
 #include "align.i65"
 ptoname
-    jsr enter
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N3
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word namefrom
-#include "page.i65"
-    .word ne
-#include "pass.i65"
-    .word qbranch
-    .byt <(ptoname01-*+1)
-#include "pass.i65"
-    .word symplus
-    .byt 3
-#include "pass.i65"
-    .word exit
-#include "page.i65"
-ptoname01
-    .word dup
-#include "pass.i65"
-    .word exit
+    ldy #$FE
+ptoname02
+    dec ACC+2*N3+1
+    lda (ACC+2*N3),y
+    inc ACC+2*N3+1
+    eor tos-$FE,y
+    bne ptoname05
+    iny
+    bne ptoname02
+    lda ACC+2*N3
+    ldy ACC+2*N3+1
+ptoname04
+    jmp put
+ptoname05
+    ldy #0
+    lda (ACC+2*N3),y
+    beq ptoname04
+    lda #3
+    jsr sympluss                ; next!
+    bne ptoname                 ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -464,7 +470,8 @@ Returns the Name Field Address (`nfa`) of a given word, or 0
 if the provided Code Field Address (`cfa`) wasn't found in the
 symbol table.  This word honors the smudge bit
 
-Populates `n3` with the current nfa
+Populates `n3` with the current `nfa`
+
 ```
 : >name   ( cfa -- nfa|0 )
     >syms >n3 drop
@@ -476,49 +483,17 @@ Populates `n3` with the current nfa
     repeat
     name> nip ;
 ```
-[18] 2017-11-09
 #endif
 #include "align.i65"
 _toname
     jsr enter
 #include "page.i65"
-    .word tosyms
-#include "pass.i65"
-    .word tozp
-    .byt ACC+2*N3               ; symtab -> N3
+    .word _symrewind
 #include "page.i65"
-    .word drop
-#include "pass.i65"
-toname01                        ; begin
-    .word zpfrom
-    .byt ACC+2*N3
-#include "page.i65"
-    .word namefrom
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word ne
-#include "page.i65"
-    .word symlen
-#include "page.i65"
-    .word andx
-#include "pass.i65"
-    .word qbranch
-    .byt <(toname02-*+1)
-#include "pass.i65"
-    .word symplus
-    .byt 3
-#include "pass.i65"
-    .word branch
-    .byt <(toname01-*+1)
-#include "pass.i65"
-toname02                        ; begin
-    .word zpfrom
-    .byt ACC+2*N3
-#include "page.i65"
-    .word nip
+    .word ptoname
 #include "pass.i65"
     .word exit
+
 
 ;--------------------------------------------------------------
 #if 0
@@ -1662,9 +1637,9 @@ _pforgetpass2
 ;--------------------------------------------------------------
 #if 0
 name=INIT.411
-stack=( ? )
+stack=( value 'filter -- )
 tags=interpreter,nfa,nosymbol
-Sweet16 primitive, sets R4 & R11
+Sweet16 primitive, sets `n4` to `value` and `r11` to `'filter`
 
 ```
 : init.411    ( flag(r4) `filter(r11) -- )

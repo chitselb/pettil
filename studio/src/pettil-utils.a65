@@ -298,20 +298,20 @@ dump06
 ;--------------------------------------------------------------
 #if 0
 name=ID.
-stack=( nfa -- )
+stack=( -- )
 tags=compiler
-Displays the name of a word
+Displays the name at the current `nfa` in `n3`
 
 ```
-: id.   ( nfa -- )
-    1+ dup 1- nfalen type ;
+: id.   ( -- )
+    <n3 1+ sym.len type ;
 ```
 #endif
 #include "align.i65"
 _iddot
     jsr enter
 #include "pass.i65"
-    .word tozp
+    .word zpfrom
     .byt ACC+2*N3
 #include "page.i65"
     .word oneplus
@@ -325,7 +325,7 @@ _iddot
 ;--------------------------------------------------------------
 #if 0
 name=ID.L
-stack=( cfa -- )
+stack=( -- )
 tags=ext,nosymbol
 
 #endif
@@ -333,18 +333,29 @@ tags=ext,nosymbol
 _iddotl
     jsr enter
 #include "page.i65"
-    .word _toname
-#include "page.i65"
     .word _iddot
 #include "page.i65"
     .word _space
 #include "pass.i65"
     .word exit
 
+
+pvoc
+    jsr slip
+    jsr symlens
+    bcc pvoc05
+    tay
+    iny
+    lda (ACC+2*N3),y
+    .byt $24
+pvoc05
+    tya
+    jmp put0a
+
 ;--------------------------------------------------------------
 #if 0
 name=WORD-LIST
-stack=( n -- )
+stack=( voc -- )
 tags=interpreter,dictionary,forth-83
 Displays all words in vocabulary `n`
 
@@ -378,34 +389,34 @@ dup c@ $40 and 0=               \ TRUE if in core
 _wordlist
     jsr enter
 #include "page.i65"
-    .word cr
+    .word _symrewind
 #include "page.i65"
-    .word tosyms
+wordlist01
+    .word pvoc
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word eq
 #include "pass.i65"
-    .word tozp
-    .byt ACC+2*N3
+    .word qbranch
+    .byt <(wordlist02-*+1)
+#include "page.i65"
+    .word _iddotl
+#include "page.i65"
+wordlist02
+    .word symplus
+    .byt 3
+#include "page.i65"
+    .word symlen
+#include "page.i65"
+    .word zeq
+#include "pass.i65"
+    .word qbranch
+    .byt <(wordlist01-*+1)
 #include "page.i65"
     .word drop
 #include "pass.i65"
-    .word plit
-    .word pwordlist
-#include "page.i65"
-    .word init411
-#include "page.i65"
-    .word _extuntil
-#include "pass.i65"
     .word exit
-
-pwordlist
-    jsr symlens
-    bcc pwordlist01
-    adc ACC+2*N8
-    tay
-    lda (ACC+2*N3),y
-    eor ACC+2*N4
-    .byt $2C                    ; BIT abs
-pwordlist01
-    lda ACC+2*N4
 
 ;--------------------------------------------------------------
 #if 0
@@ -439,60 +450,46 @@ Display the entire dictionary.
 : words
     vocabs
     begin
-        c@+ dup
+        c@+ ?dup
+    while
         word-list
-        0=
-    until drop ;
+    repeat
+    vocabs 1+ <> dup
+    ?: drop word-list  ;
 ```
 #endif
 #include "align.i65"
 _words
     jsr enter
 #include "page.i65"
-    .word cr
-#include "page.i65"
-    .word tosyms
-#include "pass.i65"
-    .word tozp
-    .byt ACC+2*N3
-#include "page.i65"
-    .word drop
-#include "page.i65"
     .word vocabs
 #include "page.i65"
-    .word cfetchplus
-#include "pass.i65"
-    .word qbranch
-    .byt <(words01-*+1)
-#include "page.i65"
 words01
-    .word symlen
+    .word cfetchplus
 #include "page.i65"
-    .word qterminal
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word andx
+    .word qdup
 #include "pass.i65"
     .word qbranch
     .byt <(words02-*+1)
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N3
 #include "page.i65"
-    .word _iddot
-#include "page.i65"
-    .word _qpause
-#include "page.i65"
-    .word _space
-#include "pass.i65"
-    .word symplus
-    .byt 3
+    .word _wordlist
 #include "pass.i65"
     .word branch
     .byt <(words01-*+1)
-#include "pass.i65"
+#include "page.i65"
 words02
+    .word vocabs
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word ne
+#include "page.i65"
+    .word dup
+#include "pass.i65"
+    .word pquerycolon
+    .word drop
+    .word _wordlist
+#include "pass.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -507,9 +504,11 @@ formatted output, three-column layout used by `info`
 _iddot14
     jsr enter
 #include "page.i65"
-    .word dup                   ; `nfa`s, one for `id.14` and one for `execute`
+    .word dup
 #include "page.i65"
     .word _toname
+#include "page.i65"
+    .word drop
 #include "page.i65"
     .word seven
 #include "page.i65"
@@ -533,9 +532,7 @@ _iddot14
 #include "page.i65"
     .word _spaces
 #include "page.i65"
-    .word _iddot
-#include "page.i65"
-    .word _space
+    .word _iddotl
 #include "page.i65"
     .word execute
 #include "pass.i65"
@@ -621,6 +618,10 @@ info02
     .word plit
     .word vocabs
 #include "page.i65"
+    .word _toname
+#include "page.i65"
+    .word drop
+#include "page.i65"
     .word _iddotl
 #include "page.i65"
     .word vocabs
@@ -649,6 +650,10 @@ info04
 #include "pass.i65"
     .word plit
     .word filename
+#include "page.i65"
+    .word _toname
+#include "page.i65"
+    .word drop
 #include "page.i65"
     .word _iddotl
 #include "page.i65"
