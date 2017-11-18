@@ -1674,6 +1674,68 @@ writing packets in the `vmbuf` region.
 
 ```
 : update   ( -- )
+\ are there any blocks?  ?exit
+\ scenario B (do not update DATA packet in editor)
+    #blk @ 0= ?exit
+\ editing? choose vidram blkbuf
+    blkbuf
+    editing?
+    if
+\ early exit if editing data packet
+\ scenario A (update packet from VIDRAM)
+        drop
+\ editing & isscr? choose vidram as source
+\ editing & !isscr? do not modify this data packet
+        isscr?
+        ?: vidram exit
+    then
+    vmbuf b/buf
+\ use the packet in `blk`   or `scr`
+\ use               `b/buf` or `b/scr`
+               b/buf blk
+    isscr?
+    if
+        2drop  b/scr scr
+    then
+\ spread out the packet by moving everything below it down 1K
+    @ >pkt
+    (upd1)
+    cmove
+\ stash 24-bit line wrap info at the front of the packet
+    l/scr wrap^
+\ set the `scrpkt` bit in the new packet header
+    scrpkt
+\ shorten the buffer with `-trailing`
+    ?: -trailing -nulls
+\ attempt to rlencode what is left
+    nip rlencode
+\ write new packet header
+\ squeeze out unused space in new packet, move `vmbuf` to top of packet
+    +move
+\ recount packets
+    #blk! ;
+
+: update   ( -- )
+    #blk @ 0= ?exit                   \ early exit if buffer empty
+    blkbuf  editing? if
+        drop  isscr? ?: vidram exit     \ early exit if editing data
+    then
+    vmbuf b/buf
+    b/buf blk  isscr? if
+        2drop  b/scr scr
+    then
+    @ >pkt
+    (upd1)
+    cmove
+    25 wrap^ scrpkt
+    (upd2)
+    ?: -trailing -nulls  nip rlencode isscr?
+    (upd3)
+    +move #blk! ;
+
+
+
+: update   ( -- )
     #blk @ 0= ?exit                   \ early exit if buffer empty
     blkbuf  editing? if
         drop  isscr? ?: vidram exit     \ early exit if editing data
@@ -1691,6 +1753,33 @@ writing packets in the `vmbuf` region.
     (upd3)
     +move #blk! ;
 ```
+
+: ^   ( -- )
+    #blk @  scr !
+    editing on
+    vidram scrpkt !
+    0 mkpkts
+    update _ ;
+
+: update   ( -- )
+    #blk @ 0= ?exit                   \ early exit if buffer empty
+    blkbuf  editing? if
+        drop  isscr? ?: vidram exit     \ early exit if editing data
+    then
+    vmbuf b/buf
+    b/buf blk  isscr? if
+        2drop  b/scr scr
+    then
+    @ >pkt
+    (upd1)
+    cmove
+    25 wrap^ scrpkt
+    (upd2)
+    ?: -trailing -nulls  nip rlencode isscr?
+    (upd3)
+    +move #blk! ;
+
+
 scenario 1 - most typical, editing a code screen
     editing?        true
     isscr?          true
