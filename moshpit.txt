@@ -66,18 +66,42 @@ moshpit
         ?: vidram exit
     then
     vmbuf b/buf
-    b/buf blk  isscr? if
+\ use the packet in `blk`   or `scr`
+\ use               `b/buf` or `b/scr`
+               b/buf blk
+    isscr?
+    if
         2drop  b/scr scr
     then
+\ spread out the packet by moving everything below it down 1K
     @ >pkt
     (upd1)
     cmove
-    25 wrap^ scrpkt
-    (upd2)
-    ?: -trailing -nulls  nip rlencode isscr?
-    (upd3)
-    +move #blk! ;
+\ stash 24-bit line wrap info at the front of the packet
+    l/scr wrap^
+\ set the `scrpkt` bit in the new packet header
+    scrpkt
+\ shorten the buffer with `-trailing`
+    ?: -trailing -nulls
+\ attempt to rlencode what is left
+    nip rlencode
+\ write new packet header
+\ squeeze out unused space in new packet, move `vmbuf` to top of packet
+    +move
+\ recount packets
+    #blk! ;
 
+editing     on/off
+scrpkt      $8000/0
+#blk        min. 1 to play
+scr         use if scrpkt & editing
+blk         use if !editing
+            use if !scrpkt
+
+
+constants
+b/buf   b/scr   l/scr   blkbuf
+$0400   1000    25      $5800
 
 editing?: true
 isscr?:   true              A   vidram
@@ -87,6 +111,10 @@ editing?: false                 blkbuf
 isscr?:   true              C
 isscr?:   false             D
 
+exit if no blocks
+exit if editing data packet
+editing? vidram blkbuf
+isscr?   vidram exit
 
 
 
@@ -111,9 +139,213 @@ rlencode
 
 
 
+rlencode
+    ; tos   src (pristine)
+    ; n0    src (in)
+    ; n1    size (in)
+    ; n2    targ (out)
+    ; n3    size (out)
+    ; n4    repeat
+    ; n5    prev
+    ; n6    $100
+    ; n7    targ (pristine)
+    ; n8    size (pristine)
+    brk
+    .byt ld | TOS               ; size
+    .byt st | N1                ; size (in)
+    .byt st | N3                ; size (out)
+    .byt st | N8                ; size (pristine)
+    .byt pull                   ; to
+    .byt st | N2                ; targ (out)
+    .byt st | N7                ; targ (pristine)
+    .byt pull                   ; from -- TOS = src (pristine)
+    .byt st | N0                ; src (pristine)
+    .byt set | N6               ; constant to initialize repeat counter
+    .word $100
+rlencode01
+    .byt ld | N6                ; also unfindable character
+rlencode02
+    .byt st | N5                ; prev character
+    .byt ld | N3
+    .byt bm , <(rlencode07-*-2) ; is RL encoding no size benefit?
+    .byt ld | N1
+    .byt bz , <(rlencode06-*-2) ; done with input?
+    .byt ldi | N0               ; read input stream
+    .byt dcr | N1
+    .byt sti | N2               ; write output stream
+    .byt dcr | N3
+    .byt cpr | N5               ; compare to prev
+    .byt bnz , <(rlencode02-*-2) ; different? go get more
+    .byt ld | N6
+    .byt st | N4                ; count backwards from 256
+    .byt dcr | N4               ; count the one already in output stream
+rlencode03
+    .byt dcr | N4
+    .byt bz , <(rlencode04-*-2) ; overflow?
+    .byt ld | N1
+    .byt bz , <(rlencode04-*-2) ; end of input?
+    .byt ldi | N0               ; get from input stream
+    .byt dcr | N1
+    .byt cpr | N5
+    .byt bz , <(rlencode03-*-2) ; same char? loop
+
+    .byt dcr | N0               ; different char?
+    .byt inr | N1               ; un-get from input stream
+rlencode04                      ; overflow/end of input
+    .byt ld | N6
+    .byt sub | N4
+    .byt sti | N2               ; write count to output stream
+    .byt dcr | N3
+    .byt br , <(rlencode01-*-2)
+
+rlencode06                      ; win
+    .byt ld | N2                ; targ (out)
+    .byt st | TOS
+    .byt sub | ACC
+    .byt push
+    .byt nxt
+;    rlencode
+;( targend uncompressed?        ; floor  pkt )
+
+rlencode07                      ; lose - copy
+    .byt ld | TOS
+    .byt st | N0                ; keep pristine TOS
+    .byt ld | N8                ; size
+    .byt add | N7               ; +pristine targ
+    .byt st | TOS
+    .byt set | ACC
+    .word $4000
+    .byt push
+    .byt ld | N0
+    .byt push
+    .byt ld | N7
+    .byt push
+    .byt ld | N8
+    .byt push
+    .byt rtn
+    jmp cmove
+
+
+pupd1
+    jsr harvests10
+    brk
+    .byt ldd | N1               ; vmbuf @
+    .byt st | N5                ; save for later
+    .byt sub | N2               ; vmbuf-1024
+    .byt add | TOS              ; vmbuf-1024+size
+    .byt dcr | ACC
+    .byt dcr | ACC              ; vmbuf-1024+size-2
+    .byt st | N6                ; save for later
+    ; things we'll need for CMOVE+
+    .byt st | TOS               ; =bottom
+    .byt ld | N4                ; pkt
+    .byt push                   ; =pkt
+    .byt sub | N2               ; pkt-1024
+    .byt st | N7                ; save for later
+    .byt push                   ; =floor
+    ; things we'll need for RLENCODE
+    .byt push                   ; =dest
+    .byt ld | N0                ; blkbuf|vidram
+    .byt push                   ; =src
+    .byt ld | N3                ; b/buf|b/scr
+    .byt push                   ; =srcbufsiz
+    ; things we'll need for CMOVE
+    .byt ld | N5
+    .byt push                   ; =from
+    .byt ld | N6
+    .byt push                   ; =bottom
+    .byt ld | N7
+    .byt sub | N6
+    .byt push                   ; =howmany
+    .byt nxt
 
 
 
+
+pupd2
+    jsr harvests10
+    lda n+7                     ; N3+1
+    sta n+12                    ; N6
+    brk
+    .byt ldd | TOS              ; isscr?
+    .byt st | N5                ; save for later
+    .byt bz , <(pupd2b-*-2)
+    .byt ldd | TOS              ; editing?
+    .byt bnz , <(pupd2a-*-2)
+    .byt ldd | N1
+    .byt std | N0
+    .byt ldi | N1
+    .byt sti | N0               ; use linewrap from blkbuf
+    .byt br , <(pupd2b-*-2)
+pupd2a
+    .byt ld | N4
+    .byt sti | N0
+    .byt ld | N6
+    .byt sti | N0
+    .byt ld | N3
+    .byt sti | N0
+;    .byt ld | N3
+;    .byt sti | N0
+;    .byt ld | N6
+;    .byt sti | N0
+;    .byt ld | N4
+;    .byt sti | N0              ; write linewrap to output
+pupd2b
+    ; setup for RLENCODE
+    .byt ld | N1                ; from
+    .byt st | TOS
+    .byt ld | N0                ; to
+    .byt push
+    ; setup for -TRAILING or -NULLS
+    .byt ld | N1                ; source
+    .byt push
+    .byt ld | N2                ; actual size
+    .byt push
+    .byt ld | N5                ; isscr?
+    .byt push
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=(UPD3)
+stack=( )
+tags=vm,nosymbol
+
+||^data|^editing<br/>screen|<|h
+|TOS|0|<|<|
+|N0|blkbuf|vidram|src|
+|N1|b/buf|b/scr|srcbufsiz|
+|N2|pkt|<|dst|
+|N3|vmbuf|<|bottom|
+|N4|b/buf|<|maxbufsiz|
+
+( bottom targend-1 pkt-targend )
++move #blk! ;
+
+~#packrat
+#endif
+pupd3
+    lda tos+1                   ; SCRPKT flag bit to Carry
+    ora stackh,x                ; UNCOMPRESSED? flag
+    and #$c0
+    sta tos+1
+    jsr harvests8
+    sty tos                     ; low byte of packet flags
+    brk
+    .byt ld | N2
+    .byt sub | N1
+    .byt add | TOS
+    .byt st | N3                ; packet header
+    .byt ldd | N3               ; +2
+    .byt ld | N2
+    .byt st | TOS
+    .byt ld | N0
+    .byt sub | TOS
+    .byt dcr | TOS              ; =targend-1
+    .byt push                   ; =pkt-targend
+    .byt ld | N3
+    .byt std | N0
+    .byt nxt
 
 
 
