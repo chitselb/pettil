@@ -481,11 +481,12 @@ packet type is screen (true) or data (false)   ~wut? calculate this instead
 : isscr?   ( -- flag )
     scrpkt @ ;
 ```
+~#packrat
 #endif
 isscrq
-    lda userscrpkt              ; ~#packrat
-    ldy userscrpkt+1
-    jmp pushya
+    lda userscrpkt+1            ; check bit 15
+    asl                         ; normalize `flag`
+    jmp pushc
 
 ;--------------------------------------------------------------
 #if 0
@@ -1743,8 +1744,6 @@ scenario 4
     isscr?
 
 
-
-
 ```
 : update   ( -- )
     editing? 0=
@@ -1786,7 +1785,58 @@ scenario 4
     ?: -trailing -nulls  nip rlencode isscr?
     (upd3)
     +move #blk! ;
+
+: update   ( -- )
+    #blk @  0= ?exit
+    editing? isscr? 2* - 2*
+
+
 ```
+    .word minus
+    .word twostar
+    .word xyzzy
+    .word blkbuf
+    .word editingq
+    .word qbranch
+    .byt <(update01-*+1)
+    .word drop
+    .word isscrq
+    .word pquerycolon
+    .word vidram
+    .word exit
+update01
+    .word vmbuf
+    .word bperbuf
+    .word bperbuf
+    .word blk
+    .word isscrq
+    .word qbranch
+    .byt <(update02-*+1)
+    .word twodrop
+    .word bperscr
+    .word scr
+update02
+    .word fetch
+    .word _topkt
+    .word _pktsize
+    .word pupd1
+    .word cmove
+    .word lperscr               ; `l/scr` is 25 on a PET
+    .word wrapabove
+    .word scrpkt
+    .word pupd2
+    .word pquerycolon
+    .word dashtrailing
+    .word dashnulls
+    .word nip
+    .word rlencode
+    .word isscrq
+    .word pupd3
+    .word _plusmove
+    .word _numblkstore
+    .word exit
+
+pupd
 ~#packrat
 #endif
 #include "align.i65"
@@ -1800,76 +1850,39 @@ _update
     .word zeq
 #include "page.i65"
     .word _qexit
-#include "page.i65"
-    .word blkbuf
+#include "pass.i65"
+    .word plit
+    .word pupdtable+8
 #include "page.i65"
     .word editingq
-#include "pass.i65"
-    .word qbranch
-    .byt <(update01-*+1)
-#include "page.i65"
-    .word drop
 #include "page.i65"
     .word isscrq
 #include "pass.i65"
-    .word pquerycolon
-    .word vidram
+    .word *+2
+    brk
+    .byt ld | TOS
+    .byt st | N4                ; `n4` isscr?
+    .byt pull
+    .byt st | N5                ; `n5` editing?
+    .byt add | N5               ; editing*2
+    .byt add | N4               ; editing*2+isscr
+    .byt add | ACC
+    .byt st | N0
+    .byt pull
+    .byt add | N0
+    .byt st | N0
+    .byt ldd | N0
+    .byt rtn
+    jmp (ACC)
+pupdtable
+    .word ewwsville
+    .word ewwsville             ; editin? isscr? both on
     .word exit
-#include "page.i65"
-update01
-    .word vmbuf
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word blk
-#include "page.i65"
-    .word isscrq
+    .word ewwsville             ; editing? false; isscr? true
+
 #include "pass.i65"
-    .word qbranch
-    .byt <(update02-*+1)
-#include "page.i65"
-    .word twodrop
-#include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word scr
-#include "page.i65"
-update02
-    .word fetch
-#include "page.i65"
-    .word _topkt
-#include "page.i65"
-    .word _pktsize
-#include "page.i65"
-    .word pupd1
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word lperscr               ; `l/scr` is 25 on a PET
-#include "page.i65"
-    .word wrapabove
-#include "page.i65"
-    .word scrpkt
-#include "page.i65"
-    .word pupd2
-#include "pass.i65"
-    .word pquerycolon
-    .word dashtrailing
-    .word dashnulls
-#include "page.i65"
-    .word nip
-#include "page.i65"
-    .word rlencode
-#include "page.i65"
-    .word isscrq
-#include "page.i65"
-    .word pupd3
-#include "page.i65"
-    .word _plusmove
-#include "page.i65"
-    .word _numblkstore
+ewwsville
+    .word xyzzy
 #include "pass.i65"
     .word exit
 
