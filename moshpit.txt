@@ -99,6 +99,16 @@ blk         use if !editing
             use if !scrpkt
 
 
+                    brk,
+    n0              set,
+    userediting     ,
+    n0              ldd,
+
+
+
+
+
+
 constants
 b/buf   b/scr   l/scr   blkbuf
 $0400   1000    25      $5800
@@ -1443,3 +1453,275 @@ index 62eba05..d7d78a2 100644
 -    .word exit
 -
  #endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+: update   ( -- )
+    #blk @ 0= ?exit                   \ early exit if buffer empty
+    blkbuf  editing? if
+        drop  isscr? ?: vidram exit     \ early exit if editing data
+    then
+    vmbuf b/buf
+    b/buf blk  isscr? if
+        2drop  b/scr scr
+    then
+    @ >pkt
+    (upd1)
+    cmove
+    25 wrap^ scrpkt
+    (upd2)
+    ?: -trailing -nulls  nip rlencode isscr?
+    (upd3)
+    +move #blk! ;
+
+
+
+: update   ( -- )
+    #blk @ 0= ?exit                   \ early exit if buffer empty
+    blkbuf  editing? if
+        drop  isscr? ?: vidram exit     \ early exit if editing data
+    then
+    vmbuf b/buf
+    b/buf blk  isscr? if
+        2drop  b/scr scr
+    then
+    @ >pkt
+    (upd1)
+    cmove
+    25 wrap^ scrpkt
+    (upd2)
+    ?: -trailing -nulls  nip rlencode isscr?
+    (upd3)
+    +move #blk! ;
+```
+
+: ^   ( -- )
+    #blk @  scr !
+    editing on
+    vidram scrpkt !
+    0 mkpkts
+    update _ ;
+
+: update   ( -- )
+    #blk @ 0= ?exit                   \ early exit if buffer empty
+    blkbuf  editing? if
+        drop  isscr? ?: vidram exit     \ early exit if editing data
+    then
+    vmbuf b/buf
+    b/buf blk  isscr? if
+        2drop  b/scr scr
+    then
+    @ >pkt
+    (upd1)
+    cmove
+    25 wrap^ scrpkt
+    (upd2)
+    ?: -trailing -nulls  nip rlencode isscr?
+    (upd3)
+    +move #blk! ;
+
+
+scenario 1 - most typical, editing a code screen
+    editing?        true
+    isscr?          true
+                                vidram
+                                scr >pkt
+                                b/scr
+
+                                wrap! -trailing ?rlencode
+
+
+scenario 2 - editing a data packet (read-only)
+    editing?        true
+    isscr?          false
+                                exit
+
+scenario 3 - not editing, `update` from blkbuf
+    editing?        false
+    isscr?          true
+
+scenario 4 - user typed `update` (`editing? true` is the only other cause)
+scenario 4
+    !editing?
+    isscr?
+
+
+```
+: update   ( -- )
+    editing? 0=
+    editing? isscr? and or      \ `data` packets are read-only in the editor
+    #blk @ and                  \ there would have to be some blocks
+    if
+        >pkt
+        cmove
+        +move
+        #blk!
+    then ;
+
+    editing? isscr? 0= blk @ and 0= ?exit
+    #blk @
+    editing?
+    if isscr? xor
+    then
+
+     0=: screen blkbuf
+    editing?
+
+    if
+        drop
+;
+: update   ( -- )
+    #blk @ 0= ?exit                   \ early exit if buffer empty
+    blkbuf  editing? if
+        drop  isscr? ?: vidram exit     \ early exit if editing data
+    then
+    vmbuf b/buf
+    b/buf blk  isscr? if
+        2drop  b/scr scr
+    then
+    @ >pkt
+    (upd1)
+    cmove
+    25 wrap^ scrpkt
+    (upd2)
+    ?: -trailing -nulls  nip rlencode isscr?
+    (upd3)
+    +move #blk! ;
+
+: update   ( -- )
+    #blk @  0= ?exit
+    editing? isscr? 2* - 2*
+
+
+```
+    .word minus
+    .word twostar
+    .word blkbuf
+    .word editingq
+    .word qbranch
+    .byt <(update01-*+1)
+    .word drop
+    .word isscrq
+    .word pquerycolon
+    .word vidram
+    .word exit
+update01
+    .word vmbuf
+    .word bperbuf
+    .word bperbuf
+    .word blk
+    .word isscrq
+    .word qbranch
+    .byt <(update02-*+1)
+    .word twodrop
+    .word bperscr
+    .word scr
+update02
+    .word fetch
+    .word _to pkt
+    .word _pktsize
+    .word pupd1
+    .word cmove
+    .word lperscr               ; `l/scr` is 25 on a PET
+    .word wrapabove
+    .word scrpkt
+    .word pupd2
+    .word pquerycolon
+    .word dashtrailing
+    .word dashnulls
+    .word nip
+    .word rlencode
+    .word isscrq
+    .word pupd3
+    .word _plusmove
+    .word _numblkstore
+    .word exit
+
+update
+    asl userscrpkt
+    bit userediting
+    php
+    pla
+    rol
+    rol
+    and #$03
+    tay
+    lda table+4,y
+    pha
+    lda table,y
+    pha
+    rts
+
+table
+    .byt <updatedata-1, <exit-1, <updatescrbuf-1, <updatescrvid-1
+    .byt >updatedata-1, >exit-1, >updatescrbuf-1, >updatescrvid-1
+
+
+
+
+0 scrpkt off, editing off (updates a data block)
+2 scrpkt off, editing on (do not update data block, exit)
+4 scrpkt on, editing off
+6 scrpkt on, editing on
+
+
+
+
+
+    bcc update01
+    ; size = 1000               n1
+    ; source = scr
+    ;   @ >pkt                  >n2
+    ;
+update01
+    bit userediting
+    bmi
+
+update01
+
+
+update
+    jsr enter
+    .word numblk
+    .word fetch
+    .word zeq
+    .word _qexit
+    .word plit
+    .word pupdtable+8
+    .word editingq
+    .word isscrq
+    .word *+2
+    brk
+    .byt ld | TOS
+    .byt st | N4                ; `n4` isscr?
+    .byt pull
+    .byt st | N5                ; `n5` editing?
+    .byt add | N5               ; editing*2
+    .byt add | N4               ; editing*2+isscr
+    .byt add | ACC
+    .byt st | N0
+    .byt pull
+    .byt add | N0
+    .byt st | N0
+    .byt ldd | N0
+    .byt rtn
+    jmp (ACC)
+    .word ewwsville
+    .word ewwsville             ; editin? isscr? both on
+    .word exit
+    .word ewwsville             ; editing? false; isscr? true
+
+ewwsville
+    .word exit
+
+

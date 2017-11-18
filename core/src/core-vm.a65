@@ -11,7 +11,7 @@ bytes per buffer = 1024
 #endif
 bperbuf
     jsr doconst
-    .word 1024
+    .word BPERBUF
 
 ;--------------------------------------------------------------
 #if 0
@@ -24,7 +24,7 @@ bytes per screen.  Not what it usually means in other Forths,
 #endif
 bperscr
     jsr doconst
-    .word 1000
+    .word BPERSCR
 
 ;--------------------------------------------------------------
 #if 0
@@ -294,12 +294,23 @@ pronounced: "packet-size"
 : pkt.size   ( packet -- packet size )
     dup @ $7ff and ;
 ```
+    jsr slip
+    ldy #0
+    lda (tos),y
+    pha
+    iny
+    lda (tos),y
+    pha
+    jmp rfrom
 
 ~#packrat
 #endif
 #include "align.i65"
 _pktsize
     jsr enter
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N5               ; `n5` addr of this packet header
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -309,6 +320,9 @@ _pktsize
     .word $07ff
 #include "page.i65"
     .word andx
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N8               ; `n8` size of this packet header
 #include "pass.i65"
     .word exit
 
@@ -689,6 +703,35 @@ _qmkpkts
     .word _mkpkts
 #include "pass.i65"
     .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=WRAP@
+stack=( -- wrapd  )
+tags=nosymbol
+
+Updates the linewrap table at $E1-F8 to reflect the low 24 bits
+in double `wrapd`.  Since line 0 ($E0) is never a continuation
+line, (always $80) it is not written to.  Only 24 bits are
+written to $E1-$F8, not 25.  Although unused, the most
+significant (2^24) bit may be set, as a framing bit, used
+to detect when the wrap double is full.
+
+#endif
+wrapfetch
+    jsr slip
+    dex
+    ldy #LPERSCR-1              ; 24 lines (1-25)
+wrapfetch01
+    lda LDTB1,y                 ;$E0 = 0, always $80  $E1-$F8
+    asl
+    ror tos
+    ror stackh,x
+    ror stackl,x
+    dey
+    bne wrapfetch01
+    sty tos+1
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -1715,239 +1758,13 @@ writing packets in the `vmbuf` region.
 \ recount packets
     #blk! ;
 
-: update   ( -- )
-    #blk @ 0= ?exit                   \ early exit if buffer empty
-    blkbuf  editing? if
-        drop  isscr? ?: vidram exit     \ early exit if editing data
-    then
-    vmbuf b/buf
-    b/buf blk  isscr? if
-        2drop  b/scr scr
-    then
-    @ >pkt
-    (upd1)
-    cmove
-    25 wrap^ scrpkt
-    (upd2)
-    ?: -trailing -nulls  nip rlencode isscr?
-    (upd3)
-    +move #blk! ;
-
-
-
-: update   ( -- )
-    #blk @ 0= ?exit                   \ early exit if buffer empty
-    blkbuf  editing? if
-        drop  isscr? ?: vidram exit     \ early exit if editing data
-    then
-    vmbuf b/buf
-    b/buf blk  isscr? if
-        2drop  b/scr scr
-    then
-    @ >pkt
-    (upd1)
-    cmove
-    25 wrap^ scrpkt
-    (upd2)
-    ?: -trailing -nulls  nip rlencode isscr?
-    (upd3)
-    +move #blk! ;
-```
-
-: ^   ( -- )
-    #blk @  scr !
-    editing on
-    vidram scrpkt !
-    0 mkpkts
-    update _ ;
-
-: update   ( -- )
-    #blk @ 0= ?exit                   \ early exit if buffer empty
-    blkbuf  editing? if
-        drop  isscr? ?: vidram exit     \ early exit if editing data
-    then
-    vmbuf b/buf
-    b/buf blk  isscr? if
-        2drop  b/scr scr
-    then
-    @ >pkt
-    (upd1)
-    cmove
-    25 wrap^ scrpkt
-    (upd2)
-    ?: -trailing -nulls  nip rlencode isscr?
-    (upd3)
-    +move #blk! ;
-
-
-scenario 1 - most typical, editing a code screen
-    editing?        true
-    isscr?          true
-                                vidram
-                                scr >pkt
-                                b/scr
-
-                                wrap! -trailing ?rlencode
-
-
-scenario 2 - editing a data packet (read-only)
-    editing?        true
-    isscr?          false
-                                exit
-
-scenario 3 - not editing, `update` from blkbuf
-    editing?        false
-    isscr?          true
-
-scenario 4 - user typed `update` (`editing? true` is the only other cause)
-scenario 4
-    !editing?
-    isscr?
-
-
-```
-: update   ( -- )
-    editing? 0=
-    editing? isscr? and or      \ `data` packets are read-only in the editor
-    #blk @ and                  \ there would have to be some blocks
-    if
-        >pkt
-        cmove
-        +move
-        #blk!
-    then ;
-
-    editing? isscr? 0= blk @ and 0= ?exit
-    #blk @
-    editing?
-    if isscr? xor
-    then
-
-     0=: screen blkbuf
-    editing?
-
-    if
-        drop
-;
-: update   ( -- )
-    #blk @ 0= ?exit                   \ early exit if buffer empty
-    blkbuf  editing? if
-        drop  isscr? ?: vidram exit     \ early exit if editing data
-    then
-    vmbuf b/buf
-    b/buf blk  isscr? if
-        2drop  b/scr scr
-    then
-    @ >pkt
-    (upd1)
-    cmove
-    25 wrap^ scrpkt
-    (upd2)
-    ?: -trailing -nulls  nip rlencode isscr?
-    (upd3)
-    +move #blk! ;
-
-: update   ( -- )
-    #blk @  0= ?exit
-    editing? isscr? 2* - 2*
-
-
-```
-    .word minus
-    .word twostar
-    .word xyzzy
-    .word blkbuf
-    .word editingq
-    .word qbranch
-    .byt <(update01-*+1)
-    .word drop
-    .word isscrq
-    .word pquerycolon
-    .word vidram
-    .word exit
-update01
-    .word vmbuf
-    .word bperbuf
-    .word bperbuf
-    .word blk
-    .word isscrq
-    .word qbranch
-    .byt <(update02-*+1)
-    .word twodrop
-    .word bperscr
-    .word scr
-update02
-    .word fetch
-    .word _topkt
-    .word _pktsize
-    .word pupd1
-    .word cmove
-    .word lperscr               ; `l/scr` is 25 on a PET
-    .word wrapabove
-    .word scrpkt
-    .word pupd2
-    .word pquerycolon
-    .word dashtrailing
-    .word dashnulls
-    .word nip
-    .word rlencode
-    .word isscrq
-    .word pupd3
-    .word _plusmove
-    .word _numblkstore
-    .word exit
-
-update
-    asl userscrpkt
-    bit userediting
-    php
-    pla
-    rol
-    rol
-    and #$03
-    tay
-    lda table+4,y
-    pha
-    lda table,y
-    pha
-    rts
-
-table
-    .byt <updatedata-1, <exit-1, <updatescrbuf-1, <updatescrvid-1
-    .byt >updatedata-1, >exit-1, >updatescrbuf-1, >updatescrvid-1
-
-
-
-
-0 scrpkt off, editing off (updates a data block)
-2 scrpkt off, editing on (do not update data block, exit)
-4 scrpkt on, editing off
-6 scrpkt on, editing on
-
-
-
-
-
-    bcc update01
-    ; size = 1000               n1
-    ; source = scr
-    ;   @ >pkt                  >n2
-    ;
-update01
-    bit userediting
-    bmi
-
-update01
 
 ~#packrat
 #endif
 #include "align.i65"
-update
-    asl userscrpkt
-    bit userediting
-    php
-    pla
-    rol
+_update
+    asl userscrpkt              ; destructive read of flag
+    lda userediting
     rol
     and #$03
     tay
@@ -1958,58 +1775,123 @@ update
     rts
 
 updtable
-    .byt <updatedata-1, <exit-1, <updatescrbuf-1, <updatescrvid-1
-    .byt >updatedata-1, >exit-1, >updatescrbuf-1, >updatescrvid-1
+    ;
+    .byt <updatedata-1, <next-1, <updatescrbuf-1, <updatescrvid-1
+    ;
+    .byt >updatedata-1, >next-1, >updatescrbuf-1, >updatescrvid-1
+
 updatedata
     nop
+
 updatescrvid
-    nop
-updatescrbuf
-    nop
-_update
+    ;sec                        ; thanks, `update`
+    ror userscrpkt              ; output will be a screen packet
+#include "align.i65"
     jsr enter
 #include "page.i65"
-    .word numblk
+    .word scr
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word zeq
+    .word _topkt
 #include "page.i65"
-    .word _qexit
+    .word _pktsize              ; ~ maybe fold this inside `>pkt`
+#include "page.i65"             ; `n5` pkt   `n8` pkt.size
+    .word bperbuf
+#include "pass.i65"             ; `n5` pkt   `n8` pkt.size
+    .word tozp
+    .byt ACC+2*N4               ; `n4` is $0400 1024 b/buf
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _vmmove
+#include "page.i65"
+    .word vidram                ; `from`
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word wrapfetch
+#include "page.i65"
+    .word *+2
+
+wrap@ order is inverted
+
+    brk
+    .byt ld | N5                ; pkt
+    .byt sub | N4               ; pkt-1024
+    .byt st | N7                ; floor
+    .byt ld | TOS               ; wrap.lo
+    .byt sti | N7
+    .byt pull                   ; wrap.mid wrap.hi
+    .byt std | N7
+
+    .byt ld | N7                ; floor+3 `to`
+    .byt push
+    .byt nxt
+#include "align.i65"
+    jsr toforth
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word dashtrailing
+
+                                    ;( vidram pkt-1024+3 1000-trailing )
+#include "page.i65"
+    .word rlencode
+
+;"from: screen
+;"to:  pkt-1K
+;"howmany: 1K
+;"rlencode
+;stack=( from to size -- targend uncompressed? )
+
+
+
+
+
+                                ;( )
 #include "pass.i65"
-    .word plit
-    .word pupdtable+8
-#include "page.i65"
-    .word editingq
-#include "page.i65"
-    .word isscrq
+    .word plits
+    .byt 3
+    .word VIDRAM                ; `n0`
+    .word BPERSCR               ; `n1`
+    .word BPERBUF               ; 'size of temp pkt'
+                                ;( pkt 1000 $8000 6 )
 #include "pass.i65"
+    .word clit
+    .byt 12
+#include "page.i65"
+    .word harvest
+#include "page.i65"
     .word *+2
     brk
-    .byt ld | TOS
-    .byt st | N4                ; `n4` isscr?
-    .byt pull
-    .byt st | N5                ; `n5` editing?
-    .byt add | N5               ; editing*2
-    .byt add | N4               ; editing*2+isscr
-    .byt add | ACC
-    .byt st | N0
-    .byt pull
-    .byt add | N0
-    .byt st | N0
-    .byt ldd | N0
-    .byt rtn
-    jmp (ACC)
-pupdtable
-    .word ewwsville
-    .word ewwsville             ; editin? isscr? both on
-    .word exit
-    .word ewwsville             ; editing? false; isscr? true
+    .byt ld | N3
+    .byt sub | N5
+    .byt
 
 #include "pass.i65"
-ewwsville
-    .word xyzzy
+    .word exit
+
+updatescrbuf
+    nop
+
+#include "align.i65"
+_vmmove
+    jsr enter
+#include "page.i65"
+    .word oneminusunder
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dashrot
+#include "page.i65"
+    .word _plusmove             ;( )
 #include "pass.i65"
     .word exit
+
 
 #print (*-bperbuf)
