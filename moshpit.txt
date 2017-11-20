@@ -1,8 +1,92 @@
 moshpit
 
 
+vmbuf
+pkt size - 1+
+b/buf negate
+57f9 57fa -1024 +move
+
+vmbuf
+pkt size - 1+
+b/buf negate +move
+
+vidram 1000 -trailing
+pkt b/buf -
+wrap@ third 3c! 3+
+swap rlencode
 
 
+36864,4         horizontal pos
+36865,26        vertical pos
+
+objective: `update` works in all four scenarios
+
+`update` makes a two-bit number combining the bits of `isscr?` and `editing?`
+and uses the rts trick to deploy its handler
+editing
+A    screen
+B    data
+interpret
+C    screen
+D    data
+
+
+current focus: 'A' editing screen
+
+
+scr @ >pkt
+pkt.size
+vidram
+wrap@
+bperscr
+(upd1)
+
+
++move
+
+
+
+
+
+vmbuf
+blkbuf
+scr
+pkt
+pkt.floor  pkt-1024
+1024
+1000
+wrap
+rlencode.end
+uncompressed?   $4000
+isscr?          $8000
+editing?
+newpkt.length   rlencode.end-pkt.floor
+
+`from` `to` `howmany` shouldn't surprise anyone who uses `cmove`
+`end` address where the next byte would be written
+`uncompressed?` is $4000 if it was cheaper to store the buffer, else 0
+
+code rlencode   ( from to howmany -- end uncompressed? )
+    tos     ld,
+    n1      st,                 \ copies of `size`
+    n3      st,
+    n8      st,                 \ pristine copy
+            pull,
+    n2      st,                 \ `targ`
+    n7      st,
+            pull,
+    n0      st,
+    $100
+    n6      set, ,
+rlencode01
+    n6      ld,
+rlencode02
+    n5      st,
+
+
+
+src
+targ
 
 
 
@@ -1725,3 +1809,292 @@ ewwsville
     .word exit
 
 
+design:
+ data types by naming convention
+ '2','D' double e.g. `2!` `du<`
+ '3C' triple byte e.g. `3c@`
+    wrap
+
+
+diff --git a/core/src/core-nucleus.a65 b/core/src/core-nucleus.a65
+index 3beb507..3354048 100644
+--- a/core/src/core-nucleus.a65
++++ b/core/src/core-nucleus.a65
+@@ -1896,7 +1896,6 @@ dashtrailing03
+     iny
+     tya
+     ldy tos+1
+-    iny
+     rts
+
+ ;--------------------------------------------------------------
+diff --git a/core/src/core-vm.a65 b/core/src/core-vm.a65
+index f154f20..d150254 100644
+--- a/core/src/core-vm.a65
++++ b/core/src/core-vm.a65
+@@ -156,12 +156,12 @@ rlencode
+     ; n5    prev
+     ; n6    $100
+     ; n7    targ (pristine)
+-    ; n8    size (pristine)
++    ; r11   size (pristine)
+     brk
+     .byt ld | TOS               ; size
+     .byt st | N1                ; size (in)
+     .byt st | N3                ; size (out)
+-    .byt st | N8                ; size (pristine)
++    .byt st | R11               ; size (pristine)
+     .byt pull                   ; to
+     .byt st | N2                ; targ (out)
+     .byt st | N7                ; targ (pristine)
+@@ -215,9 +215,11 @@ rlencode06                      ; win
+ ;( targend uncompressed?        ; floor  pkt )
+
+ rlencode07                      ; lose - copy
++    .byt ext
++    .word plugh
+     .byt ld | TOS
+     .byt st | N0                ; keep pristine TOS
+-    .byt ld | N8                ; size
++    .byt ld | R11               ; size
+     .byt add | N7               ; +pristine targ
+     .byt st | TOS
+     .byt set | ACC
+@@ -227,10 +229,10 @@ rlencode07                      ; lose - copy
+     .byt push
+     .byt ld | N7
+     .byt push
+-    .byt ld | N8
++    .byt ld | R11
+     .byt push
+-    .byt rtn
+-    jmp cmove
++    .byt ext
++    .word cmove
+
+ ;--------------------------------------------------------------
+ #if 0
+@@ -308,9 +310,9 @@ pronounced: "packet-size"
+ #include "align.i65"
+ _pktsize
+     jsr enter
+-#include "pass.i65"
+-    .word tozp
+-    .byt ACC+2*N5               ; `n5` addr of this packet header
++#include "page.i65"
++    .word zpfrom
++    .byt ACC+2*N8
+ #include "page.i65"
+     .word dup
+ #include "page.i65"
+@@ -321,9 +323,6 @@ _pktsize
+ #include "page.i65"
+     .word andx
+ #include "pass.i65"
+-    .word tozp
+-    .byt ACC+2*N8               ; `n8` size of this packet header
+-#include "pass.i65"
+     .word exit
+
+ ;--------------------------------------------------------------
+@@ -374,6 +373,9 @@ topktb01
+ topktb02
+     .word nip
+ #include "pass.i65"
++    .word tozp
++    .byt ACC+2*N8               ; `n8` addr of this packet header
++#include "pass.i65"
+     .word exit
+
+ ;--------------------------------------------------------------
+@@ -725,12 +727,12 @@ wrapfetch
+ wrapfetch01
+     lda LDTB1,y                 ;$E0 = 0, always $80  $E1-$F8
+     asl
+-    ror tos
+-    ror stackh,x
+     ror stackl,x
++    ror tos+1
++    ror tos                     ; weird inverted byte order here
+     dey
+     bne wrapfetch01
+-    sty tos+1
++    sty stackh,x
+     jmp next
+
+ ;--------------------------------------------------------------
+@@ -1564,9 +1566,6 @@ along with a couple values that are required later.
+ |N5|b/buf|<|maxbufsiz|
+ ( bottom pkt floor / src dest src srcbufsiz / vmbuf vmbuf-b/buf pkt-vmbuf )
+
+-~#packrat
+-#endif
+-#include "align.i65"
+ pupd1
+     jsr harvests10
+     brk
+@@ -1600,26 +1599,6 @@ pupd1
+     .byt push                   ; =howmany
+     .byt nxt
+
+-;--------------------------------------------------------------
+-#if 0
+-name=(UPD2)
+-stack=( source floor actualsize wrapd 'scrpkt -- )
+-tags=vm,nosymbol
+-Sets up the linewrap bits in the output buffer (if needed) and
+-gets ready for RLENCODE and squeezing out unused space
+-
+-||^data|^editing<br/>screen|<|h
+-|TOS|'scrpkt|<|<|
+-|N0|floor|<|<|
+-|N1|blkbuf|vidram|src|
+-|N2|b/buf|b/scr|srcbufsiz|
+-|N3|wrapdlo|<|<|
+-|N4|wrapdhi|<|<|
+-
+-need 3C@ and 3C! for linewrap
+-
+-~#packrat
+-#endif
+ pupd2
+     jsr harvests10
+     lda n+7                     ; N3+1
+@@ -1663,25 +1642,6 @@ pupd2b
+     .byt push
+     .byt nxt
+
+-;--------------------------------------------------------------
+-#if 0
+-name=(UPD3)
+-stack=( )
+-tags=vm,nosymbol
+-
+-||^data|^editing<br/>screen|<|h
+-|TOS|0|<|<|
+-|N0|blkbuf|vidram|src|
+-|N1|b/buf|b/scr|srcbufsiz|
+-|N2|pkt|<|dst|
+-|N3|vmbuf|<|bottom|
+-|N4|b/buf|<|maxbufsiz|
+-
+-( bottom targend-1 pkt-targend )
+-+move #blk! ;
+-
+-~#packrat
+-#endif
+ pupd3
+     lda tos+1                   ; SCRPKT flag bit to Carry
+     ora stackh,x                ; UNCOMPRESSED? flag
+@@ -1705,6 +1665,10 @@ pupd3
+     .byt std | N0
+     .byt nxt
+
++~#packrat
++#endif
++pupd3
++
+ ;--------------------------------------------------------------
+ #if 0
+ name=UPDATE
+@@ -1786,6 +1750,7 @@ updatedata
+ updatescrvid
+     ;sec                        ; thanks, `update`
+     ror userscrpkt              ; output will be a screen packet
++                                ;( )
+ #include "align.i65"
+     jsr enter
+ #include "page.i65"
+@@ -1798,48 +1763,48 @@ updatescrvid
+     .word _pktsize              ; ~ maybe fold this inside `>pkt`
+ #include "page.i65"             ; `n5` pkt   `n8` pkt.size
+     .word bperbuf
+-#include "pass.i65"             ; `n5` pkt   `n8` pkt.size
+-    .word tozp
+-    .byt ACC+2*N4               ; `n4` is $0400 1024 b/buf
+ #include "page.i65"
+     .word twoplus
+ #include "page.i65"
+     .word minus
+ #include "page.i65"
++    .word xyzzy
++
++
++#ifdef pigsfly
++: update
++    scr @  >pkt
++#endif
++
++
++
++
++                                ;( 57fe fc03 )
++#include "page.i65"
+     .word _vmmove
+ #include "page.i65"
+     .word vidram                ; `from`
+ #include "page.i65"
+-    .word xyzzy
++    .word bperscr               ; 1000, max source size for screens
+ #include "page.i65"
+-    .word wrapfetch
++    .word dashtrailing
+ #include "page.i65"
+-    .word *+2
+-
+-wrap@ order is inverted
++    .word wrapfetch
+
+-    brk
+-    .byt ld | N5                ; pkt
+-    .byt sub | N4               ; pkt-1024
+-    .byt st | N7                ; floor
+-    .byt ld | TOS               ; wrap.lo
+-    .byt sti | N7
+-    .byt pull                   ; wrap.mid wrap.hi
+-    .byt std | N7
++; ~ wrap@ byte order is inverted for `(upd1)`, should probably be a `3c` type
+
+-    .byt ld | N7                ; floor+3 `to`
+-    .byt push
+-    .byt nxt
+-#include "align.i65"
+-    jsr toforth
+ #include "page.i65"
+-    .word bperbuf
++    .word pupd1
+ #include "page.i65"
+-    .word dashtrailing
+-
+-                                    ;( vidram pkt-1024+3 1000-trailing )
++    .word swap
+ #include "page.i65"
+     .word rlencode
++#include "page.i65"
++    .word xyzzy
++
++  ;  1024-$577C+5401
++                                ;( targend uncompressed )
++                                    ;( vidram pkt-1024+3 1000-trailing )
+
+ ;"from: screen
+ ;"to:  pkt-1K
+@@ -1893,5 +1858,18 @@ _vmmove
+ #include "pass.i65"
+     .word exit
+
++;(UPDATE1)
++pupd1
++    brk
++    .byt ld | N5                ; pkt
++    .byt sub | N4               ; pkt-1024
++    .byt st | N7                ; pkt.floor
++    .byt ld | TOS               ; wrap.mid wrap.hi
++    .byt std | N7
++    .byt pull                   ; wrap.lo
++    .byt sti | N7
++    .byt ld | N7
++    .byt st | TOS
++    .byt nxt
+
+ #print (*-bperbuf)

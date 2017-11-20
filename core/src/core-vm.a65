@@ -156,12 +156,12 @@ rlencode
     ; n5    prev
     ; n6    $100
     ; n7    targ (pristine)
-    ; n8    size (pristine)
+    ; r11   size (pristine)
     brk
     .byt ld | TOS               ; size
     .byt st | N1                ; size (in)
     .byt st | N3                ; size (out)
-    .byt st | N8                ; size (pristine)
+    .byt st | R11               ; size (pristine)
     .byt pull                   ; to
     .byt st | N2                ; targ (out)
     .byt st | N7                ; targ (pristine)
@@ -217,7 +217,7 @@ rlencode06                      ; win
 rlencode07                      ; lose - copy
     .byt ld | TOS
     .byt st | N0                ; keep pristine TOS
-    .byt ld | N8                ; size
+    .byt ld | R11               ; size
     .byt add | N7               ; +pristine targ
     .byt st | TOS
     .byt set | ACC
@@ -227,7 +227,7 @@ rlencode07                      ; lose - copy
     .byt push
     .byt ld | N7
     .byt push
-    .byt ld | N8
+    .byt ld | R11
     .byt push
     .byt rtn
     jmp cmove
@@ -280,20 +280,15 @@ rldecode06
 ;--------------------------------------------------------------
 #if 0
 name=PKT.SIZE
-stack=( packet -- packet size )
+stack=( -- packet size )
 tags=vm,nosymbol
-Returns the packet length from a packet header.  The term `size` includes the 2
-byte packet header, where a packet's `length` is just the contents (`size-2`).  The subroutine mode replaces the packet address at
-`tos` with the length.  When called as a Forth word, `PKT.SIZE`
-pushes the length to `tos` leaving the packet address unchanged
-at `2os`.
+Returns the current `pkt` address and `size` of the packet in `n8`
 
-pronounced: "packet-size"
 
 ```
-: pkt.size   ( packet -- packet size )
-    dup @ $7ff and ;
-```
+: pkt.size   ( -- pkt size )
+    <n8 dup @ $7ff and ;
+
     jsr slip
     ldy #0
     lda (tos),y
@@ -302,39 +297,43 @@ pronounced: "packet-size"
     lda (tos),y
     pha
     jmp rfrom
-
+```
+pronounced: "packet-size"
 ~#packrat
 #endif
 #include "align.i65"
 _pktsize
     jsr enter
 #include "pass.i65"
-    .word tozp
-    .byt ACC+2*N5               ; `n5` addr of this packet header
+    .word zpfrom
+    .byt ACC+2*N8
 #include "page.i65"
     .word dup
 #include "page.i65"
     .word fetch
-#include "pass.i65"
-    .word plit
-    .word $07ff
 #include "page.i65"
-    .word andx
-#include "pass.i65"
-    .word tozp
-    .byt ACC+2*N8               ; `n8` size of this packet header
+    .word psize
 #include "pass.i65"
     .word exit
+
+psize
+    lda tos+1
+    and #$07
+    tay
+    lda tos
+    jmp put
 
 ;--------------------------------------------------------------
 #if 0
 name=>PKT
-stack=( n -- packet )
+stack=( n -- pkt )
 tags=vm,ext
-Return the packet address of block N
+Return the `pkt` address of block `n`, sets `n8`
+
+~ should return a 0 if there are less than `n` packets
 
 ```
-: >pkt   ( n -- packet )
+: >pkt   ( n -- pkt )
     blkbuf 2-
     begin
         over
@@ -342,7 +341,8 @@ Return the packet address of block N
         pkt.size
         - -1 +under
     repeat
-    nip ;
+    nip >n8 ;
+
 ```
 ~#packrat
 #endif
@@ -353,6 +353,9 @@ _topkt
     .word blkbuf
 #include "page.i65"
     .word twominus
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N8
 #include "page.i65"
 topktb01
     .word over
@@ -373,6 +376,9 @@ topktb01
 #include "page.i65"
 topktb02
     .word nip
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N8
 #include "pass.i65"
     .word exit
 
@@ -526,62 +532,6 @@ _pktplus
     .word minus
 #include "page.i65"
     .word twoplus
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=RLE+
-stack=( pkt -- floor )
-tags=vm,ext,nosymbol
-Converts the given packet into a maximum-sized packet so it may be used
-as a temporary buffer by [[RLENCODE]]. This is a design-around to avoid
-adding a second [[BLKBUF]] block buffer to the system.  Returns the
-address of the beginning of the 1K temporary buffer.
-
-```
-: rle+   ( pkt -- floor )
-    dup>r  b/buf dup 2+ r@ pkt.len
-    >r 2- over r> - pkt+ drop
-    r> ! - ;
-```
-~#packrat
-#endif
-#include "align.i65"
-_rleplus
-    jsr enter
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word _pktsize
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word _pktplus
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word minus
 #include "pass.i65"
     .word exit
 
@@ -802,7 +752,6 @@ Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
     begin
         pkt.size ?dup
     while
-        b/buf under > 12 ?error    "BAD VM PACKET"
         #blk 1+!
         -
     repeat
@@ -820,25 +769,17 @@ _numblkstore
     .word off
 #include "page.i65"
     .word blkbuf
-#include "page.i65"
-    .word twominus
+                                ;( pkt0 )
 #include "page.i65"
 numblkstore01
-    .word _pktsize
+    .word nbsa
+#include "page.i65"
+    .word psize
 #include "page.i65"
     .word qdup
 #include "pass.i65"
     .word qbranch
     .byt <(numblkstore02-*+1)
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word under
-#include "page.i65"
-    .word _gt
-#include "pass.i65"
-    .word qerror                ;"BAD VM PACKET"
-    .byt 12
 #include "page.i65"
     .word numblk
 #include "page.i65"
@@ -855,6 +796,11 @@ numblkstore02
     .word store
 #include "pass.i65"
     .word exit
+nbsa
+    brk
+    .byt popd | TOS             ; 2- @+ 2 -under (size)
+    .byt push
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -1544,169 +1490,6 @@ block02
 
 ;--------------------------------------------------------------
 #if 0
-name=(UPD1)
-stack=( from to howmany char -- )
-tags=vm,nosymbol
-Reorganize the stack from some raw, disorganized pointers and
-values.  Returns enough to open up a 1024 byte hole in the
-VM buffer and trim trailing blanks/nulls from the source buffer,
-along with a couple values that are required later.
-
-( src srcbufsiz pkt vmbuf maxbufsiz 0 )
-
-||^data|^editing<br/>screen|<|h
-|TOS|0|<|<|
-|N0|blkbuf|vidram|src|
-|N1|b/buf|b/scr|srcbufsiz|
-|N2|pkt|<|dst|
-|N3|pktsize|<||
-|N4|vmbuf|<|bottom|
-|N5|b/buf|<|maxbufsiz|
-( bottom pkt floor / src dest src srcbufsiz / vmbuf vmbuf-b/buf pkt-vmbuf )
-
-~#packrat
-#endif
-#include "align.i65"
-pupd1
-    jsr harvests10
-    brk
-    .byt ldd | N1               ; vmbuf @
-    .byt st | N5                ; save for later
-    .byt sub | N2               ; vmbuf-1024
-    .byt add | TOS              ; vmbuf-1024+size
-    .byt dcr | ACC
-    .byt dcr | ACC              ; vmbuf-1024+size-2
-    .byt st | N6                ; save for later
-    ; things we'll need for CMOVE+
-    .byt st | TOS               ; =bottom
-    .byt ld | N4                ; pkt
-    .byt push                   ; =pkt
-    .byt sub | N2               ; pkt-1024
-    .byt st | N7                ; save for later
-    .byt push                   ; =floor
-    ; things we'll need for RLENCODE
-    .byt push                   ; =dest
-    .byt ld | N0                ; blkbuf|vidram
-    .byt push                   ; =src
-    .byt ld | N3                ; b/buf|b/scr
-    .byt push                   ; =srcbufsiz
-    ; things we'll need for CMOVE
-    .byt ld | N5
-    .byt push                   ; =from
-    .byt ld | N6
-    .byt push                   ; =bottom
-    .byt ld | N7
-    .byt sub | N6
-    .byt push                   ; =howmany
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=(UPD2)
-stack=( source floor actualsize wrapd 'scrpkt -- )
-tags=vm,nosymbol
-Sets up the linewrap bits in the output buffer (if needed) and
-gets ready for RLENCODE and squeezing out unused space
-
-||^data|^editing<br/>screen|<|h
-|TOS|'scrpkt|<|<|
-|N0|floor|<|<|
-|N1|blkbuf|vidram|src|
-|N2|b/buf|b/scr|srcbufsiz|
-|N3|wrapdlo|<|<|
-|N4|wrapdhi|<|<|
-
-need 3C@ and 3C! for linewrap
-
-~#packrat
-#endif
-pupd2
-    jsr harvests10
-    lda n+7                     ; N3+1
-    sta n+12                    ; N6
-    brk
-    .byt ldd | TOS              ; isscr?
-    .byt st | N5                ; save for later
-    .byt bz , <(pupd2b-*-2)
-    .byt ldd | TOS              ; editing?
-    .byt bnz , <(pupd2a-*-2)
-    .byt ldd | N1
-    .byt std | N0
-    .byt ldi | N1
-    .byt sti | N0               ; use linewrap from blkbuf
-    .byt br , <(pupd2b-*-2)
-pupd2a
-    .byt ld | N4
-    .byt sti | N0
-    .byt ld | N6
-    .byt sti | N0
-    .byt ld | N3
-    .byt sti | N0
-;    .byt ld | N3
-;    .byt sti | N0
-;    .byt ld | N6
-;    .byt sti | N0
-;    .byt ld | N4
-;    .byt sti | N0              ; write linewrap to output
-pupd2b
-    ; setup for RLENCODE
-    .byt ld | N1                ; from
-    .byt st | TOS
-    .byt ld | N0                ; to
-    .byt push
-    ; setup for -TRAILING or -NULLS
-    .byt ld | N1                ; source
-    .byt push
-    .byt ld | N2                ; actual size
-    .byt push
-    .byt ld | N5                ; isscr?
-    .byt push
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=(UPD3)
-stack=( )
-tags=vm,nosymbol
-
-||^data|^editing<br/>screen|<|h
-|TOS|0|<|<|
-|N0|blkbuf|vidram|src|
-|N1|b/buf|b/scr|srcbufsiz|
-|N2|pkt|<|dst|
-|N3|vmbuf|<|bottom|
-|N4|b/buf|<|maxbufsiz|
-
-( bottom targend-1 pkt-targend )
-+move #blk! ;
-
-~#packrat
-#endif
-pupd3
-    lda tos+1                   ; SCRPKT flag bit to Carry
-    ora stackh,x                ; UNCOMPRESSED? flag
-    and #$c0
-    sta tos+1
-    jsr harvests8
-    sty tos                     ; low byte of packet flags
-    brk
-    .byt ld | N2
-    .byt sub | N1
-    .byt add | TOS
-    .byt st | N3                ; packet header
-    .byt ldd | N3               ; +2
-    .byt ld | N2
-    .byt st | TOS
-    .byt ld | N0
-    .byt sub | TOS
-    .byt dcr | TOS              ; =targend-1
-    .byt push                   ; =pkt-targend
-    .byt ld | N3
-    .byt std | N0
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
 name=UPDATE
 stack=( -- )
 tags=forth-83,vm
@@ -1759,6 +1542,10 @@ writing packets in the `vmbuf` region.
     #blk! ;
 
 
+vmbuf
+pkt - size + 1
+-1024
+
 ~#packrat
 #endif
 #include "align.i65"
@@ -1789,24 +1576,127 @@ updatescrvid
 #include "align.i65"
     jsr enter
 #include "page.i65"
+    .word wrapfetch
+#include "page.i65"
+    .word vidram
+#include "page.i65"
     .word scr
 #include "page.i65"
     .word fetch
 #include "page.i65"
     .word _topkt
+                                ;( pkt )
+
+#include "page.i65"
+    .word _pktsize
+#include "page.i65"
+    .word bperscr
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word pupd1
+    .word _plusmove
+    .word threecstore
+    .word bperscr
+    .word _dashtrailing
+    .word nip
+    .word rlencode
+
+
+pupd1
+    jsr harvests10
+    brk
+    .byt ldd | TOS              ; vmbuf @
+    .byt st | TOS
+                                ;( wrapd start )
+    .byt ld | N8                ; pkt
+    .byt sub | N3               ; - pkt.size
+    .byt push
+                                ;( wrapd start end )
+    .byt set | N0
+    .word -1024
+    .byt add | N3               ;( delta )
+    .byt push
+                                ;( wrapd start end delta )
+    .byt add | N8               ;pkt.floor
+
+    .byt nxt
+
+
+
+
+    .byt add | N2               ; size
+
+    .byt sub | N2
+    .byt nxt
+
+;( start end delta )
+    .word _plusmove
+
+
+    .word vidram
+    .word wrapfetch
+    .word zpfrom
+    .byt ACC+2*N7
+    .word vidram
+    .word bperscr
+    .word _dashtrailing
+
+;( vidram pkt-1024+3 ` )
+;( from to howmany )
+    .word rlencode
+
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word _pktsize
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word pupd1
+
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word negate
+#include "page.i65"
+    .word _plusmove
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word xyzzy
 #include "page.i65"
     .word _pktsize              ; ~ maybe fold this inside `>pkt`
-#include "page.i65"             ; `n5` pkt   `n8` pkt.size
+                                ; ( pkt size )
+#include "page.i65"
+    .word xyzzy
+
+#include "page.i65"
     .word bperbuf
-#include "pass.i65"             ; `n5` pkt   `n8` pkt.size
-    .word tozp
-    .byt ACC+2*N4               ; `n4` is $0400 1024 b/buf
 #include "page.i65"
     .word twoplus
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word _vmmove
+;    .word _vmmove
 #include "page.i65"
     .word vidram                ; `from`
 #include "page.i65"
@@ -1816,7 +1706,7 @@ updatescrvid
 #include "page.i65"
     .word *+2
 
-wrap@ order is inverted
+;wrap@ order is inverted
 
     brk
     .byt ld | N5                ; pkt
@@ -1835,7 +1725,7 @@ wrap@ order is inverted
 #include "page.i65"
     .word bperbuf
 #include "page.i65"
-    .word dashtrailing
+    .word _dashtrailing
 
                                     ;( vidram pkt-1024+3 1000-trailing )
 #include "page.i65"
@@ -1874,6 +1764,7 @@ wrap@ order is inverted
 #include "pass.i65"
     .word exit
 
+
 updatescrbuf
     nop
 
@@ -1892,6 +1783,5 @@ _vmmove
     .word _plusmove             ;( )
 #include "pass.i65"
     .word exit
-
 
 #print (*-bperbuf)
