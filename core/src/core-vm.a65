@@ -1320,7 +1320,7 @@ tags=vm,ext,nosymbol
 ~#packrat
 #endif
 #include "align.i65"
-_srctargx
+_srctarg
     jsr enter
 #include "page.i65"
     .word editingq
@@ -1548,32 +1548,46 @@ pkt - size + 1
 #endif
 #include "align.i65"
 _update
-    asl userscrpkt+1            ; destructive read of flag
-    lda userediting
-    rol
-    and #$03
-    tay
-    lda updtable+4,y
-    pha
-    lda updtable,y
-    pha
-    rts
-
-updtable
-    ;
-    .byt <updatedata-1, <next-1, <updatescrbuf-1, <updatescrvid-1
-    ;
-    .byt >updatedata-1, >next-1, >updatescrbuf-1, >updatescrvid-1
-
-updatedata
-    nop
-
-updatescrvid
-    ;sec                        ; thanks, `update`
-    ror userscrpkt+1            ; output will be a screen packet
-#include "align.i65"
     jsr enter
 #include "page.i65"
+    .word scredidx              ; 0, 2, 4, 6 based from `editing` `scrpkt`
+#include "pass.i65"
+    .word plit
+    .word updtable
+#include "page.i65"
+    .word _dispatch
+updtable
+    .word updatedata,exit,updatescrbuf,updatescrvid-2
+
+scredidx
+    lda userscrpkt+1
+    rol
+    lda userediting
+    rol
+    asl
+    and #$06
+    jmp push0a
+
+#include "align.i65"
+_dispatch
+    jsr enter
+#include "page.i65"
+    .word rdrop
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word tor
+#include "pass.i65"
+    .word exit
+
+#include "pass.i65"
+updatedata
+    .word exit
+
+#include "pass.i65"
+updatescrvid
     .word scr
 #include "page.i65"
     .word fetch
@@ -1619,6 +1633,8 @@ updatescrvid
     .word cmovegt
 #include "page.i65"
     .word _numblkstore
+#include "page.i65"
+    .word xyzzy
 #include "pass.i65"
     .word exit
 
@@ -1636,14 +1652,11 @@ pupd2
     .byt inr | ACC              ; + 1
     .byt inr | ACC              ; + 1
     .byt std | N8               ; set packet header
-
     .byt ld | N1
     .byt sub | N0
     .byt st | TOS               ; 'howmany'
-
     .byt ld | N0
     .byt st | N1                ; 'from'
-
     .byt ld | N8
     .byt sub | TOS
     .byt dcr | ACC
@@ -1657,23 +1670,17 @@ pupd1
     brk
     .byt ext
     .word harvests4
-                                ;`tos` vmbuf
-                                ;`n0` pkt.size of original packet
-                                ;`n1` b/buf
     .byt ldd | TOS              ; @
     .byt st | N3                ; vmbuf 'from' for cmoveq
-
     .byt ld | N8                ; pkt
     .byt sub | N1               ; - b/buf
     .byt st | N2                ; pkt.floor
-
     .byt ld | N8                ; pkt
     .byt sub | N0               ; - size
     .byt sub | N3               ; - vmbuf
     .byt inr | ACC              ; + 2
     .byt inr | ACC
     .byt st | TOS               ; 'howmany'
-
     .byt ld | N3                ; vmbuf
     .byt sub | N1               ; - b/buf
     .byt add | N0               ; + size
@@ -1688,18 +1695,8 @@ pupd1
     .word plants8
     .byt nxt
 
-
-
-;"from: screen
-;"to:  pkt-1K
-;"howmany: 1K
-;"rlencode
-;stack=( from to size -- targend uncompressed? )
-
-
-
-
+#include "pass.i65"
 updatescrbuf
-    nop
+    .word exit
 
 #print (*-bperbuf)
