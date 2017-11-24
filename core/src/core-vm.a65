@@ -206,9 +206,9 @@ rlencode04                      ; overflow/end of input
     .byt br , <(rlencode01-*-2)
 
 rlencode06                      ; win
-    .byt ld | N2                ; targ (out)
-    .byt st | TOS
     .byt sub | ACC
+    .byt st | TOS
+    .byt ld | N2                ; targ (out)
     .byt push
     .byt nxt
 ;    rlencode
@@ -217,11 +217,11 @@ rlencode06                      ; win
 rlencode07                      ; lose - copy
     .byt ld | TOS
     .byt st | N0                ; keep pristine TOS
-    .byt ld | R11               ; size
-    .byt add | N7               ; +pristine targ
-    .byt st | TOS
     .byt set | ACC
     .word $4000
+    .byt st | TOS
+    .byt ld | R11               ; size
+    .byt add | N7               ; +pristine targ
     .byt push
     .byt ld | N0
     .byt push
@@ -476,6 +476,27 @@ packet type is screen (true) or data (false)   ~wut? calculate this instead
 #endif
 isscrq
     lda userscrpkt+1            ; check bit 15
+    jmp uncompressedq01
+
+;--------------------------------------------------------------
+#if 0
+name=UNCOMPRESSED?
+stack=( -- flag )
+tags=vm,ext,nosymbol
+Returns a `flag`, `true` when the packet is simply stored by `cmove` or
+`false` when the packet is runlength-encoded
+
+```
+: uncompressed?   ( -- flag )
+    blk @ >pkt @ $4000 and ;
+```
+~#packrat
+#endif
+uncompressedq
+    ldy #1
+    lda (ACC+2*N8),y            ; packet header msb
+    asl
+uncompressedq01
     asl                         ; normalize `flag`
     jmp pushc
 
@@ -699,7 +720,7 @@ to detect when the wrap double is full.
 #endif
 wrapstore
     jsr harvests2
-    stx z
+    txa
     ldx #24
 wrapstore01
     asl $e0,x
@@ -710,7 +731,7 @@ wrapstore01
     ror $e0,x
     dex
     bne wrapstore01
-    ldx z
+    tax                         ; restore stack pointer
     jmp drop
 
 ;--------------------------------------------------------------
@@ -1390,10 +1411,21 @@ user is in the editor or not, and whether the packet is screen or data.
     2r> -rot ! ;
 
 : block   ( u -- addr )
-                                ( u )
-    dup ?mkpkts
-                                ( u )
-    scredidx 'blktable >dispatch
+    dup ?mkpkts  dup blk !
+    >pkt scredidx  >dodispatch blkclassic , blkdatavid , blkscrbuf , blkscrvid , [ latest @ unmsmudge
+
+blkdatabuf:
+
+blkdatavid:
+    ;
+
+blkscrbuf:
+
+blkscrvid:
+    vidram b/scr blank  pkt.size 2- dup>r
+    - vidram r> 3-
+    uncompressed?  ?: cmove rldecode
+    <n0 dup 3c@ wrap! 3+ ;
 
 ```
 ~#packrat
@@ -1416,11 +1448,11 @@ _block
 #include "page.i65"
    .word scredidx
 #include "pass.i65"
-   .word plit
-   .word blktable
-#include "pass.i65"
    .word _dodispatch
-
+    .word 0
+    .word 2
+    .word 4
+    .word blkscrvid-2
 #include "pass.i65"
 blkscrvid
     .word vidram
@@ -1431,97 +1463,33 @@ blkscrvid
 #include "page.i65"
     .word _pktsize
 #include "page.i65"
-    .word xyzzy
+    .word twominus
 #include "page.i65"
-
-
-
-    .word dup
+    .word duptor
 #include "page.i65"
-    .word pktinfo
+    .word minus
 #include "page.i65"
-    .word rot
+    .word vidram
 #include "page.i65"
-    .word _srctarg
-#include "page.i65"
-    .word _threedup
-#include "page.i65"
-    .word nip
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word swap
-#include "page.i65"
- .word fill
-#include "page.i65"
-    .word twodrop
-#include "page.i65"
-    .word twotor
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word isscrq
-#include "pass.i65"
-    .word qbranch
-    .byt <(block02-*+1)
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word rot
+    .word rfrom
 #include "page.i65"
     .word threeminus
 #include "page.i65"
-    .word dashrot
-#include "page.i65"
-    .word threeplus
-#include "page.i65"
-    .word dup
+    .word uncompressedq
+#include "pass.i65"
+    .word pquerycolon
+    .word cmove
+    .word rldecode
 #include "page.i65"
     .word threeminus
 #include "page.i65"
     .word threecfetch
 #include "page.i65"
-    .word editingq
-#include "pass.i65"
-    .word qbranch
-    .byt <(block01-*+1)
+    .word wrapstore
 #include "page.i65"
- .word wrapstore
-#include "page.i65"
-    .word rfetch
-#include "pass.i65"
-    .word branch
-    .byt <(block02-*+1)
-#include "page.i65"
-block01
-    .word rfetch
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word threeplus
-#include "page.i65"
-block02
-    .word twoswap
-#include "pass.i65"
-    .word pquerycolon
- .word cmove
- .word rldecode
-#include "page.i65"
-    .word tworfrom
-#include "page.i65"
-    .word dashrot
-#include "page.i65"
- .word store
+    .word vidram
 #include "pass.i65"
     .word exit
-
-blktable
-    .word 0
-    .word 2
-    .word 4
-    .word blkscrvid-2
 
 ;--------------------------------------------------------------
 #if 0
@@ -1575,6 +1543,28 @@ writing packets in the `vmbuf` region.
 \ recount packets
     #blk! ;
 
+: update   ( -- )
+    scredidx 'updatetable >dispatch
+
+updatescrvid:
+    scr @ >pkt pkt.size b/buf
+    2nip vmbuf (upd1)
+    cmove wrap@ third 3c! 3+
+    vidram tuck b/scr -trailing nip
+    rlencode scrpkt (upd2)
+    cmove> #blk! ;
+
+: update   ( -- )
+    scredidx 'updatetable dispatch
+
+updatescrvid:
+    scr @ >pkt pkt.size b/buf
+    2nip vmbuf (upd1) cmove
+    vidram tuck b/scr -trailing nip
+    rlencode scrpkt (upd2)
+    wrap@ rot 3c!
+    cmove> #blk! ;
+```
 ~#packrat
 #endif
 #include "align.i65"
@@ -1583,13 +1573,12 @@ _update
 #include "page.i65"
     .word scredidx              ; 0, 2, 4, 6 based from `editing` `scrpkt`
 #include "pass.i65"
-    .word plit
-    .word updtable
-#include "pass.i65"
     .word _dodispatch
+    .word updatedata-2
+    .word exit-2
+    .word updatescrbuf-2
+    .word updatescrvid-2
 
-updtable
-    .word updatedata,exit,updatescrbuf,updatescrvid-2
 
 scredidx
     lda userscrpkt+1
@@ -1599,20 +1588,6 @@ scredidx
     asl
     and #$06
     jmp push0a
-
-#include "align.i65"
-_dodispatch
-    jsr enter
-#include "page.i65"
-    .word rdrop
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word tor
-#include "pass.i65"
-    .word exit
 
 #include "pass.i65"
 updatedata
@@ -1638,14 +1613,6 @@ updatescrvid
 #include "page.i65"
     .word cmove
 #include "page.i65"
-    .word wrapfetch
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word threecstore
-#include "page.i65"
-    .word threeplus
-#include "page.i65"
     .word vidram
 #include "page.i65"
     .word tuck
@@ -1656,41 +1623,53 @@ updatescrvid
 #include "page.i65"
     .word nip
 #include "page.i65"
-    .word rlencode
+    .word rlencode              ; ( uncompressed? targend )
 #include "page.i65"
-    .word scrpkt
+    .word duptor
+#include "page.i65"
+    .word threeplus
+#include "page.i65"
+    .word wrapfetch
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word threecstore
+#include "page.i65"
+    .word scrpkt                ; ( uncompressed? targend scrpkt )
 #include "page.i65"
     .word pupd2
 #include "page.i65"
     .word cmovegt
+
 #include "page.i65"
     .word _numblkstore
 #include "pass.i65"
     .word exit
 
+#ifdef 0
+name=(UPD2)
+stack=( wrapd )
+tags=nosymbol
+#endif
 pupd2
     brk
     .byt ext
     .word harvests6
     .byt ldd | TOS              ; scrpkt
-    .byt add | N1               ; + targend
-    .byt sub | N7               ; - floor+3
+    .byt add | N1               ; targend+3
+    .byt sub | N7               ; - floor
     .byt add | N2               ; + uncompressed?
-    .byt inr | ACC              ; + 1
-    .byt inr | ACC              ; + 1
-    .byt inr | ACC              ; + 1
-    .byt inr | ACC              ; + 1
-    .byt inr | ACC              ; + 1
-    .byt std | N8               ; set packet header
-    .byt ld | N1
-    .byt sub | N0
+    .byt inr | ACC
+    .byt inr | ACC
+    .byt std | N8               ; write updated packet header
+    .byt popd | N8
+    .byt ld | N2                ; targend
+    .byt sub | N0               ; - vmbuf'
     .byt st | TOS               ; 'howmany'
     .byt ld | N0
     .byt st | N1                ; 'from'
     .byt ld | N8
     .byt sub | TOS
-    .byt dcr | ACC
-    .byt dcr | ACC
     .byt st | N0                ; 'to'
     .byt ext
     .word plants4
