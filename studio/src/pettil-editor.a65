@@ -543,37 +543,6 @@ editpaste01
 
 ;--------------------------------------------------------------
 #if 0
-name=EDITZILCH
-stack=( -- )
-tags=editor,nosymbol
-
- STOP-Z   Zilch the paste buffer
-
-```
-: editzilch   ( -- )
-     pad paste !  pwrap 4 erase ;
-```
-#endif
-#include "align.i65"
-_editzilch
-    jsr enter
-#include "page.i65"
-    .word _pad
-#include "page.i65"
-    .word paste
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word pwrap
-#include "page.i65"
-    .word four
-#include "page.i65"
-    .word _erase
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=EDITNOWRAP
 stack=( -- )
 tags=editor,nosymbol
@@ -583,8 +552,10 @@ tags=editor,nosymbol
 
 ~#packrat
 #endif
-_editnowrap
-    stx z
+#include "align.i65"
+editnowrap
+    .word *+2
+    txa
     ldx #24
 editnowrap01
     asl $e0,x
@@ -592,11 +563,12 @@ editnowrap01
     ror $e0,x
     dex
     bpl editnowrap01
+    tax
     inx
-    stx userscrpkt
-    ldx #$80
-    stx userscrpkt+1
-    ldx z
+    ldy #1
+    lda (ACC+2*N8),y
+    ora #$80
+    sta (ACC+2*N8),y
     jmp exit
 
 ;--------------------------------------------------------------
@@ -605,18 +577,20 @@ name=>EDIT
 stack=( scr -- )
 tags=editor,nosymbol
 
- Save current editor screen in packet buffer
- Set `toscr` as the current [[SCR]] and edit it
+* Turn on edit mode
+* Save current screen in packet buffer
 
 ```
 : >edit   ( scr -- )
-    update 0 max block drop ;
+    editmode  update  0 max block drop ;
 ```
 ~#packrat
 #endif
 #include "align.i65"
 _toedit
     jsr enter
+#include "page.i65"
+    .word _editmode
 #include "page.i65"
     .word _update
 #include "page.i65"
@@ -676,7 +650,7 @@ underscore, it's the left-arrow character.
 _back
     jsr enter
 #include "page.i65"
-    .word editor
+    .word _editmode
 #include "page.i65"
     .word scr
 #include "page.i65"
@@ -688,32 +662,6 @@ _back
 
 ;--------------------------------------------------------------
 #if 0
-name=(^)
-stack=( -- 0 )
-tags=editor,nosymbol
-
-~#packrat
-#endif
-pcaret
-    brk
-    .byt set | N0
-    .word usernumblk            ; #blk @
-    .byt ldd | N0
-    .byt std | N0               ; scr !
-    .byt set | N0
-    .word userscrpkt
-    .byt sub | ACC
-    .byt push                   ; push a 0 for `mkpkts`
-    .byt std | N0               ; scrpkt off
-    .byt dcr | ACC
-    .byt std | N0               ; editing on
-    .byt rtn
-    sec
-    ror userscrpkt+1            ; $8000 scrpkt !
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
 name=^
 stack=( -- )
 tags=editor
@@ -721,16 +669,13 @@ The capture word `^` first captures the contents (including linewrap)
 of the current display into a new editor packet, which is created and
 appended to the end of the [[VMBUF]] area. Then the editor is invoked.
 
-
-    brk
-    set n0
-        numblk                  ; #blk @
-    ldd n0
-    std n0                      ; scr !
-
 ```
 : ^   ( -- )
     #blk @  scr ! editing on vidram scrpkt !  0 mkpkts  update _ ;
+
+: ^   ( -- )
+    editmode pkt+ update _ ;
+    #blk @  scr ! pkt+ update _ ;
 ```
 !!!pronounced: "capture"
 ~#packrat
@@ -739,23 +684,23 @@ appended to the end of the [[VMBUF]] area. Then the editor is invoked.
 _caret
     jsr enter
 #include "page.i65"
-    .word pcaret
+    .word xyzzy
+#include "page.i65"
+    .word _editmode
 #include "page.i65"
     .word numblk
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word _block
+    .word scr
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word pktplus
 #include "page.i65"
     .word _update
 #include "page.i65"
     .word _back
-#include "pass.i65"
-    .word exit
-
-#include "align.i65"
-_addedit
-    jsr enter
 #include "pass.i65"
     .word exit
 
@@ -1135,65 +1080,6 @@ dolindex02
 
 ;--------------------------------------------------------------
 #if 0
-name=>IDX
-stack=( addr char -- )
-tags=nosymbol
-Computed branch based on a counted string of characters followed by
-the same number of branch target `cfa`s
-
-Lookup the character in the counted string at `addr`
-If found, `execute` the corresponding word, then `exit`
-if not found, just `exit`
-
-: >idx   ( addr char -- )
-    under $index
-                                ( addr index )
-    ?dup
-                                ( addr 0 )              \ not found
-                                ( addr index index )    \ found
-    if
-                                ( addr index )
-        2* 2- over c@+ + +
-                                ( x cfa )
-        @ execute
-    then drop ;
-#endif
-#include "align.i65"
-_toidx
-    jsr enter
-#include "page.i65"
-    .word dolindex
-#include "page.i65"
-    .word dolindex
-#include "page.i65"
-    .word qdup
-#include "pass.i65"
-    .word qbranch
-    .byt <(toidx01-*+1)
-#include "page.i65"
-    .word oneminus
-#include "page.i65"
-    .word twostar
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word cfetchplus
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word execute
-#include "page.i65"
-toidx01
-    .word drop
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=EDITCMD
 stack=( -- )
 tags=editor,nosymbol
@@ -1235,7 +1121,7 @@ _editcmd
     .word editdelscr-2
     .word _editinsscr-2
     .word _edittopscr-2
-    .word _editnowrap-2
+    .word editnowrap-2
     .word _editnextscr-2
     .word _editprevscr-2
 
@@ -1295,6 +1181,57 @@ pedit04
 
 ;--------------------------------------------------------------
 #if 0
+name=EDITZILCH
+stack=( -- )
+tags=editor,nosymbol
+
+ STOP-Z   Zilch the paste buffer
+
+```
+: editzilch   ( -- )
+     pad paste !  pwrap 4 erase ;
+```
+#endif
+#include "align.i65"
+_editzilch
+    jsr enter
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word paste
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word pwrap
+#include "page.i65"
+    .word four
+#include "page.i65"
+    .word _erase
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=EDITMODE
+stack=( scr -- )
+tags=editor,nosymbol
+
+#endif
+#include "align.i65"
+_editmode
+    jsr enter
+#include "page.i65"
+    .word editor
+#include "page.i65"
+editmode01
+    .word editing
+#include "page.i65"
+    .word on
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=EDIT
 stack=( scr -- )
 tags=editor
@@ -1306,9 +1243,7 @@ not present on early PET keyboards.
 _edit
     jsr enter
 #include "page.i65"
-    .word editing
-#include "page.i65"
-    .word on
+    .word _editmode
 #include "page.i65"
     .word _block
 #include "page.i65"
@@ -1454,3 +1389,5 @@ _p
     .word _donp
 #include "pass.i65"
     .word exit
+
+#print (*-editor)
