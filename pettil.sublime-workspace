@@ -8,14 +8,10 @@
 	"buffers":
 	[
 		{
-			"contents": "; pettil-core.a65\n#echo .       pettil-core.a65\n#echo .       PETTIL - Personal Electronics Transactor\n#echo .                Threaded Interpretive Language\n#echo .\n; PETTIL core dictionary\n\n#include \"options.def\"\n#include \"inc/cbm.def\"\n#include \"inc/pettil.def\"\n\n;==============================================================\n;====                     BASIC bootstrap                  ====\n#define basic $0401\n*=basic-2\n#print basic\n;--------------------------------------------------------------\n#if 0\nname=BASIC2PETTIL\ntags=system,nosymbol\n! BASIC bootstrap `$0401`\n\nPETTIL loads as a BASIC program consisting of the line,\n\n`10 SYS1037`\n\nPETTIL is designed with the idea of having a clear separation between\n`pettil-core` (which is this file) and any application code running\non top of core.\n\nThe bonus of doing this is to release about 10K of RAM when `pettil-studio`\nand the symbol table are not resident.  PETTIL Studio behaves like any other\napplications coded to run on top of `pettil-core`.\n#endif\nbasic2pettil\n    .word basic                 ; PRG file load address `$0401`\n    .word basend\n    .word 10\n    .byt $9E                    ; SYS token\n    .asc \"1037\",0               ; restart #1 (of 3) `liftoff`\nbasend\n    .word 0\n\n;--------------------------------------------------------------\n#if 0\nname=RESTART\nstack=( -- )\ntags=system,startup,default\nPerforms the `startup` action.  Usually results in a `warm` boot,\nwhen reentering PETTIL from BASIC.\n\nDuring startup, `restart` executes four times\n1. when called from BASIC to `liftoff`\n2. to start the upper dictionary\n3. at the end of `cold`\n4. finally, at the end of `mackinac` to get to the first `warm` boot\n\n\n\n```\n: restart   ( -- )\n    startup @  execute ;\n```\n#endif\nrestart\n    jmp (userstartup)\n\n; check for build at proper point in memory\n#if (* <> $0410)\n#echo PETTIL Build Error - Program counter is not at $0410!\n#echo You moved something, didn't you?  PETTIL expected BASIC\n#echo to transfer control here to kick things off.  This is a problem.\n#endif (pettil address check)\n#print *\n;====                     BASIC bootstrap                  ====\n;==============================================================\n\n;--------------------------------------------------------------\n#if 0\nname=ZPBUF\ntags=system,nosymbol,startup,self-modifying\n!Zero page buffer and NEXT routine `$0410`\n\n|ROM_PET_4|$00-$8C|\n|ROM_PET_UPGRADE|$00-$8C|\n|ROM_PET_ORIGINAL||\n|ROM_VIC20||\n|ROM_C64|$02-$8C|\n\nzero page swap region, first 141 bytes\n\n`aloha` swaps this region with a little over half of zero page when\ncoming from or going back to BASIC\n\n* Sweet16 stack pointer initialized to `$0100` here\n* copy of NEXT routine is here\n#endif\nzpbuf\n;$0000\n    .word $0000,$1001,$2002,$3003   ; overlapping\n    .word $4004,$5005,$6006,$7007   ; PETTIL registers\n    .word $8008,$9009,$A00A,$B00B   ; and\n    .word $0100,$D00D,$E00E,$F00F   ; Sweet16 registers ()\n;$0020\n    .dsb bos,$aa                ; low stack\n;$0050\n    .dsb bos,$bb                ; high stack\n;$0080\n    .word 0, 0, uarea           ; zi, zlim, up\n;\n;       NEXT\n;               +IP\n;               [IP] -> PC\n;\n; PETTIL's minimalist NEXT.\n;\n; PETTIL's NEXT routine puts responsibility for page alignment on the compiler,\n; greatly improving execution speed vs. a more conventional indirect-threaded\n; design.\n;\n;$0086\nzpnext\n    inc ip              ;[5]    ; (next)\n    inc ip              ;[5]    ; (next1)\n;ip = *+1\n    jmp ($cafe)         ;[5]    ; (nexto)\n\n                        ;[15]   ; clock cycles total!!!\n;$008D TIME                     ; end of zero page buffer, Jiffy clock is here\n\n;==============================================================\n; powers of 2 in a lookup table\npower2\n    .byt $80,$40,$20,$10,$08,$04,$02,$01\n\n;--------------------------------------------------------------\n#if 0\nname=PLUGH\ntags=nosymbol\nAn isolated RTS instruction, used only as a VICE xpet debugger breakpoint,\nset in the `pettil.dbg` config file. [[XYZZY]] is the high-level Forth\nvariant of this.\n\n```\n    .byt ld | N0\n    .byt std | N2\n    .byt ext                    ; invoking VICE debugger from Sweet16\n    .word plugh\n    .byt ld | N3\n    .byt nxt\n\n    jsr something\n    jsr somethingelse\n    sta anyplace\n    jsr plugh                   ; invoking VICE debugger from 6502 assembler\n    ldx anyplace\n```\n#endif\nplugh\n    rts\n;   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .\n; .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .\n\n\n;==============================================================\n;==== ALL SWEET16 OPERATION HANDLERS MUST BE ON SAME PAGE! ====\n;\n; Before this point there should be exactly 156($9C) bytes of code\n; and data, beginning at $0401 (BASIC), with the last byte at $04A5.\n; This is where `pettil-core` page-aligns Sweet-16.\n; <$0401> | BASIC | $9C bytes of padding |\n; <$04A6> | Sweet16 prequel |\n; <$0500> | Sweet16 opcode handler page |\n; <$0600> | Sweet16 sequel |\n; <$0660> | User variables init/storage |\n; check for build at proper point in memory\n#if (* <> $04A6)\n#echo PETTIL Build Error - Program counter is not at $04A6!\n#echo You moved something, didn't you?  Sweet16 expected to\n#echo load at $04A6 (1190).  This is a problem.\n#echo .       program counter is now:\n#print *\n#endif\n;\n;==== ALL SWEET16 OPERATION HANDLERS MUST BE ON SAME PAGE! ====\n;==============================================================\n#include \"inc/sweet16.def\"\n#include \"sweet16.a65\"\n\n;--------------------------------------------------------------\n#if 0\nname=USERAREA\nstack=( -- )\ntags=system,uservar,nosymbol\n!User Area\nInitialization values & storage for User Variables\n\n#endif\nuserarea\n; ---- initialization values per each `cold`\nuser0base       .word 10\nuser0filename   .word currname+3 ;1 counted string, default \"PETTILPACKETS\"\nuser0sanum      .word 0         ;2 default secondary address is 0, (PRG file)\nuser0drvnum     .word 1         ;3 default drive (datasette #1),\n\n; ---- UP points to here, all live user variables\nuarea\n; ---- not re-initialized or initialized another way\nusermemsiz      .word 0         ; 0 here means use BASIC MEMTOP($34)\nusersp0         .word bos+1     ; `abort` does `sp!`\nuserrp0         .word $01FE     ; `quit` does `rp!`\nuserirqtoggle   .word 0\nuserbrktoggle   .word SW16^TIMBRK\nuserstartup     .word liftoff       ;`studio` needs these two in ~#userorder\nuserwarning     .word _doterr       ;1/ `studio` replaces this with `error.msg`\nusernbrvec      .word _corenumber   ;2\\ `number` vectored to handle prefixes\nuserdp          .word there\nuserfence       .word fencepost\nusersymtab      .word 0\n\nucore\n    .dsb uarea-userarea+70,$cc  ; predefined values plus 60 bytes\n\n; ---- re-initialized by `cold`\nuserbase        = ucore+0\nuserfilename    = ucore+2\nusersanum       = ucore+4\nuserdrvnum      = ucore+6\n\nustart = ucore+8\nuservmbuf       = ustart+0\nusernumblk      = ustart+2      ;1/ adjacency required by `^`\nuserscr         = ustart+4      ;2\\ x\nuserblk         = ustart+6      ;1 `refill?` needs these four in ~#userorder\nuserin          = ustart+8      ;2                                         8-bit\nuserspan        = ustart+10     ;3                                         8-bit\nusernumline     = ustart+12     ;5/ adjacent to #OUT in uarea\nusernumout      = ustart+14     ;4\\ CR relies on #LINE being\nuserscrpkt      = ustart+16     ;1/ adjacency required by `^`\nuserediting     = ustart+18     ;2\\ x\nuserdpl         = ustart+20     ;                                          8-bit\nuserhld         = ustart+22     ;\nuendcore = ustart+24            ; mark our place for TDICT uservar base\n\n;--------------------------------------------------------------\n#if 0\nname=ZPMODE\nstack=( -- )\ntags=system,uservar,nosymbol,data\n!User Area\n\nThis one's like a meta-User variable, in that it has to function properly\neven when PETTIL is switched out (reasons: BASIC; TIM monitor; cassette I/O)\n\nIt's only one byte, which makes it a convenient thing to move around to\nword-align something like `userarea`\n\nA byte used as a semaphore by `aloha` to test/indicate whether BASIC (0)\nor PETTIL (1) occupies (a bit more than half of) zero page\n\n#endif\nzpmode\n    .byt 0\n\n;==============================================================\n#if 0\nname=COREBASE\ntags=nosymbol\nWhen changing these files, also modify `xap.rb`\n\n#endif\ncorebase\n#print *\n#include \"core-locals.a65\"\n#print *\n#include \"core-user.a65\"\n#print *\n#include \"core-nucleus.a65\"\n#print *\n#include \"core-extra.a65\"\n#print *\n#include \"core-inner.a65\"\n#print *\n#include \"core-double.a65\"\n#print *\n#include \"core-vm.a65\"\n#print *\n#include \"core-io.a65\"\n#print *\n\n;lower location for `fencepost` for turnkey apps (without `cold`)\n;XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n;==============================================================\n; If your app will never `restart` again, it would be okay to\n; move FENCE to ` ' restart ` before invoking `restart`\n; * No in and out of BASIC/TIM\n; * tape I/O will still work\n; * no restart with COLD\n; * no editor (needs IRQ switching)\n;==============================================================\n\n;--------------------------------------------------------------\n#if 0\nname=AUFWIEDERSEHEN\ntags=startup,nosymbol\nExit Forth, restoring BASIC z.p.\n#endif\naufwiedersehen\n    lsr zpmode                  ; lights off!\n    beq aloha2                  ; bra\n\n;--------------------------------------------------------------\n#if 0\nname=ALOHARD\ntags=startup,nosymbol\n`aloha` invoked by `cold` and `liftoff` also closes files\n#endif\nalohard\n    cld                         ; clear decimal mode\n    jsr CLRCHN                  ; restore default I/O channels\n    jsr CLALL                   ; close all open files\n\n;--------------------------------------------------------------\n#if 0\nname=ALOHA\ntags=startup,nosymbol\nFlips back and forth between BASIC and PETTIL modes.\n\n* Swap part of zero page with zpbuf\n* required by tape I/O\n\n* used to access TIM monitor\n* toggle Sweet16 BRK vector at ($0090)\n* `pettil-studio` does not use the IRQ vector except in the Editor\n* performs swapzp, toggleirq and togglesw16\n#endif\naloha\n    lsr zpmode                  ; check lights\n    inc zpmode                  ; lights on!\n    bcs aloha4                  ; were the lights already on?\naloha2                          ; entry point for tape I/O\n    jsr toggleirqbrk\n    stx z                       ; preserve Forth data stack pointer\n    ldx #TIME                   ; loop from ACC $00 up to the jiffy clock $8D\naloha3\n    lda <(ACC-1),x\n    ldy zpbuf-1,x\n    sty <(ACC-1),x\n    sta zpbuf-1,x\n    dex\n    bne aloha3\n    ldx z                       ; restore Forth data stack pointer\naloha4\n    rts\n\n;--------------------------------------------------------------\n#if 0\nname=COLD\nstack=( -- )\ntags=system,startup\nCOLD starts up the system and when invoked as a command will attempt\nto restore the system to as pristine a condition as possible.\n#endif\n#include \"align.i65\"\n_cold\n    jsr alohard\n    ldx usersp0\n    dex\n#include \"align.i65\"\n    jsr toforth                 ; transition from 6502 Assembly to Forth\n#include \"pass.i65\"\n    .word plits\n    .byt 5\n    .word ustart                ; erase\n    .word uendcore-ustart\n    .word userarea              ; cmove\n    .word ucore\n    .word uarea-userarea\n#include \"page.i65\"\n    .word cmove\n#include \"page.i65\"\n    .word _erase\n#include \"page.i65\"\ncoldpatch\n    .word next                  ; later transformed into `rehash`\n; ~ no #page here -- but these may not be on different pages (currently $1B76)\n    .word next                  ; later transformed into `emptybuffers`\n#include \"pass.i65\"\n    .word restart               ; restart #2 (of 3) `studio`\n\n;upper location for `fencepost` for development (includes `cold`)\n;XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n;==============================================================\n; move the `fencepost` label to either lower or upper location\n;==============================================================\n;--------------------------------------------------------------\n#if 0\nname=FENCEPOST\ntags=system,startup,nosymbol\nThis is where [[FENCE]] points, and also [[DP]] after initial\nbuild of the symbol table.  First-run startup code beyond\nthis point (`fencepost` to `there`) may not have symbol table\nentries pointing to it.\n#endif\nfencepost\n; beyond lies the Abyss...\n;XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n;==============================================================\n;==============================================================\n;===-===-===-===-===-===-===-===-===-===-===-===-===-===-===-==\n;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==\n;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n;=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=--=-\n;---=---=---=---=---=---=---=---=---=---=---=---=---=---=---=--\n;--------------------------------------------------------------\n;---.---.---.---.---.---.---.---.---.---.---.---.---.---.---.--\n;--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--.--\n;-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.\n;..............................................................\n;... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ..\n;.. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. ..\n;. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .\n; .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .\n;   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .\n;.     .     .     .     .     .     .     .     .     .     .\n;   .        .        .        .        .        .        .\n;   .     .        .             .              .     .\n;                        .             .                   .\n;         .     .              .            .\n;\n;\n;\n;\n;\n;\n\n;--------------------------------------------------------------\n#if 0\nname=LIFTOFF\ntags=system,startup,throwaway,nosymbol\nA primitive relocator to move already-linked code to upper memory\nGets us from `pettil-core` to module LAUNCH\n\n* CMOVE transient dictionary to upper memory\n* EXECUTE first word in transient dictionary\n\nSetting the `size` of the transient dictionary to 0 will prevent\nmoving anything; control still transfers to `loadaddr+2`.\n\n```\n: liftoff   ( -- )\n    ['] there @+ tuck over @ 2+ cmove 2+ execute\n```\n#endif\n#include \"align.i65\"\nliftoff\n    lda usermemsiz\n    ldy usermemsiz+1\n    bne fs01                    ; something there already? leave it alone\n    lda MEMSIZ                  ; nothing there?  get it from BASIC MEMSIZ($34)\n    ldy MEMSIZ+1\nfs01\n    sta usermemsiz\n    sty usermemsiz+1\n    jsr alohard\n    ldx usersp0\n    dex\n#include \"align.i65\"\n    jsr toforth                 ; transition from 6502 Assembly to Forth\n#include \"pass.i65\"\n    .word plit\n    .word there\n#include \"page.i65\"\n    .word fetchplus             ; link to upper dictionary\n#include \"page.i65\"\n    .word tuck\n#include \"page.i65\"\n    .word over\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word twoplus\n#include \"page.i65\"\n    .word cmove                 ; but first, make an upper dictionary\n#include \"page.i65\"\n    .word twoplus\n#include \"page.i65\"\n    .word startup\n#include \"page.i65\"\n    .word store                 ; `studio` -> `startup` for 2nd `restart`\n#include \"page.i65\"\n    .word _cold\n\n;--------------------------------------------------------------\n#if 0\nname=SPLASHIRQ\nstack=( -- )\ntags=system,startup,nosymbol\nsplash screen irq handler\nchoose a random location\ncheck character on either page\n    4D?  replace it with 4E\n    4E?  replace it with 4D\n    else? leave it alone\n\n#endif\n#include \"align.i65\"\nsplashirq\n    dec sploosh\n    bne splashirq03\n    lda #80\n    sta sploosh                 ; jiffies between letters\n    lda #1\n    sta splotch+3               ; set the mainline `doletter` flag\n\nsplashirq03\n    lda splushh+3\n    sta splush\nsplashirq01\n    jsr randu\n    tax\n    lda VIDRAM,x\n    jsr splish\n    sta VIDRAM,x\n    lda VIDRAM+$100,x\n    jsr splish\n    sta VIDRAM+$100,x\n    dec splush\n    bne splashirq01\n;    inc $83E7\n    jmp MAINIRQ\n\nsplish\n    tay\n    eor #$4C                    ; swap \\ <--> / else leave it alone\n    and #$7C\n    bne splish01\n    tya\n    eor #3\n    tay\nsplish01\n    tya\n    rts\n\nsplush\n    .byt 1\nsplushh\n    jsr docreate\n    .byt 15\nsploosh\n    .byt 120\nsplotch                         ; flag for mainline routine\n    jsr docreate\n    .byt 0\nsplash\n    .byt 0\ncurrletter\n    jsr docreate\n    .word pettillogo\n\n;--------------------------------------------------------------\n#if 0\nname=?TRIGGER\nstack=( -- )\ntags=system,startup,nosymbol\n\n```\n: qtrigger   ( -- )\n    splotch c@\n    if\n        splotch coff\n    then\n;\n```\n#endif\n#include \"align.i65\"\n_qtrigger\n    jsr enter\n#include \"page.i65\"\n    .word splotch\n#include \"page.i65\"\n    .word cfetch\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(qtrigger01-*+1)\n#include \"page.i65\"\n    .word splotch\n#include \"page.i65\"\n    .word coff\n#include \"page.i65\"\n    .word _doletter\n#include \"pass.i65\"\nqtrigger01\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=BARF\nstack=( -- false )\ntags=system,startup,nosymbol\nprimitive to fill the screen with a rapidly changing diagonal\nmaze effect\n\n#endif\nbarf\n    stx z\n    lda #$93\n    jsr $FFD2\n    ldx #0\n    lda #$4d\nbarf01\n    sta $8000,x\n    sta $8100,x\n    sta $8200,x\n    sta $8300,x\n    dex\n    bne barf01\nbarf02\n    jsr randu\n    tax\n    lda VIDRAM,x\n    jsr splish\n    sta VIDRAM,x\n    lda VIDRAM+$100,x\n    jsr splish\n    sta VIDRAM+$100,x\n    lda VIDRAM+$200,x\n    jsr splish\n    sta VIDRAM+$200,x\n    lda VIDRAM+$300,x\n    jsr splish\n    sta VIDRAM+$300,x\n    dec barfctr\n    bne barf02\n    dec barfctr+1\n    bne barf02\n    ldx z\n    jmp next\n\n;--------------------------------------------------------------\n#if 0\nname=BARF.CTR\nstack=( -- false )\ntags=system,startup,nosymbol\ncounter used by `barf`, number of times to twiddle the maze\n#endif\nbarfctr\n    .word 5000\n\n;--------------------------------------------------------------\n#if 0\nname=FLIPPER\nstack=( -- false )\ntags=system,startup,nosymbol\n\n```\n: flipper  2-\n    9 40* vidram dup +under\n    do\n        i c@ c>s 0<\n        if $66 i c! then\n    loop ;\n```\n#endif\n#include \"align.i65\"\n_flipper\n    jsr enter\n#include \"page.i65\"\n    .word vidram\n#include \"page.i65\"\n    .word nine\n#include \"page.i65\"\n    .word fortytimes\n#include \"page.i65\"\n    .word plus\n#include \"page.i65\"\n    .word vidram\n#include \"pass.i65\"\n    .word pdo\n    .byt <(flipper03-*+1)\n#include \"page.i65\"\nflipper01\n    .word i\n#include \"page.i65\"\n    .word cfetch\n#include \"page.i65\"\n    .word duptor\n#include \"pass.i65\"\n    .word clit\n    .byt $E9\n#include \"page.i65\"\n    .word eq\n#include \"page.i65\"\n    .word rfrom\n#include \"page.i65\"\n    .word ctos\n#include \"page.i65\"\n    .word zlt\n#include \"page.i65\"\n    .word xor\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(flipper02-*+1)\n#include \"pass.i65\"\n    .word clit\n;    .byt $66  ; shift-&\n;    .byt $BA  ; rvs-:\n    .byt $A0\n#include \"page.i65\"\n    .word i\n#include \"page.i65\"\n    .word cstore\n#include \"pass.i65\"\nflipper02\n    .word ploop\n    .byt <(flipper01-*+1)\n#include \"pass.i65\"\nflipper03\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=DOLETTER\nstack=( -- false )\ntags=system,startup,nosymbol\ninstalled by `splashirq` to get in there and display something during FORGET\n\nReplaces either (forget).pass1 or (forget).pass2 for one call\nreturns \"false\" to iterate t\nsplash screen irq handler\nchoose a random location\ncheck character on either page\n    4D?  replace it with 4E\n    4E?  replace it with 4D\n    else? leave it alone\n\n```\n: doletter\n    'origr11 @ >r11 drop\n    'currletter dup @ @+ dup\n    ?: $. drop\n    swap ! ;\n\n: doletter\n    'currletter dup @ @+ ?dup\n    if\n        $. over !\n    then  drop ;\n```\n#endif\n#include \"align.i65\"\n_doletter\n    jsr enter\n;#include \"pass.i65\"\n;    .word plit\n;    .word $83E7\n;#include \"page.i65\"\n;    .word oneplusstore\n#include \"page.i65\"\n    .word currletter\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word fetchplus\n#include \"page.i65\"\n    .word swap\n#include \"page.i65\"\n    .word currletter\n#include \"page.i65\"\n    .word store\n#include \"page.i65\"\n    .word execute\n#include \"pass.i65\"\n    .word exit\n\npettillogo\n    .word pl0,pl1,pl2,pl3,pl4,pl5,pl6,pl7,pl8,pl9,pl10\n\n#include \"align.i65\"\npl0\n    jsr enter\n#include \"pass.i65\"\n    .word _pdq\n    .byt (pl0x-*-1)\n    .asc HOME,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN\n    .asc CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN\n    .asc CRSRDOWN,RVSON,\"SORTING SYMBOLS... 30 SECONDS\",RVSOFF\npl0x\n#include \"pass.i65\"\n    .word exit\n\n#include \"align.i65\"\npl1\n    jsr enter\n#include \"pass.i65\"\n    .word _pdq\n    .byt (pl1x-*-1)\n    .asc    HOME,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN\n    .asc    CRSRDOWN,CRSRDOWN,RVSON,$CE,RVSOFF,$E9,RVSON\n    .asc    CRSRUP,CRSRLEFT,CRSRLEFT,$CE,$CE\n    .asc    CRSRUP,CRSRLEFT,CRSRLEFT,$EB,$CE\n    .asc    CRSRUP,CRSRLEFT,CRSRLEFT,$CE,$CE\n    .asc    CRSRUP,CRSRLEFT,CRSRLEFT,$CE,$CE\n    .asc    CRSRUP,CRSRLEFT,CRSRLEFT,$CE,$CE\n    .asc    CRSRUP,CRSRLEFT,CRSRLEFT,$E9,$F2,$CE,$CE,$CE,$DF\n    .asc    CRSRDOWN,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,$CE,$CE,$CE,$CE\n    .asc    CRSRDOWN,CRSRLEFT,CRSRLEFT,$EB,$CE\n    .asc    CRSRDOWN,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,$CE,$CE,$CE,RVSOFF,$E9\npl1x\n#include \"page.i65\"\n    .word one\n#include \"page.i65\"\n    .word splushh\n#include \"page.i65\"\n    .word store\n#include \"pass.i65\"\n    .word exit\n\n\n#include \"align.i65\"\npl2\n    jsr enter\n#include \"pass.i65\"\n    .word _pdq\n    .byt (pl2x-*-1)\n    .asc HOME,CRSRDOWN,CRSRDOWN,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc RVSON,$E9,$CE,$CE,$CE,$CE,$CE,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,$F1,$CE,$CE,$CE,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $EB,$CE,$CE,$CE,RVSOFF,$E9,RVSON,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,$CE,$CE,$F2,$CE,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$F1,$CE,$CE,$CE,RVSOFF,$E9,RVSON\npl2x\n#include \"pass.i65\"\n    .word exit\n\n#include \"align.i65\"\npl3\n    jsr enter\n#include \"pass.i65\"\n    .word _pdq\n    .byt (pl3x-*-1)\n    .asc HOME,CRSRDOWN,CRSRDOWN,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,RVSON,$E9,$F2,$CE,$CE,$CE,$CE,CRSRLEFT\n    .asc CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,$CE,$CE,$F1,RVSOFF,$E9,RVSON,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$F3,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,RVSOFF,$E9,RVSON\npl3x\n#include \"pass.i65\"\n    .word exit\n\n#include \"align.i65\"\npl4\n    jsr enter\n#include \"pass.i65\"\n    .word _pdq\n    .byt (pl4x-*-1)\n    .asc HOME,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,RVSOFF,$D6,RVSON,CR,CR,CR,CR,CR,CR,CR,CR\n    .asc RVSON,\"PERSONAL ELECTRONIC TRANSACTOR\"\npl4x\n#include \"page.i65\"\n    .word nine\n#include \"page.i65\"\n    .word splushh\n#include \"page.i65\"\n    .word store\n#include \"pass.i65\"\n    .word exit\n\n#include \"align.i65\"\npl5\n    jsr enter\n#include \"pass.i65\"\n    .word _pdq\n    .byt (pl5x-*-1)\n    .asc CR,RVSON,\"THREADED INTERPRETIVE LANGUAGE\",CR\npl5x\n#include \"page.i65\"\n    .word _flipper\n#include \"pass.i65\"\n    .word exit\n\n#include \"align.i65\"\npl6\n    jsr enter\n#include \"pass.i65\"\n    .word _pdq\n    .byt (pl6x-*-1)\n    .asc HOME,CRSRDOWN,CRSRDOWN,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc RVSON,$E9,$CE,$CE,$CE,$CE,$CE,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$F1,$CE,$CE,$CE,RVSOFF,$E9,RVSON,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$F3,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,RVSOFF,$E9,RVSON\npl6x\n#include \"page.i65\"\n    .word one\n#include \"page.i65\"\n    .word splushh\n#include \"page.i65\"\n    .word store\n#include \"pass.i65\"\n    .word exit\n\n#include \"align.i65\"\npl7\n    jsr enter\n#include \"pass.i65\"\n    .word _pdq\n    .byt (pl7x-*-1)\n    .asc HOME,CRSRDOWN,CRSRDOWN,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc RVSON,$E9,$CE,$CE,$CE,$CE,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,$CE,$F1,RVSOFF,$E9,RVSON,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc RVSOFF,$AA,RVSON,$CE,RVSOFF,$B4,RVSON,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc RVSOFF,$AA,RVSON,$CE,RVSOFF,$B4,RVSON,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc RVSOFF,$AA,RVSON,$CE,RVSOFF,$B4,RVSON,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $E9,$CE,$CE,$CE,$CE,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$F1,$CE,$CE,RVSOFF,$E9,RVSON\npl7x\n#include \"pass.i65\"\n    .word exit\n\n\n#include \"align.i65\"\npl8\n    jsr enter\n#include \"pass.i65\"\n    .word _pdq\n    .byt (pl8x-*-1)\n    .asc HOME,CRSRDOWN,CRSRDOWN,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT,CRSRRIGHT\n    .asc RVSON,$E9,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$F3,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $EB,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,$CE,$CE,$F2,$CE,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRDOWN\n    .asc $CE,$CE,$CE,$CE,$CE,RVSOFF,$E9\npl8x\n#include \"pass.i65\"\n    .word exit\n\n#include \"align.i65\"\npl9\n    jsr enter\n#include \"page.i65\"\n    .word _flipper\n#include \"page.i65\"\n    .word exit\n\n#include \"align.i65\"\npl10\n    jsr enter\n#include \"pass.i65\"\n    .word plit\n    .word pettillogo+2*10\n#include \"page.i65\"\n    .word currletter\n#include \"page.i65\"\n    .word store\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=SPLASH\nstack=( -- )\ntags=system,startup,nosymbol\nSet up the loader splash screen entertainment\n#endif\n#include \"align.i65\"\n_splash\n    jsr enter\n#include \"page.i65\"\n    .word barf\n#include \"pass.i65\"\n    .word plits\n    .byt 3\n    .word splashirq\n    .word VIDRAM+11*40\n    .word 14*40\n#include \"page.i65\"\n    .word _blank\n#include \"page.i65\"\n    .word _banner\n#include \"page.i65\"\n    .word irqstore\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=BANNER\nstack=( -- )\ntags=system,startup,nosymbol\nsplash screen irq handler\nchoose a random location\ncheck character on either page\n    4D?  replace it with 4E\n    4E?  replace it with 4D\n    else? leave it alone\n\n#endif\n#include \"align.i65\"\n_banner\n    jsr enter\n#include \"pass.i65\"\n    .word _pdq\n    .byt (setupmsg01-*-1)\n    .asc    HOME,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN\n    .asc    CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN\n    .asc    RVSON,\"FORTH FOR THE COMMODORE PET 2001!\",CR\n    .asc    \"HTTP:\",\"/\",\"/GITHUB.COM/CHITSELB/PETTIL\",CR,CR,CR,CR\nsetupmsg01\n#include \"pass.i65\"\n    .word _pdq\n    .byt (bannermsg01-*-1)      ; length of bannermsg\n    .asc    \"VERSION: 2017-11-09\",CR\n    .asc    \"2017 WHEN I PROGRAM, I LIKE TO LISTEN\",CR\n    .asc    \"     TO WCBN-FM, RADIO FREE ANN ARBOR\",CR\n            ;123456789.123456789.123456789.123456789.\nbannermsg01\n#include \"pass.i65\"\n    .word exit\n\nthere\n#print *\n#echo . you are there\n\n; concatenate pettil-studio (or some other) object module here\n; first word is starting address for indirect `jmp (there)`\n;==============================================================\n;   .word load address          ; e.g. `$68FE`\n;$<68FE>\n;   .word size                  ; there+2 contains (there+4)\n;<$6900>\n;                               ; <-- cfa of module initialization\n",
 			"file": "core/src/pettil-core.a65",
-			"file_size": 29080,
-			"file_write_time": 131556566778505208,
 			"settings":
 			{
-				"buffer_size": 29080,
-				"encoding": "UTF-8",
+				"buffer_size": 29076,
 				"line_ending": "Unix"
 			}
 		},
@@ -23,38 +19,80 @@
 			"file": "studio/src/pettil-studio.a65",
 			"settings":
 			{
-				"buffer_size": 10187,
+				"buffer_size": 10228,
 				"encoding": "UTF-8",
 				"line_ending": "Unix"
-			}
-		},
-		{
-			"contents": "; core-vm.a65\n#echo .       core-vm.a65               Virtual Memory\n\n;--------------------------------------------------------------\n#if 0\nname=B/BUF\nstack=( -- 1024 )\ntags=const,forth-83\n!!!Constant\nbytes per buffer = 1024\n#endif\nbperbuf\n    jsr doconst\n    .word BPERBUF\n\n;--------------------------------------------------------------\n#if 0\nname=B/SCR\nstack=( -- 1000 )\ntags=const,vm\n!!!Constant\nbytes per screen.  Not what it usually means in other Forths,\n(not blocks per screen = 1)\n#endif\nbperscr\n    jsr doconst\n    .word BPERSCR\n\n;--------------------------------------------------------------\n#if 0\nname=CAS1BUF\nstack=( -- $027A )\ntags=const,vm\n!!!Constant\nAddress of the first tape buffer (device #1)\n#endif\ncas1buf\n    jsr doconst\n    .word CAS1BUF\n\n;--------------------------------------------------------------\n#if 0\nname=CAS2BUF\nstack=( -- $033A )\ntags=const,vm\n!!!Constant\nAddress of the second tape buffer (device #1)\nbase address of cassette buffer #2, used (for now) as a line buffer\nto unpack screens and blocks into lines\n#endif\ncas2buf\n    jsr doconst\n    .word CAS2BUF\n\n;--------------------------------------------------------------\n#if 0\nname=BLKBUF\nstack=( -- addr )\ntags=vm\nReturns the address of the 1K virtual memory block buffer.\n\nThere is only a single 1K fixed block buffer on the system, and\nall data and screen packets are retrieved from the packet buffer\nthrough it.\n\nCopying a block to a different block can be achieved by using [[PAD]] as\ntemporary storage.  When [[REHASH]] rebuilds the symbol\ntable, it performs [[automatic memory allocation|AUTOMEM]]\nand may move `BLKBUF` (and its contents) to a new location.\n\n!!! pronounced: \"b-l-k-buff\"\n\n```\n: blkbuf   ( -- addr )\n    symtab @  ?: symtab memsiz  @ b/buf - ;\n```\n#endif\n#include \"align.i65\"\nblkbuf\n    ldy usersymtab+1            ; always a page boundary\n    bne blkbuf02                ; or 0 if `symtab` is off\n    ldy usermemsiz+1            ; okay use memsize in core mode\nblkbuf02\n    dey\n    dey\n    dey\n    dey                         ; -1K (1024 bytes aka `b/buf`)\n    lda #0\n    jmp pushya\n\n;--------------------------------------------------------------\n#if 0\nname=WRAP^\nstack=( logline -- d )\ntags=editor,primitive,nosymbol\n\n Reads a portion of the linewrap table above the requested\n `logline`, up to but not including `logline`.\n\n Returns a right-aligned double with a copy of those high bit values\n\n!!!pronounced: \"wrap-above\"\n#endif\nwrapabove\n    stx z                       ; preserve Forth data stack pointer\n    ldx #0\n    stx n+1\n    stx n\n    stx tos+1\n    ldy tos                     ; first physical line of this logical line\n    stx tos\n    tya\n    beq wrapabove03\n    sty n+2\n    dex\nwrapabove02\n    inx\n    cpx n+2                     ; are we there yet?\n    beq wrapabove03             ; leave if done\n    lda $e0,x\n    asl                         ; nondestructively\n    rol tos\n    rol tos+1\n    rol n\n    rol n+1                     ; append the next high bit to the double\n    beq wrapabove02             ; this should always take the branch\nwrapabove03\n    lda n\n    ldy n+1                     ; high half of the double is going on the stack\n    ldx z                       ; restore Forth data stack pointer\n    jmp pushya\n\n;--------------------------------------------------------------\n#if 0\nname=RLENCODE\nstack=( from to size -- targend uncompressed? )\ntags=vm,sweet16\nThis works a lot like `cmove` with its `from to howmany` stack signature, but\nthe target is a `packet` of `virtual memory` that can be permanently stored\nto cassette tape.  The other difference is the two return values provided by\n`rlencode`.\n\n* `targend` End of the compressed|stored output\n* `uncompressed?` Flag reveals whether RLE compression was used.\n\nencode length {srclen} bytes from source address {srcaddr} to\ntarget address {targaddr}.  Return target end address {targend}\n#endif\nrlencode\n    ; tos   src (pristine)\n    ; n0    src (in)\n    ; n1    size (in)\n    ; n2    targ (out)\n    ; n3    size (out)\n    ; n4    repeat\n    ; n5    prev\n    ; n6    $100\n    ; n7    targ (pristine)\n    ; r11   size (pristine)\n    brk\n    .byt ld | TOS               ; size\n    .byt st | N1                ; size (in)\n    .byt st | N3                ; size (out)\n    .byt st | R11               ; size (pristine)\n    .byt pull                   ; to\n    .byt st | N2                ; targ (out)\n    .byt st | N7                ; targ (pristine)\n    .byt pull                   ; from -- TOS = src (pristine)\n    .byt st | N0                ; src (pristine)\n    .byt set | N6               ; constant to initialize repeat counter\n    .word $100\nrlencode01\n    .byt ld | N6                ; also unfindable character\nrlencode02\n    .byt st | N5                ; prev character\n    .byt ld | N3\n    .byt bm , <(rlencode07-*-2) ; is RL encoding no size benefit?\n    .byt ld | N1\n    .byt bz , <(rlencode06-*-2) ; done with input?\n    .byt ldi | N0               ; read input stream\n    .byt dcr | N1\n    .byt sti | N2               ; write output stream\n    .byt dcr | N3\n    .byt cpr | N5               ; compare to prev\n    .byt bnz , <(rlencode02-*-2) ; different? go get more\n    .byt ld | N6\n    .byt st | N4                ; count backwards from 256\n    .byt dcr | N4               ; count the one already in output stream\nrlencode03\n    .byt dcr | N4\n    .byt bz , <(rlencode04-*-2) ; overflow?\n    .byt ld | N1\n    .byt bz , <(rlencode04-*-2) ; end of input?\n    .byt ldi | N0               ; get from input stream\n    .byt dcr | N1\n    .byt cpr | N5\n    .byt bz , <(rlencode03-*-2) ; same char? loop\n\n    .byt dcr | N0               ; different char?\n    .byt inr | N1               ; un-get from input stream\nrlencode04                      ; overflow/end of input\n    .byt ld | N6\n    .byt sub | N4\n    .byt sti | N2               ; write count to output stream\n    .byt dcr | N3\n    .byt br , <(rlencode01-*-2)\n\nrlencode06                      ; win\n    .byt ld | N2                ; targ (out)\n    .byt st | TOS\n    .byt sub | ACC\n    .byt push\n    .byt nxt\n;    rlencode\n;( targend uncompressed?        ; floor  pkt )\n\nrlencode07                      ; lose - copy\n    .byt ld | TOS\n    .byt st | N0                ; keep pristine TOS\n    .byt ld | R11               ; size\n    .byt add | N7               ; +pristine targ\n    .byt st | TOS\n    .byt set | ACC\n    .word $4000\n    .byt push\n    .byt ld | N0\n    .byt push\n    .byt ld | N7\n    .byt push\n    .byt ld | R11\n    .byt push\n    .byt rtn\n    jmp cmove\n\n;--------------------------------------------------------------\n#if 0\nname=RLDECODE\nstack=( from to size -- )\ntags=vm,sweet16\ndecode length {srclen} bytes beginning at source address\n{srcaddr} to the target address (targaddr).\n#endif\nrldecode\n    jsr harvests4\n    brk\n    .byt set | N4\n    .word $100\nrldecode01\n    .byt ld | N4\n    .byt st | N2                ; set prev to unmatchable value\nrldecode02\n    .byt ld | TOS\n    .byt bz , <(rldecode06-*-2)\n    .byt dcr | TOS              ; decrement source counter\n    .byt ldi | N0               ; read source stream\n    .byt sti | N1               ; write target stream\n    .byt cpr | N2\n    .byt st | N2\n    .byt ld | R13\n    .byt bnz , <(rldecode02-*-2) ; different? go get more\nrldecode03\n    .byt dcr | TOS              ; decrement source counter\n    .byt ldi | N0               ; get the repeat count\n    .byt bnz, <(rldecode04-*-2)\n    .byt ld | N4\nrldecode04\n    .byt st | N3\n    .byt dcr | N3\n    .byt bz , <(rldecode01-*-2)\nrldecode05\n    .byt dcr | N3\n    .byt bz , <(rldecode01-*-2)\n    .byt ld | N2\n    .byt sti | N1               ; write target stream\n    .byt br , <(rldecode05-*-2)\nrldecode06\n    .byt pull                   ; drop srclen\n    .byt nxt\n\n;--------------------------------------------------------------\n#if 0\nname=PKT.SIZE\nstack=( -- packet size )\ntags=vm,nosymbol\nReturns the current `pkt` address and `size` of the packet in `n8`\n\n\n```\n: pkt.size   ( -- pkt size )\n    <n8 dup @ $7ff and ;\n\n    jsr slip\n    ldy #0\n    lda (tos),y\n    pha\n    iny\n    lda (tos),y\n    pha\n    jmp rfrom\n```\npronounced: \"packet-size\"\n~#packrat\n#endif\n#include \"align.i65\"\n_pktsize\n    jsr enter\n#include \"pass.i65\"\n    .word zpfrom\n    .byt ACC+2*N8\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word psize\n#include \"pass.i65\"\n    .word exit\n\npsize\n    lda tos+1\n    and #$07\n    tay\n    lda tos\n    jmp put\n\n;--------------------------------------------------------------\n#if 0\nname=>PKT\nstack=( n -- pkt )\ntags=vm,ext\nReturn the `pkt` address of block `n`, sets `n8`\n\n~ should return a 0 if there are less than `n` packets\n\n```\n: >pkt   ( n -- pkt )\n    blkbuf 2-\n    begin\n        over\n    while\n        pkt.size\n        - -1 +under\n    repeat\n    nip >n8 ;\n\n```\n~#packrat\n#endif\n#include \"align.i65\"\n_topkt\n    jsr enter\n#include \"page.i65\"\n    .word blkbuf\n#include \"page.i65\"\n    .word twominus\n#include \"pass.i65\"\n    .word tozp\n    .byt ACC+2*N8\n#include \"page.i65\"\ntopktb01\n    .word over\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(topktb02-*+1)\n#include \"page.i65\"\n    .word _pktsize\n#include \"page.i65\"\n    .word minus\n#include \"page.i65\"\n    .word minusone\n#include \"page.i65\"\n    .word plusunder\n#include \"pass.i65\"\n    .word branch\n    .byt <(topktb01-*+1)\n#include \"page.i65\"\ntopktb02\n    .word nip\n#include \"pass.i65\"\n    .word tozp\n    .byt ACC+2*N8\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=PKT.INFO\nstack=( packet -- floor length uncompressed? isscr? )\ntags=vm,nosymbol\nReturns the floor, length and flags from a packet header.  [[SCRPKT]]\nis $8000 for screen packets, 0 for data packets.  the `uncompressed?`\nvalue is $4000 for uncompressed packets, 0 for [[RLENCODE]]d packets.\nThe term `size` also includes the 2 byte packet header, while a\npacket's `length` is just the contents (`size-2`)\n\npronounced: \"packet-info\"\n\n```\n: pkt.info   ( block -- floor length uncompressed? isscr? )\n    >pkt dup>r pkt.size 2- dup>r -\n    r> r> @ dup>r $4000 and r> vidram and scrpkt ! ;\n```\n~#packrat\n#endif\n#include \"align.i65\"\npktinfo\n    jsr enter\n#include \"page.i65\"\n    .word _topkt\n#include \"page.i65\"\n    .word duptor\n#include \"page.i65\"\n    .word _pktsize\n#include \"page.i65\"\n    .word twominus\n#include \"page.i65\"\n    .word duptor\n#include \"page.i65\"\n    .word minus\n#include \"page.i65\"\n    .word rfrom\n#include \"page.i65\"\n    .word rfrom\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word duptor\n#include \"pass.i65\"\n    .word plit\n    .word $4000\n#include \"page.i65\"\n    .word andx\n#include \"page.i65\"\n    .word rfrom\n#include \"page.i65\"\n    .word vidram\n#include \"page.i65\"\n    .word andx\n#include \"page.i65\"\n    .word scrpkt                ; ~#packrat\n#include \"page.i65\"\n    .word store\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=EDITING?\nstack=( -- flag )\ntags=vm,ext,nosymbol\nRetrieves the EDITING user variable\n\n```\n: editing?\n    editing @ ;\n```\n#endif\neditingq\n    lda userediting\n    ldy userediting+1\n    jmp pushya\n\n;--------------------------------------------------------------\n#if 0\nname=ISSCR?\nstack=( -- flag )\ntags=vm,ext,nosymbol\nRetrieves the [[SCRPKT]] user variable, which describes whether the current\npacket type is screen (true) or data (false)   ~wut? calculate this instead\n\n```\n: isscr?   ( -- flag )\n    scrpkt @ ;\n```\n~#packrat\n#endif\nisscrq\n    lda userscrpkt+1            ; check bit 15\n    asl                         ; normalize `flag`\n    jmp pushc\n\n;--------------------------------------------------------------\n#if 0\nname=PKT+\nstack=( addr size -- floor )\ntags=vm,ext,nosymbol\ninserts a new packet at address.\n\n```\n: pkt+   ( addr size -- floor )\n    >r vmbuf @ over 1+\n    r@ negate  dup vmbuf +!  +move\n    r@ over !\n    r> - 2+ ;\n```\n~#packrat\n#endif\n#include \"align.i65\"\n_pktplus\n    jsr enter\n#include \"page.i65\"\n    .word tor\n#include \"page.i65\"\n    .word vmbuf\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word over\n#include \"page.i65\"\n    .word oneplus\n#include \"page.i65\"\n    .word rfetch\n#include \"page.i65\"\n    .word negate\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n    .word vmbuf\n#include \"page.i65\"\n    .word plusstore\n#include \"page.i65\"\n    .word _plusmove\n#include \"page.i65\"\n    .word rfetch\n#include \"page.i65\"\n    .word over\n#include \"page.i65\"\n    .word store\n#include \"page.i65\"\n    .word rfrom\n#include \"page.i65\"\n    .word minus\n#include \"page.i65\"\n    .word twoplus\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=MKPKTS\nstack=( n -- )\ntags=vm,ext,nosymbol\nconcatenates `n+1` new packets at the tail of the [[VMBUF]] area\n\n```\n: mkpkts   ( n -- )\n    begin\n        #blk 1+!  vmbuf @  editing?\n        if\n            dup>r 5 pkt+ dup on 1+ on vidram r> +!\n        else\n            2 pkt+ drop\n        then\n        1- 0<\n    until drop ;\n```\n~#packrat\n#endif\n#include \"align.i65\"\n_mkpkts\n    jsr enter\n#include \"page.i65\"\nmkpkts01\n    .word numblk\n#include \"page.i65\"\n    .word oneplusstore\n#include \"page.i65\"\n    .word vmbuf\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word editingq\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(mkpkts02-*+1)\n#include \"page.i65\"\n    .word duptor\n#include \"page.i65\"\n    .word five\n#include \"page.i65\"\n    .word _pktplus\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n    .word on\n#include \"page.i65\"\n    .word oneplus\n#include \"page.i65\"\n    .word on\n#include \"page.i65\"\n    .word vidram\n#include \"page.i65\"\n    .word rfrom\n#include \"page.i65\"\n    .word plusstore\n#include \"pass.i65\"\n    .word branch\n    .byt <(mkpkts03-*+1)\n#include \"page.i65\"\nmkpkts02\n    .word two\n#include \"page.i65\"\n    .word _pktplus\n#include \"page.i65\"\n    .word drop\n#include \"page.i65\"\nmkpkts03\n    .word oneminus\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n    .word zlt\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(mkpkts01-*+1)\n#include \"page.i65\"\n    .word drop\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=?MKPKTS\nstack=( blk -- )\ntags=vm,ext,nosymbol\nUsed by [[BLOCK]] to create empty packets.  If `blk` references a packet\nhigher than  [[#BLK]], generates new packets at the tail of the buffer\n(screen or data, based on [[EDITING]])\n\n```\n: ?mkpkts   ( blk -- )\n    #blk @ - dup 0<\n    ?: drop mkpkts ;\n```\n~#packrat\n#endif\n#include \"align.i65\"\n_qmkpkts\n    jsr enter\n#include \"page.i65\"\n    .word numblk\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word minus\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n    .word zlt\n#include \"pass.i65\"\n    .word pquerycolon\n    .word drop\n    .word _mkpkts\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=WRAP@\nstack=( -- wrapd  )\ntags=nosymbol\n\nUpdates the linewrap table at $E1-F8 to reflect the low 24 bits\nin double `wrapd`.  Since line 0 ($E0) is never a continuation\nline, (always $80) it is not written to.  Only 24 bits are\nwritten to $E1-$F8, not 25.  Although unused, the most\nsignificant (2^24) bit may be set, as a framing bit, used\nto detect when the wrap double is full.\n\n#endif\nwrapfetch\n    jsr slip\n    dex\n    ldy #LPERSCR-1              ; 24 lines (1-25)\nwrapfetch01\n    lda LDTB1,y                 ;$E0 = 0, always $80  $E1-$F8\n    asl\n    ror tos\n    ror stackh,x\n    ror stackl,x\n    dey\n    bne wrapfetch01\n    sty tos+1\n    jmp next\n\n;--------------------------------------------------------------\n#if 0\nname=WRAP!\nstack=( wrapd -- )\ntags=nosymbol\n\nUpdates the linewrap table at $E1-F8 to reflect the low 24 bits\nin double `wrapd`.  Since line 0 ($E0) is never a continuation\nline, (always $80) it is not written to.  Only 24 bits are\nwritten to $E1-$F8, not 25.  Although unused, the most\nsignificant (2^24) bit may be set, as a framing bit, used\nto detect when the wrap double is full.\n\n#endif\nwrapstore\n    jsr harvests2\n    stx z\n    ldx #24\nwrapstore01\n    asl $e0,x\n    lsr tos+1\n    ror tos\n    ror n+1\n    ror n\n    ror $e0,x\n    dex\n    bne wrapstore01\n    ldx z\n    jmp drop\n\n;--------------------------------------------------------------\n#if 0\nname=SCR0\nstack=( -- )\ntags=vm,nosymbol\nReset [[SCR]] and [[BLK]] to screen/block 0.\n\n```\n: scr0   ( -- )\n    blk off  scr off ;\n```\n#endif\n#include \"align.i65\"\n_scr0\n    jsr enter\n#include \"page.i65\"\n    .word scr\n#include \"page.i65\"\n    .word four\n#include \"page.i65\"\n    .word _erase\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=#BLK!\nstack=( -- )\ntags=vm,nosymbol\nReset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`\n\n~ It should also validate flags and max-lengths, error out on corrupt VMBUF\n~wut?  throw a `bad vm packet` error if a length/flag is off the reservation\n```\n: #blk!   ( -- )\n    #blk off  blkbuf 2-\n    begin\n        pkt.size ?dup\n    while\n        #blk 1+!\n        -\n    repeat\n    vmbuf ! ;\n\n```\n~#packrat\n#endif\n#include \"align.i65\"\n_numblkstore\n    jsr enter\n#include \"page.i65\"\n    .word numblk\n#include \"page.i65\"\n    .word off\n#include \"page.i65\"\n    .word blkbuf\n#include \"page.i65\"\n    .word twominus\n#include \"page.i65\"\nnumblkstore01\n    .word dup\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word psize\n#include \"page.i65\"\n    .word qdup\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(numblkstore02-*+1)\n#include \"page.i65\"\n    .word numblk\n#include \"page.i65\"\n    .word oneplusstore\n#include \"page.i65\"\n    .word minus\n#include \"pass.i65\"\n    .word branch\n    .byt <(numblkstore01-*+1)\n#include \"page.i65\"\nnumblkstore02\n    .word vmbuf\n#include \"page.i65\"\n    .word store\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=EMPTY-BUFFERS\nstack=( -- )\ntags=i/o,forth-83\nUnassign all virtual memory.  UPDATEed blocks are not written\nto mass storage.\n\n```\n: empty-buffers   ( -- )\n    blkbuf 2-  dup vmbuf !  off  blk off  scr off  #blk! ;\n```\n#endif\n#include \"align.i65\"\n_emptybuffers\n    jsr enter\n#include \"page.i65\"\n    .word blkbuf\n#include \"page.i65\"\n    .word twominus\n#include \"page.i65\"\n    .word off\n#include \"page.i65\"\n    .word _scr0\n#include \"page.i65\"\n    .word _numblkstore\n#include \"pass.i65\"\n    .word exit\n\n\n;--------------------------------------------------------------\n#if 0\nname=STASH-FORTH\nstack=( -- )\ntags=vm,i/o,kernel,nosymbol,magic-number\nSubroutine to preserve the data stack pointer, stack, Sweet16 and\nother Forth zero page during a BASIC system call\n\n#endif\nstashforth\n    stx stashforth01\n    jsr aufwiedersehen\n    lda #2                      ; set direct mode in CHRGET routine\n    sta $78                     ; so we get prompts during i/o\n    rts\nstashforth01 .byt 0             ; temp storage for X register during tape I/O\n\n;--------------------------------------------------------------\n#if 0\nname=RESTORE-FORTH\nstack=( -- )\ntags=vm,i/o,kernel,nosymbol\nRestore Forth stack after BASIC system call\n\n#endif\nrestoreforth\n    jsr aloha2\n    ldx stashforth01            ; this messes up BASIC's USR() function\n    jmp exit\n\n;--------------------------------------------------------------\n#if 0\nname=DOTAPEIO\nstack=( -- )\ntags=vm,i/o,kernel,nosymbol\nPerform a ROM call framed between calls to `aloha`. This is\nneeded in particular for tape I/O, which might error out to a\nCommodore BASIC `ready.` prompt.\n\nLike `execute` and the Sweet-16 interpreter, this word\nuses the machine stack ($0100-$01ff) and RTS trick to transfer\ncontrol from one subroutine to the next, so that code executes\nin this order:\n\n~wut?  this is a little crashy returning from hitting the [[STOP]] key\n\n```\nstashforth\nRTS\ncaller's ROM routine\nRTS\nrestoreforth\nEXIT\n```\n#endif\n#include \"align.i65\"\n_dotapeio\n    jsr enter\n#include \"pass.i65\"\n    .word plit\n    .word restoreforth-1\n#include \"page.i65\"\n    .word caller\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word oneminus\n#include \"page.i65\"\n    .word twotor\n#include \"pass.i65\"\n    .word stashforth\n\n;--------------------------------------------------------------\n#if 0\nname=(SAVEPRG)\nstack=( -- )\ntags=vm,i/o,kernel,nosymbol\n#endif\npsaveprg\n    jsr _dotapeio\n    .word SAVEPRG\n\n;--------------------------------------------------------------\n#if 0\nname=(READHEAD)\nstack=( -- )\ntags=vm,i/o,kernel,nosymbol\n#endif\npreadhead\n    jsr _dotapeio\n    .word READHEAD\n\n;--------------------------------------------------------------\n#if 0\nname=(READDATA)\nstack=( -- )\ntags=vm,i/o,kernel,nosymbol\n#endif\npreaddata\n    jsr _dotapeio\n    .word READDATA\n\n;--------------------------------------------------------------\n#if 0\nname=CURRNAME\nstack=( -- addr )\ntags=vm,i/o\nCurrent filename\n\ntodo: All parameter and no code, maybe a string variable?\n#endif\ncurrname\n    jsr docreate\n    .byt (currname01-*-1)\n    .asc \"PETTILPACKETS\",\ncurrname01\n    .asc              \"           \"\n        ;\"@0:full16characters,s,w \"\n        ; 123456789.123456789.1234\n\n;--------------------------------------------------------------\n#if 0\nname=FILE\nstack=( filename device secondary -- )\ntags=vm,i/o\nSet up parameters for file i/o\n\n```\n: file\n    sa# ! drv# ! filename ! ;\n```\n#endif\n#include \"align.i65\"\n_file\n    jsr enter\n#include \"page.i65\"\n    .word sanum\n#include \"page.i65\"\n    .word store\n#include \"page.i65\"\n    .word drvnum\n#include \"page.i65\"\n    .word store\n#include \"page.i65\"\n    .word filename\n#include \"page.i65\"\n    .word store\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=(FILE)\nstack=( -- )\ntags=vm,i/o,nosymbol\nCalled at start of tape or disk i/o, sets up zero page variables.\nRetrieves DRV# SA# and FILENAME uservariables and stores them\nin zero page locations FA SA FNLEN FNADR.\n\nRelies on [[SA#]], [[DRV#]], and [[FILENAME]] being adjacent in uarea\n\n|zero page|<|value|set by|description|h\n|^STATUS|^96|^0|rom|^i/o status byte|\n|^VERCK|^9d|^0|(file)|^0=load; 1=verify|\n|^TAPEID|^b4|^1|(prg-file)|^01=PRG; 02=data; 04=SEQ; 05=EOT|\n|^SAL|^c7-c8|^||^start address|\n|^EAL|^c9-ca|^||^end address|\n|^FNLEN|^d1|^FILENAME[0]|(file)|^File name length|\n|^LA|^d2|^0|(file)|^logical file #|\n|^SA|^d3|^SA#|(prg-file)|Secondary address|\n|^FA|^d4|^DRV#|(file)|Device number|\n|^FNADR|^da-db|^FILENAME[1..]|(file)|^File name address|\n|^STAL|^fb-fc|^||^start address|\n\n|save|load|verify|open|name|address|description|h\n|^?|^?|^?|^?|^FNLEN|^d1|^Length of current file name|\n|^?|^?|^?|^?|^FNADR|^da-db|^File name address|\n|^&nbsp;|<|<|<|<|<|<|\n|^0|^0|^0|^0|^STATUS|^96|^Status byte ST|\n|^?|^0|^1|^?|^VERCK|^9d|^Load/Verify flag (0,1)|\n|^01|^?|^?|^?|^TAPEID|^b4|^Tape buffer leading char<br/>01=PRG 05=EOT|\n|^?|^?|^?|^?|^EAL|^c9-ca|^Tape end address|\n|^?|^?|^?|^?|^LA|^d2|^Current logical file number|\n|^?|^?|^?|^?|^SA|^d3|^Current secondary address|\n|^?|^?|^?|^?|^FA|^d4|^First address (device number)|\n|^?|^?|^?|^?|^TAPE1|^d6|^Pointer - start of tape buffer|\n|^?|^?|^?|^?|^FSBLK|^de|^Cassette read/write block count|\n|^?|^?|^?|^?|^STAL|^fb-fc|^I/O start address|\n|''?'' = don't care<br/>''x'' = don't initialize|<|<|<|<|<|<|f\n\n#endif\npfile\n    brk\n    .byt set | N0\n    .word userfilename\n    .byt ldd | N0               ; FILENAME\n    .byt st | N2                ; pointer to FILENAME[0] or 0\n    .byt bz , <(pfile01-*-2)\n    .byt ldi | N2\npfile01\n    .byt set | N1               ; N1 walks through FNLEN, LA, SA, FA on a PET\n    .word FNLEN\n    .byt sti | N1               ; set FNLEN ($d1)\n\n;    .byt set | N1\n;    .word LA\n    .byt sub | ACC              ; 0\n    .byt sti | N1               ; set LA ($d2)\n\n;    .byt set | N1\n;    .word SA\n    .byt ldd | N0               ; get SA#\n    .byt sti | N1               ; set SA ($d3)\n\n;    .byt set | N1\n;    .word FA\n    .byt ldd | N0               ; DRV#\n    .byt sti | N1               ; set FA ($d4)\n\n    .byt set | N1\n    .word FNADR\n    .byt ld | N2\n    .byt std | N1               ; set FNADR ($da)\n    .byt nxt\n\n;--------------------------------------------------------------\n#if 0\nname=(PRG-FILE)\nstack=( -- )\ntags=vm,i/o,nosymbol\nTurn off SA# and set up for PRG file tape i/o\n\n* sets SA# = 0\n* sets TAPEID = 1\n* invoke [[(FILE)]]\n** copy `SA#` to SA\n** copy `DRV#` to FA\n** copy `FILENAME` to FNADR, FNLEN\n** set TAPEID to $01 (PRG)\n** set TAPE1 to point to CAS1BUF (or possibly CAS2BUF on a real PET)\n\n```\n: (prg-file)   ( -- )\n    sa# off  1 TAPEID c!  (file) ;\n```\n#endif\n#include \"align.i65\"\n_pprgfile\n    jsr enter\n#include \"page.i65\"\n    .word sanum\n#include \"page.i65\"\n    .word off\n#include \"page.i65\"\n    .word one\n#include \"pass.i65\"\n    .word clit                  ; ~ can remove this if using $f619\n    .byt TAPEID\n#include \"page.i65\"\n    .word cstore\n#include \"page.i65\"\n    .word pfile\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=(VMBUF)\nstack=( -- from to )\ntags=vm,kernel,nosymbol\nReturns the end and start of the virtual memory buffer\n\n```\n: (vmbuf)   ( -- vmbuf blkbuf )\n    vmbuf @  blkbuf ;\n```\n#endif\n#include \"align.i65\"\n_pvmbuf\n    jsr enter\n#include \"page.i65\"\n    .word vmbuf\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word blkbuf\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=(CASBUF)\nstack=( -- 027a|033a )\ntags=vm,kernel,nosymbol\nReturns the tape buffer address for most recently accessed\ndevice `FA ($d4)`\n\n```\n: (casbuf)   ( -- 027a|033a )\n    [ SETCASBUF ] call  [ TAPE1 ] cliteral @ ;\n```\n#endif\ncasbuf\n    brk\n    .byt ext\n    .word SETCASBUF\n    .byt set | N0\n    .word TAPE1\n    .byt ldd | N0\n    .byt push\n    .byt nxt\n\n;--------------------------------------------------------------\n#if 0\nname=SAVE-BUFFERS\nstack=( -- )\ntags=vm,forth-83,i/o,kernel\nWrites the virtual memory area between [[VMBUF]] and [[BLKBUF]] out\nto a PRG file on cassette or disk\n\nAlso called by STOP-S in the editor\n\n```\n: save-buffers   ( -- )\n    (prg-file)\n    (vmbuf) next-1\n    >r 2>r\n    [ SETEALSTAL , ]\n    (saveprg) ;\n```\n#endif\n#include \"align.i65\"\n_savebuffers\n    jsr enter\n#include \"page.i65\"\n    .word _pprgfile             ; set up z.p. device, secondary, filename\n#include \"page.i65\"\n    .word _pvmbuf\n#include \"pass.i65\"\n    .word clit\n    .byt <(next-1)              ; stupid stack tricks\n#include \"page.i65\"\n    .word tor\n#include \"page.i65\"\n    .word twotor\n#include \"page.i65\"\n    .word SETEALSTAL            ; invoke a ROM routine, RTS to NEXT\n#include \"page.i65\"\n    .word psaveprg\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=(LOADVERIFY)\nstack=( -- )\ntags=vm,i/o,kernel,nosymbol\nLoad or compare a batch of packets from tape to [[VMBUF]]\n\n```\n: (loadverify)   ( flag -- )\n    [ VERCK ] literal c!\n    (prg-file) (readhead)\n    blkbuf dup (casbuf) 1+ dup>r\n    2@ - - r> 2! ;\n```\n#endif\n#include \"align.i65\"\n_ploadverify\n    jsr enter\n#include \"pass.i65\"\n    .word clit\n    .byt VERCK\n#include \"page.i65\"\n    .word cstore\n#include \"page.i65\"\n    .word _pprgfile\n#include \"page.i65\"\n    .word preadhead\n#include \"page.i65\"\n    .word blkbuf\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n    .word casbuf\n#include \"page.i65\"\n    .word oneplus\n#include \"page.i65\"\n    .word duptor\n#include \"page.i65\"\n    .word twofetch\n#include \"page.i65\"\n    .word minus\n#include \"page.i65\"\n    .word minus\n#include \"page.i65\"\n    .word rfrom\n#include \"page.i65\"\n    .word twostore\n#include \"page.i65\"\n    .word preaddata\n#include \"page.i65\"\n    .word _scr0\n#include \"page.i65\"\n    .word _numblkstore\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=LOAD-BUFFERS\nstack=( -- )\ntags=vm,i/o,kernel\nLoad a batch of packets from the file to [[VMBUF]]\n\ncalled by STOP-L in the editor\n\n```\n: load-buffers   ( -- )\n    0 (loadverify) ;\n```\n#endif\n#include \"align.i65\"\n_loadbuffers\n    jsr enter\n#include \"page.i65\"\n    .word zero                  ; LOAD\n#include \"page.i65\"\n    .word _ploadverify\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=VERIFY-BUFFERS\nstack=( -- )\ntags=vm\nVerifies the [[VMBUF]] area following a write\n\ncalled by STOP-V in the editor\n\n```\n: verify-buffers   ( -- )\n    1 (loadverify)\n    ST c@  if  .\" error\"  then ;\n```\n#endif\n#include \"align.i65\"\n_verifybuffers\n    jsr enter\n#include \"page.i65\"\n    .word one                   ; VERIFY\n#include \"page.i65\"\n    .word _ploadverify\n#include \"pass.i65\"\n    .word clit\n    .byt STATUS\n#include \"page.i65\"\n    .word cfetch\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(verifybuffers05-*+1)\n#include \"pass.i65\"\n    .word _pdq\n    .byt (verifybuffers06-*-1)\n    .asc \"ERROR\"\nverifybuffers06\n#include \"pass.i65\"\nverifybuffers05\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=SRCTARG\nstack=( -- var buffer size char  )\ntags=vm,ext,nosymbol\n[[BLOCK]] packs from or unpacks to [[VIDRAM]] or [[BLKBUF]], based on [[EDITING?]] and [[SCRPKT?]]\n\n~ horrible name\n\n```\n: srctarg   ( -- scr|blk vidram|blkbuf b/scr|b/buf bl|0 )\n    editing? ?: scr blk\n    editing? ?: vidram blkbuf\n    scrpkt? ?: b/scr b/buf\n    scrpkt? ?: bl 0 ;\n```\n~#packrat\n#endif\n#include \"align.i65\"\n_srctarg\n    jsr enter\n#include \"page.i65\"\n    .word editingq\n#include \"pass.i65\"\n    .word pquerycolon\n    .word scr\n    .word blk\n#include \"page.i65\"\n    .word editingq\n#include \"pass.i65\"\n    .word pquerycolon\n    .word vidram                ; screens only, 1000 bytes\n    .word blkbuf               ; block buffer, 1024 bytes\n#include \"page.i65\"\n    .word isscrq\n#include \"pass.i65\"\n    .word pquerycolon\n    .word bperscr\n    .word bperbuf\n#include \"page.i65\"\n    .word isscrq\n#include \"pass.i65\"\n    .word pquerycolon\n    .word bl\n    .word zero\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=BLOCK\nstack=( blk -- buf )\ntags=vm,fig,forth-79,forth-83\nRetrieves and decompresses a screen or data block from the [[VMBUF]]\n[[region|PETTIL system memory map]]. This is PETTIL's top of the food\nchain for reading packets, the antonym of [[UPDATE]] (which writes\npackets).\n\nThe table below summarizes how `BLOCK` functions based on whether the\nuser is in the editor or not, and whether the packet is screen or data.\n\n|^[[EDITING?]] |<|packet# sets [[SCR]]<br>returns [[VIDRAM]]|\n|>|^ [[SCRPKT?]]|[[VIDRAM]] initialized to spaces<br>linewrap stored to zero page<br>write 1000-byte packet to [[VIDRAM]]|\n|>|^ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;not [[SCRPKT?]]|[[VIDRAM]] initialized to nulls<br>zero page linewrap table set to all 40-column<br>displays first 1000 characters of data block|\n||<|<|\n|^not [[EDITING?]] |<|packet# sets [[BLK]]<br>returns [[BLKBUF]]|\n|>|^ [[SCRPKT?]]|[[BLKBUF]] initialized to spaces<br>linewrap stored in first three bytes of [[BLKBUF]]<br>followed by 1000-bytes of screencodes|\n|>|^ not [[SCRPKT?]]|[[BLKBUF]] initialized to nulls<br>1024 bytes of data expanded to [[BLKBUF]]|\n\n```\n: block   ( u -- addr )\n    dup ?mkpkts     \\ create packets if they don't exist yet\n    dup pkt.info    \\ ( blk floor len uncompressed? )\n    rot srctarg 3dup nip\n    b/buf swap fill 2drop 2>r r@ scrpkt?\n    if              \\ ( blk len uncompressed? floor\n                    \\ vidram|blkbuf scrpkt?\n                    \\ R; vidram|blkbuf scr|blk )\n        drop rot 3- -rot 3+ dup 3- 3c@ editing?\n        if\n            wrap! r@\n        else\n            r@ 3C! r@ 3+\n        then\n    then\n    2swap  ?: cmove rldecode\n    2r> -rot ! ;\n\n: block   ( u -- addr )\n                                ( u )\n    dup ?mkpkts\n                                ( u )\n    scredidx 'blktable >dispatch\n\n```\n~#packrat\n#endif\n#include \"align.i65\"\n_block\n    jsr enter\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n   .word _qmkpkts\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n    .word blk\n#include \"page.i65\"\n    .word store\n#include \"page.i65\"\n    .word _topkt\n#include \"page.i65\"\n   .word scredidx\n#include \"pass.i65\"\n   .word plit\n   .word blktable\n#include \"pass.i65\"\n   .word _dodispatch\n\n#include \"pass.i65\"\nblkscrvid\n    .word vidram\n#include \"page.i65\"\n    .word bperscr\n#include \"page.i65\"\n    .word _blank\n#include \"page.i65\"\n    .word _pktsize\n#include \"page.i65\"\n    .word minus\n#include \"page.i65\"\n    .word twoplus\n#include \"page.i65\"\n    .word threecfetch\n#include \"page.i65\"\n    .word wrapstore\n#include \"page.i65\"\n    .word xyzzy\n#include \"page.i65\"\n\n\n\n    .word dup\n#include \"page.i65\"\n    .word pktinfo\n#include \"page.i65\"\n    .word rot\n#include \"page.i65\"\n    .word _srctarg\n#include \"page.i65\"\n    .word _threedup\n#include \"page.i65\"\n    .word nip\n#include \"page.i65\"\n    .word bperbuf\n#include \"page.i65\"\n    .word swap\n#include \"page.i65\"\n .word fill\n#include \"page.i65\"\n    .word twodrop\n#include \"page.i65\"\n    .word twotor\n#include \"page.i65\"\n    .word rfetch\n#include \"page.i65\"\n    .word isscrq\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(block02-*+1)\n#include \"page.i65\"\n    .word drop\n#include \"page.i65\"\n    .word rot\n#include \"page.i65\"\n    .word threeminus\n#include \"page.i65\"\n    .word dashrot\n#include \"page.i65\"\n    .word threeplus\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n    .word threeminus\n#include \"page.i65\"\n    .word threecfetch\n#include \"page.i65\"\n    .word editingq\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(block01-*+1)\n#include \"page.i65\"\n .word wrapstore\n#include \"page.i65\"\n    .word rfetch\n#include \"pass.i65\"\n    .word branch\n    .byt <(block02-*+1)\n#include \"page.i65\"\nblock01\n    .word rfetch\n#include \"page.i65\"\n    .word threecstore\n#include \"page.i65\"\n    .word rfetch\n#include \"page.i65\"\n    .word threeplus\n#include \"page.i65\"\nblock02\n    .word twoswap\n#include \"pass.i65\"\n    .word pquerycolon\n .word cmove\n .word rldecode\n#include \"page.i65\"\n    .word tworfrom\n#include \"page.i65\"\n    .word dashrot\n#include \"page.i65\"\n .word store\n#include \"pass.i65\"\n    .word exit\n\nblktable\n    .word 0\n    .word 2\n    .word 4\n    .word blkscrvid-2\n\n;--------------------------------------------------------------\n#if 0\nname=UPDATE\nstack=( -- )\ntags=forth-83,vm\nCopies and compresses the current block buffer to the [[virtual memory\npacket buffer|PETTIL system memory map]].  Analogous to `block` which\nreads packets, this is PETTIL's single point of responsibility for\nwriting packets in the `vmbuf` region.\n\n```\n: update   ( -- )\n\\ are there any blocks?  ?exit\n    #blk @ 0= ?exit\n\\ editing? choose vidram blkbuf\n    blkbuf\n    editing?\n    if\n\\ early exit if editing data packet\n\\ scenario A (update packet from VIDRAM)\n        drop\n\\ editing & isscr? choose vidram as source\n\\ editing & !isscr? do not modify this data packet\n        isscr?\n        ?: vidram exit\n    then\n    vmbuf b/buf\n\\ use the packet in `blk`   or `scr`\n\\ use               `b/buf` or `b/scr`\n               b/buf blk\n    isscr?\n    if\n        2drop  b/scr scr\n    then\n\\ spread out the packet by moving everything below it down 1K\n    @ >pkt\n    (upd1)\n    cmove\n\\ stash 24-bit line wrap info at the front of the packet\n    l/scr wrap^\n\\ set the `scrpkt` bit in the new packet header\n    scrpkt\n\\ shorten the buffer with `-trailing`\n    ?: -trailing -nulls\n\\ attempt to rlencode what is left\n    nip rlencode\n\\ write new packet header\n\\ squeeze out unused space in new packet, move `vmbuf` to top of packet\n    +move\n\\ recount packets\n    #blk! ;\n\n~#packrat\n#endif\n#include \"align.i65\"\n_update\n    jsr enter\n#include \"page.i65\"\n    .word scredidx              ; 0, 2, 4, 6 based from `editing` `scrpkt`\n#include \"pass.i65\"\n    .word plit\n    .word updtable\n#include \"pass.i65\"\n    .word _dodispatch\n\nupdtable\n    .word updatedata,exit,updatescrbuf,updatescrvid-2\n\nscredidx\n    lda userscrpkt+1\n    rol\n    lda userediting\n    rol\n    asl\n    and #$06\n    jmp push0a\n\n#include \"align.i65\"\n_dodispatch\n    jsr enter\n#include \"page.i65\"\n    .word rdrop\n#include \"page.i65\"\n    .word plus\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word tor\n#include \"pass.i65\"\n    .word exit\n\n#include \"pass.i65\"\nupdatedata\n    .word exit\n\n#include \"pass.i65\"\nupdatescrvid\n    .word scr\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word _topkt\n#include \"page.i65\"\n    .word _pktsize\n#include \"page.i65\"\n    .word bperbuf\n#include \"page.i65\"\n    .word twonip\n#include \"page.i65\"\n    .word vmbuf\n#include \"page.i65\"\n    .word pupd1\n#include \"page.i65\"\n    .word cmove\n#include \"page.i65\"\n    .word wrapfetch\n#include \"page.i65\"\n    .word third\n#include \"page.i65\"\n    .word threecstore\n#include \"page.i65\"\n    .word threeplus\n#include \"page.i65\"\n    .word vidram\n#include \"page.i65\"\n    .word tuck\n#include \"page.i65\"\n    .word bperscr\n#include \"page.i65\"\n    .word _dashtrailing\n#include \"page.i65\"\n    .word nip\n#include \"page.i65\"\n    .word rlencode\n#include \"page.i65\"\n    .word scrpkt\n#include \"page.i65\"\n    .word pupd2\n#include \"page.i65\"\n    .word cmovegt\n#include \"page.i65\"\n    .word _numblkstore\n#include \"pass.i65\"\n    .word exit\n\npupd2\n    brk\n    .byt ext\n    .word harvests6\n    .byt ldd | TOS              ; scrpkt\n    .byt add | N1               ; + targend\n    .byt sub | N7               ; - floor+3\n    .byt add | N2               ; + uncompressed?\n    .byt inr | ACC              ; + 1\n    .byt inr | ACC              ; + 1\n    .byt inr | ACC              ; + 1\n    .byt inr | ACC              ; + 1\n    .byt inr | ACC              ; + 1\n    .byt std | N8               ; set packet header\n    .byt ld | N1\n    .byt sub | N0\n    .byt st | TOS               ; 'howmany'\n    .byt ld | N0\n    .byt st | N1                ; 'from'\n    .byt ld | N8\n    .byt sub | TOS\n    .byt dcr | ACC\n    .byt dcr | ACC\n    .byt st | N0                ; 'to'\n    .byt ext\n    .word plants4\n    .byt nxt\n\npupd1\n    brk\n    .byt ext\n    .word harvests4\n    .byt ldd | TOS              ; @\n    .byt st | N3                ; vmbuf 'from' for cmoveq\n    .byt ld | N8                ; pkt\n    .byt sub | N1               ; - b/buf\n    .byt st | N2                ; pkt.floor\n    .byt ld | N8                ; pkt\n    .byt sub | N0               ; - size\n    .byt sub | N3               ; - vmbuf\n    .byt inr | ACC              ; + 2\n    .byt inr | ACC\n    .byt st | TOS               ; 'howmany'\n    .byt ld | N3                ; vmbuf\n    .byt sub | N1               ; - b/buf\n    .byt add | N0               ; + size\n    .byt dcr | ACC              ; - 2\n    .byt dcr | ACC\n    .byt st | N0                ; 'to' for cmove\n    .byt ld | N3\n    .byt st | N1\n    .byt ld | N0\n    .byt st | N3\n    .byt ext\n    .word plants8\n    .byt nxt\n\n#include \"pass.i65\"\nupdatescrbuf\n    .word exit\n\n#print (*-bperbuf)\n",
-			"file": "core/src/core-vm.a65",
-			"file_size": 38745,
-			"file_write_time": 131559337366577664,
-			"settings":
-			{
-				"buffer_size": 38901,
-				"encoding": "UTF-8",
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"contents": "Searching 31 files for \"xyzzy\"\n\n/home/chitselb/dev/commodore/pettil/core/src/core-extra.a65:\n   29  ;--------------------------------------------------------------\n   30  #if 0\n   31: name=XYZZY\n   32  stack=( -- )\n   33  tags=extra\n   ..\n   37  See [[PLUGH]] for low-level variant of this.\n   38  \n   39: Forth breakpoint, used for debugging in VICE when `break .xyzzy`\n   40  is enabled, as it is in the `pettil.dbg` configuration file\n   41  \n   ..\n   49         dup bar 0=\n   50  \n   51:        xyzzy    \\ insert a breakpoint\n   52  \n   53      until drop ;\n   54  ```\n   55  #endif\n   56: xyzzy\n   57      jmp next                    ; used as a VICE monitor breakpoint\n   58  \n\n/home/chitselb/dev/commodore/pettil/core/src/core-vm.a65:\n 1418      .word scr\n 1419  #include \"page.i65\"\n 1420:     .word xyzzy\n 1421  #include \"page.i65\"\n 1422  \n ....\n 1659      .word _numblkstore\n 1660  #include \"page.i65\"\n 1661:     .word xyzzy\n 1662  #include \"pass.i65\"\n 1663      .word exit\n\n/home/chitselb/dev/commodore/pettil/core/src/pettil-core.a65:\n  139  tags=nosymbol\n  140  An isolated RTS instruction, used only as a VICE xpet debugger breakpoint,\n  141: set in the `pettil.dbg` config file. [[XYZZY]] is the high-level Forth\n  142  variant of this.\n  143  \n\n7 matches across 3 files\n\n\nSearching 31 files for \"clrscr\"\n\n/home/chitselb/dev/commodore/pettil/studio/src/pettil-editor.a65:\n   18  ;--------------------------------------------------------------\n   19  #if 0\n   20: name=CLRSCR\n   21  stack=( -- )\n   22  tags=editor\n   ..\n   24  #endif\n   25  #include \"align.i65\"\n   26: _clrscr\n   27      jsr enter\n   28  #include \"pass.i65\"\n   ..\n  890      .word _update\n  891  #include \"page.i65\"\n  892:     .word _clrscr\n  893  #include \"page.i65\"\n  894      .word _savebuffers\n  ...\n  911      jsr enter\n  912  #include \"page.i65\"\n  913:     .word _clrscr\n  914  #include \"page.i65\"\n  915      .word _loadbuffers\n  ...\n  936      jsr enter\n  937  #include \"page.i65\"\n  938:     .word _clrscr\n  939  #include \"page.i65\"\n  940      .word _verifybuffers\n  ...\n 1125      .word _update\n 1126  #include \"page.i65\"\n 1127:     .word _clrscr\n 1128  #include \"page.i65\"\n 1129      .word _info\n ....\n 1133      .word _pause\n 1134  #include \"page.i65\"\n 1135:     .word _clrscr\n 1136  #include \"page.i65\"\n 1137      .word _editrestore\n\n7 matches in 1 file\n",
-			"settings":
-			{
-				"buffer_size": 2346,
-				"line_ending": "Unix",
-				"name": "Find Results",
-				"scratch": true
 			}
 		},
 		{
 			"file": "studio/src/pettil-editor.a65",
 			"settings":
 			{
-				"buffer_size": 31431,
+				"buffer_size": 27938,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "studio/src/pettil-utils.a65",
+			"settings":
+			{
+				"buffer_size": 13068,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "core/src/core-vm.a65",
+			"settings":
+			{
+				"buffer_size": 34265,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"contents": "Searching 31 files for\n\"pquerycolon\"\n\n/home/chitselb/dev/commodore/pettil/core/src/core-inner.a65:\n  210  following this word\n  211  \n  212: pquerycolon\n  213      ldy #3\n  214      lda tos\n  215      ora tos+1                   ; evaluate the flag\n  216:     bne pquerycolon01           ; true?\n  217      ldy #5                      ; false.\n  218: pquerycolon01\n  219      lda (ip),y\n  220      sta tos+1\n  ...\n  227  \n  228  #endif\n  229: pquerycolon\n  230      ldy #3\n  231      lda tos\n  232      ora tos+1                   ; evaluate the flag\n  233:     bne pquerycolon01           ; true?\n  234      ldy #5                      ; false.\n  235: pquerycolon01\n  236      lda (ip),y\n  237      sta tos+1\n\n/home/chitselb/dev/commodore/pettil/core/src/core-nucleus.a65:\n 2057      .word nip\n 2058  #include \"pass.i65\"\n 2059:     .word pquerycolon\n 2060      .word cmovegt\n 2061      .word cmove\n ....\n 2361      .word execute\n 2362  #include \"pass.i65\"\n 2363:     .word pquerycolon\n 2364      .word nip\n 2365      .word drop\n\n/home/chitselb/dev/commodore/pettil/core/src/core-vm.a65:\n  716      .word editingq\n  717  #include \"pass.i65\"\n  718:     .word pquerycolon\n  719      .word mkscr\n  720      .word mkdata\n  ...\n  891      .word uncompressedq\n  892  #include \"pass.i65\"\n  893:     .word pquerycolon\n  894      .word cmove\n  895      .word rldecode\n\n/home/chitselb/dev/commodore/pettil/studio/src/pettil-compiler.a65:\n  437      .word dup\n  438  #include \"pass.i65\"\n  439:     .word pquerycolon\n  440      .word smudge\n  441      .word drop\n  ...\n  504  #include \"pass.i65\"\n  505      .word _compile\n  506:     .word pquerycolon\n  507  #include \"pass.i65\"\n  508      .word _tick\n  ...\n  957      .word compilingq\n  958      .word duptor\n  959:     .word pquerycolon\n  960      .word _xtcomma\n  961      .word drop\n\n/home/chitselb/dev/commodore/pettil/studio/src/pettil-dictionary.a65:\n 1560  #include \"pass.i65\"\n 1561  pforgetpass1a\n 1562:     .word pquerycolon\n 1563      .word drop\n 1564      .word _pforgetkeep\n\n/home/chitselb/dev/commodore/pettil/studio/src/pettil-editor.a65:\n 1346  ;    .word betweenq             ~wut? use `within`\n 1347  #include \"pass.i65\"\n 1348:     .word pquerycolon\n 1349      .word store\n 1350      .word twodrop\n\n/home/chitselb/dev/commodore/pettil/studio/src/pettil-interpreter.a65:\n 1065      .word ne\n 1066  #include \"pass.i65\"\n 1067:     .word pquerycolon\n 1068      .word execute\n 1069      .word _xtcomma\n ....\n 1331      .word cfetch\n 1332  #include \"pass.i65\"\n 1333:     .word pquerycolon\n 1334      .word _foundq\n 1335      .word zero\n\n/home/chitselb/dev/commodore/pettil/studio/src/pettil-studio.a65:\n  196      .byt ACC+2*N4\n  197  #include \"pass.i65\"\n  198:     .word pquerycolon\n  199      .word _pforgetpass1\n  200      .word _pforgetpass2\n\n/home/chitselb/dev/commodore/pettil/studio/src/pettil-utils.a65:\n  534      .word dup\n  535  #include \"pass.i65\"\n  536:     .word pquerycolon\n  537      .word drop\n  538      .word _wordlist\n  ...\n  574      .word twodrop\n  575  #include \"pass.i65\"\n  576:     .word pquerycolon\n  577      .word twoplus\n  578      .word next\n\n20 matches across 9 files\n\n\nSearching 31 files for \"padjust\"\n\n/home/chitselb/dev/commodore/pettil/core/src/core-inner.a65:\n  223      sta tos\n  224      lda #3\n  225:     jsr padjust                 ; move IP past CFA pair\n  226      ; fall through\n  227  \n  ...\n  240      sta tos\n  241      lda #3\n  242:     jsr padjust                 ; move IP past CFA pair\n  243      ; fall through\n  244  ;--------------------------------------------------------------\n  ...\n  535  ;--------------------------------------------------------------\n  536  #if 0\n  537: name=padjust\n  538  stack=( -- )\n  539  tags=nosymbol,pads\n  ...\n  559  |$43FF| `NOP` |\n  560  \n  561: In this worst-case scenarios, `IP` would be set after `padjust` to\n  562  $44FE and the next execution of [[NEXT|Zero page buffer and NEXT routine]]\n  563  would use $4400 as the address of the following instruction.\n  564  #endif\n  565: padjust\n  566      sec                         ; A = offset to be added to IP\n  567      adc ip\n  568:     bcs padjust05               ; wrap the page?\n  569      cmp #$FD                    ; IP $xxFE $xxFF will not blend\n  570:     bcc padjust06               ; same page?\n  571      lda #$FE                    ; tail.  will it blend?\n  572: padjust05\n  573      inc ip+1\n  574: padjust06\n  575      sta ip\n  576      rts\n  ...\n 1044      pla\n 1045      lda #3\n 1046:     jsr padjust\n 1047      jmp tworfrom                ; move IP past double constant, `2r>`\n 1048  \n\n/home/chitselb/dev/commodore/pettil/core/src/core-locals.a65:\n  269      ldy #2                      ; Squeaky's little sister, Zeepy\n  270      lda (ip),y\n  271:     inc ip                      ; ~wut? unsafe, use `padjust` maybe\n  272  zpfrom01                        ; pass A\n  273      tay                         ; Y = the actual address\n\n11 matches across 2 files\n\n\nSearching 31 files for \"xyzzy\"\n\n/home/chitselb/dev/commodore/pettil/core/src/core-extra.a65:\n   29  ;--------------------------------------------------------------\n   30  #if 0\n   31: name=XYZZY\n   32  stack=( -- )\n   33  tags=extra\n   ..\n   37  See [[PLUGH]] for low-level variant of this.\n   38  \n   39: Forth breakpoint, used for debugging in VICE when `break .xyzzy`\n   40  is enabled, as it is in the `pettil.dbg` configuration file\n   41  \n   ..\n   49         dup bar 0=\n   50  \n   51:        xyzzy    \\ insert a breakpoint\n   52  \n   53      until drop ;\n   54  ```\n   55  #endif\n   56: xyzzy\n   57      jmp next                    ; used as a VICE monitor breakpoint\n   58  \n\n/home/chitselb/dev/commodore/pettil/core/src/core-vm.a65:\n  827      jsr enter\n  828  #include \"page.i65\"\n  829:     .word xyzzy\n  830  #include \"page.i65\"\n  831      .word dup\n\n/home/chitselb/dev/commodore/pettil/core/src/pettil-core.a65:\n  139  tags=nosymbol\n  140  An isolated RTS instruction, used only as a VICE xpet debugger breakpoint,\n  141: set in the `pettil.dbg` config file. [[XYZZY]] is the high-level Forth\n  142  variant of this.\n  143  \n\n/home/chitselb/dev/commodore/pettil/studio/src/pettil-compiler.a65:\n 1202      jsr dodoes\n 1203  #include \"page.i65\"\n 1204:     .word xyzzy\n 1205  #include \"page.i65\"\n 1206      .word cfetch\n\n7 matches across 4 files\n\n\nSearching 31 files for \"name=BLOCK\"\n\n/home/chitselb/dev/commodore/pettil/core/src/core-vm.a65:\n  772  ;--------------------------------------------------------------\n  773  #if 0\n  774: name=BLOCK\n  775  stack=( blk -- buf )\n  776  tags=vm,fig,forth-79,forth-83\n\n1 match in 1 file\n\n\nSearching 31 files for \"_dodispatch\"\n\n/home/chitselb/dev/commodore/pettil/core/src/core-extra.a65:\n  506  #endif\n  507  #include \"align.i65\"\n  508: _dodispatch\n  509      jsr enter\n  510  #include \"page.i65\"\n\n/home/chitselb/dev/commodore/pettil/core/src/core-vm.a65:\n  859     .word xyzzy\n  860  #include \"pass.i65\"\n  861:     .word _dodispatch\n  862      .word 0\n  863      .word 2\n  ...\n 1002      .word scredidx              ; 0, 2, 4, 6 based from `editing` `scrpkt`\n 1003  #include \"pass.i65\"\n 1004:     .word _dodispatch\n 1005      .word updatedata-2          ; update the current `pkt` from `blkbuf`\n 1006      .word exit-2                ; data packets are read-only in screen editor\n\n/home/chitselb/dev/commodore/pettil/studio/src/pettil-editor.a65:\n 1100      .word twostar\n 1101  #include \"pass.i65\"\n 1102:     .word _dodispatch\n 1103      .word exit\n 1104      .word _editquit-2\n\n4 matches across 3 files\n",
+			"settings":
+			{
+				"buffer_size": 7522,
+				"line_ending": "Unix",
+				"name": "Find Results",
+				"scratch": true
+			}
+		},
+		{
+			"file": "core/src/core-extra.a65",
+			"settings":
+			{
+				"buffer_size": 10254,
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "core/src/core-inner.a65",
+			"settings":
+			{
+				"buffer_size": 23760,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "studio/src/pettil-dictionary.a65",
+			"settings":
+			{
+				"buffer_size": 48005,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "studio/src/pettil-compiler.a65",
+			"settings":
+			{
+				"buffer_size": 43082,
+				"encoding": "UTF-8",
 				"line_ending": "Unix"
 			}
 		}
@@ -82,12 +120,12 @@
 	"build_varint": "",
 	"command_palette":
 	{
-		"height": 0.0,
+		"height": 392.0,
 		"last_filter": "",
 		"selected_items":
 		[
 		],
-		"width": 0.0
+		"width": 497.0
 	},
 	"console":
 	{
@@ -99,42 +137,51 @@
 	"distraction_free":
 	{
 		"menu_visible": true,
-		"show_minimap": false,
+		"show_minimap": true,
 		"show_open_files": false,
-		"show_tabs": false,
+		"show_tabs": true,
 		"side_bar_visible": false,
 		"status_bar_visible": false
 	},
 	"expanded_folders":
 	[
 		"/home/chitselb/dev/commodore/pettil",
+		"/home/chitselb/dev/commodore/pettil/core",
+		"/home/chitselb/dev/commodore/pettil/core/src",
 		"/home/chitselb/dev/commodore/pettil/studio",
 		"/home/chitselb/dev/commodore/pettil/studio/src"
 	],
 	"file_history":
 	[
+		"/home/chitselb/.config/autokey/data/My Phrases/pds.txt",
+		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-user.a65",
+		"/home/chitselb/dev/commodore/pettil/core/src/core-nucleus.a65",
+		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-assembler.a65",
+		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-editor.a65",
+		"/home/chitselb/dev/commodore/pettil/core/src/core-user.a65",
+		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-utils.a65",
+		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-interpreter.a65",
+		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-studio.a65",
+		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-dictionary.a65",
+		"/home/chitselb/dev/commodore/pettil/core/src/core-extra.a65",
+		"/home/chitselb/dev/commodore/pettil/core/src/pettil-core.a65",
+		"/home/chitselb/core-vm.a65",
+		"/home/chitselb/dev/commodore/pettil/tools/xap.rb",
+		"/home/chitselb/dev/commodore/pettil/docs/statictiddlers/tiddlywiki.info",
+		"/home/chitselb/dev/commodore/pettil/core/src/pettil-corewtf.a65",
 		"/home/chitselb/dev/commodore/pettil/core/src/core-locals.a65",
 		"/home/chitselb/dev/commodore/pettil/core/src/sweet16.a65",
 		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-compiler.a65",
-		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-assembler.a65",
-		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-editor.a65",
-		"/home/chitselb/dev/commodore/pettil/core/src/core-nucleus.a65",
 		"/home/chitselb/dev/commodore/pettil/core/src/core-inner.a65",
 		"/home/chitselb/dev/commodore/pettil/core/src/core-double.a65",
 		"/mnt/sdc1/chitselb/dev/commodore/otherpet/kenross/download",
-		"/home/chitselb/dev/commodore/pettil/core/src/core-extra.a65",
 		"/home/chitselb/.local/share/applications/xpet.desktop",
 		"/home/chitselb/.local/share/applications/xvic.desktop",
 		"/home/chitselb/dev/commodore/pettil/core/src/inc/pettil.def",
 		"/home/chitselb/dev/commodore/pettil/studio/src/inc/pettil-studio.def",
 		"/home/chitselb/dev/commodore/pettil/core/src/inc/cbm.def",
-		"/home/chitselb/dev/commodore/pettil/core/src/core-user.a65",
 		"/home/chitselb/dev/commodore/pettil/core/src/core-vm.a65",
 		"/home/chitselb/dev/commodore/pettil/pettil.dbg",
-		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-user.a65",
-		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-dictionary.a65",
-		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-interpreter.a65",
-		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-utils.a65",
 		"/home/chitselb/dev/commodore/pettil/core/src/core-io.a65",
 		"/home/chitselb/.vice/PET/chitselb.vpl",
 		"/mnt/sdc1/chitselb/dev/commodore/emulators/vice-2.4.28/configure.ac",
@@ -150,11 +197,8 @@
 		"/home/chitselb/dev/commodore/vic20/vickeymap.txt",
 		"/home/chitselb/vickeymap.txt",
 		"/home/chitselb/dev/commodore/pettil/tmp/symtab.csv",
-		"/home/chitselb/dev/commodore/pettil/tools/xap.rb",
-		"/home/chitselb/dev/commodore/pettil/studio/src/pettil-studio.a65",
 		"/home/chitselb/dev/commodore/activity.log",
 		"/home/chitselb/dev/commodore/pettil/docs/statictiddlers/F83 05. Definitions of Terms.tid",
-		"/home/chitselb/dev/commodore/pettil/core/src/pettil-core.a65",
 		"/home/chitselb/dev/commodore/pettil/docs/statictiddlers/AboutPETTIL.tid",
 		"/home/chitselb/dev/commodore/pettil/README",
 		"/home/chitselb/dev/commodore/pettil/docs/statictiddlers/F83 Appendix B. Uncontrolled Reference Words.tid",
@@ -181,6 +225,121 @@
 		"case_sensitive": false,
 		"find_history":
 		[
+			"_dodispatch",
+			"name=BLOCK",
+			"xyzzy",
+			"padjust",
+			"pquerycolon",
+			"udslashmod",
+			"_info",
+			"xyzzy",
+			"name=FORTH",
+			"clrscr",
+			"vocabs",
+			"uservocabs",
+			"name=vocabs",
+			"dovoca",
+			"doli",
+			"dovocab",
+			"xyzzy",
+			"plusstore",
+			"pktplus",
+			"editnowrap",
+			"scrpkt",
+			"N8",
+			"isscr",
+			"N8",
+			"isscr",
+			"N8",
+			"pkt",
+			"isscr",
+			"uncompressedq01",
+			"sta tos+1",
+			"usernumblk",
+			"name=PKT\\+",
+			"xyzzy",
+			"caret",
+			"zil",
+			"\\.word editing",
+			"_block",
+			"_qmkpkts",
+			"pkt\\+",
+			"^name=",
+			"dpl",
+			"namefrom",
+			"twominus",
+			"uservmbuf",
+			"name=VMBUF",
+			"_cold",
+			"name=>",
+			"name=<=",
+			"xyzzy",
+			"kpkts",
+			"pktplus",
+			"xyzzy",
+			"dodispatch",
+			"_edittopscr",
+			"plusedit",
+			"_addedit",
+			"editrestore",
+			"xyzzy",
+			"editrestore",
+			"editinfo",
+			"max",
+			"jsr enter",
+			"editindex",
+			"_editquit",
+			"_editrestore",
+			"plit",
+			"dodispatch",
+			"xyzzy",
+			"editmenu",
+			"_block",
+			"xyzzy",
+			"zzy",
+			"editzilch",
+			"rldecode",
+			"xyzzy",
+			"_back",
+			"xyzzy",
+			"dodispatch",
+			"dolindex",
+			"dispatch",
+			"editmenu",
+			"xyzzy",
+			"block",
+			"psize",
+			"bz",
+			"blkbuf",
+			"^_topkt",
+			"upd2",
+			"upd",
+			"up",
+			"upda",
+			"name=",
+			"and #.*7",
+			"rlencode",
+			"scredidx",
+			"name=EDITING",
+			"name=INFO",
+			"name=^",
+			"onemin01",
+			"oneplusstore",
+			"twoplusstore",
+			"oneplusstore",
+			"rlencode",
+			"xyzzy",
+			".word",
+			"update",
+			"plusmove",
+			"_toedit",
+			"uncompres",
+			"isscr",
+			"compressed",
+			"wrapstore",
+			"_wrapstore",
+			"coldpatch",
+			"xyzzy",
 			"clrscr",
 			"_qmkpkts",
 			"xyzzy",
@@ -193,122 +352,7 @@
 			"userscrpkt",
 			"xyzzy",
 			"editmenu",
-			"numblkstore",
-			"nbsa",
-			"xyzzy",
-			"word",
-			"xyzzy",
-			"plusmove",
-			"isscrq",
-			"EXT",
-			"ET",
-			"plants6",
-			"plants4",
-			"endif",
-			"plants4",
-			"plants",
-			"rput",
-			"sty tos",
-			"st. tos",
-			"^(.)",
-			"(href=\")(.*)\".*$",
-			"twonip",
-			"slmod40",
-			"twonip",
-			"st. stack.,",
-			"sta stackl",
-			"nip",
-			"ni",
-			"nip",
-			"twodrop",
-			"threec",
-			"threecfetch",
-			"name=warap",
-			"wrapfetch",
-			"_pktsize",
-			"harvests10",
-			"pupd1",
-			"pupd1`",
-			"utend",
-			"core-locals",
-			"harvests8",
-			"pupd1",
-			"_vmmove",
-			"_topkt",
-			"_pktsize",
-			"ptopkt",
-			"_pktsize",
-			"psize",
-			"^put",
-			"pktsize",
-			"bz",
-			"_pktsize",
-			"pktsize",
-			"_pktsize",
-			"numblkstore",
-			"harvest",
-			"n5",
-			"n8",
-			"r11",
-			"tozpfrom",
-			"_rleplus",
-			"rleplus",
-			"_pktsize",
-			"_topkt",
-			"N8",
-			"n8",
-			"xyzzy",
-			"dashtrailing",
-			"vmmove",
-			"N8",
-			"N8R",
-			"N8",
-			"pkt",
-			"N8",
-			"pkt.size",
-			"pupd1",
-			"xyzzy",
-			"rlencode",
-			"xyzzy",
-			"dashtrailing",
-			"wrapfetch",
-			"LDTB1",
-			"e0",
-			"LPERSCR",
-			"lperscr",
-			"$e0",
-			"wrapabove",
-			"wrap",
-			"wrapabove",
-			"wrap",
-			"xyzzy",
-			"rlencode",
-			"delta",
-			"xyzzy",
-			"_pktsize",
-			"_topkt",
-			"_back",
-			"harvest",
-			"xyzzy",
-			"_topkt",
-			"_emptybuffers",
-			"_numblkstore",
-			"_topkt",
-			"pktsize",
-			"1024",
-			"zpfrom",
-			"pktinfo",
-			"pkt",
-			"pktlen",
-			"topkt",
-			"BPERSCR",
-			"CAS1BUF",
-			"b/scr",
-			"update",
-			"rfetch",
-			"mkpkts",
-			"userblk",
-			"pupd"
+			"numblkstore"
 		],
 		"highlight": true,
 		"in_selection": false,
@@ -330,7 +374,7 @@
 	"groups":
 	[
 		{
-			"selected": 2,
+			"selected": 4,
 			"sheets":
 			[
 				{
@@ -339,28 +383,33 @@
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 29080,
+						"buffer_size": 29076,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								8012,
-								8012
+								0,
+								0
 							]
 						],
 						"settings":
 						{
+							"rulers":
+							[
+								32,
+								80
+							],
 							"syntax": "Packages/Text/Plain text.tmLanguage",
 							"tab_size": 4,
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 3131.0,
+						"translation.y": 966.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 4,
+					"stack_index": 9,
 					"type": "text"
 				},
 				{
@@ -369,37 +418,112 @@
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 10187,
+						"buffer_size": 10228,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								8940,
-								8940
+								9169,
+								9169
 							]
 						],
 						"settings":
 						{
+							"rulers":
+							[
+								32,
+								80
+							],
 							"syntax": "Packages/Text/Plain text.tmLanguage",
 							"tab_size": 4,
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 4265.0,
+						"translation.y": 4459.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 3,
+					"stack_index": 6,
 					"type": "text"
 				},
 				{
 					"buffer": 2,
+					"file": "studio/src/pettil-editor.a65",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 27938,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								19157,
+								19157
+							]
+						],
+						"settings":
+						{
+							"rulers":
+							[
+								32,
+								80
+							],
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 13433.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 7,
+					"type": "text"
+				},
+				{
+					"buffer": 3,
+					"file": "studio/src/pettil-utils.a65",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 13068,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								10283,
+								10283
+							]
+						],
+						"settings":
+						{
+							"rulers":
+							[
+								32,
+								80
+							],
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 7827.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 4,
+					"type": "text"
+				},
+				{
+					"buffer": 4,
 					"file": "core/src/core-vm.a65",
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 38901,
+						"buffer_size": 34265,
 						"regions":
 						{
 							"bookmarks":
@@ -409,12 +533,8 @@
 								"regions":
 								[
 									[
-										8091,
-										8091
-									],
-									[
-										38833,
-										38833
+										11917,
+										11917
 									]
 								],
 								"scope": "bookmarks"
@@ -423,29 +543,34 @@
 						"selection":
 						[
 							[
-								32649,
-								32649
+								19152,
+								19152
 							]
 						],
 						"settings":
 						{
+							"rulers":
+							[
+								32,
+								80
+							],
 							"syntax": "Packages/Text/Plain text.tmLanguage",
 							"tab_size": 4,
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 19673.0,
+						"translation.y": 11665.0,
 						"zoom_level": 1.0
 					},
 					"stack_index": 0,
 					"type": "text"
 				},
 				{
-					"buffer": 3,
+					"buffer": 5,
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 2346,
+						"buffer_size": 7522,
 						"regions":
 						{
 							"match":
@@ -454,60 +579,176 @@
 								"regions":
 								[
 									[
-										189,
-										194
+										141,
+										152
 									],
 									[
-										364,
-										369
+										264,
+										275
 									],
 									[
-										499,
-										504
+										351,
+										362
 									],
 									[
-										594,
-										599
+										443,
+										454
 									],
 									[
-										807,
-										812
+										566,
+										577
 									],
 									[
-										928,
-										933
+										653,
+										664
 									],
 									[
-										1195,
-										1200
+										839,
+										850
 									],
 									[
-										1482,
-										1488
+										974,
+										985
 									],
 									[
-										1584,
-										1590
+										1158,
+										1169
 									],
 									[
-										1715,
-										1721
+										1298,
+										1309
 									],
 									[
-										1851,
-										1857
+										1493,
+										1504
 									],
 									[
-										1987,
-										1993
+										1627,
+										1638
 									],
 									[
-										2129,
-										2135
+										1764,
+										1775
 									],
 									[
-										2261,
-										2267
+										1960,
+										1971
+									],
+									[
+										2193,
+										2204
+									],
+									[
+										2389,
+										2400
+									],
+									[
+										2526,
+										2537
+									],
+									[
+										2721,
+										2732
+									],
+									[
+										2926,
+										2937
+									],
+									[
+										3062,
+										3073
+									],
+									[
+										3297,
+										3304
+									],
+									[
+										3437,
+										3444
+									],
+									[
+										3684,
+										3691
+									],
+									[
+										3837,
+										3844
+									],
+									[
+										4020,
+										4027
+									],
+									[
+										4131,
+										4138
+									],
+									[
+										4258,
+										4265
+									],
+									[
+										4365,
+										4372
+									],
+									[
+										4402,
+										4409
+									],
+									[
+										4499,
+										4506
+									],
+									[
+										4809,
+										4816
+									],
+									[
+										5154,
+										5159
+									],
+									[
+										5329,
+										5334
+									],
+									[
+										5464,
+										5469
+									],
+									[
+										5559,
+										5564
+									],
+									[
+										5772,
+										5777
+									],
+									[
+										6038,
+										6043
+									],
+									[
+										6237,
+										6242
+									],
+									[
+										6508,
+										6518
+									],
+									[
+										6753,
+										6764
+									],
+									[
+										6938,
+										6949
+									],
+									[
+										7120,
+										7131
+									],
+									[
+										7433,
+										7444
 									]
 								],
 								"scope": ""
@@ -516,15 +757,15 @@
 						"selection":
 						[
 							[
-								1485,
-								1485
+								6760,
+								6760
 							]
 						],
 						"settings":
 						{
 							"detect_indentation": false,
 							"line_numbers": false,
-							"output_tag": 2,
+							"output_tag": 5,
 							"result_base_dir": "",
 							"result_file_regex": "^([^ \t].*):$",
 							"result_line_regex": "^ +([0-9]+):",
@@ -532,31 +773,106 @@
 							"syntax": "Packages/Default/Find Results.hidden-tmLanguage"
 						},
 						"translation.x": 0.0,
-						"translation.y": 672.0,
+						"translation.y": 3360.0,
 						"zoom_level": 1.0
 					},
 					"stack_index": 2,
 					"type": "text"
 				},
 				{
-					"buffer": 4,
-					"file": "studio/src/pettil-editor.a65",
+					"buffer": 6,
+					"file": "core/src/core-extra.a65",
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 31431,
+						"buffer_size": 10254,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								578,
-								585
+								9236,
+								9236
 							]
 						],
 						"settings":
 						{
+							"rulers":
+							[
+								32,
+								80
+							],
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 6690.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"type": "text"
+				},
+				{
+					"buffer": 7,
+					"file": "core/src/core-inner.a65",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 23760,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								12070,
+								12070
+							]
+						],
+						"settings":
+						{
+							"rulers":
+							[
+								32,
+								80
+							],
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 7474.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 5,
+					"type": "text"
+				},
+				{
+					"buffer": 8,
+					"file": "studio/src/pettil-dictionary.a65",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 48005,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								538,
+								538
+							]
+						],
+						"settings":
+						{
+							"rulers":
+							[
+								32,
+								80
+							],
 							"syntax": "Packages/Text/Plain text.tmLanguage",
 							"tab_size": 4,
 							"translate_tabs_to_spaces": true
@@ -565,7 +881,42 @@
 						"translation.y": 0.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 1,
+					"stack_index": 8,
+					"type": "text"
+				},
+				{
+					"buffer": 9,
+					"file": "studio/src/pettil-compiler.a65",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 43082,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								25146,
+								25146
+							]
+						],
+						"settings":
+						{
+							"rulers":
+							[
+								32,
+								80
+							],
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 16499.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 3,
 					"type": "text"
 				}
 			]
@@ -618,7 +969,7 @@
 	"project": "pettil.sublime-project",
 	"replace":
 	{
-		"height": 69.0
+		"height": 40.0
 	},
 	"save_all_on_build": true,
 	"select_file":
@@ -627,6 +978,10 @@
 		"last_filter": "",
 		"selected_items":
 		[
+			[
+				"tiddly",
+				"docs/statictiddlers/tiddlywiki.info"
+			]
 		],
 		"width": 0.0
 	},
@@ -655,7 +1010,7 @@
 	"show_minimap": true,
 	"show_open_files": true,
 	"show_tabs": true,
-	"side_bar_visible": true,
+	"side_bar_visible": false,
 	"side_bar_width": 199.0,
 	"status_bar_visible": true,
 	"template_settings":
