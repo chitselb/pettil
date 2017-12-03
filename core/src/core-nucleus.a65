@@ -462,6 +462,11 @@ tags=forth-83,nucleus,stack,fig,forth-79
 Exchange the top two values on the stack.
 #endif
 swap
+    lda #>(next-1)
+    pha
+    lda #<(next-1)
+    pha
+swaps
     ldy tos+1
     lda stackh,x
     sta tos+1
@@ -470,7 +475,7 @@ swap
     lda stackl,x
     sta tos
     sty stackl,x
-    jmp next
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -1799,12 +1804,27 @@ fill03
 
 ;--------------------------------------------------------------
 #if 0
-name=ERASE
+name=>FILL
 stack=( addr howmany -- )
 tags=nucleus
 
 #endif
 #include "align.i65"
+_dofill
+    jsr dodoes
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word fill
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ERASE
+stack=( addr howmany -- )
+tags=nucleus
+
 _erase
     jsr enter
 #include "page.i65"
@@ -1814,14 +1834,17 @@ _erase
 #include "pass.i65"
     .word exit
 
+#endif
+#include "align.i65"
+erase
+    jsr _dofill
+    .byt 0
+
 ;--------------------------------------------------------------
 #if 0
 name=BLANK
 stack=( addr howmany -- )
 tags=nucleus
-
-#endif
-#include "align.i65"
 _blank
     jsr enter
 #include "page.i65"
@@ -1832,8 +1855,69 @@ _blank
     .word exit
 
 
+#endif
+#include "align.i65"
+blank
+    jsr _dofill
+    .byt ' '
 
+;--------------------------------------------------------------
+#if 0
+name=>-SOMETHING
+stack=( char == ; buff max -- buff actual )
+tags=nucleus
 
+```
+: >-buf   ( char == ; buff max -- buff actual )
+\   <builds  c,
+    does>
+        c@ >r
+        over + 1-
+        begin
+            c@+ r@ =
+        while
+            2-
+        repeat
+        over - rdrop ;
+```
+#endif
+#include "align.i65"
+_dodashbuf
+    jsr dodoes
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+dbuf01
+    .word cfetchplus
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word eq
+#include "pass.i65"
+    .word qbranch
+    .byt <(dbuf02-*+1)
+#include "page.i65"
+    .word twominus
+#include "pass.i65"
+    .word branch
+    .byt <(dbuf01-*+1)
+#include "page.i65"
+dbuf02
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word rdrop
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1846,103 +1930,26 @@ tags=nucleus
  then +n2 is also zero.  If the entire string consists of
  nulls, then +n2 is zero.
 
-```
-: -nulls   ( addr n1 -- addr n2 )
-     dup 0
-     ?do
-         2dup + 1- c@
-         0 <>
-     ?leave
-         1-
-     loop ;
-```
 #endif
 dashnulls
-    lda #$00
-    .byt $2c        ; BIT xxxx
-    ; fall through
-dashtrailings
-    lda #$20
-    sta n+2
-dtrail01
-    dey
-    cpy #$ff
-    bne dtrail02
-    dec tos+1
-    bmi dtrail03          ; `-trailing` will not work with 32K+ strings
-dtrail02
-    lda (n),y
-    eor n+2
-    beq dtrail01
-dtrail03
-    iny
-    tya
-    ldy tos+1
-    iny
-    rts
-
+    jsr _dodashbuf
+    .byt 0
 
 ;--------------------------------------------------------------
 #if 0
 name=-TRAILING
 stack=( addr +n1 -- addr +n2 )
-tags=nucleus,forth-83
+tags=nucleus
 
  The character count +n1 of a text string beginning at addr
  is adjusted to exclude trailing spaces.  If +n1 is zero,
  then +n2 is also zero.  If the entire string consists of
  spaces, then +n2 is zero.
 
-```
-: -trailing   ( addr n1 -- addr n2 )
-    dup 0
-    ?do
-    2dup + 1- c@
-    bl <>
-    ?leave
-    1-
-    loop ;
-
-: -trailing   ( addr n1 -- addr n2 )
-    over +
-    begin
-        c@+ bl =
-    while
-        2-
-    repeat over - ;
-```
 #endif
-#include "align.i65"
-_dashtrailing
-    jsr enter
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word oneminus
-#include "page.i65"
-dashtrailing01
-    .word cfetchplus
-#include "page.i65"
-    .word bl
-#include "page.i65"
-    .word eq
-#include "pass.i65"
-    .word qbranch
-    .byt <(dashtrailing02-*+1)
-#include "page.i65"
-    .word twominus
-#include "pass.i65"
-    .word branch
-    .byt <(dashtrailing01-*+1)
-#include "page.i65"
-dashtrailing02
-    .word over
-#include "page.i65"
-    .word minus
-#include "pass.i65"
-    .word exit
+dashtrailing
+    jsr _dodashbuf
+    .byt ' '
 
 ;--------------------------------------------------------------
 #if 0
