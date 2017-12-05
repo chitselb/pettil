@@ -215,7 +215,7 @@ wrapabove03
 ;--------------------------------------------------------------
 #if 0
 name=RLENCODE
-stack=( from to size -- uncompressed? targend )
+stack=( from to size -- targend uncompressed? )
 tags=vm,sweet16
 This works a lot like `cmove` with its `from to howmany` stack signature, but
 the target is a `packet` of `virtual memory` that can be permanently stored
@@ -288,9 +288,9 @@ rlencode04                      ; overflow/end of input
     .byt br , <(rlencode01-*-2)
 
 rlencode06                      ; win
-    .byt sub | ACC
-    .byt st | TOS
     .byt ld | N2                ; targ (out)
+    .byt st | TOS
+    .byt sub | ACC
     .byt push
     .byt nxt
 ;    rlencode
@@ -299,11 +299,11 @@ rlencode06                      ; win
 rlencode07                      ; lose - copy
     .byt ld | TOS
     .byt st | N0                ; keep pristine TOS
-    .byt set | ACC
-    .word $4000
-    .byt st | TOS
     .byt ld | R11               ; return original `size`
     .byt add | N7               ; +pristine targ
+    .byt st | TOS
+    .byt set | ACC
+    .word $4000
     .byt push
     .byt ld | N0                ; from
     .byt push
@@ -1045,9 +1045,6 @@ blkscrvid
 name=(UPD1)
 stack=( source size b/buf vmbuf -- source vmbuf' floor from to howmany )
 tags=nosymbol
-
-~#packrat
-#endif
 pupd1
     brk
     .byt ext
@@ -1077,24 +1074,49 @@ pupd1
     .word plants8
     .byt nxt
 
+~#packrat
+#endif
+pupd1
+    brk
+    .byt ext
+    .word harvests4
+    .byt ldd | TOS              ; vmbuf @
+    .byt st | N2                ; vmbuf 'from' for cmoveq
+    .byt sub | N1
+    .byt add | N0
+    .byt st | N3
+    .byt ld | N8
+    .byt sub | N1
+    .byt st | N1
+    .byt sub | N3
+    .byt sub | N0
+    .byt st | TOS
+    .byt ld | N3
+    .byt st | N0
+    .byt ext
+    .word plants8
+    .byt nxt
+
 ;--------------------------------------------------------------
 #if 0
 name=(UPD2)
-stack=( -- )
+stack=( vmbuf' targend mask -- vmbuf' from to howmany )
 tags=nosymbol
+* set packet header
+* close gap at end of new packet
+* set `vmbuf`
 #endif
 pupd2
     brk
     .byt ext
-    .word harvests6
-    .byt ld | TOS               ; isscr?
+    .word harvests4
+    .byt ld | TOS               ; mask
     .byt add | N1               ; targend+3
     .byt sub | N7               ; - floor
-    .byt add | N2               ; + uncompressed?
     .byt inr | ACC
     .byt inr | ACC
     .byt std | N8               ; write updated packet header
-    .byt popd | N8
+    .byt popd | N8              ; leave `pkt` undisturbed
     .byt ld | N2                ; targend
     .byt sub | N0               ; - vmbuf'
     .byt st | TOS               ; 'howmany'
@@ -1102,8 +1124,6 @@ pupd2
     .byt st | N1                ; 'from'
     .byt ld | N8
     .byt sub | TOS
-    .byt ext
-    .word plugh
     .byt st | N0                ; 'to'
     .byt st | N2                ; `vmbuf`
     .byt ext
@@ -1120,12 +1140,25 @@ tags=forth-83,vm,nosymbol
 \ sprog of update
 : sup ( vidram|blkbuf -- )
     @ >pkt pkt.size b/buf 2nip vmbuf
-    (upd1) cmove
-    rlencode
-    set up pkt.floor
-    (upd1)
-    cmove
+    (upd1) cmove                ;( source vmbuf floor )
+    rot tuck
+    isscr?
+    if
+        b/scr -trailing
+    else
+        b/buf -nulls
+    then
+    nip rlencode
+          ?: b/scr b/buf
     isscr?  ?: -trailing -nulls nip
+    rlencode
+    isscr?
+    if
+( wrapd vmbuf' uncompressed? targend )
+        >r twoswap r@ 3c! r> 3+
+    then
+
+
     rlencode
     editing? vidram and
     (upd2)
@@ -1141,18 +1174,17 @@ _sup
 #include "page.i65"
     .word _pktsize
 #include "page.i65"
-    .word bperbuf               ; open up a space this big in the packet
+    .word twominus
+#include "page.i65"
+    .word bperbuf
 #include "page.i65"
     .word twonip
 #include "page.i65"
     .word vmbuf
 #include "page.i65"
-                                ;( source size b/buf vmbuf )
     .word pupd1
-                                ;( source vmbuf pkt.floor from to howmany )
 #include "page.i65"
-    .word cmove
-                                ;( source vmbuf pkt.floor )
+    .word cmove                 ; temporarily allocate 1K space in the packet
 #include "page.i65"
     .word rot
 #include "page.i65"
@@ -1160,26 +1192,48 @@ _sup
 #include "page.i65"
     .word isscrq
 #include "pass.i65"
-    .word pquerycolon
+    .word qbranch
+    .byt <(sup01-*+1)
+#include "page.i65"
     .word bperscr
+#include "page.i65"
+    .word dashtrailing
+#include "pass.i65"
+    .word branch
+    .byt <(sup02-*+1)
+#include "page.i65"
+sup01
     .word bperbuf
+#include "page.i65"
+    .word dashnulls
+#include "page.i65"
+sup02
+    .word nip
+#include "page.i65"
+    .word rlencode              ; attempt to run-length encode the buffer
 #include "page.i65"
     .word isscrq
 #include "pass.i65"
-    .word pquerycolon
-    .word dashtrailing
-    .word dashnulls
-#include "page.i65"
-    .word nip
-#include "page.i65"
-    .word rlencode              ; ( uncompressed? targend )
-#include "page.i65"
-    .word isscrq
+    .word qbranch
+    .byt <(sup03-*+1)
 #include "page.i65"
     .word vidram
 #include "page.i65"
-    .word andx
+    .word orx
 #include "page.i65"
+    .word tor
+#include "page.i65"
+    .word twoswap
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word threecstore           ; append linewrap
+#include "page.i65"
+    .word threeplus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+sup03
     .word pupd2
 #include "page.i65"
     .word cmovegt               ; move the bottom of `vmbuf` back up
@@ -1201,69 +1255,46 @@ reads packets, this is PETTIL's single point of responsibility for
 writing packets in the `vmbuf` region.
 
 tests:
+~\ block 0
+~\ nonzero block numbers
 ~\ empty block
-~\ fill blkbuf half with deadbeef
-~\ fill blkbuf all with deadbeef
+~\ blank block
+~\ screen 1000+3 in blkbuf
+~\ for all combinations of `isscr?` and `editing?`
+~\ for both packet types
+~\ with and without compression
+~\ fill blkbuf half with $DEADBEEF
+~\ fill blkbuf all with $DEADBEEF
 ~\ fill blkbuf half with '!'
+~\ fill blkbuf all with '!'
+~\ fill screen with 80-column uncompressable ($555555 wrap)
+~\ fill screen with normal source code
+~\ fill screen half with '!'
+~\ fill blkbuf all with '!'
 ~\ fill blkbuf all with '!'
 
 ```
-
-updatescrvid:
-    scr @ >pkt pkt.size b/buf
-    2nip vmbuf (upd1) cmove
-    vidram tuck b/scr -trailing nip
-    rlencode dup>r 3+ wrap@ 3c! scrpkt?
-    (upd2) cmove> #blk! ;
-
-updscrvid
-    .word scr
-    .word fetch
-    .word _topkt
-    .word _pktsize
-    .word bperbuf
-    .word twonip
-    .word vmbuf
-    .word pupd1
-    .word cmove
-    .word vidram
-    .word tuck
-    .word bperscr
-    .word dashtrailing
-    .word nip
-    .word rlencode              ; ( uncompressed? targend )
-    .word duptor
-    .word threeplus
-    .word wrapfetch
-    .word rfrom
-    .word threecstore
-    .word editingq
-    .word vidram
-    .word andx
-    .word pupd2
-    .word cmovegt
-    .word vmbuf
-    .word store
-    .word exit
-
 : update   ( -- )
     \ source is either `vidram` or `blkbuf`
     \ target is always pkt.floor
+    editing? ?: scr blk
+    @ >pkt drop
     editing?
     if
         isscr?
         if
-            vidram sup
-            wrap@ rot 3c!
+            wrap@
+            vidram scr sup
+        \ else
+        \   nothing to do -- vidram can't hold data block
         then
     else
 upd01
-        blkbuf sup
         isscr?
         if
             blkbuf 1000 + 3c@
-            rot 3c!
         then
+        blkbuf blk sup
     then
 upd02
 ;
@@ -1276,6 +1307,18 @@ _update
 #include "page.i65"
     .word editingq
 #include "pass.i65"
+    .word pquerycolon
+    .word scr
+    .word blk
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _topkt
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word editingq
+#include "pass.i65"
     .word qbranch
     .byt <(upd01-*+1)
 #include "page.i65"
@@ -1284,35 +1327,22 @@ _update
     .word qbranch
     .byt <(upd02-*+1)
 #include "page.i65"
+    .word wrapfetch
+#include "page.i65"
     .word vidram
 #include "page.i65"
     .word scr
 #include "page.i65"
     .word _sup
-#include "page.i65"
-    .word wrapfetch
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N8
-#include "page.i65"
-    .word threeminus
-#include "page.i65"
-    .word threecstore
 #include "pass.i65"
     .word branch
     .byt <(upd02-*+1)
 #include "page.i65"
 upd01
-    .word blkbuf
-#include "page.i65"
-    .word blk
-#include "page.i65"
-    .word _sup
-#include "page.i65"
     .word isscrq
 #include "pass.i65"
     .word qbranch
-    .byt <(upd02-*+1)
+    .byt <(upd03-*+1)
 #include "page.i65"
     .word blkbuf
 #include "page.i65"
@@ -1322,9 +1352,12 @@ upd01
 #include "page.i65"
     .word threecfetch
 #include "page.i65"
-    .word rot
+upd03
+    .word blkbuf
 #include "page.i65"
-    .word threecstore
+    .word blk
+#include "page.i65"
+    .word _sup
 #include "pass.i65"
 upd02
     .word exit
