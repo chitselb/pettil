@@ -75,9 +75,8 @@ Retrieves the EDITING user variable
 ```
 #endif
 editingq
-    lda userediting
-    ldy userediting+1
-    jmp pushya
+    lda userediting+1
+    jmp uncompressedq01
 
 ;--------------------------------------------------------------
 #if 0
@@ -89,7 +88,7 @@ Returns a `flag`, `true` when the current packet is a screen
 
 ```
 : isscr?   ( -- flag )
-    blk @ >pkt @ $4000 and ;
+    <n8 @ $4000 and ;
 ```
 ~#packrat
 #endif
@@ -479,6 +478,12 @@ topkt02
 _topkt
     jsr enter
 #include "page.i65"
+    .word dup
+#include "page.i65"
+    .word prev
+#include "page.i65"
+    .word store
+#include "page.i65"
     .word blkbuf
 #include "page.i65"
     .word twominus
@@ -731,6 +736,39 @@ mkdata
 
 ;--------------------------------------------------------------
 #if 0
+name=(PKT+)
+stack=( size -- size floor #blk )
+tags=compiler
+Returns the Code Field Address (`cfa`) of the provided Name
+Field Address (`nfa`)
+
+* adds a new data or screen packet (per `editing`)
+* sets `scr` to point to it (also per `editing`) ( `^` likes this )
+* moves `vmbuf` down by 2 or 5
+* increments `#blk`
+
+vmbuf @ >n8
+swap - vmbuf !
+vmbuf @ off  #blk
+
+#endif
+ppktplus
+    brk
+    .byt set | N0
+    .word usernumblk
+    .byt popd | N0              ; `vmbuf`
+    .byt st | N8                ; `pkt`
+    .byt sub | TOS              ; `pkt` - `size`
+    .byt std | N0               ; set `vmbuf`
+    .byt push
+    .byt sub | ACC
+    .byt std | TOS              ; `vmbuf off`
+    .byt ld | N0                ; #blk
+    .byt push
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
 name=PKT+
 stack=( -- )
 tags=compiler
@@ -747,9 +785,6 @@ Field Address (`nfa`)
     editing? ?: mkscr mkdata
     count (pkt+)
     1+! swap cmove ;
-
-
-
 ```
 #endif
 #include "align.i65"
@@ -773,21 +808,6 @@ _pktplus
     .word cmove
 #include "pass.i65"
     .word exit
-
-ppktplus
-    brk
-    .byt set | N0
-    .word usernumblk
-    .byt popd | N0              ; `vmbuf`
-    .byt st | N8                ; `pkt`
-    .byt sub | TOS              ; `pkt` - `size`
-    .byt std | N0               ; set `vmbuf`
-    .byt push
-    .byt sub | ACC
-    .byt std | TOS
-    .byt ld | N0                ; #blk
-    .byt push
-    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -841,7 +861,7 @@ user is in the editor or not, and whether the packet is screen or data.
      while
         pkt+
     repeat
-    blk !                       \ `blk` <- `u`
+    prev !                      \ `prev` <- `u`
     >pkt scredidx  >dodispatch
         blkclassic ,
         blkdatavid ,
@@ -869,8 +889,6 @@ blkscrvid:
 _block
     jsr enter
 #include "page.i65"
-    .word dup
-#include "page.i65"
 qmkpkts01
     .word numblk
 #include "page.i65"
@@ -891,10 +909,6 @@ qmkpkts01
     .byt <(qmkpkts01-*+1)
 #include "page.i65"
 qmkpkts02
-    .word blk
-#include "page.i65"
-    .word store
-#include "page.i65"
     .word _topkt
 #include "page.i65"
    .word scredidx
@@ -1309,7 +1323,7 @@ _update
 #include "pass.i65"
     .word pquerycolon
     .word scr
-    .word blk
+    .word prev
 #include "page.i65"
     .word fetch
 #include "page.i65"
@@ -1355,7 +1369,7 @@ upd01
 upd03
     .word blkbuf
 #include "page.i65"
-    .word blk
+    .word prev
 #include "page.i65"
     .word _sup
 #include "pass.i65"
