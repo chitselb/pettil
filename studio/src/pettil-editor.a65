@@ -286,7 +286,7 @@ loglineplus02
 
 ;--------------------------------------------------------------
 #if 0
-name=EDITCOPY
+name=:EDITCOPY
 stack=( -- )
 tags=editor,nosymbol
 STOP-C Copy Line
@@ -294,19 +294,14 @@ STOP-C Copy Line
 Appends a copy of the current logical screen line to the paste buffer
 
 ```
-: editcopy
-   paste logline lineinfo
-   (>paste) cmove 2drop ;
-: editcopy   ( -- )
+:editcopy   ( -- )
     logline lineinfo >r paste @  r@ cmove
     paste r@ +!
     pwrap 2@ r> 40/mod nip wrap+ pwrap 2! ;
 ```
 #endif
-#include "align.i65"
-_editcopy
-    jsr enter
 #include "page.i65"
+__editcopy
     .word logline
 #include "page.i65"
     .word lineinfo
@@ -345,7 +340,7 @@ _editcopy
 
 ;--------------------------------------------------------------
 #if 0
-name=EDITDEL
+name=:EDITDEL
 stack=( -- )
 tags=editor,nosymbol
 STOP-D Delete Line
@@ -369,11 +364,9 @@ screen
     2dup + >r cmove r> r@ blank logline r> wraproll ;
 ```
 #endif
-#include "align.i65"
-_editdel
-    jsr enter
 #include "page.i65"
-    .word _editcopy             ; ( )
+__editdel
+    .word __editcopy            ; ( )
 #include "page.i65"
     .word logline
 #include "page.i65"
@@ -430,7 +423,7 @@ editdel01
 
 ;--------------------------------------------------------------
 #if 0
-name=EDITPASTE
+name=:EDITPASTE
 stack=( -- )
 tags=editor,nosymbol
 
@@ -439,7 +432,7 @@ STOP-P
 Insert the paste buffer above the current logical line
 
 ```
-: editpaste   ( -- )
+:editpaste   ( -- )
     paste @  logline
     dup lineinfo drop over eos third - cmove
     pwrap 2@ logline
@@ -455,10 +448,8 @@ Insert the paste buffer above the current logical line
     paste ! ;
 ```
 #endif
-#include "align.i65"
-_editpaste
-    jsr enter
 #include "page.i65"
+__editpaste
     .word paste
 #include "page.i65"
     .word fetch
@@ -541,7 +532,7 @@ editpaste01
 
 ;--------------------------------------------------------------
 #if 0
-name=EDITNOWRAP:
+name=:EDITNOWRAP
 stack=( -- )
 tags=editor,nosymbol
 
@@ -551,7 +542,7 @@ tags=editor,nosymbol
 ~#packrat
 #endif
 #include "align.i65"
-editnowrap
+__editnowrap
     .word *+2
     txa
     ldx #24
@@ -568,6 +559,577 @@ editnowrap01
     ora #$80
     sta (ACC+2*N8),y
     jmp exit
+
+;--------------------------------------------------------------
+#if 0
+name=$INDEX
+stack=( addr char -- +index|0 )
+tags=string,ext,primitive
+returns the 1-based position of char within the counted string at addr
+otherwise returns 0
+#endif
+dolindex
+    jsr harvests2
+    lda (n),y
+    tay                         ; Y = length of string
+dolindex01
+    lda (n),y
+    eor tos
+    beq dolindex02
+    dey
+    bne dolindex01
+dolindex02
+    tya
+    jmp put0a
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITTOPSCR
+stack=( -- )
+tags=editor,nosymbol
+
+ from the top (first) screen
+
+```
+:edittopscr   ( -- )
+    0 >edit ;
+```
+#endif
+#include "align.i65"
+__edittopscr
+    .word zero
+#include "page.i65"
+    .word _toedit
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITQUIT
+stack=( -- )
+tags=editor,nosymbol
+STOP-_   Quit the editor
+STOP-Q
+
+```
+:editquit   ( -- )
+    editing off  rdrop rdrop ;
+```
+#endif
+#include "page.i65"
+__editquit
+    .word _update
+#include "page.i65"
+    .word editing
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word rdrop                 ; discard returns
+#include "page.i65"
+    .word rdrop                 ; discard returns
+#include "pass.i65"
+    .word exit                  ; exiting from EDIT
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITINDEX
+stack=( -- )
+tags=editor,nosymbol,unimplemented
+
+STOP-I   Present an index screen and let the user select one to edit
+
+```
+:editindex   ( -- ) ;
+```
+~wut? write this
+#endif
+#include "page.i65"
+__editindex
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITSAVE
+stack=( -- )
+tags=editor,nosymbol
+
+ STOP-S   Save all buffers to a PRG file
+
+```
+:editsave   ( -- ) ;
+```
+#endif
+#include "page.i65"
+__editsave
+    .word _update
+#include "page.i65"
+    .word _clrscr
+#include "page.i65"
+    .word _savebuffers
+#include "pass.i65"
+    .word branch
+    .byt <(__editrestore-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITLOAD
+stack=( -- )
+tags=editor,nosymbol
+
+ STOP-L   Load a group of buffers from a PRG file
+
+```
+:editload   ( -- ) ;
+```
+#endif
+#include "page.i65"
+__editload
+    .word _clrscr
+#include "page.i65"
+    .word _loadbuffers
+#include "page.i65"
+    .word scr
+#include "page.i65"
+    .word off
+#include "pass.i65"
+    .word branch
+    .byt <(__editrestore-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITVERIFY
+stack=( -- )
+tags=editor,nosymbol
+
+ STOP-V   Verify a buffer file vs. memory
+
+```
+:editverify   ( -- )
+   clrscr verify-buffers true pause :editrestore
+```
+#endif
+#include "page.i65"
+__editverify
+    .word _clrscr
+#include "page.i65"
+    .word _verifybuffers
+#include "page.i65"
+    .word true
+#include "page.i65"
+    .word _pause
+#include "pass.i65"
+    .word branch
+    .byt <(__editrestore-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=EDITZILCH
+stack=( -- )
+tags=editor,nosymbol
+
+#endif
+#include "align.i65"
+_editzilch
+    jsr enter
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=:EDITZILCH
+stack=( -- )
+tags=editor,nosymbol
+
+ STOP-Z   Zilch the paste buffer
+
+```
+:editzilch   ( -- )
+     pad paste !  pwrap 4 erase ;
+```
+#endif
+#include "page.i65"
+__editzilch
+    .word _pad
+#include "page.i65"
+    .word paste
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word pwrap
+#include "page.i65"
+    .word four
+#include "page.i65"
+    .word erase
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITRESTORE
+stack=( -- )
+tags=editor,nosymbol
+
+ STOP-R   Restore the current screen from the buffer
+
+```
+:editrestore   ( -- )
+    scr @ block drop ;
+```
+#endif
+#include "page.i65"
+__editrestore
+    .word scr
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _block
+#include "page.i65"
+    .word drop
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITDELSCR
+stack=( -- )
+tags=editor,nosymbol,unimplemented
+
+ STOP-DEL delete the current screen.  restore from next, then prev, then blank
+
+Deletes the current screen from the packet buffer.  The edit
+screen is replaced by the first available of:
+
+* The next screen in the packet buffer, if it already exists
+
+* The previous screen in the packet buffer
+
+* Screen 0 is blanked and written to the packet buffer
+
+```
+:editdelscr   ( scr -- packet )
+    >pkt
+    vmbuf floor size +move
+    #blk! scr @ #blk @ 1- max
+    >edit ;
+```
+~wut? write this
+#endif
+#include "page.i65"
+__editdelscr
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITINSSCR
+stack=( -- )
+tags=editor,nosymbol,unimplemented
+
+ insert a new, blank screen
+
+```
+:editinsscr   ( scr -- packet )
+    update vmbuf @ scr @ >pkt
+
+```
+~wut? fix this
+~ still a little goofy when inserting multiple screens
+#endif
+#include "page.i65"
+__editinsscr
+    .word _update
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word scr
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _topkt
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word oneplus
+#include "pass.i65"
+    .word plit
+    .word -5
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+    .word _plusmove
+#include "pass.i65"
+    .word plit
+    .word editinsscr01
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word threeminus
+#include "page.i65"
+    .word five
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word numblk
+#include "page.i65"
+    .word oneplusstore
+#include "pass.i65"
+    .word branch
+    .byt <(__editrestore-*+1)
+
+editinsscr01
+    .byt $ff, $ff, $ff, $05, $80
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITINFO
+stack=( -- )
+tags=editor,nosymbol
+Show the user an info screen
+
+```
+:editinfo   ( -- )
+    update vmbuf @ scr @ >pkt
+
+```
+#endif
+#include "page.i65"
+__editinfo
+    .word _update
+#include "page.i65"
+    .word _clrscr
+#include "page.i65"
+    .word _info
+#include "page.i65"
+    .word true
+#include "page.i65"
+    .word _pause
+#include "page.i65"
+    .word _clrscr
+#include "pass.i65"
+    .word branch
+    .word <(__editrestore-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITSPACE
+stack=( -- )
+tags=editor,nosymbol
+
+scan for shifted spaces
+
+```
+:editspace   ( -- )
+     vidram b/scr + vidram
+     do
+       i c@ $60 =
+       if $e0 i c! then
+    loop ;
+```
+#endif
+#include "page.i65"
+__editspace
+    .word vidram
+#include "page.i65"
+    .word bperscr
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word vidram
+#include "pass.i65"
+    .word pdo
+    .byt <(editspace03-*+1)
+#include "page.i65"
+editspace01
+    .word i
+#include "page.i65"
+    .word cfetch
+#include "pass.i65"
+    .word clit
+    .byt $60
+#include "page.i65"
+    .word eq
+#include "pass.i65"
+    .word qbranch               ; IF
+    .byt <(editspace02-*+1)
+#include "page.i65"
+    .word clit
+    .byte $e0
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word cstore
+#include "pass.i65"
+editspace02
+    .word ploop
+    .byt <(editspace01-*+1)
+#include "page.i65"
+editspace03
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITNEXTSCR
+stack=( -- )
+tags=editor,nosymbol
+restore from the next screen or append a blank one
+
+```
+:editnextscr   ( -- )
+    1 +edit ;
+
+```
+#endif
+#include "page.i65"
+__editnextscr
+    .word one
+#include "page.i65"
+    .word _plusedit
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=:EDITPREVSCR
+stack=( -- )
+tags=editor,nosymbol
+
+ restore from the previous screen or insert a blank one
+
+```
+:editprevscr   ( -- )
+    -1 +edit ;
+```
+#endif
+#include "page.i65"
+__editprevscr
+    .word minusone
+#include "page.i65"
+    .word _plusedit
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=EDITCMD
+stack=( -- )
+tags=editor,nosymbol
+
+ get a key and perform that command
+
+#endif
+#include "align.i65"
+_editcmd
+    jsr enter
+#include "page.i65"
+    .word flipscr
+#include "page.i65"
+    .word editmenu
+#include "page.i65"
+    .word key                   ; ( editmenu char )
+#include "page.i65"
+    .word flipscr
+#include "page.i65"
+    .word dolindex
+#include "page.i65"
+    .word twostar
+#include "pass.i65"
+    .word _dodispatch
+    .word editspace03-2         ; `exit`
+    .word __editquit-2
+    .word __editquit-2
+    .word __editindex-2
+    .word __editsave-2
+    .word __editload-2
+    .word __editverify-2
+    .word __editzilch-2
+    .word __editrestore-2
+    .word __editdel-2
+    .word __editcopy-2
+    .word __editpaste-2
+    .word __editspace-2
+    .word __editinfo-2
+    .word __editdelscr-2
+    .word __editinsscr-2
+    .word __edittopscr-2
+    .word __editnowrap-2
+    .word __editnextscr-2
+    .word __editprevscr-2
+
+;--------------------------------------------------------------
+#if 0
+name=EDITMENU
+tags=editor,nosymbol
+editor menu commands (no `cfa`)
+#endif
+editmenu
+    jsr docreate
+    .byt editmenuz-*-1
+    .asc "_QISLVZRDCP ?"        ; command keys
+    .byt DELETE, INSERT, HOME, CLR, CRSRDOWN, CRSRUP
+editmenuz
+
+;--------------------------------------------------------------
+#if 0
+name=(EDIT)
+stack=( scr -- )
+tags=editor,nosymbol
+#endif
+pedit
+    stx z                       ; preserve Forth data stack pointer
+    tsx
+    stx n                       ; preserve machine stack frame pointer
+
+pedit01                         ; PET screen editor forever loop
+    jsr CHRIN                   ; Kernel - blink the cursor, wait for a line of input, ignore it
+    lda #$0d                    ; don't just leave the cursor two characters past end of line
+    jsr CHROUT                  ; Kernel - so echo the carriage return
+    jmp pedit01                 ; ... do this forever
+
+pedit02                         ; this is edit's IRQ handler, enabled/disabled by _editirqtoggle
+    lda $9b                     ; copy of contents of PIA1 Port B for testing STOP key, etc...
+    cmp #$ef                    ; test STOP key
+    bne pedit03
+                                ; looks like someone pressed STOP. Exit the editor
+                                ; but not so fast!  Are we in quotes or inserts?
+    lda $cd                     ; nonzero is quotes mode
+    ora $dc                     ; number of inserts pending
+    beq pedit04
+pedit03
+    jmp MAINIRQ                 ; not yet?  perform normal system IRQ
+
+; if we get here, clean up from cursor wink and bail out of the IRQ
+pedit04
+    jsr UDTIM                   ; keep the clock running even if someone leans on STOP
+    ;sec                        ; because f7a1 debounce loop always sets carry
+    inc $a7                     ; turn off cursor
+    lda $a9                     ; true character at cursor position
+    jsr FIX_CHR                 ; ROM $E606 on 40-column BASIC4 PET
+    ldx n
+    txs                         ; reset stack frame
+    ldx z                       ; restore Forth stack pointer
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=EDITMODE
+stack=( scr -- )
+tags=editor,nosymbol
+
+#endif
+#include "align.i65"
+_editmode
+    jsr enter
+#include "page.i65"
+    .word editor
+#include "page.i65"
+editmode01
+    .word editing
+#include "page.i65"
+    .word on
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -638,6 +1200,45 @@ _plusedit
 
 ;--------------------------------------------------------------
 #if 0
+name=EDIT
+stack=( scr -- )
+tags=editor
+PETTIL's editor leverages the wonderful ROM screen editor
+on the PET, using the `STOP` key as a substitute for escape,
+not present on early PET keyboards.
+#endif
+#include "align.i65"
+_edit
+    jsr enter
+#include "page.i65"
+    .word _editmode
+#include "page.i65"
+    .word _block
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word _editzilch
+#include "pass.i65"
+edit00                          ; reentry to editor here
+    .word plit
+    .word pedit02
+#include "page.i65"
+    .word irqstore              ; enable STOP key trap
+#include "page.i65"
+    .word pedit
+#include "pass.i65"
+    .word plit
+    .word MAINIRQ
+#include "page.i65"
+    .word irqstore              ; disable STOP key trap, also does CLI
+#include "page.i65"
+    .word _editcmd              ; get and perform editor command
+#include "pass.i65"
+    .word branch
+    .byt <(edit00-*+1)          ; AGAIN
+
+;--------------------------------------------------------------
+#if 0
 name=_
 stack=( -- )
 tags=editor
@@ -705,573 +1306,6 @@ _caret
     .word _back
 #include "pass.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EDITTOPSCR
-stack=( -- )
-tags=editor,nosymbol
-
- from the top (first) screen
-
-#endif
-#include "align.i65"
-_edittopscr
-    .word zero
-#include "page.i65"
-    .word _toedit
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EDITNEXTSCR
-stack=( -- )
-tags=editor,nosymbol
-restore from the next screen or append a blank one
-
-```
-: editnextscr   ( -- )
-    1 +edit ;
-
-```
-#endif
-#include "align.i65"
-_editnextscr
-    .word one
-#include "page.i65"
-    .word _plusedit
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EDITPREVSCR
-stack=( -- )
-tags=editor,nosymbol
-
- restore from the previous screen or insert a blank one
-
-```
-: editprevscr   ( -- )
-    -1 +edit ;
-```
-#endif
-#include "align.i65"
-editprevscr
-    .word minusone
-#include "page.i65"
-    .word _plusedit
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EDITQUIT
-stack=( -- )
-tags=editor,nosymbol
-STOP-_   Quit the editor
-#endif
-#include "align.i65"
-_editquit
-    .word _update
-#include "page.i65"
-    .word editing
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word rdrop                 ; discard returns
-#include "page.i65"
-    .word rdrop
-#include "page.i65"
-    .word rdrop
-#include "pass.i65"
-    .word exit                  ; exiting from EDIT
-
-;--------------------------------------------------------------
-#if 0
-name=EDITINDEX
-stack=( -- )
-tags=editor,nosymbol,unimplemented
-
-STOP-I   Present an index screen and let the user select one to edit
-
-~wut? write this
-#endif
-#include "align.i65"
-editindex
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EDITSAVE
-stack=( -- )
-tags=editor,nosymbol
-
- STOP-S   Save all buffers to a PRG file
-
-#endif
-#include "align.i65"
-_editsave
-    .word _update
-#include "page.i65"
-    .word _clrscr
-#include "page.i65"
-    .word _savebuffers
-#include "pass.i65"
-    .word branch
-    .byt <(_editrestore-*+1)
-
-;--------------------------------------------------------------
-#if 0
-name=EDITLOAD
-stack=( -- )
-tags=editor,nosymbol
-
- STOP-L   Load a group of buffers from a PRG file
-
-#endif
-#include "align.i65"
-_editload
-    .word _clrscr
-#include "page.i65"
-    .word _loadbuffers
-#include "page.i65"
-    .word scr
-#include "page.i65"
-    .word off
-#include "pass.i65"
-    .word branch
-    .byt <(_editrestore-*+1)
-
-;--------------------------------------------------------------
-#if 0
-name=EDITVERIFY
-stack=( -- )
-tags=editor,nosymbol
-
- STOP-V   Verify a buffer file vs. memory
-
-#endif
-#include "align.i65"
-editverify
-    .word _clrscr
-#include "page.i65"
-    .word _verifybuffers
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word _pause
-#include "pass.i65"
-    .word branch
-    .byt <(_editrestore-*+1)
-
-;--------------------------------------------------------------
-#if 0
-name=EDITRESTORE
-stack=( -- )
-tags=editor,nosymbol
-
- STOP-R   Restore the current screen from the buffer
-
-#endif
-#include "align.i65"
-_editrestore
-    .word scr
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _block
-#include "page.i65"
-    .word drop
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EDITDELSCR
-stack=( -- )
-tags=editor,nosymbol,unimplemented
-
- STOP-DEL delete the current screen.  restore from next, then prev, then blank
-
-Deletes the current screen from the packet buffer.  The edit
-screen is replaced by the first available of:
-
-* The next screen in the packet buffer, if it already exists
-
-* The previous screen in the packet buffer
-
-* Screen 0 is blanked and written to the packet buffer
-
-```
-: scrdel   ( scr -- packet )
-    >pkt
-    vmbuf floor size +move
-    #blk! scr @ #blk @ 1- max
-    >edit ;
-```
-~wut? write this
-#endif
-#include "align.i65"
-editdelscr
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EDITINSSCR
-stack=( -- )
-tags=editor,nosymbol,unimplemented
-
- insert a new, blank screen
-
-~ still a little goofy when inserting multiple screens
-#endif
-#include "align.i65"
-_editinsscr
-    .word _update
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word scr
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _topkt
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word oneplus
-#include "pass.i65"
-    .word plit
-    .word -5
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word plusstore
-#include "page.i65"
-    .word _plusmove
-#include "pass.i65"
-    .word plit
-    .word editinsscr01
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word threeminus
-#include "page.i65"
-    .word five
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word numblk
-#include "page.i65"
-    .word oneplusstore
-#include "pass.i65"
-    .word branch
-    .byt <(_editrestore-*+1)
-
-editinsscr01
-    .byt $ff, $ff, $ff, $05, $80
-
-;--------------------------------------------------------------
-#if 0
-name=EDITINFO
-stack=( -- )
-tags=editor,nosymbol
-Show the user an info screen
-#endif
-#include "align.i65"
-_editinfo
-    .word _update
-#include "page.i65"
-    .word _clrscr
-#include "page.i65"
-    .word _info
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word _pause
-#include "page.i65"
-    .word _clrscr
-#include "pass.i65"
-    .word branch
-    .word <(_editrestore-*+1)
-
-;--------------------------------------------------------------
-#if 0
-name=EDITSPACE
-stack=( -- )
-tags=editor,nosymbol
-
-scan for shifted spaces
-
-```
-: editspace   ( -- )
-     vidram b/scr + vidram
-     do
-       i c@ $60 =
-       if $e0 i c! then
-    loop ;
-
-```
-#endif
-#include "align.i65"
-_editspace
-    .word vidram
-#include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word vidram
-#include "pass.i65"
-    .word pdo
-    .byt <(editspace03-*+1)
-#include "page.i65"
-editspace01
-    .word i
-#include "page.i65"
-    .word cfetch
-#include "pass.i65"
-    .word clit
-    .byt $60
-#include "page.i65"
-    .word eq
-#include "pass.i65"
-    .word qbranch               ; IF
-    .byt <(editspace02-*+1)
-#include "page.i65"
-    .word clit
-    .byte $e0
-#include "page.i65"
-    .word i
-#include "page.i65"
-    .word cstore
-#include "pass.i65"
-editspace02
-    .word ploop
-    .byt <(editspace01-*+1)
-#include "page.i65"
-editspace03
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=$INDEX
-stack=( addr char -- +index|0 )
-tags=string,ext,primitive
-returns the 1-based position of char within the counted string at addr
-otherwise returns 0
-#endif
-dolindex
-    jsr harvests2
-    lda (n),y
-    tay                         ; Y = length of string
-dolindex01
-    lda (n),y
-    eor tos
-    beq dolindex02
-    dey
-    bne dolindex01
-dolindex02
-    tya
-    jmp put0a
-
-;--------------------------------------------------------------
-#if 0
-name=EDITCMD
-stack=( -- )
-tags=editor,nosymbol
-
- get a key and perform that command
-
-#endif
-#include "align.i65"
-_editcmd
-    jsr enter
-#include "page.i65"
-    .word flipscr
-#include "page.i65"
-    .word editmenu
-#include "page.i65"
-    .word key                   ; ( editmenu char )
-#include "page.i65"
-    .word flipscr
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word dolindex
-#include "page.i65"
-    .word twostar
-#include "pass.i65"
-    .word _dodispatch
-    .word exit
-    .word _editquit-2
-    .word _editquit-2
-    .word editindex-2
-    .word _editsave-2
-    .word _editload-2
-    .word editverify-2
-    .word _editzilch-2
-    .word _editrestore-2
-    .word _editdel-2
-    .word _editcopy-2
-    .word _editpaste-2
-    .word _editspace-2
-    .word _editinfo-2
-    .word editdelscr-2
-    .word _editinsscr-2
-    .word _edittopscr-2
-    .word editnowrap-2
-    .word _editnextscr-2
-    .word editprevscr-2
-
-;--------------------------------------------------------------
-#if 0
-name=EDITMENU
-tags=editor,nosymbol
-editor menu commands (no `cfa`)
-#endif
-editmenu
-    jsr docreate
-    .byt editmenuz-*-1
-    .asc "_QISLVZRDCP ?"        ; command keys
-    .byt DELETE, INSERT, HOME, CLR, CRSRDOWN, CRSRUP
-editmenuz
-
-;--------------------------------------------------------------
-#if 0
-name=(EDIT)
-stack=( scr -- )
-tags=editor,nosymbol
-#endif
-pedit
-    stx z                       ; preserve Forth data stack pointer
-    tsx
-    stx n                       ; preserve machine stack frame pointer
-
-pedit01                         ; PET screen editor forever loop
-    jsr CHRIN                   ; Kernel - blink the cursor, wait for a line of input, ignore it
-    lda #$0d                    ; don't just leave the cursor two characters past end of line
-    jsr CHROUT                  ; Kernel - so echo the carriage return
-    jmp pedit01                 ; ... do this forever
-
-pedit02                         ; this is edit's IRQ handler, enabled/disabled by _editirqtoggle
-    lda $9b                     ; copy of contents of PIA1 Port B for testing STOP key, etc...
-    cmp #$ef                    ; test STOP key
-    bne pedit03
-                                ; looks like someone pressed STOP. Exit the editor
-                                ; but not so fast!  Are we in quotes or inserts?
-    lda $cd                     ; nonzero is quotes mode
-    ora $dc                     ; number of inserts pending
-    beq pedit04
-pedit03
-    jmp MAINIRQ                 ; not yet?  perform normal system IRQ
-
-; if we get here, clean up from cursor wink and bail out of the IRQ
-pedit04
-    jsr UDTIM                   ; keep the clock running even if someone leans on STOP
-    ;sec                        ; because f7a1 debounce loop always sets carry
-    inc $a7                     ; turn off cursor
-    lda $a9                     ; true character at cursor position
-    jsr FIX_CHR                 ; ROM $E606 on 40-column BASIC4 PET
-    ldx n
-    txs                         ; reset stack frame
-    ldx z                       ; restore Forth stack pointer
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=EDITZILCH
-stack=( -- )
-tags=editor,nosymbol
-
- STOP-Z   Zilch the paste buffer
-
-```
-: editzilch   ( -- )
-     pad paste !  pwrap 4 erase ;
-```
-#endif
-#include "align.i65"
-_editzilch
-    jsr enter
-#include "page.i65"
-    .word _pad
-#include "page.i65"
-    .word paste
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word pwrap
-#include "page.i65"
-    .word four
-#include "page.i65"
-    .word erase
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EDITMODE
-stack=( scr -- )
-tags=editor,nosymbol
-
-#endif
-#include "align.i65"
-_editmode
-    jsr enter
-#include "page.i65"
-    .word editor
-#include "page.i65"
-editmode01
-    .word editing
-#include "page.i65"
-    .word on
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EDIT
-stack=( scr -- )
-tags=editor
-PETTIL's editor leverages the wonderful ROM screen editor
-on the PET, using the `STOP` key as a substitute for escape,
-not present on early PET keyboards.
-#endif
-#include "align.i65"
-_edit
-    jsr enter
-#include "page.i65"
-    .word _editmode
-#include "page.i65"
-    .word _block
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word _editzilch
-#include "pass.i65"
-edit00                          ; reentry to editor here
-    .word plit
-    .word pedit02
-#include "page.i65"
-    .word irqstore              ; enable STOP key trap
-#include "page.i65"
-    .word pedit
-#include "pass.i65"
-    .word plit
-    .word MAINIRQ
-#include "page.i65"
-    .word irqstore              ; disable STOP key trap, also does CLI
-#include "page.i65"
-    .word _editcmd              ; get and perform editor command
-#include "pass.i65"
-    .word branch
-    .byt <(edit00-*+1)          ; AGAIN
 
 ;--------------------------------------------------------------
 #if 0
