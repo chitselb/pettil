@@ -200,8 +200,7 @@ symplus
     ldy #2
     lda (ip),y
     jsr sympluss
-    lda #2
-    jmp pad
+    jmp pad3
 
 sympluss
     sta ACC
@@ -697,30 +696,59 @@ nextvocab01
 
 ;--------------------------------------------------------------
 #if 0
-name=FOUND?
+name=(FOUND?)
 stack=( nfa -- xfa -1|0|1 )
 tags=interpreter,forth-83,conspiracy,nosymbol
 
-`nfa` is the word we are looking for.  It will usually be found in `n7`
-`xfa` is the result,
-    either (unfound) `nfa` (always 0 flag)
-    or the `cfa` of (found) `nfa`.
-        Flag is +1 for immediate,
-        -1 for not so much
+#endif
+pfoundq
+    brk
+    .byt ld | TOS
+    .byt st | N5                       ; 1
+    .byt ld | N8
+    .byt st | N4
+    .byt pull
+    .byt st | N7
+    .byt st | N3
+    .byt pull
+    .byt nxt
 
-(FIND) first searches all unsorted names beginning at SYMTAIL, without regard
-to name length.  If it fails to find the word there,
-it tries the hash list, which is sorted in ascending size
-order.  Vocabularies are searched first, beginning with CONTEXT and chaining
-up until core (0) is reached.  The vocabid is appended to the word when
-searching that vocabulary.  Only one symbol within a vocabulary may be
-active (unsmudged) at a time.  Smudged words are ignored.  The same symbol
-may be active within more than one vocabulary.
+;--------------------------------------------------------------
+#if 0
+name=FOUND?
+stack=( nfa -- xfa flag )
+tags=interpreter,forth-83,conspiracy
+This replaces the Forth-83 standard word `find`, idea from Albert van der Horst
+in comp.lang.forth
 
- returns
-       ( cfa -1 ) found normal word
-       ( cfa 1 ) found immediate word
-       ( name 0 ) not in dictionary
+|^`nfa`|^the `name` we are looking for<br/>(e.g. counted string in `tib` buffer)|<|
+|^`xfa`|^`flag`|<|
+|nfa|0|not found|
+|cfa|-1|found normal word|
+|cfa|+1|found immediate word|
+
+```
+Consider this:
+
+forth editor assembler
+vocabulary tools
+tools definitions
+```
+|>|Search order|<|h
+|1|`tools` vocabulary|`symtail`|unsorted|
+|2|`tools` vocabulary|`thread`|sorted|
+|3|`assembler` vocabulary|`symtail`|unsorted|
+|4|`assembler` vocabulary|`thread`|sorted|
+|5|`editor` vocabulary|`symtail`|unsorted|
+|6|`editor` vocabulary|`thread`|sorted|
+|7|`core` vocabulary|`symtail`|unsorted|
+|8|`core` vocabulary|`thread`|sorted|
+|9|not found|<|<|
+
+`core` is always the last vocabulary searched.  A name/vocabulary combination
+is `unique` meaning it has at most one active symbol.  Prior copies of
+redefined symbols remain in the symbol table, smudged. Smudged words are
+ignored (not a match) by `found?`
 
 ```
 : found?   ( name -- xfa flag )
@@ -815,16 +843,18 @@ foundq03                        ; found it
 #include "page.i65"
     .word exit
 
-pfoundq
+;--------------------------------------------------------------
+#if 0
+name=((CREATE))
+stack=( )
+tags=compiler,nosymbol
+Sweet16 to squeeze `create`
+
+#endif
+#include "align.i65"
+ppcreate
+    jsr harvests8
     brk
-    .byt ld | TOS
-    .byt st | N5                       ; 1
-    .byt ld | N8
-    .byt st | N4
-    .byt pull
-    .byt st | N7
-    .byt st | N3
-    .byt pull
     .byt nxt
 
 ;--------------------------------------------------------------
@@ -935,171 +965,21 @@ _pcreate
     .word zeq
 #include "pass.i65"
     .word qerror
-    .byt 4                      ; DEFINITION UNFINISHED
+    .byt 4                      ; MISSING NAME
 #include "page.i65"
     .word bl
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
     .word _name
 #include "page.i65"
-    .word qdup
-#include "pass.i65"
-    .word qbranch
-    .byt <(pcreate03-*+1)
-#include "page.i65"
-    .word _foundq               ;( nfa 0 ; not found )
-#include "page.i65"
-    .word qdup
-#include "page.i65"
-    .word xyzzy
-#include "pass.i65"
-    .word qbranch
-    .byt <(pcreate02-*+1)
-#include "page.i65"
-    .word clit
-    .byt RVSON
-#include "page.i65"
-    .word emit
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word _iddot
-#include "page.i65"
-    .word redefined
-#include "page.i65"
-    .word store
-#include "pass.i65"
-    .word _pdq
-    .byt pcreate01-*-1
-    .byt RVSOFF
-    .asc    " EXISTS "
-pcreate01
-#include "page.i65"
-    .word here
-#include "page.i65"
-
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word zeq
-#include "pass.i65"
-    .word qbranch
-    .byt <(pcreate03-*+1)
-#include "page.i65"
-    .word twodrop
-    .word exit
-#include "page.i65"
-pcreate03
-    .word current
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-;    .word _pvfind
-#include "page.i65"
-    .word nip
-#include "pass.i65"
-    .word qbranch
-    .byt <(pcreate02-*+1)
-#include "page.i65"
-    .word clit
-    .byt RVSON
-#include "page.i65"
-    .word emit
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word _iddot
-#include "page.i65"
-    .word redefined
-#include "page.i65"
-    .word store
-#include "pass.i65"
-    .word _pdq
-    .byt pcreate01x-*-1
-    .byt RVSOFF
-    .asc    " EXISTS "
-pcreate01x
-#include "page.i65"
-    .word here
-#include "page.i65"
-pcreate02
-    .word dup
-#include "page.i65"
-    .word _bloomfilter
-#include "page.i65"
-    .word cbitstore
-#include "page.i65"
-    .word symtail
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word newest
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word symlen
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word current
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word qdup
-#include "pass.i65"
-    .word qbranch
-    .byt <(pcreate04-*+1)
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word cfetch
-#include "pass.i65"
-    .word clit
-    .byt $40
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-pcreate04
     .word twodup
 #include "page.i65"
-    .word plus
+    .word tosyms
 #include "page.i65"
-    .word dup
+    .word current
 #include "page.i65"
-    .word symtail
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word threecoff
-#include "page.i65"
-    .word cmove
+    .word rot
 #include "page.i65"
     .word _cfacomma
 #include "page.i65"
@@ -1107,11 +987,7 @@ pcreate04
 #include "page.i65"
     .word threeminus
 #include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word store
-#include "pass.i65"
-    .word exit
+    .word ppcreate
 
 ;--------------------------------------------------------------
 #if 0
