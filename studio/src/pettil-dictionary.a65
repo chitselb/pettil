@@ -175,6 +175,11 @@ tags=ext,primitive,nfa,nosymbol
 
 #endif
 symcopy
+    lda #>(next-1)
+    pha
+    lda #<(next-1)
+    pha
+symcopys
     jsr symlens
     adc #0
     tay
@@ -183,7 +188,7 @@ symcopy01
     sta (ACC+2*N7),y
     dey
     bpl symcopy01
-    jmp next
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -223,7 +228,6 @@ Always returns a value between 0 and 63, which is used as an index into a
 
 the sum of all the digits within the word
 (each digit is incremented before it is summed, so 0 --> +1, 9 --> +10
-
 
 The dictionary Bloom filter tries to answer the question,
 'is this word a number or does it contain numbers?'
@@ -372,26 +376,7 @@ inactive any names that have been [[REDEFINED]].
 #endif
 smudge
     sec
-    lda #>(drop-1)
-    pha
-    lda #<(drop-1)
-    pha
-    ;fall through
-;--------------------------------------------------------------
-#if 0
-name=?SMUDGE
-stack=( nfa -- nfa )
-tags=compiler,nosymbol
-Smudges or unsmudges the byte pointed to by `tos`
-
-|<br><i>inputs</i>|<|
-|<b>C</b>|<b>0</b> unsmudge<br/><b>1</b> smudge|
-|<b>TOS</b>|NFA address|
-|<br><i>returns</i>|<|
-|^<b>A</b>|altered byte|
-|^<b>Y</b>|<b>0</b>|
-#endif
-qsmudge
+    ;
     php
     ldy #0
     lda (tos),y
@@ -399,29 +384,7 @@ qsmudge
     plp
     ror
     sta (tos),y
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=UNSMUDGECLONE16
-stack=( nfa -- nfa )
-tags=interpreter,ext,nosymbol
-Unsmudge the last clone
-#endif
-unsmudgeclone16
-    clc
-    bcc qsmudge                 ; bra
-
-;--------------------------------------------------------------
-#if 0
-name=SMUDGECLONE16
-stack=( nfa -- nfa )
-tags=interpreter,ext,nosymbol
-Unsmudge the last clone
-#endif
-smudgeclone16
-    sec
-    bcs qsmudge                 ; bra
+    jmp drop
 
 ;--------------------------------------------------------------
 #if 0
@@ -597,21 +560,19 @@ not found
 `n8h`
 #endif
 pseek
+    brk
+    .byt ldd | TOS
+    .byt st | N3
+    .byt rtn                    ; start of thread `n3`
+pseekb
     lda ACC+2*N4+1              ; toggle sorted/unsorted flag in `n4h`
     eor #$FF
     sta ACC+2*N4+1              ; sorted = 0; unsorted = $FF
-    ldy #0
-    lda (tos),y
-    sta ACC+2*N3                ; try to shorten this
-    iny
-    lda (tos),y
-    sta ACC+2*N3+1              ; start of thread `n3`
 pseek00
     jsr symlens
     beq pseek08                 ; not found!
-    tay
-    ror                         ; save the C (vocab) flag for later
-    cpy ACC+2*N4                ; compare curr vs seek lengths
+    ror ACC                     ; stash the `c` (vocab) flag
+    cmp ACC+2*N4
     beq pseek02                 ; same length? check it
     bcc pseek01                 ; curr length is shorter, keep try
     bit ACC+2*N4+1              ; is this list sorted?
@@ -621,24 +582,30 @@ pseek01
     jsr sympluss                ; next!
     bne pseek00                 ; bra
 pseek02
-    asl                         ; restore C (vocab) flag from before
-    bcc pseek03
+    ;ldy #0                     ; thanks, `symlens`
+    lda (ACC+2*N3),y
+    bmi pseek01                 ; ignore smudged
+    ldy ACC+2*N8
+    bit ACC                     ; check stashed (vocab) flag
+    bpl pseek03
     lda ACC+2*N5                ; vocab we are looking for
     iny
-    .byt $2C
+    .byt $2C                    ; BIT abs opcode
 pseek03
     lda (ACC+2*N7),y            ; `n7` name we are looking for
 pseek04
+    ;
     eor (ACC+2*N3),y            ; `n3` current name under consideration
     bne pseek01
     dey
     bne pseek03
 pseek07
     clc                         ; found, false (inverted flag)
-    .byt $29
+    .byt $29                    ; AND imm opcode
 pseek08
     sec                         ; not found, true
 pseek09
+    ;
     jmp putc
 
 ;--------------------------------------------------------------
@@ -697,18 +664,18 @@ nextvocab01
 ;--------------------------------------------------------------
 #if 0
 name=(FOUND?)
-stack=( nfa -- xfa -1|0|1 )
+stack=( name 1 -- )
 tags=interpreter,forth-83,conspiracy,nosymbol
 
 #endif
 pfoundq
     brk
-    .byt ld | TOS
-    .byt st | N5                       ; 1
-    .byt ld | N8
+    .byt set | N5
+    .word $100                  ; `n5l` search vocab; `n5h` vocabs index
+    .byt ld | N8                ; `n4` `n8` len
     .byt st | N4
-    .byt pull
-    .byt st | N7
+    .byt ld | TOS
+    .byt st | N7                ; `n3` `n7` name
     .byt st | N3
     .byt pull
     .byt nxt
@@ -727,14 +694,8 @@ in comp.lang.forth
 |cfa|-1|found normal word|
 |cfa|+1|found immediate word|
 
-```
-Consider this:
-
-forth editor assembler
-vocabulary tools
-tools definitions
-```
-|>|Search order|<|h
+|^`forth editor assembler`<br/>`vocabulary tools`<br/>`tools definitions`<br/>|<|<|<|
+|>|Search order example|<|<|h
 |1|`tools` vocabulary|`symtail`|unsorted|
 |2|`tools` vocabulary|`thread`|sorted|
 |3|`assembler` vocabulary|`symtail`|unsorted|
@@ -787,8 +748,6 @@ if still not found, 0
 #include "align.i65"
 _foundq
     jsr enter
-#include "page.i65"
-    .word one
 #include "page.i65"
     .word pfoundq
 #include "page.i65"
@@ -846,15 +805,48 @@ foundq03                        ; found it
 ;--------------------------------------------------------------
 #if 0
 name=((CREATE))
-stack=( )
+stack=( symtail cfa' -- newest )
 tags=compiler,nosymbol
 Sweet16 to squeeze `create`
 
 #endif
 #include "align.i65"
 ppcreate
-    jsr harvests8
+    jsr harvests10
     brk
+    .byt popd | N0               ; symtail @
+    .byt st | N5
+    .byt ld | TOS               ; cfa'
+    .byt std | N5               ; !
+    .byt ld | N5
+    .byt st | N7                ; newest
+    .byt add | N8
+    .byt st | N5
+    .byt inr | N5
+    .byt ext
+    .word symcopys              ; copy the symbol/length
+    .byt inr | N7
+    .byt ldi | N1
+    .byt bz , <(ppcreate01-*-2)
+    .byt sti | N5
+    .byt set | TOS
+    .word $40
+    .byt pop | N7
+    .byt add | TOS
+    .byt sti | N7
+ppcreate01
+    .byt dcr | N7               ; newest
+    .byt ld | N7                ; newest
+    .byt st | TOS
+    .byt ld | N5
+    .byt std | N0               ; symtail !
+    .byt push
+    .byt ld | N4                ; set up for (seek)
+    .byt st | N3                ; `n3` is symbol pointer `sym0`
+    .byt ld | N8
+    .byt st | N4                ; `n4l` is length, `n4h` is 0 (unsorted)
+    .byt ld | N1
+    .byt st | N5                ; `n5` is seek vocab
     .byt nxt
 
 ;--------------------------------------------------------------
@@ -862,96 +854,28 @@ ppcreate
 name=(CREATE)
 stack=( cfa -- )
 tags=compiler,nosymbol
-* for duplicate names (same name & vocabulary)
-** issues "//name// EXISTS" warning message
-** sets [[REDEFINED]] user variable
-* new symbol table entry
-** symbol CFA links back to [[HERE]]
-** compiles page-aligned `JSR cfa` at [[HERE]]
+Create a new symbol in the symbol table, emit a warning if it exists,
+and manage `redefined`.
 
-~wut? rewrite
-
-
-get next token from the input stream
-nada? bye.  maybe error DEFINITION UNFINISHED
-
-search current vocabulary first, if nonzero
-search symnew
-search Forth vocabulary thread
-don't search other vocabularies in VOCABS
-
-
-* Frame out the word with BL NAME
-* Check length = 0? exit
-* Search current (where definitions are added) vocabulary first
-* found it?
-** It's a duplicate.
-** Tell the user RVS {word} OFF EXISTS
-** REDEFINED !
-** remember to deactivate (smudge) the active clone at the very end during close-definition
-* turn on bloom bit
-* set NEWEST
-
-append to symtail
-cfa
-length & name
-vocabulary byte
-update symtail
-symtail symtail (forget).teardown   cheesy trick to use this from (CREATE)
-triple null
-
+||found|not found|h
+|`redefined`|prior|0|
+|unsmudged?|prior|`newest`|
 ```
 : (create)   ( cfa -- )
-    >r  bl word                 ( cfa addr size )
-    dup 0=  4 ?error            \ DEFINITION UNFINISHED
-    current c@                  ( addr size voabcid ; cfa )
-    (vfind)
-
-
-    set N7 = symnew
-    r> cfa++
-
-    current c@ (vfind) nip
+    span @ 0= 4 ?error          \ "MISSING NAME"
+    bl name
+    bloom ( symtail 2+ )
+    current 2swap over cfa,
+    >syms here 3- ((create))
+    3coff dup smudge newest !
+    false (seekb)
     if
-        [ RVSON ] cliteral emit
-        dup id.
-        redefined !
-        ." [RVSOFF] EXISTS"
-        here
-    then
-    ( cfa here )
-    dup bloom# >bit bloom + cbit!       \ add to bloom filter
-    ( cfa here )
-    symtail @  dup>r  2+ dup newest !   \ set NEWEST
-    ( cfa here symtail+2 ; symtail )
-    over sym.len 1+
-    ( cfa here symtail+2 sym.len+1 ; symtail )
-
-    current @ ?dup                      \ are we adding to a vocabulary?
-    if
-    ( cfa here symtail+2 sym.len+1 current ; symtail )
-        >r  here c@ $40 or here c!      \ set vocabulary bit
-    ( cfa here symtail+2 sym.len+1+1 ; current symtail )
-        r> over here + c!  1+
-    ( cfa here symtail+2 sym.len+1+1 ; symtail )
-    then
-    ( cfa here symtail+2 sym.len+1+voc ; symtail )
-
-    2dup +
-    ( cfa here symtail+2 len+1 len+symtail+3 ; symtail )
-    dup symtail ! 3erase              \ mark new symtail
-    ( cfa here symtail+2 len+1 ; symtail )
-    cmove cfa,
-    ( cfa ; symtail )
-    here 3- r> ! ;
-
-: (create)   ( cfa -- )
-    span @ 0= 4 ?error          \ definition unfinished
-    bl name ?dup
-    if
-        found? ?dup
-        if
-
+        unsmudge
+    else
+        <n3 dup redefined !
+        RVSON emit
+        id. ." exists{OFF}"
+    then ;
 ```
 #endif
 #include "align.i65"
@@ -969,37 +893,83 @@ _pcreate
 #include "page.i65"
     .word bl
 #include "page.i65"
-    .word xyzzy
-#include "page.i65"
     .word _name
 #include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word tosyms
+    .word bloom                 ; aka `symtail` +2
 #include "page.i65"
     .word current
 #include "page.i65"
-    .word rot
+    .word twoswap
+#include "page.i65"
+    .word over
 #include "page.i65"
     .word _cfacomma
+#include "page.i65"
+    .word tosyms
 #include "page.i65"
     .word here
 #include "page.i65"
     .word threeminus
 #include "page.i65"
     .word ppcreate
+#include "page.i65"
+    .word threecoff
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word smudge
+#include "page.i65"
+    .word newest
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word false                 ; make room for `(seekb)` result
+#include "page.i65"
+    .word pseekb
+#include "page.i65"
+    .word xyzzy
+#include "pass.i65"
+    .word qbranch
+    .byt <(pcreate01-*+1)
+#include "page.i65"
+    .word unsmudge
+#include "pass.i65"
+    .word branch
+    .byt <(pcreate03-*+1)
+#include "page.i65"
+pcreate01
+    .word zpfrom
+    .byt ACC+2*N3
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word redefined
+#include "page.i65"
+    .word store
+#include "pass.i65"
+    .word clit
+    .byt RVSON
+#include "page.i65"
+    .word emit
+#include "page.i65"
+    .word _iddot
+#include "pass.i65"
+    .word _pdq
+    .byt <(pcreate02-*-1)
+    .asc " EXISTS",RVSOFF
+pcreate02
+#include "pass.i65"
+pcreate03
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
 name=?VMMOVE
 stack=( newsymtab -- )
 tags=ext,nosymbol
-
 * if `#blk` nonzero, move `vmbuf` area
-
-
-
-
 
 ```
 : ?vmmove   ( newsymtab -- )
