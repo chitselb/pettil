@@ -550,7 +550,7 @@ not found
     vocabs+ false
 
 `n4l` seeking length
-`n4h` flag: dictionary segment is sorted by size (or not)
+`n4h` flag: dictionary segment is sorted by size (0) or unsorted ($FF)
 `n3` current nfa
 `n5l` seeking vocab
 `n5h` vocabs index
@@ -562,8 +562,8 @@ not found
 pseek
     brk
     .byt ldd | TOS
-    .byt st | N3
-    .byt rtn                    ; start of thread `n3`
+    .byt st | N3                ; `n3` is start of thread
+    .byt rtn
 pseekb
     lda ACC+2*N4+1              ; toggle sorted/unsorted flag in `n4h`
     eor #$FF
@@ -571,10 +571,9 @@ pseekb
 pseek00
     jsr symlens
     beq pseek08                 ; not found!
-    ror ACC                     ; stash the `c` (vocab) flag
     cmp ACC+2*N4
     beq pseek02                 ; same length? check it
-    bcc pseek01                 ; curr length is shorter, keep try
+    bcc pseek01                 ; curr length is shorter, try another
     bit ACC+2*N4+1              ; is this list sorted?
     bpl pseek08
 pseek01
@@ -585,16 +584,16 @@ pseek02
     ;ldy #0                     ; thanks, `symlens`
     lda (ACC+2*N3),y
     bmi pseek01                 ; ignore smudged
-    ldy ACC+2*N8
-    bit ACC                     ; check stashed (vocab) flag
-    bpl pseek03
-    lda ACC+2*N5                ; vocab we are looking for
+    ldy ACC+2*N8                ; seek length
+    asl                         ; to check `vocab` flag
+    bpl pseek03                 ; branch when `n3` nfa is in `core`
     iny
-    .byt $2C                    ; BIT abs opcode
+    lda ACC+2*N5                ; seek vocab
+    bne pseek04
+    dey
 pseek03
     lda (ACC+2*N7),y            ; `n7` name we are looking for
 pseek04
-    ;
     eor (ACC+2*N3),y            ; `n3` current name under consideration
     bne pseek01
     dey
@@ -647,15 +646,17 @@ name=NEXTVOCAB?
 stack=( -- flag )
 tags=interpreter,forth-83,conspiracy,nosymbol
 Returns `true` if there is a next vocabulary
+increment the vocabulary pointer `n5+1`
+
 #endif
-nextvocab
+nextvocabq
     jsr slip                    ; leave room for the flag
     ldy ACC+2*N5                ; `n5` is current vocabulary
     beq nextvocab01             ; true -- last vocab
-    ldy ACC+2*N5+1              ; `n5h` is vocabs index
-    lda uservocabs,y
-    sta ACC+2*N5                ; new current vocabulary
+    ldy ACC+2*N5+1              ; `n5h` is the index
     iny
+    lda uservocabs+1,y
+    sta ACC+2*N5                ; new current vocabulary
 nextvocab01
     sty ACC+2*N5+1              ; bump vocabs index, or reset it
     bne pseek07                 ; we got another vocab here!           false
@@ -664,17 +665,18 @@ nextvocab01
 ;--------------------------------------------------------------
 #if 0
 name=(FOUND?)
-stack=( name 1 -- )
+stack=( name vocabs -- )
 tags=interpreter,forth-83,conspiracy,nosymbol
 
 #endif
 pfoundq
     brk
-    .byt set | N5
-    .word $100                  ; `n5l` search vocab; `n5h` vocabs index
+    .byt inr | TOS
+    .byt ldi | TOS
+    .byt st | N5                ; `n5l` is first vocab; `n5h` is 0po
     .byt ld | N8                ; `n4` `n8` len
     .byt st | N4
-    .byt ld | TOS
+    .byt pull
     .byt st | N7                ; `n3` `n7` name
     .byt st | N3
     .byt pull
@@ -743,11 +745,20 @@ if still not found, 0
         set.76 swap73
         ext-until ?exit
         1- c@+
+: found?   ( name -- xfa flag )
+    vocabs (found?) bloomfilter cbit@
+    if
+        symnew (seek)
+        if
+            symtab @ >thread (seek)
+
 ```
 #endif
 #include "align.i65"
 _foundq
     jsr enter
+#include "page.i65"
+    .word vocabs
 #include "page.i65"
     .word pfoundq
 #include "page.i65"
@@ -777,7 +788,7 @@ foundq01                        ;     begin (loop through vocabs)
     .word qbranch               ; inverted flag, so branch if found
     .byt <(foundq03-*+1)
 #include "page.i65"
-    .word nextvocab
+    .word nextvocabq
 #include "pass.i65"
     .word qbranch               ; loop if more vocabs
     .byt <(foundq01-*+1)
@@ -928,8 +939,6 @@ _pcreate
     .word false                 ; make room for `(seekb)` result
 #include "page.i65"
     .word pseekb
-#include "page.i65"
-    .word xyzzy
 #include "pass.i65"
     .word qbranch
     .byt <(pcreate01-*+1)
