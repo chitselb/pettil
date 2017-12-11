@@ -931,7 +931,7 @@ Leaves a flag indicating whether the [[STOP]] key was pressed by the user
 qterminal
     lda STKEY                   ; $9B
     cmp #$EF                    ; check STOP key
-    beq xtrue
+    beq true
 
 ;--------------------------------------------------------------
 #if 0
@@ -982,16 +982,29 @@ name=TRUE
 stack=( -- -1 )
 tags=nucleus,forth-83
 #endif
-ytrue
+true
     sec
-ypushc
-    ldy #<(pushya-1)
-    lda #>(pushya-1)
-rightchere
+    ;
+xpushc
+    jsr slip
+    jmp putc
+xputtrue
+    sec
+    .byt $29
+xputfalse
+    clc
+putc
+    ldy #0
+    bcc xyyrts
+    dey                         ; you load 16 ones, and whaddya get?
+xyyrts
+    tya
+    jmp put
+
+rightcherex
     pha
     tya
     pha
-ctoyarts
     ldy #0
     bcc yyrts
     dey                         ; you load 16 ones, and whaddya get?
@@ -999,23 +1012,24 @@ yyrts
     tya
     rts
 
-xtrue
-    jsr slip
-xputtrue
-    sec
-    .byt $29
-xputfalse
-    clc
-xputc
-    ldy #0
-    bcc xyyrts
-    dey                         ; you load 16 ones, and whaddya get?
-xyyrts
-    tya
-    jmp put
-xpushc
-    jsr slip
-    jmp xputc
+;--------------------------------------------------------------
+#if 0
+name=<
+stack=( n1 n2 -- flag )
+tags=forth-83,nucleus
+Perform a signed comparison and return `true` if `n1` is less
+than `n2`
+#endif
+lt
+    jsr sub16                   ; 2OS - TOS, return (N^V)
+lt01
+    bvs xputnotn
+    eor #$80
+xputnotn
+    asl
+xputnotc
+    bcc xputtrue
+    bcs xputfalse                ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -1071,7 +1085,7 @@ betweenq
     dex
     jsr sub16                   ;lo-n
 betwq01
-    jmp putnotc
+    jmp xputnotc
 
 ;--------------------------------------------------------------
 #if 0
@@ -1109,10 +1123,11 @@ tags=forth-83,nucleus
 #endif
 zlt
     asl tos+1                   ; copy N to C
-putc
+    jmp putc
+putcx
     ldy #<(put-1)
     lda #>(put-1)               ; more 'bra' than a Hawaiian surf party here
-    bne rightchere              ; bra
+    bne rightcherex              ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -1140,27 +1155,6 @@ sub16
 
 ;--------------------------------------------------------------
 #if 0
-name=<
-stack=( n1 n2 -- flag )
-tags=forth-83,nucleus
-Perform a signed comparison and return `true` if `n1` is less
-than `n2`
-#endif
-lt
-    jsr sub16                   ; 2OS - TOS, return (N^V)
-lt01
-    bvs putnotn
-    eor #$80
-putnotn
-    asl
-putnotc
-    bcc puttrue                 ; 8 bytes for put{notc,false,true}... not bad
-putfalse
-    clc
-    bcc putc                    ; bra
-
-;--------------------------------------------------------------
-#if 0
 name=0>
 stack=( n -- flag )
 tags=forth-83,nucleus,relational
@@ -1168,12 +1162,12 @@ tags=forth-83,nucleus,relational
 #endif
 zgt
     asl tos+1
-    bcs putfalse
+    bcs xputfalse
 puttrue
     sec
     bcs putc                    ; bra
-;--
-;                       U<
+
+;--------------------------------------------------------------
 #if 0
 name=U<
 stack=( n1 n2 -- flag )
@@ -1181,7 +1175,7 @@ tags=forth-83,nucleus
 #endif
 ult
     jsr sub16                   ; also clears `z` flag
-    bne putnotc                 ; bra
+    bne xputnotc                 ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -1194,7 +1188,7 @@ Performs an unsigned compare of two doubles and leaves true if "d1" < "d2"
 dult
     jsr dsub
     inx
-    bne putnotc                 ; bra
+    bne xputnotc                 ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -1218,31 +1212,6 @@ __deq01
     .word zeq
 #include "pass.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(=)
-stack=( n1 n2 -- n1 n2 ; returns Z flag )
-tags=nucleus,relational,nosymbol
-subroutine evaluates TOS==2OS
-
-* Compares the TOS with 2OS
-* returns the Z flag
-* doesn't alter the stack
-
-|^A|^''*'' |^N|^''-'' |
-|^X||^V||
-|^Y||^Z|^''*'' |
-|>||^C||
-#endif
-peq
-    lda stackh,x    ; [4]
-    eor tos+1       ; [3]
-    sta z           ; [3]
-    lda stackl,x    ; [4]
-    eor tos         ; [3]
-    ora z           ; [3]
-    rts             ; [6]       ; Z flag is (TOS = 2OS)
 
 ;--------------------------------------------------------------
 #if 0
@@ -1277,6 +1246,31 @@ eq
     adc #0                      ; toggle bit 0 if `c` true
     lsr                         ; the answer is in the `c` flag
     bpl putc                    ; bra, replace 1st operand with flag
+
+;--------------------------------------------------------------
+#if 0
+name=(=)
+stack=( n1 n2 -- n1 n2 ; returns Z flag )
+tags=nucleus,relational,nosymbol
+subroutine evaluates TOS==2OS
+
+* Compares the TOS with 2OS
+* returns the Z flag
+* doesn't alter the stack
+
+|^A|^''*'' |^N|^''-'' |
+|^X||^V||
+|^Y||^Z|^''*'' |
+|>||^C||
+#endif
+peq
+    lda stackh,x    ; [4]
+    eor tos+1       ; [3]
+    sta z           ; [3]
+    lda stackl,x    ; [4]
+    eor tos         ; [3]
+    ora z           ; [3]
+    rts             ; [6]       ; Z flag is (TOS = 2OS)
 
 ;--------------------------------------------------------------
 #if 0
