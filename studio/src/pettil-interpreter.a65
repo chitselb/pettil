@@ -462,60 +462,6 @@ name01
 
 ;--------------------------------------------------------------
 #if 0
-name=PREFIX<
-tags=numword,nosymbol
-
-~#comfortablynumber
-#endif
-#include "align.i65"
-_prefixzpfrom
-    jsr enter
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=PREFIX=
-tags=numword,nosymbol
-Exchange the values at `tos` and the memory location
-
-
-~#comfortablynumber
-#endif
-#include "align.i65"
-_prefixzpswap
-    jsr enter
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=PREFIX>
-stack=( -- )
-tags=numword,nosymbol
-~#comfortablynumber
-#endif
-#include "align.i65"
-_prefixtozp
-    jsr enter
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=PREFIXR
-stack=( -- )
-tags=numword,nosymbol
-~#comfortablynumber
-#endif
-#include "align.i65"
-_prefixs16reg
-    jsr enter
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=PREFIXN
 stack=( -- )
 tags=numword,nosymbol
@@ -725,91 +671,48 @@ tags=numword,nosymbol
 ~#comfortablynumber
 #endif
 prefixes
+    jsr docreate
      .byt prefixes01-*-1        ; number of prefixes
      .asc "-<=>RN#$%"
 prefixes01
-    .word prefixnegate
-    .word _prefixzpfrom
-    .word _prefixzpswap
-    .word _prefixtozp
-    .word _prefixs16reg
-    .word _prefixnreg
-    .word _prefixdecimal
-    .word _prefixhex
-    .word _prefixboolean
 
 ;--------------------------------------------------------------
 #if 0
-name=FIRSTCHAR
+name=(NUMBER)
+stack=( dpl base -- d )
+tags=numword,nosymbol
+~#comfortablynumber
+#endif
+pnumber
+    brk
+    .byt ldi | TOS              ; `base c@`
+    .byt st | N6                ; base / flags=0
+    .byt pull                   ; `dpl`
+    .byt sub | ACC
+    .byt std | TOS              ; `dpl off`
+    .byt st | TOS
+    .byt push                   ; initialize result `d` to 0
+    .byt ldi | N7
+    .byt st | N8                ; `len` and bump char pointer
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=NUM.CHAR+
 stack=( -- c )
 tags=numword,nosymbol
-Return the first character of the current `number` candidate.
-
-`tos` 1st char
-`n7` address of number          (n7),0 is length
-`n8l` length of number          (n7),n8l is last char
-`n8h` pointer to next char
-
+Return next character of the number we're parsing.  Return 0 at end
 ~#comfortablynumber
 #endif
-firstchar
-    ldy #0
-    sty ACC+2*N6+1              ; pointer to next char
-    sty ACC+2*N8+1              ; pointer to next char
-    lda (ACC+2*N7),y
-    sta ACC+2*N8                ; length of number
-    ; fall through
-;--------------------------------------------------------------
-#if 0
-name=NEXTCHAR
-stack=( -- c )
-tags=numword,nosymbol
-Return the first character of the current `number` candidate.
-
-`tos` next char
-`n8l` length of number
-`n8h` pointer to next char
-
-~#comfortablynumber
-#endif
-nextchar
-    inc ACC+2*N8+1
-    ldy ACC+2*N8+1              ; pointer to next char
-    lda (ACC+2*N7),y            ; get char
-    jmp push0a
-
-;--------------------------------------------------------------
-#if 0
-name=PREFIX?
-stack=( -- )
-tags=numword,nosymbol
-Handle any number prefixes for the string at `addr`
-
-set up for `number`
-dispatch a prefix handler, if found
-
-```
-: prefix?   ( addr -- )
-
-;
-```
-~#comfortablynumber
-#endif
-#include "align.i65"
-_prefixq
-    jsr enter
-#include "pass.i65"
-    .word plit
-    .word prefixes
-#include "page.i65"
-    .word firstchar
-#include "pass.i65"
-    .word tozp                  ; `n8h` = the character under consideration
-    .byt ACC+2*N8+1             ; zeroes `r11l`
-#include "page.i65"
-;    .word _toidx
-#include "pass.i65"
-    .word exit
+numcharplus
+    brk
+    .byt dcr | N8
+    .byt ld | N8
+    .byt bz , <(numch01-*-2)
+    .byt ldi | N7
+numch01
+    .byt push
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -853,7 +756,6 @@ $                               hex
 #                               decimal
 %                               binary
 
-
 ```
 \ There is a string that is probably a number stored from addrlow..addrhigh
 \ convert a counted string to a signed double, keeping track of the decimal
@@ -865,17 +767,97 @@ $                               hex
 \   $   temporarily set `base` to hex
 \   #   temporarily set `base` to decimal
 
-: number   ( addr -- d )
-                                ( addr )
-    (number)
-                                ( )
-                                \ sets default number `base`
-                                \ zeroes quotient for `ud/mods`
+: number   ( 123 -- d )
+    (number)                    \ set things up
+                                    \ initialize prefix flags = 0
+                                    \ `n7` already has `addr`
+                                    \ `n8` already has `len`
+                                    \ set `n6` to `base`
+                                    \ push 0.
+    begin
+        num.char+ ?dup
+    while
+        " -<=>RN#$%" $index 2*
+        >dispatch
+        :digits? ,
+        :minus ,
+        :from ,  :exchange ,  :to ,
+        :r ,  :n ,
+        :decimal ,  :hex ,  :binary ,
+:num.next
+    repeat
+    ;
+
+:minus  ( -- )
+    %11101000 prefix.flags      \ -<N#-<N# disallow/set
+                                \ set prefix flag `-`
+                                    \ disallow another `-`
+                                    \ disallow `<=>`
+                                    \ disallow `rn`
+                                    \ allow `#$%`
+        >num.next               \ another character
+
+
+:<=>
+                                \ state off: "COMPILATION ONLY"
+                                \ state on: compile one of:
+                                    `tozp`
+                                    ;`tomem`
+                                    `zpex`
+                                    ;`exchgmem`
+                                    `zpfrom`
+                                    ;`memfrom`
+    ?comp                       \ compile mode only
+    %11000100 prefix.flags      \ -<N#-<N# disallow/set
+                                \ set prefix flag `<=>`
+                                    \ disallow `-`
+                                    \ disallow another `<=>`
+                                    \ allow `rn`
+                                    \ allow `#$%`
+:from
+zpfrom
+:exchange
+zpex
+:to
+tozp
+
+:register
+    %11100100 prefix.flags      \ -<N#-<N# disallow/set
+                                \ set prefix flag `rn`
+                                    \ disallow `-`
+                                    \ disallow `<=>`
+                                    \ disallow another `rn`
+                                    \ allow `#$%`
+                                \ `this.chr`
+                                \ eor #$04    r or n
+                                \ adc ACC     offset
+                                \ + 2* `value`
+
     prefix?
                                 \ addr -> n7
                                 ( flag )
 
+:r
++4
+:n
++0
 
+:base
+                                \ sets default number `base`
+    %11110001 prefix.flags      \ -<N#-<N# disallow/set
+                                \ set prefix flag `#$%`
+                                    \ disallow `-`
+                                    \ disallow `<=>`
+                                    \ disallow `rn`
+                                    \ disallow another `#$%`
+                                \ change 'n6l'
+
+:decimal
+10 >base
+:hex
+16 >base
+:binary
+2 >base
 
 
      0 0 rot count
@@ -934,23 +916,142 @@ For implementation, I'm hooking it into NUMBER so that R0 >R0 <R0 >N8 N8 <N0 >R1
 _devnumber
     jsr enter
 #include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word nip                   ; discard `addr`, already in `n7`
+#include "page.i65"
     .word base
 #include "page.i65"
-    .word fetch
+    .word pnumber
+#include "page.i65"
+devnum01
+    .word numcharplus
+#include "page.i65"
+    .word qdup
 #include "pass.i65"
-    .word tozp
-    .byt ACC+2*N6
+    .word qbranch
+    .byt <(devnum02-*+1)
 #include "page.i65"
-    .word drop
+    .word prefixes
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word dolindex
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word xyzzy
 #include "pass.i65"
-    .word tozp
-    .byt ACC+2*N7
+    .word _dodispatch
+    .word __digits-2
+    .word __minus-2
+    .word __from-2
+    .word __exchange-2
+    .word __to-2
+    .word __r-2
+    .word __n-2
+    .word __decimal-2
+    .word __hex-2
+    .word __binary-2
 #include "page.i65"
-    .word drop
-#include "page.i65"
-    .word _prefixq              ; handle prefix characters
+devnum02
+    .word exit
 #include "pass.i65"
     .word exit
+
+#include "pass.i65"
+__digits
+    .word branch
+    .byt <(devnum01-*+1)
+
+#include "pass.i65"
+__minus
+    .word exit
+
+; <
+#include "pass.i65"
+__from
+    .word _spaceship
+    .word zpfrom
+#include "pass.i65"
+    .word branch
+    .byt <(devnum01-*+1)
+
+; =
+#include "pass.i65"
+__exchange
+    .word _spaceship
+    .word zpex
+#include "pass.i65"
+    .word branch
+    .byt <(devnum01-*+1)
+
+; >
+#include "pass.i65"
+__to
+    .word xyzzy
+    .word _spaceship
+    .word tozp
+#include "pass.i65"
+    .word xyzzy
+    .word branch
+    .byt <(devnum01-*+1)
+
+#include "pass.i65"
+__r
+    .word exit
+
+#include "pass.i65"
+__n
+    .word exit
+
+#include "pass.i65"
+__decimal
+    .word exit
+
+#include "pass.i65"
+__hex
+    .word exit
+
+#include "pass.i65"
+__binary
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=<=>
+stack=( -- )
+tags=fig,forth-83,interpreter,nosymbol
+The Forth interpreter loop
+
+#endif
+#include "align.i65"
+_spaceship
+    jsr enter
+#include "pass.i65"
+;    .word nflagsq
+    .byt %01000000
+    .byt %1100
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word msb
+#include "pass.i65"
+    .word clit
+    .byt %1000000
+#include "page.i65"
+    .word andx
+#include "pass.i65"
+    .word qerror
+    .byt 3
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word fetch
 
 ;--------------------------------------------------------------
 #if 0
