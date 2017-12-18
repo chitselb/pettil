@@ -470,7 +470,7 @@ tags=numword,nosymbol
 prefixes
     jsr docreate
      .byt prefixes01-*-1        ; number of prefixes
-     .asc "-<=>RN#$%"
+     .asc ".-<=>RN#$%"
 prefixes01
 
 ;--------------------------------------------------------------
@@ -484,11 +484,10 @@ pnumber
     brk
     .byt ldi | TOS              ; `base c@`
     .byt st | N6                ; base / flags=0
-    .byt pull                   ; `dpl`
     .byt sub | ACC
-    .byt std | TOS              ; `dpl off`
     .byt st | TOS
     .byt push                   ; initialize result `d` to 0
+    .byt push                   ; leave a flag for `3 ?error`
     .byt ldi | N7
     .byt st | N8                ; `len` and bump char pointer
     .byt nxt
@@ -619,12 +618,12 @@ zpex
 tozp
 
 :register
-    %11100100 prefix.flags      \ -<N#-<N# disallow/set
+    %11110010 prefix.flags      \ -<N#-<N# disallow/set
                                 \ set prefix flag `rn`
                                     \ disallow `-`
                                     \ disallow `<=>`
                                     \ disallow another `rn`
-                                    \ allow `#$%`
+                                    \ disallow `#$%`
                                 \ `this.chr`
                                 \ eor #$04    r or n
                                 \ adc ACC     offset
@@ -715,13 +714,18 @@ _devnumber
 #include "page.i65"
     .word dpl
 #include "page.i65"
+    .word on
+#include "page.i65"
     .word nip                   ; discard `addr`, already in `n7`
 #include "page.i65"
     .word base
 #include "page.i65"
-    .word pnumber
-#include "page.i65"
+    .word pnumber               ; ( 0. false )
+#include "pass.i65"
 devnum01
+    .word qerror                ; is prefix disallowed?  "NOT FOUND"
+    .byt 3
+#include "page.i65"
     .word numcharplus
 #include "page.i65"
     .word qdup
@@ -738,16 +742,17 @@ devnum01
     .word twostar
 #include "pass.i65"
     .word _dodispatch
-    .word __digits-2
-    .word __minus-2
-    .word __from-2
-    .word __exchange-2
-    .word __to-2
-    .word __r-2
-    .word __n-2
-    .word __decimal-2
-    .word __hex-2
-    .word __binary-2
+    .word __digits-2            ; digit <base
+    .word __decimal-2           ; .
+    .word __minus-2             ; -
+    .word __spaceship-2         ; <
+    .word __spaceship-2         ; =
+    .word __spaceship-2         ; >
+    .word __register-2          ; R
+    .word __register-2          ; N
+    .word __base-2              ; #
+    .word __base-2              ; $
+    .word __base-2              ; %
 #include "page.i65"
 devnum02
     .word exit
@@ -756,97 +761,170 @@ devnum02
 
 #include "pass.i65"
 __digits
-    .word branch
-    .byt <(devnum01-*+1)
-
-#include "pass.i65"
-__minus
-    .word exit
-
-; <
-#include "pass.i65"
-__from
-    .word _spaceship
-    .word zpfrom
-#include "pass.i65"
-    .word branch
-    .byt <(devnum01-*+1)
-
-; =
-#include "pass.i65"
-__exchange
-    .word _spaceship
-    .word zpex
-#include "pass.i65"
-    .word branch
-    .byt <(devnum01-*+1)
-
-; >
-#include "pass.i65"
-__to
     .word xyzzy
-    .word _spaceship
-    .word tozp
-#include "pass.i65"
-    .word xyzzy
+#include "page.i65"
+    .word digits
+#include "page.i65"
     .word branch
     .byt <(devnum01-*+1)
+#if 0
+name=DIGITS
+stack=( ~? flag )
+tags=numword,nosymbol
+Crunch through allowable characters, by now limited to just digits in the
+current number base at `n6` and a first occurrence of decimal point (`.`)
 
-#include "pass.i65"
-__r
-    .word exit
+For valid digits, `multiply` the double at `n0-n3` by `n6` and add the digit
 
-#include "pass.i65"
-__n
-    .word exit
+umstar
+    lda stackl,x
+    sta n+4
+    lda stackh,x                ; multiplicand in tos
+    sta n+5                     ; multiplier in N2
+    jsr multiply                ; 16 bit unsigned multiply
+    lda n
+    sta stackl,x
+    lda n+1
+    sta stackh,x
+    lda n+2
+    ldy n+3
+    jmp put
+
+multiply
+    lda #0                      ; unsigned multiply tos*N2 destroys tos
+    sta n+2                     ; clear upper half of product
+    sta n+3
+    ldy #16
+rshift
+    lsr tos+1
+    ror tos
+    bcc rrot                    ; Go rotate right if c = 0
+    clc
+    lda n+2                     ; Get upper half of product
+    adc n+4                     ; and add multiplicand toit
+    sta n+2
+    lda n+3
+    adc n+5
+rrot
+    ror                         ; shift partial product right
+    sta n+3
+    ror n+2
+    ror n+1
+    ror n
+    dey                         ; Decrement bit count and
+    bne rshift                  ; loop
+    rts
+
+
+#endif
+digits
+    lda #%11110000              ; no more prefixes
+    jsr flagme
+    jmp next
 
 #include "pass.i65"
 __decimal
+    .word xyzzy
+#include "page.i65"
+    .word punkt
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word branch
+    .byt <(devnum01-*+1)
+
+punkt
+    lda #%11110000
+    jsr flagme
+    jmp next
+
+#include "pass.i65"
+__minus
+    .word xyzzy
+#include "page.i65"
+    .word negnum
+
+negnum
+    lda #%11101000              ; - < N #   - < N #
+    jsr flagme                  ; disallow  set
+    jmp swap
+
+; <=>
+#include "pass.i65"
+__spaceship
+    .word xyzzy
+#include "page.i65"
+;    .word qcomp
+#include "page.i65"
+    .word spaceship
+#include "pass.i65"
+    .word branch
+    .byt <(devnum01-*+1)
+
+spaceship
+    dex
+    ldy ACC
+    lda spaceshiph-'<',y
+    sta stackh,x
+    lda spaceshipl-'<',y
+    sta stackl,x
+    lda #%11000100              ; no `-` or other `<=>`
+flagmerotate
+    jsr flagme
+    jmp dashrot
+
+spaceshipl
+    .byt <zpfrom, <zpex, <tozp
+spaceshiph
+    .byt >zpfrom, >zpex, >tozp
+
+flagme
+    dex
+    pha
+    and ACC+2*N6+1              ; flags
+    sta stackh,x
+    sta stackl,x                ; sloppy (but valid) flag
+    pla
+    ora ACC+2*N6+1
+    sta ACC+2*N6+1
+    rts
+
+#include "pass.i65"
+__register
+    .word xyzzy
+#include "page.i65"
+    .word register
+#include "pass.i65"
     .word exit
 
-#include "pass.i65"
-__hex
-    .word exit
+register
+    lda #10
+    sta ACC+2*N6                ; set base to decimal
+    dex
+    sec
+    lda ACC
+    sbc #'N'                    ; 0 or 4
+    sta stackl,x
+    lda #0
+    sta stackh,x
+    dex
+    lda #%11110010
+    bne flagmerotate
 
 #include "pass.i65"
-__binary
-    .word exit
+__base
+    .word xyzzy
+    ldy ACC
+    lda bases-'#',y
+    sta ACC+2*N6
+    lda #%11110001
+    jsr flagme
+    jmp swap
 
-;--------------------------------------------------------------
-#if 0
-name=<=>
-stack=( -- )
-tags=fig,forth-83,interpreter,nosymbol
-The Forth interpreter loop
-
-#endif
-#include "align.i65"
-_spaceship
-    jsr enter
-#include "pass.i65"
-;    .word nflagsq
-    .byt %01000000
-    .byt %1100
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word msb
-#include "pass.i65"
-    .word clit
-    .byt %1000000
-#include "page.i65"
-    .word andx
-#include "pass.i65"
-    .word qerror
-    .byt 3
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word fetch
+bases
+    .byt 10,16,2
 
 ;--------------------------------------------------------------
 #if 0
