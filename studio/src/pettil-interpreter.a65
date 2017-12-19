@@ -485,9 +485,8 @@ pnumber
     .byt ldi | TOS              ; `base c@`
     .byt st | N6                ; base / flags=0
     .byt sub | ACC
-    .byt st | TOS
-    .byt push                   ; initialize result `d` to 0
-    .byt push                   ; leave a flag for `3 ?error`
+    .byt st | TOS               ; leave a flag for `3 ?error`
+    .byt st | N0
     .byt ldi | N7
     .byt st | N8                ; `len` and bump char pointer
     .byt nxt
@@ -720,7 +719,7 @@ _devnumber
 #include "page.i65"
     .word base
 #include "page.i65"
-    .word pnumber               ; ( 0. false )
+    .word pnumber               ; ( false )
 #include "pass.i65"
 devnum01
     .word qerror                ; is prefix disallowed?  "NOT FOUND"
@@ -767,9 +766,10 @@ __digits
 #include "page.i65"
     .word branch
     .byt <(devnum01-*+1)
+
 #if 0
 name=DIGITS
-stack=( ~? flag )
+stack=( -- flag )
 tags=numword,nosymbol
 Crunch through allowable characters, by now limited to just digits in the
 current number base at `n6` and a first occurrence of decimal point (`.`)
@@ -778,15 +778,15 @@ For valid digits, `multiply` the double at `n0-n3` by `n6` and add the digit
 
 umstar
     lda stackl,x
-    sta ACC+*2N2
+    sta ACC+2*N2
     lda stackh,x                ; multiplicand in tos
     sta ACC+2*N2+1              ; multiplier in `n2`
     jsr multiply                ; 16 bit unsigned multiply
-    lda ACC+2*N0
+    lda ACC+2*N0                ; low word
     sta stackl,x
     lda ACC+2*N0+1
     sta stackh,x
-    lda ACC+2*N1
+    lda ACC+2*N1                ; high word
     ldy ACC+2*N1
     jmp put
 
@@ -815,11 +815,38 @@ rrot
     bne rshift                  ; loop
     rts
 
-
 #endif
 digits
     lda #%11110000              ; no more prefixes
     jsr flagme
+    lda ACC
+    sec
+    sbc #$30
+    bcc digits03
+    cmp #10
+    bcc notalpha
+    sbc #7
+notalpha                        ; evaluate base(`n6`) * dresult (`n0` `n1`)
+    cmp ACC+2*N6
+    bcs digits03
+    pha
+    lda ACC+2*N6
+    sta tos
+    lda #0
+    sta tos+1
+    jsr multiply
+    pla
+    adc ACC+2*N0
+    sta ACC+2*N0
+    bcc digits03
+    inc ACC+2*N0+1
+    bne digits03
+    inc ACC+2*N1+1
+    bne digits03
+    inc ACC+2*N1+1
+
+digits03
+    sta tos                     ; sloppy flag for `number`
     jmp next
 
 #include "pass.i65"
