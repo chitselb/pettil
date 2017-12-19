@@ -528,6 +528,7 @@ puts @label   if @label == "STUDIO"
     # Adding new files here?  Also add them to src/pettil-tdict.a65
     files = \
         "pettil-studio.a65 "\
+        "pettil-name.a65 "\
         "pettil-number.a65 "\
         "pettil-user.a65 "\
         "pettil-dictionary.a65 "\
