@@ -1,0 +1,574 @@
+; pettil-number.a65
+#echo .       pettil-number.a65         Number parser
+
+;--------------------------------------------------------------
+#if 0
+name=PREFIXES
+tags=numword,nosymbol
+`number` prefix indexed jump table (no `cfa`)
+~#comfortablynumber
+#endif
+prefixes
+    jsr docreate
+     .byt prefixes01-*-1        ; number of prefixes
+     .asc ".-<=>RN#$%"
+prefixes01
+
+;--------------------------------------------------------------
+#if 0
+name=(NUMBER)
+stack=( base -- d )
+tags=numword,nosymbol
+~#comfortablynumber
+#endif
+pnumber
+    brk
+    .byt ldi | TOS              ; `base c@`
+    .byt st | N6                ; base / flags=0
+    .byt sub | ACC
+    .byt st | TOS               ; leave a flag for `3 ?error`
+    .byt st | N2
+    .byt st | N3
+    .byt ldi | N7
+    .byt st | N8                ; `len` and bump char pointer
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=NUM.CHAR+
+stack=( -- c )
+tags=numword,nosymbol
+Return next character of the number we're parsing.  Return 0 at end
+~#comfortablynumber
+#endif
+numcharplus
+    brk
+    .byt dcr | N8
+    .byt ld | N8
+    .byt bz , <(numch01-*-2)
+    .byt ldi | N7
+numch01
+    .byt push
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=:DIGITS
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+#include "pass.i65"
+__digits
+    .word xyzzy
+#include "page.i65"
+    .word digits
+#include "page.i65"
+    .word branch
+    .byt <(devnum01-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=DIGITS
+stack=( -- flag )
+tags=numword,nosymbol
+Crunch through allowable characters, by now limited to just digits in the
+current number base at `n6` and a first occurrence of decimal point (`.`)
+
+For valid digits, `multiply` the double at `n0-n3` by `n6` and add the digit
+
+umstar
+    lda stackl,x
+    sta ACC+2*N2
+    lda stackh,x                ; multiplicand in tos
+    sta ACC+2*N2+1              ; multiplier in `n2`
+    jsr multiply                ; 16 bit unsigned multiply
+    lda ACC+2*N0                ; low word
+    sta stackl,x
+    lda ACC+2*N0+1
+    sta stackh,x
+    lda ACC+2*N1                ; high word
+    ldy ACC+2*N1
+    jmp put
+
+multiply
+    lda #0                      ; unsigned multiply tos*N2 destroys tos
+    sta ACC+2*N1                ; clear upper half of product
+    sta ACC+2*N1+1
+    ldy #16
+rshift
+    lsr tos+1
+    ror tos
+    bcc rrot                    ; Go rotate right if c = 0
+    clc
+    lda ACC+2*N1                ; Get upper half of product
+    adc ACC+2*N2                ; and add multiplicand toit
+    sta ACC+2*N1
+    lda ACC+2*N1+1
+    adc ACC+2*N2+1
+rrot
+    ror                         ; shift partial product right
+    sta ACC+2*N1+1
+    ror ACC+2*N1
+    ror ACC+2*N0+1
+    ror ACC+2*N0
+    dey                         ; Decrement bit count and
+    bne rshift                  ; loop
+    rts
+
+#endif
+digits
+    lda #%11110000              ; no more prefixes
+    jsr flagme
+    lda ACC
+    sec
+    sbc #$30
+    bcc digits03
+    cmp #10
+    bcc notalpha
+    sbc #7
+notalpha                        ; evaluate base(`n6`) * dresult (`n0` `n1`)
+    cmp ACC+2*N6
+    bcs digits03
+    pha
+    lda ACC+2*N6
+    sta tos
+    lda #0
+    sta tos+1
+    jsr multiply
+    pla
+    adc ACC+2*N0
+    sta ACC+2*N0
+    bcc digits03
+    inc ACC+2*N0+1
+    bne digits03
+    inc ACC+2*N1+1
+    bne digits03
+    inc ACC+2*N1+1
+
+digits03
+    sta tos                     ; sloppy flag for `number`
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=:.
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+#include "pass.i65"
+__decimal
+    .word xyzzy
+#include "page.i65"
+    .word punkt
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word branch
+    .byt <(devnum01-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=PUNKT
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+punkt
+    lda #%11110000
+    jsr flagme
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=:-
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+#include "pass.i65"
+__minus
+    .word xyzzy
+#include "page.i65"
+    .word negnum
+
+;--------------------------------------------------------------
+#if 0
+name=NEGNUM
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+negnum
+    lda #%11101000              ; - < N #   - < N #
+    jsr flagme                  ; disallow  set
+    jmp swap
+
+;--------------------------------------------------------------
+#if 0
+name=:<=>
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+#include "pass.i65"
+__spaceship
+    .word xyzzy
+#include "page.i65"
+;    .word qcomp
+#include "page.i65"
+    .word spaceship
+#include "pass.i65"
+    .word branch
+    .byt <(devnum01-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=<=>
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+spaceship
+    dex
+    ldy ACC
+    lda spaceshiph-'<',y
+    sta stackh,x
+    lda spaceshipl-'<',y
+    sta stackl,x
+    lda #%11000100              ; no `-` or other `<=>`
+flagmerotate
+    jsr flagme
+    jmp dashrot
+
+spaceshipl
+    .byt <zpfrom, <zpex, <tozp
+spaceshiph
+    .byt >zpfrom, >zpex, >tozp
+
+;--------------------------------------------------------------
+#if 0
+name=FLAGME
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+flagme
+    dex
+    pha
+    and ACC+2*N6+1              ; flags
+    sta stackh,x
+    sta stackl,x                ; sloppy (but valid) flag
+    pla
+    ora ACC+2*N6+1
+    sta ACC+2*N6+1
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=:REGISTER
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+#include "pass.i65"
+__register
+    .word xyzzy
+#include "page.i65"
+    .word register
+
+;--------------------------------------------------------------
+#if 0
+name=REGISTER
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+register
+    lda #10
+    sta ACC+2*N6                ; set base to decimal
+    dex
+    sec
+    lda ACC
+    sbc #'N'                    ; 0 or 4 for n or r
+    sta stackl,x
+    lda #0
+    sta stackh,x
+    dex
+    lda #%11110010
+    bne flagmerotate
+
+;--------------------------------------------------------------
+#if 0
+name=:BASE
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+#include "pass.i65"
+__base
+    .word xyzzy
+    ldy ACC
+    lda bases-'#',y
+    sta ACC+2*N6
+    lda #%11110001
+    jsr flagme
+    jmp swap
+
+bases
+    .byt 10,16,2                ; #$%
+
+;--------------------------------------------------------------
+#if 0
+name=NUMBER
+stack=( addr -- d )
+tags=numword,nosymbol
+`number` rewritten for `studio`, this variant recognizes several prefix
+characters
+
+-2342
+3.14159
+
+$ffd2
+#32767
+%1001001010001011
+
+(compile-time only)
+>n8
+<r11
+r3
+n5
+
+Upper dictionary variant of `number` to support local registers and
+temporary `base` conversions in `interpret`
+
+>                               `>acc`   read ACC
+                                `>$8D`   write high, middle bytes of TIME
+                                `>$9D`   write $9D-9E
+                                            load/verify flag(lsb)
+                                            keyboard buffer pending #char(msb)
+>                               `>r0`   read ACC
+                                `>n5`   write high byte of TIME
+
+<                               `<r11`   read R11
+                                `<$8F`   read low byte of TIME
+
+R0 - R15
+N0 - N8
+
+$                               hex
+#                               decimal
+%                               binary
+
+```
+\ There is a string that is probably a number stored from addrlow..addrhigh
+\ convert a counted string to a signed double, keeping track of the decimal
+\ hook to hi-mem address to process programmer prefix characters
+
+\   -   negate
+\   +   positive
+
+\   $   temporarily set `base` to hex
+\   #   temporarily set `base` to decimal
+
+: number   ( 123 -- d )
+    (number)                    \ set things up
+                                    \ initialize prefix flags = 0
+                                    \ `n7` already has `addr`
+                                    \ `n8` already has `len`
+                                    \ set `n6` to `base`
+                                    \ push 0.
+    begin
+        num.char+ ?dup
+    while
+        " -<=>RN#$%" $index 2*
+        >dispatch
+        :digits? ,
+        :minus ,
+        :from ,  :exchange ,  :to ,
+        :r ,  :n ,
+        :decimal ,  :hex ,  :binary ,
+:num.next
+    repeat
+    ;
+
+:minus  ( -- )
+    %11101000 prefix.flags      \ -<N#-<N# disallow/set
+                                \ set prefix flag `-`
+                                    \ disallow another `-`
+                                    \ disallow `<=>`
+                                    \ disallow `rn`
+                                    \ allow `#$%`
+        >num.next               \ another character
+
+
+:<=>
+                                \ state off: "COMPILATION ONLY"
+                                \ state on: compile one of:
+                                    `tozp`
+                                    ;`tomem`
+                                    `zpex`
+                                    ;`exchgmem`
+                                    `zpfrom`
+                                    ;`memfrom`
+    ?comp                       \ compile mode only
+    %11000100 prefix.flags      \ -<N#-<N# disallow/set
+                                \ set prefix flag `<=>`
+                                    \ disallow `-`
+                                    \ disallow another `<=>`
+                                    \ allow `rn`
+                                    \ allow `#$%`
+:from
+zpfrom
+:exchange
+zpex
+:to
+tozp
+
+:register
+    %11110010 prefix.flags      \ -<N#-<N# disallow/set
+                                \ set prefix flag `rn`
+                                    \ disallow `-`
+                                    \ disallow `<=>`
+                                    \ disallow another `rn`
+                                    \ disallow `#$%`
+                                \ `this.chr`
+                                \ eor #$04    r or n
+                                \ adc ACC     offset
+                                \ + 2* `value`
+
+    prefix?
+                                \ addr -> n7
+                                ( flag )
+
+:r
++4
+:n
++0
+
+:base
+                                \ sets default number `base`
+    %11110001 prefix.flags      \ -<N#-<N# disallow/set
+                                \ set prefix flag `#$%`
+                                    \ disallow `-`
+                                    \ disallow `<=>`
+                                    \ disallow `rn`
+                                    \ disallow another `#$%`
+                                \ change 'n6l'
+
+:decimal
+10 >base
+:hex
+16 >base
+:binary
+2 >base
+
+
+     0 0 rot count
+                                ( 0 0 addr+1 len )
+     over c@ [ ascii - ] literal  =
+                                ( 0 0 addr+1 len negative? )
+     dup>r
+                                ( 0 0 addr+1 len negative? )  ( R; negative? )
+     +                          \ adjust length for sign char )
+                                ( 0 0 addr+1 lenadj )
+     over + r@ -
+                                ( 0 0 addr+1 addrhigh+1 )
+     swap  r@ -
+                                ( 0 0 addrhigh+1 addrlow )
+     dpl on                     \ -1 means no decimal place
+     ?do
+                                ( d )
+         base @ >r
+                                ( d ) ( R; base negative? )
+         i c@  r@
+                                ( )
+         digit
+                                ( -- d currdigit~?~ flag )
+         if
+             swap r@ um*
+             drop rot
+             r@ um* d+
+             dpl @ 1+  0= negate dpl +!
+         else
+             i c@ [ ascii . ] literal  =
+             dpl @ 0<  and
+             if
+                 dpl off
+             else
+                 3 fail ( abort" not found" )
+             then
+         then
+         r> drop
+                                ( R; negative? ; discard base )
+     loop
+     r>  if  dnegate  then ;
+
+Inspired by what I read about PLASMA, another 6502 retro language targeting very similar Apple II hardware, I thought, well here's 32 bytes of Sweet16 register space just sitting around while Forth spins itself dizzy at the tip of the stack. Why not put in something like local variables which map to the Sweet16 register space, and have certain sets of primitives like the outer interpreter share information there? A place to spread out some of the work and speed things up, reduce code size, maybe other goodness too.
+
+In traditional Forth, `number` leaves a signed `d` on the stack and sets `dpl`.
+
+
+
+For implementation, I'm hooking it into NUMBER so that R0 >R0 <R0 >N8 N8 <N0 >R15 etc... won't have to be in the dictionary. While I'm at it, e.g. $BEEF will momentarily switch BASE to hexadecimal and switch back after converting the NUMBER after the leading dollar-sign, #31415 for decimal constants, %1001100 for binary
+
+: number ( addr -- )
+
+```
+~#comfortablynumber
+#endif
+#include "align.i65"
+_number
+    jsr enter
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word base
+#include "page.i65"
+    .word nip                   ; discard `addr`, already in `n7`
+#include "page.i65"
+    .word pnumber               ; ( false )
+#include "pass.i65"
+devnum01
+    .word qerror                ; is prefix disallowed?  "NOT FOUND"
+    .byt 3
+#include "page.i65"
+    .word numcharplus
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word qbranch
+    .byt <(devnum02-*+1)
+#include "page.i65"
+    .word prefixes
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word dolindex
+#include "page.i65"
+    .word twostar
+#include "pass.i65"
+    .word _dodispatch
+    .word __digits-2            ; digit <base
+    .word __decimal-2           ; .
+    .word __minus-2             ; -
+    .word __spaceship-2         ; <
+    .word __spaceship-2         ; =
+    .word __spaceship-2         ; >
+    .word __register-2          ; R
+    .word __register-2          ; N
+    .word __base-2              ; #
+    .word __base-2              ; $
+    .word __base-2              ; %
+#include "page.i65"
+devnum02
+    .word exit
+#include "pass.i65"
+    .word exit
+
+#print (*-prefixes)
