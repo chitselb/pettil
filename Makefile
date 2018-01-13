@@ -12,13 +12,13 @@ clean:
 	mkdir ./tmp/
 
 launch: clean pettil
-	cd ./tmp  &&  /usr/local/bin/xpet \
+#	cd ./tmp  &&  /usr/local/bin/xpet \
 		-verbose \
 		-1 ../tapes/2017-02.tap \
 		-moncommand pettil.mon \
 		-warp \
 	pettil.prg &
-#	cd ./tmp  &&  /usr/bin/xpet       \
+	cd ./tmp  &&  /usr/bin/xpet       \
 		-verbose \
 		-1 ../tapes/2017-02.tap \
 		-moncommand pettil.mon \
@@ -71,7 +71,6 @@ tiddlypettil:
 	export MMDDYY=`date +"documentation generated %Y-%m-%d"`;sed "s/datetimestamp/$${MMDDYY}/" <./docs/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
 	cd ./tmp/tiddlypettil/ && ~/.npm-packages/bin/tiddlywiki --load ../pettil.json --rendertiddler $$:/core/save/all tiddlypettil.html text/plain >/dev/null
 	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./docs/tiddlypettil.html
-	echo . complete
 
 publish:
 	scp ./docs/tiddlypettil.html www-data@puri.chitselb.com:chitselb.com/current/public/files/
