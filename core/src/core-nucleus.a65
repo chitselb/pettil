@@ -11,60 +11,50 @@ arithmetic are unsigned.
 
 check http://6502.org/source/ for multiply and divide and stuff
 
-`tos`     multiplicand
-`n0`      multiplier
-`n1..n2`  product
-: um*   ( u1 u2 -- ud )
-    0 4 harvest
-    multiply
-    4 plants drop ;
 
+```
 umstar
-    lda #0
-    jsr pushya
-    jsr multiply
-    jsr multiply
-    jsr enter
-    .word zero
-    .word four
-    .word harvest
-    .word multiply
-    .word four
-    .word plant
-    .word exit
+    lda stackl,x
+    sta n+4
+    lda stackh,x            ;multiplicand in tos
+    sta n+5                 ;multiplier in N2
+    jsr multiply            ;16 bit unsigned multiply
+    lda n
+    sta stackl,x
+    lda n+1
+    sta stackh,x
+    lda n+2
+    ldy n+3
+    jmp put ;[26]
 
-: um*   ( u1 u2 -- d )
-\ 2dup u< if swap then
-0. 3 harvest swap (um*) 1 plant ;
-
-code (um*)   ( 0 0 -- d )
-    stackl ,x       lda,
-    n2              sta,
-    stackh ,x       lda,
-    n2 1+           sta,
-    multiply        jsr,
-    n0              lda,
-    stackl ,x       sta,
-    n0 1+           lda,
-    stackh ,x       sta,
-    n1              lda,
-    n1 1+           ldy,
-    put             jmp,
-
-pumstar
-    lsr ACC+2*N0+1
-    ror ACC+2*N0
-    bcc +
-    lda ACC+2*N1
-    clc
-    adc
-+
-    asl ACC+2*N1
-    rol ACC+2*N1+1
+multiply
+    lda #0                  ; unsigned multiply tos*N2 destroys tos
+    sta n+2                 ;clear upper half of product
+    sta n+3
+    ldy #16
+rshift
+    lsr tos+1
+    ror tos
+    bcc rrot                ;Go rotate right if c = 0
+    clc                     ; and add multiplicand to
+    lda n+2                 ;Get upper half of product
+    adc n+4                 ; it
+    sta n+2
+    lda n+3
+    adc n+5
+rrot
+    ror                     ;shift partial product right
+    sta n+3
+    ror n+2
+    ror n+1
+    ror n
+    dey                     ;Decrement bit count and
+    bne rshift
+    rts ;[38 == 64]
 
 : um*   ( u1 u2 -- ud )
-  0 0 2swap 0 (um*) ;
-
+  0 -rot 0 0 (um*) ;
+```
 #endif
 #include "align.i65"
 _umstar
@@ -72,9 +62,9 @@ _umstar
 #include "page.i65"
     .word zero
 #include "page.i65"
-    .word zero
+    .word dashrot
 #include "page.i65"
-    .word twoswap
+    .word zero
 #include "page.i65"
     .word zero
 #include "page.i65"
@@ -88,9 +78,9 @@ name=(UM*)
 stack=( -- )
 tags=nucleus,math,forth-83
 
+```
 set product to 0.
 begin
-    double product
     right shift multiplier
 if
     add multiplicand to product
@@ -98,59 +88,37 @@ then
     double multiplicand
     multiplier 0=
 until
-
-begin
-    right shift multiplier
-    double product
-    carry set?
-    if
-        add multiplicand to product
-    then
-
-
+```
 #endif
 pumstar
     jsr harvests8
-yahyah
-    jmp yahyah
-
-
-    lda stackl,x
-    sta ACC+2*N2
-    lda stackh,x                ; multiplicand in tos
-    sta ACC+2*N2+1              ; multiplier in `n2`
-    jsr multiply                ; 16 bit unsigned multiply
-    lda ACC+2*N0
-    sta stackl,x
-    lda ACC+2*N0+1
-    sta stackh,x
-    lda ACC+2*N1
-    ldy ACC+2*N1+1
-    jmp put
-multiply
-    lda #0                      ; unsigned multiply tos*N2 destroys tos
-    sta ACC+2*N1                ; clear upper half of product
-    sta ACC+2*N1+1
-    ldy #16
-rshift
-    lsr tos+1
-    ror tos
-    bcc rrot                    ; Go rotate right if c = 0
+pumstar01
+    lsr ACC+2*N2+1
+    ror ACC+2*N2
+    bcc pumstar03
     clc
-    lda ACC+2*N1                ; Get upper half of product
-    adc ACC+2*N2                ; and add multiplicand toit
-    sta ACC+2*N1
+    lda ACC+2*N1
+    adc ACC+2*N0
+    sta ACC+2*N0
     lda ACC+2*N1+1
-    adc ACC+2*N2+1
-rrot
-    ror                         ; shift partial product right
-    sta ACC+2*N1+1
-    ror ACC+2*N1
-    ror ACC+2*N0+1
-    ror ACC+2*N0
-    dey                         ; Decrement bit count and
-    bne rshift                  ; loop
-    rts
+    adc ACC+2*N0+1
+    sta ACC+2*N0+1
+    lda ACC+2*N3
+    adc tos
+    sta tos
+    lda ACC+2*N3+1
+    adc tos+1
+    sta tos+1
+pumstar03
+    asl ACC+2*N1
+    rol ACC+2*N1+1
+    rol ACC+2*N3
+    rol ACC+2*N3+1
+    lda ACC+2*N2
+    ora ACC+2*N2+1
+    bne pumstar01
+    jsr plants2
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -2500,7 +2468,8 @@ mult01
     sbc n+5
     sta n+5
 mult02
-    jsr multiply
+    ;jsr multiply
+    jsr plugh
     lda n+1
     sta stackh,x
     lda n
