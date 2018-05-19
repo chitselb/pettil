@@ -166,9 +166,9 @@ dotwoconst01
 ;--------------------------------------------------------------
 #if 0
 name=DOCONST
-stack=( -- c )
-tags=nosymbol,inner
-Runtime behavior of a word defined by CONSTANT
+stack=( -- n )
+tags=nosymbol,inner,primitive
+Child runtime action of words defined by `constant`
 #endif
 doconst
     sec
@@ -176,16 +176,9 @@ doconst
 ;--------------------------------------------------------------
 #if 0
 name=DOCCONST
-stack=( -- n )
+stack=( -- c )
 tags=nosymbol,inner,primitive
-Runtime behavior of child words defined by `cconstant`
-
-```
-_docconst
-    jsr dodoes
-    .word cfetch
-    .word exit
-```
+Child runtime action of words defined by `cconstant`
 #endif
 docconst
     clc
@@ -297,7 +290,7 @@ pquerycolon01
     lda (ip),y
     pha
     lda #<pquerycolon03
-    sta ip 
+    sta ip
     lda #>pquerycolon03
     sta ip+1
 
@@ -662,148 +655,6 @@ to properly cross a page boundary.
 | FE| FE| +1|
 | FF| FE| +1|
 
-There is probably a worst-case scenario where it is possible to
-cross two page boundaries, e.g. with [[(.")]] printing a 255-byte
-string, where the [[(.")]] was compiled at the very top of the page.
-
-|$42FC-$42FD| [[(.")]] cfa |
-|$42FE| $FF(length) |
-|$42FF-$43FE| the string |
-|$43FF| `NOP` |
-
-In this worst-case scenarios, `IP` would be set after `padjust` to
-$44FE and the next execution of [[NEXT|Zero page buffer and NEXT routine]]
-would use $4400 as the address of the following instruction.
-+
-+; `a` = offset added to `ip`
-+padjust
-+    sec
-+    adc ip
-+    tay
-+    jsr slip
-+    sty tos
-+    lda ip+1
-+    adc #0
-+    sta tos+1
-+    lda #>(padjust02-2)
-+    sta ip+1
-+    lda #<(padjust02-2)
-+    sta ip
-+    rts
-+
-+padjust02
-+    
-+padjust01
-+padjust02
-+padjust03
-+
-+padjust
-+    sec
-+    adc ip
-+    bcs padjust01
-+    tay
-+    iny
-+    bcc padjust01
-+    bne padjust01
-+    tya
-+    padjust01
-+    tya
-+    ldy ip+1
-+    bcc padjust02
-+    iny
-+padjust02
-+
-+    pha
-+    tya
-+    pha
-+
-+
-+
-+
-+
-+; a = offset to ip
-+padjust
-+    sec
-+‎    adc ip
-+‎    tay                         ; new ip low byte
-+‎    pla
-+‎    sta ACC
-+‎    pla
-+‎    sta ACC+1                   ; preserve return address
-+‎    lda ip+1
-+‎    adc #0
-+‎    iny
-+‎    bne padjust01
-+‎    iny
-+‎    adc #1
-+padjust01
-+    dey
-+‎    pha
-+‎    tya
-+‎    pha                         ; push new ip, tucked underneath return address
-+    ‎lda ACC+1
-+‎    pha
-+‎    lda ACC
-+‎    pha                         ; restore return address
-+‎    lda #>(padjust02-2)
-+‎    sta ip+1
-+‎    lda #<(padjist02-2)
-+‎    sta ip                      ; jerry-rig `next` to come back here
-+‎    rts                         ; done with phase 1
-+padjust02
-+    .word padjust03             ; phase 2, effect a branch
-+padjust03
-+    pla
-+    tay
-+‎    pla
-+‎    jmp jumpay
-+
-+
- padjust
-     sec                         ; A = offset to be added to IP
-     adc ip
-@@ -664,6 +748,44 @@ padjust06
- padjust07
-     rts
- 
-+#endif
-+padjust
-+    sec
-+    adc ip
-+    tay
-+    pla
-+    sta ACC
-+    pla
-+    sta ACC+1                   ; preserve return address
-+    lda ip+1
-+    adc #0
-+    iny
-+    bne padjust01
-+    iny
-+    adc #1
-+padjust01
-+    dey
-+    pha
-+    tya
-+    pha
-+    lda #>(padjust02-2)
-+    sta ip+1
-+    lda #<(padjust02-2)
-+    sta ip                      ; jerry-rig `next` to come back here
-+    lda ACC+1
-+    pha
-+    lda ACC
-+    pha                         ; restore return address
-+padjust07
-+    rts                         ; done with phase 1
-+padjust02
-+    .word padjust03             ; phase 2, effect a branch
-+padjust03
-+    pla
-+    tay
-+    pla
-+    jmp jumpay
-+
 #endif
 padjust
     sec                         ; A = offset to be added to IP
