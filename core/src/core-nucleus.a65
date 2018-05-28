@@ -52,8 +52,8 @@ rrot
     bne rshift
     rts ;[38 == 64]
 
-: um*   ( u1 u2 -- ud )
-  0 -rot 0 0 (um*) ;
+: um*   ( u2 u1 -- ud )
+  0 tuck dup (um*) ;
 ```
 #endif
 #include "align.i65"
@@ -61,12 +61,11 @@ _umstar
     jsr enter
 #include "page.i65"
     .word zero
+#include "pass.i65"
+    .word tozp
+    .byt ACC
 #include "page.i65"
-    .word dashrot
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word zero
+    .word tuck
 #include "page.i65"
     .word pumstar
 #include "pass.i65"
@@ -91,37 +90,36 @@ until
 ```
 #endif
 pumstar
-    jsr harvests8
-    jsr pumstars
-    jsr plants2
-    jmp next
-
-pumstars
+                                ;( multiplicand.lo multiplicand.hi multiplier )
+    jsr harvests6               ;( N0              N1              N2 )
+    stx z                       ; stash stack pointer
+pumstar01
     lsr ACC+2*N2+1
     ror ACC+2*N2
     bcc pumstar03
     clc
-    lda ACC+2*N1
-    adc ACC+2*N0
-    sta ACC+2*N0
-    lda ACC+2*N1+1
-    adc ACC+2*N0+1
-    sta ACC+2*N0+1
-    lda ACC+2*N3
-    adc tos
-    sta tos
-    lda ACC+2*N3+1
-    adc tos+1
-    sta tos+1
+    ldx #<(-4)
+pumstar02                       ; add 32-bit multiplicand to 32-bit product
+    lda <(ACC+4),x
+    adc <(ACC+2*N0+4),x
+    sta <(ACC+4),x
+    inx
+    bmi pumstar02
 pumstar03
-    asl ACC+2*N1
+    asl ACC+2*N0
+    rol ACC+2*N0+1
+    rol ACC+2*N1
     rol ACC+2*N1+1
-    rol ACC+2*N3
-    rol ACC+2*N3+1
-    lda ACC+2*N2
+    lda ACC+2*N2                ; done when multiplier reaches 0
     ora ACC+2*N2+1
-    bne pumstars
-    rts
+    bne pumstar01               ; keep go?
+    ldx z                       ; restore stack pointer
+
+    lda ACC
+    ldy ACC+1
+    dex
+    jmp slmod40d
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -2222,16 +2220,22 @@ name=S>D
 stack=( s -- d )
 tags=nucleus
 sign-extends a single into a double
+
+
+```
+: s>d   ( s -- d )
+    dup 0< ;
+```
 #endif
 #include "align.i65"
-_stod
-    jsr enter
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word zlt
-#include "pass.i65"
-    .word exit
+stod
+    lda tos+1
+    eor #$80
+    asl
+    lda #0
+    sbc #0
+    tay
+    jmp pushya
 
 ;--------------------------------------------------------------
 #if 0
