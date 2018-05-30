@@ -40,6 +40,7 @@ morecharq01
 ;--------------------------------------------------------------
 #if 0
 name=PREFIXES
+stack=( -- addr )
 tags=numword,nosymbol
 `number` prefix indexed jump table (no `cfa`)
 ~#comfortablynumber
@@ -50,144 +51,6 @@ prefixes
      .asc ".-<=>RN#$%"
 prefixes01
     .byt 0
-
-;--------------------------------------------------------------
-#if 0
-name=DIGIT
-stack=( char -- digit )
-tags=numword,nosymbol
-Throws a "NOT FOUND" exception if `char` is not a valid digit in the current number base.  Otherwise leave `digit` on the stack.  Operates only on low byte of `tos`
-
-#endif
-digit
-    lda tos
-    sec
-    sbc #$30
-    bcs digit02                 ; is it maybe a digit?
-digit01
-    ldy #3
-    jmp error
-digit02
-    cmp #10
-    bcc digit03                 ; see if it's a hex digit or a real digit
-    sbc #7
-digit03
-    cmp ACC+2*N6                ; compare to current number base
-    bcs digit01                 ; not a digit?
-    sta tos
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=:.
-stack=( addr -- d )
-tags=numword,nosymbol
-
-#endif
-#include "pass.i65"
-__decimal
-    .word punkt
-#include "page.i65"
-    .word dpl
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word branch
-    .byt <(devnum02-*+1)
-
-;--------------------------------------------------------------
-#if 0
-name=PUNKT
-stack=( addr -- d )
-tags=numword,nosymbol
-
-#endif
-punkt
-    lda #%11110000
-    jsr flagme
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=:-
-stack=( addr -- d )
-tags=numword,nosymbol
-
-set rundown vector to negate routine for either double/single
-
-#endif
-#include "pass.i65"
-__minus
-    .word flagme
-    .byt %11111110              ; - <=> NR #$%
-#include "pass.i65"
-    .word numberrundown
-    .word negator
-#include "pass.i65"
-    .word branch
-    .byt <(devnum02-*+1)
-
-;--------------------------------------------------------------
-#if 0
-name=NEGATOR
-stack=( )
-tags=numword,nosymbol
-
-#endif
-negator
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=:<=>
-stack=( addr -- d )
-tags=numword,nosymbol
-
-#endif
-#include "pass.i65"
-__spaceship
-    .word flagme
-    .byt %11111100
-#include "pass.i65"
-    .word numberrundown
-    .word spaceshippor
-#include "pass.i65"
-    .word branch
-    .byt <(devnum02-*+1)
-
-;--------------------------------------------------------------
-#if 0
-name=SPACESHIPPOR
-stack=( )
-tags=numword,nosymbol
-
-#endif
-spaceshippor
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=<=>
-stack=(  )
-tags=numword,nosymbol
-
-#endif
-spaceship
-    dex
-    ldy ACC
-    lda spaceshiph-'<',y
-    sta stackh,x
-    lda spaceshipl-'<',y
-    sta stackl,x
-    lda #%11000100              ; no `-` or other `<=>`
-flagmerotate
-    jsr flagme
-    jmp dashrot
-
-spaceshipl
-    .byt <zpfrom, <zpex, <tozp
-spaceshiph
-    .byt >zpfrom, >zpex, >tozp
 
 ;--------------------------------------------------------------
 #if 0
@@ -216,89 +79,44 @@ flagme01
 
 ;--------------------------------------------------------------
 #if 0
-name=NUMBER.RUNDOWN
-stack=( )
+name=DIGIT
+stack=( char -- digit )
 tags=numword,nosymbol
+Throws a "NOT FOUND" exception if `char` is not a valid digit in the current number base.  Otherwise leave `digit` on the stack.  Operates only on low byte of `tos`
 
 #endif
-numberrundown
-    ldy #2
-    lda (ip),y
-    sta ACC+2*R11
-    iny
-    lda (ip),y
-    sta ACC+2*R11+1
-    lda #3
-    jmp pad
-
-;--------------------------------------------------------------
-#if 0
-name=:REGISTER
-stack=(  )
-tags=numword,nosymbol
-
-#endif
-#include "pass.i65"
-__register
-    .word flagme
-    .byt %10111111
-#include "pass.i65"
-    .word numberrundown
-    .word registor
-#include "pass.i65"
-    .word branch
-    .byt <(devnum02-*+1)
-
-;--------------------------------------------------------------
-#if 0
-name=REGISTER
-stack=( addr -- d )
-tags=numword,nosymbol
-
-#endif
-registor
-    lda #10
-    sta ACC+2*N6                ; set base to decimal
-    dex
+digit
+    lda tos
     sec
-    lda ACC
-    sbc #'N'                    ; 0 or 4 for n or r
-    sta stackl,x
-    lda #0
-    sta stackh,x
-    dex
-    lda #%11110010
-    bne flagmerotate
+    sbc #$30
+    bcs digit02                 ; is it maybe a digit?
+digit01
+    ldy #3
+    jmp error
+digit02
+    cmp #10
+    bcc digit03                 ; see if it's a hex digit or a real digit
+    sbc #7
+digit03
+    cmp ACC+2*N6                ; compare to current number base
+    bcs digit01                 ; not a digit?
+    sta tos
+digit04
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
-name=:BASE
-stack=( )
-tags=numword,nosymbol
+name=?DPL
+stack=( -- )
+tags=numword,nosymbol,primitive
+If `dpl` is positive, add 1 to `dpl`
 
 #endif
-#include "pass.i65"
-__base
-    ldy ACC
-    lda bases-'#',y
-    sta ACC+2*N6
-    lda #%11110001
-    jsr flagme
-    jmp swap
-
-bases
-    .byt 10,16,2                ; #$%
-
-;--------------------------------------------------------------
-#if 0
-name=:RUNDOWN
-stack=( )
-tags=numword,nosymbol
-
-#endif
-#include "pass.i65"
-__rundown
-    .word xyzzy
+qdpl
+    bit userdpl+1
+    bmi digit04                 ; next
+    inc userdpl
+    bpl digit04                 ; bra next
 
 ;--------------------------------------------------------------
 #if 0
@@ -339,17 +157,252 @@ Setup for number parser
 #endif
 pnumber
     brk
+    .byt set | R11              ; `number.rundown`
+    .word _pnumdown
     .byt ldi | TOS              ; `base c@`
-    .byt st | N6                ; base / flags=0
+    .byt st | N6                ; temp number base ; flags=0
     .byt pull
     .byt st | N7                ; address of text buffer
     .byt ldi | N7
     .byt st | N8                ; `len` and bump char pointer
     .byt sub | ACC
-    .byt st | R11               ; initialize rundown vector
+    .byt st | N5                ; register offset N=4; R=0
+    .byt st | N4                ; <=> cfa
     .byt st | TOS
-    .byt push                   ; leave `0.`
+    .byt push                   ; leave `0.` as initial result
     .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=(NUMBER).RUNDOWN
+stack=( addr base -- 0. )
+tags=numword,nosymbol
+default rundown for `number` parser
+
+    lda userdpl+1
+    bpl double
+
+    jsr drop
+double
+
+
+
+dpl @ 1+ ?: next drop
+
+~#comfortablynumber
+#endif
+#include "align.i65"
+pnumdown
+    jsr enter
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word exit
+
+
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word dup
+#include "pass.i65"
+    .word pquerycolon
+    .word next
+    .word nip
+#include "page.i65"
+    .word compilingq
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=RESISTOR
+stack=( )
+tags=numword,nosymbol
+
+#endif
+#include "align.i65"
+_resistor
+    jsr enter
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word twostar
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N5
+#include "page.i65"
+    .word plus
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N4
+#include "pass.i65"
+    .word pquerycolon
+    .word _spaceship
+    .word next
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=<=>
+stack=( cfa d -- )
+tags=numword,nosymbol
+
+#endif
+#include "align.i65"
+_spaceship
+    jsr enter
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N4
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word qbranch
+    .byt <(spaceship01-*+1)
+#include "page.i65"
+    .word _xtcomma
+#include "page.i65"
+    .word _ccomma
+#include "pass.i65"
+spaceship01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=<=>N4
+stack=( -- )
+tags=numword,nosymbol,primitive
+
+#endif
+sshipn4
+    ldy tos
+    lda spaceshipl-'<',y
+    sta ACC+2*N4
+    lda spaceshiph-'<',y        ; could be 'lda #7'
+                                ; if zpfrom zpex tozp are on page 7
+    sta ACC+2*N4+1
+    jmp drop
+
+spaceshipl
+    .byt <zpfrom, <zpex, <tozp
+spaceshiph
+    .byt >zpfrom, >zpex, >tozp
+
+
+;--------------------------------------------------------------
+#if 0
+name=NUMBER.RUNDOWN
+stack=( -- )
+tags=numword,nosymbol,primitive
+
+#endif
+numberrundown
+    ldy #2
+    lda (ip),y
+    sta ACC+2*R11
+    iny
+    lda (ip),y
+    sta ACC+2*R11+1
+    lda #3
+    jmp pad
+
+;--------------------------------------------------------------
+#if 0
+name=REGOFFSET
+stack=( R|N -- )
+tags=numword,nosymbol,primitive
+
+#endif
+regoffset
+    sec
+    lda #10                     ; for R0..R15, N0..N8
+    sta ACC+2*N6                ; register numbers are base 10
+    lda #'R'
+    sbc tos                     ; +0 for `R`, or +4 if it's `N`
+    sta ACC+2*N5
+    jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=REBASE
+stack=( #|$|% -- )
+tags=numword,nosymbol,primitive
+
+#endif
+rebase
+    ldy ACC
+    lda bases-'#',y
+    sta ACC+2*N6
+    jmp drop
+
+bases
+    .byt 10,16,2                ; #$%
+
+;--------------------------------------------------------------
+#if 0
+name=:BASE
+stack=( #|$|% -- )
+tags=numword,nosymbol
+
+#endif
+#include "pass.i65"
+__base
+    .word flagme
+    .byt %00110001
+#include "pass.i65"
+    .word rebase
+#include "pass.i65"
+    .word branch
+    .byt <(number02-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=:REGISTER
+stack=( R|N -- )
+tags=numword,nosymbol
+
+#endif
+#include "pass.i65"
+__register
+    .word flagme
+    .byt %10110010
+#include "pass.i65"
+    .word numberrundown
+    .word _resistor
+#include "page.i65"
+    .word regoffset
+#include "pass.i65"
+    .word branch
+    .byt <(number02-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=:<=>
+stack=( addr -- d )
+tags=numword,nosymbol
+
+#endif
+#include "pass.i65"
+__spaceship
+    .word qcomp
+#include "pass.i65"
+    .word flagme
+    .byt %11110100
+#include "pass.i65"
+    .word numberrundown
+    .word _spaceship
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word sshipn4
+#include "pass.i65"
+    .word branch
+    .byt <(number02-*+1)
 
 ;--------------------------------------------------------------
 #if 0
@@ -371,6 +424,18 @@ characters
 |`#`|''decimal'' number base|
 |`$`|''hex'' number base|
 |`%`|''binary'' number base|
+
+# push single/char
+# push double
+# enclose lit
+# enclose clit
+# enclose dlit
+# compile zpfrom
+# compile addrfrom
+# compile zpex
+# compile addrex
+# compile tozp
+# compile toaddr
 
 # `-` `.` `digit` characters work like ''standard Forth''
 #* `-` negate this number
@@ -426,7 +491,6 @@ characters
         :from ,  :exchange ,  :to ,
         :r ,  :n ,
         :decimal ,  :hex ,  :binary ,
-        :rundown ,
 :num.next
                                 ( flag )
     until
@@ -600,7 +664,7 @@ _number
 #include "page.i65"
     .word pnumber               ; ( 0. )
 #include "page.i65"
-devnum01
+number01
     .word nextchar              ; ( result. char )
 #include "page.i65"
     .word dup
@@ -615,7 +679,7 @@ devnum01
 #include "pass.i65"
     .word _dodispatch
     .word __digits-2            ; digit <base
-    .word __decimal-2           ; .
+    .word __punkt-2             ; .
     .word __minus-2             ; -
     .word __spaceship-2         ; <
     .word __spaceship-2         ; =
@@ -625,16 +689,15 @@ devnum01
     .word __base-2              ; #
     .word __base-2              ; $
     .word __base-2              ; %
-    .word __rundown-2           ; null
 #include "page.i65"
-devnum02
-    .word xyzzy
-#include "page.i65"
+number02
     .word morecharq
 #include "pass.i65"
     .word qbranch
-    .byt <(devnum01-*+1)
+    .byt <(number01-*+1)
 #include "page.i65"
+    .word extuntil02            ; jmp(r11) performs `number` rundown
+#include "pass.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -653,6 +716,8 @@ __digits
     .word zpfrom
     .byt ACC+2*N6
 #include "page.i65"
+    .word lsb
+#include "page.i65"
     .word zero
 #include "pass.i65"
     .word tozp
@@ -663,12 +728,65 @@ __digits
     .word rfrom
 #include "page.i65"
     .word _mplus
+#include "page.i65"
+    .word qdpl
 #include "pass.i65"
-                                ; ( result. )
+    .word branch                ; ( result. )
+    .byt <(number02-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=:.
+stack=( addr -- d )
+tags=numword,nosymbol
+Decimal point `.` handler for `number`
+
+
+#endif
+#include "pass.i65"
+__punkt
+    .word flagme
+    .byt %01101111              ; - <=> NR #$%
+#include "page.i65"
+    .word dpl
+#include "page.i65"
+    .word nip
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word oneplus
+#include "pass.i65"
+    .word qerror
+    .byt 3
+#include "page.i65"
+    .word oneplusstore
+#include "pass.i65"
     .word branch
-    .byt <(devnum02-*+1)
+    .byt <(number02-*+1)
 
+;--------------------------------------------------------------
+#if 0
+name=:-
+stack=( addr -- d )
+tags=numword,nosymbol
 
+set rundown vector to negate routine for either double/single
+
+#endif
+#include "pass.i65"
+__minus
+    .word flagme
+    .byt %11111000              ; - <=> NR #$%
+#include "page.i65"
+    .word drop                  ; discard `-` sign
+#include "pass.i65"
+    .word numberrundown
+    .word dnegate
+#include "pass.i65"
+    .word branch
+    .byt <(number02-*+1)
 
 ;--------------------------------------------------------------
 #if 0
