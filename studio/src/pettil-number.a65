@@ -166,11 +166,11 @@ pnumber
     .byt ldi | N7
     .byt st | N8                ; `len` and bump char pointer
     .byt sub | ACC
-    .byt st | N4                ; rundown cfa set to `0` (positive number)
     .byt st | TOS
     .byt push                   ; leave `0.` as initial result
-    .byt dcr | ACC              ; -1 means not a register (used by rundown)
-    .byt st | N5                ; register offset N=4; R=0
+    .byt st | N3                ; zero `-` flag. -1 with a leading `-` sign
+    .byt st | N4                ; zero rundown cfa (normal number)
+    .byt st | N5                ; zero `nr` flag
     .byt nxt
 
 ;--------------------------------------------------------------
@@ -231,10 +231,67 @@ regoffset
     sec
     lda #10                     ; for R0..R15, N0..N8
     sta ACC+2*N6                ; register numbers are base 10
-    lda #'R'
-    sbc tos                     ; +0 for `R`, or +4 if it's `N`
+    lda #'R'+2                  ; off-by-one to make `n5` flag nonzero
+    sbc tos                     ; +2 for `R`, or +6 if it's `N`
+    lsr
     sta ACC+2*N5
     jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=DOUBLE?
+stack=( -- flag )
+tags=numword,nosymbol,primitive
+returns a poorly formed flag (either `0` or `dpl+1`)
+
+#endif
+#include "align.i65"
+_doubleq
+    jsr enter
+#include "page.i65"
+    .word dpl                   ; transform double to single if `dpl` is -1
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word oneplus
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ITSNORMAL
+stack=( d|n -- )
+tags=numword,nosymbol
+
+#endif
+#include "align.i65"
+_itsnormal
+    jsr enter
+#include "page.i65"
+    .word _doubleq
+#include "pass.i65"
+    .word pquerycolon
+    .word _dliteral
+    .word _literal
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ITSASPACESHIP
+stack=( n cfa -- )
+tags=numword,nosymbol
+
+#endif
+#include "align.i65"
+_itsaspaceship
+    jsr enter
+#include "page.i65"
+    .word _xtcomma
+#include "page.i65"
+    .word _ccomma
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -602,23 +659,71 @@ number02
 #include "pass.i65"
     .word qbranch
     .byt <(number01-*+1)
-                                ; dnegate if the negator is on
-
 #include "page.i65"
-    .word dpl                   ; transform double to single if `dpl` is -1
+;    .word xyzzy
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N3               ; -1 for negative; 0 for positive
+#include "pass.i65"
+    .word qbranch
+    .byt <(number03-*+1)
 #include "page.i65"
-    .word fetch
+    .word dnegate
 #include "page.i65"
-    .word oneplus
+number03
+    .word _doubleq              ; ( 0 if single, nonzero if double )
 #include "page.i65"
     .word qdup
 #include "page.i65"
     .word twodrop
-                                ; double (and add 4?) for register prefix
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N5               ; flag -- `n`=3; `r`=1; not a register = 0
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word qbranch
+    .byt <(number04-*+1)
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+number04
+    .word compilingq
+#include "pass.i65"
+    .word qbranch
+    .byt <(number05-*+1)
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N4               ; cfa or `0` for normal number
+#include "page.i65"
+    .word dup
+#include "pass.i65"
+    .word pquerycolon
+    .word _itsaspaceship
+    .word _itsnormal
 #include "page.i65"
     .word extuntil02            ; jmp(r11) performs `number` rundown
 #include "pass.i65"
+    .word qbranch
+    .byt <(number05-*+1)
+
+    .word extuntil02
+#include "pass.i65"
+    .word branch
+    .byt <(number06-*+1)
+#include "page.i65"
+number05
+    .word extuntil02            ; jmp(r11) performs `number` rundown
+#include "pass.i65"
+number06
     .word exit
+
+
+
 
 ;--------------------------------------------------------------
 #if 0
@@ -703,7 +808,7 @@ __minus
     .word minusone
 #include "pass.i65"
     .word tozp
-    .byt ACC+2*N4               ; for rundown handler
+    .byt ACC+2*N3               ; for rundown handler
 #include "page.i65"
     .word twodrop               ; discard `-` sign and -1 flag
 #include "pass.i65"
