@@ -12,7 +12,13 @@ clean:
 	mkdir ./tmp/
 
 launch: clean pettil
-	cd ./tmp  &&  /usr/local/bin/xpet \
+	/usr/local/bin/xpet \
+		-verbose \
+		-1 ../tapes/2017-02.tap \
+		-moncommand pettil.mon \
+		-warp \
+	pettil.prg &
+#	cd ./tmp  &&  /usr/local/bin/xpet \
 		-verbose \
 		-1 ../tapes/2017-02.tap \
 		-moncommand pettil.mon \
@@ -57,6 +63,7 @@ pettil:
 	sort ./tmp/pettil.mon > ./tmp/t.t
 	if [ -e ./pettil.dbg ]; then cat ./pettil.dbg >> ./tmp/t.t; fi
 	mv ./tmp/t.t ./tmp/pettil.mon
+	cp -v tmp/pettil.mon tmp/pettil.prg .
 #	ls -l ./tmp/*.obj ./tmp/*.sym > ./docs/sizes.txt
 	stat -c '%8s %n' tmp/*.obj tmp/*.sym | sed -e 's/tmp\///' > docs/sizes.txt
 	cp -v ./tmp/sizes.csv docs/

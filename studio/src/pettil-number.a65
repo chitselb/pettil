@@ -158,7 +158,7 @@ Setup for number parser
 pnumber
     brk
     .byt set | R11              ; `number.rundown`
-    .word _pnumdown
+    .word next
     .byt ldi | TOS              ; `base c@`
     .byt st | N6                ; temp number base ; flags=0
     .byt pull
@@ -166,85 +166,12 @@ pnumber
     .byt ldi | N7
     .byt st | N8                ; `len` and bump char pointer
     .byt sub | ACC
-    .byt st | N5                ; register offset N=4; R=0
-    .byt st | N4                ; <=> cfa
+    .byt st | N4                ; rundown cfa set to `0` (positive number)
     .byt st | TOS
     .byt push                   ; leave `0.` as initial result
+    .byt dcr | ACC              ; -1 means not a register (used by rundown)
+    .byt st | N5                ; register offset N=4; R=0
     .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=(NUMBER).RUNDOWN
-stack=( addr base -- 0. )
-tags=numword,nosymbol
-default rundown for `number` parser
-
-    lda userdpl+1
-    bpl double
-
-    jsr drop
-double
-
-
-
-dpl @ 1+ ?: next drop
-
-~#comfortablynumber
-#endif
-#include "align.i65"
-pnumdown
-    jsr enter
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word exit
-
-
-#include "page.i65"
-    .word dpl
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word dup
-#include "pass.i65"
-    .word pquerycolon
-    .word next
-    .word nip
-#include "page.i65"
-    .word compilingq
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=RESISTOR
-stack=( )
-tags=numword,nosymbol
-
-#endif
-#include "align.i65"
-_resistor
-    jsr enter
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word twostar
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N5
-#include "page.i65"
-    .word plus
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N4
-#include "pass.i65"
-    .word pquerycolon
-    .word _spaceship
-    .word next
-#include "pass.i65"
-    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -254,7 +181,7 @@ tags=numword,nosymbol
 
 #endif
 #include "align.i65"
-_spaceship
+_spaceshipx
     jsr enter
 #include "pass.i65"
     .word zpfrom
@@ -281,35 +208,17 @@ tags=numword,nosymbol,primitive
 #endif
 sshipn4
     ldy tos
-    lda spaceshipl-'<',y
+    lda sshipl-'<',y
     sta ACC+2*N4
-    lda spaceshiph-'<',y        ; could be 'lda #7'
+    lda sshiph-'<',y        ; could be 'lda #7'
                                 ; if zpfrom zpex tozp are on page 7
     sta ACC+2*N4+1
     jmp drop
 
-spaceshipl
+sshipl
     .byt <zpfrom, <zpex, <tozp
-spaceshiph
+sshiph
     .byt >zpfrom, >zpex, >tozp
-
-
-;--------------------------------------------------------------
-#if 0
-name=NUMBER.RUNDOWN
-stack=( -- )
-tags=numword,nosymbol,primitive
-
-#endif
-numberrundown
-    ldy #2
-    lda (ip),y
-    sta ACC+2*R11
-    iny
-    lda (ip),y
-    sta ACC+2*R11+1
-    lda #3
-    jmp pad
 
 ;--------------------------------------------------------------
 #if 0
@@ -334,13 +243,13 @@ stack=( #|$|% -- )
 tags=numword,nosymbol,primitive
 
 #endif
-rebase
-    ldy ACC
-    lda bases-'#',y
+rebasex
+    ldy tos
+    lda allurbases-'#',y
     sta ACC+2*N6
     jmp drop
 
-bases
+allurbases
     .byt 10,16,2                ; #$%
 
 ;--------------------------------------------------------------
@@ -355,7 +264,7 @@ __base
     .word flagme
     .byt %00110001
 #include "pass.i65"
-    .word rebase
+    .word allurbases
 #include "pass.i65"
     .word branch
     .byt <(number02-*+1)
@@ -371,9 +280,6 @@ tags=numword,nosymbol
 __register
     .word flagme
     .byt %10110010
-#include "pass.i65"
-    .word numberrundown
-    .word _resistor
 #include "page.i65"
     .word regoffset
 #include "pass.i65"
@@ -393,11 +299,6 @@ __spaceship
 #include "pass.i65"
     .word flagme
     .byt %11110100
-#include "pass.i65"
-    .word numberrundown
-    .word _spaceship
-#include "page.i65"
-    .word xyzzy
 #include "page.i65"
     .word sshipn4
 #include "pass.i65"
@@ -646,6 +547,10 @@ For implementation, I'm hooking it into NUMBER so that R0 >R0 <R0 >N8 N8 <N0 >R1
     brk
     ldi n7
 
+( dlo dhi )
+dpl @ 1+ ?dup 2drop
+( dlo dhi )
+
 
 ```
 
@@ -675,6 +580,8 @@ number01
 #include "page.i65"
     .word dolindex
 #include "page.i65"
+;    .word xyzzy
+#include "page.i65"
     .word twostar
 #include "pass.i65"
     .word _dodispatch
@@ -695,6 +602,19 @@ number02
 #include "pass.i65"
     .word qbranch
     .byt <(number01-*+1)
+                                ; dnegate if the negator is on
+
+#include "page.i65"
+    .word dpl                   ; transform double to single if `dpl` is -1
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word twodrop
+                                ; double (and add 4?) for register prefix
 #include "page.i65"
     .word extuntil02            ; jmp(r11) performs `number` rundown
 #include "pass.i65"
@@ -780,10 +700,12 @@ __minus
     .word flagme
     .byt %11111000              ; - <=> NR #$%
 #include "page.i65"
-    .word drop                  ; discard `-` sign
+    .word minusone
 #include "pass.i65"
-    .word numberrundown
-    .word dnegate
+    .word tozp
+    .byt ACC+2*N4               ; for rundown handler
+#include "page.i65"
+    .word twodrop               ; discard `-` sign and -1 flag
 #include "pass.i65"
     .word branch
     .byt <(number02-*+1)
