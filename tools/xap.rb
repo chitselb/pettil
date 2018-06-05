@@ -404,9 +404,9 @@ puts @label   if @label == "STUDIO"
     end
 
     def set_sizes(forthwordhash)
-#forthwordhash.each do  |wordname, stuff|
-#    puts stuff.addr.to_s + '     ' + wordname
-#end
+forthwordhash.each do  |wordname, stuff|
+    puts stuff.addr.to_s + '     ' + wordname
+end
         sortedbyaddr = forthwordhash.sort_by {|wordname, stuff| stuff.addr}
         for i in 0..(sortedbyaddr.size-2)
             prevword = (i>0) ? sortedbyaddr[i-1][1].wikititle : nil
