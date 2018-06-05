@@ -12,7 +12,13 @@ clean:
 	mkdir ./tmp/
 
 launch: clean pettil
-	/usr/local/bin/xpet \
+	~/Documents/dev/commodore/vice-3.2/src/xpet \
+		-verbose \
+		-1 ../tapes/2017-02.tap \
+		-moncommand pettil.mon \
+		-warp \
+	pettil.prg &
+#	/usr/local/bin/xpet \
 		-verbose \
 		-1 ../tapes/2017-02.tap \
 		-moncommand pettil.mon \
