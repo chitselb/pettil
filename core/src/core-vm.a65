@@ -469,32 +469,91 @@ namefrom01
 
 ;--------------------------------------------------------------
 #if 0
+name=WRAPZAP
+stack=( -- 0 )
+tags=editor,primitive,nosymbol
+zero R0..R5 (12 bytes)
+
+as a side-effect, this stashes the x register in memory at `z`, which other
+words may rely on to omit `stx z` / `ldx z`
+
+!!!pronounced: "wrap zap"
+#endif
+wrapzap
+    lda #>(next-1)
+    pha
+    lda #<(next-1)
+    pha
+wrapzap12
+    jsr slip                    ; dup, so this won't overwrite `tos`
+    lda #12                     ; default # of bytes to clear
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=WRAPZAPS
+stack=( x -- 0 )
+tags=editor,subroutine,nosymbol
+Does not alter data stack pointer, but `x` is safely stored in `z`
+
+|pass:|A|bytes to clear|
+|return:|A|0|
+||Z|stack|
+
+!!!pronounced: "wrap zap"
+#endif
+wrapzaps
+    stx z                       ; preserve Forth data stack pointer
+    tax
+    lda #0
+wrapzap01
+    dex
+    sta 0,x
+    bne wrapzap01
+    ldx z
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=WRAPROLLS
+stack=( x -- 0 )
+tags=editor,subroutine,nosymbol
+pass in `c` flag and `x` as starting address,
+
+appends linewrap bit to a zeropage double beginning at `x`
+
+!!!pronounced: "wrap zap"
+#endif
+wraprolls
+    rol 2,x
+    rol 3,x
+    rol 0,x
+    rol 1,x
+    rts
+;[9]
+
+;--------------------------------------------------------------
+#if 0
 name=WRAP@
 stack=( -- wrapd  )
 tags=nosymbol
 
-Updates the linewrap table at $E1-F8 to reflect the low 24 bits
-in double `wrapd`.  Since line 0 ($E0) is never a continuation
-line, (always $80) it is not written to.  Only 24 bits are
-written to $E1-$F8, not 25.  Although unused, the most
-significant (2^24) bit may be set, as a framing bit, used
-to detect when the wrap double is full.
-
+Retrieve the linewrap table at `$E1..F8` as a double
 #endif
 wrapfetch
-    jsr slip
-    dex
-    ldy #LPERSCR-1              ; 24 lines (1-25)
+    jsr plugh
+    jsr wrapzap12
+    ldy #$FF
+    ldx #ACC+2*R1               ; put it in `tos(hi) n0(lo)`
 wrapfetch01
-    lda LDTB1,y                 ;$E0 = 0, always $80  $E1-$F8
+    iny
+    lda LDTB1,y
     asl
-    ror tos
-    ror stackh,x
-    ror stackl,x
-    dey
-    bne wrapfetch01
-    sty tos+1
-    jmp next
+    jsr wraprolls
+    beq wrapfetch01
+    ldx z
+    jsr plants2
+    jsr plugh
+    jmp drop
 
 ;--------------------------------------------------------------
 #if 0

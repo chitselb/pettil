@@ -121,31 +121,8 @@ _eoss
 
 ;--------------------------------------------------------------
 #if 0
-name=WRAPZAPS
-stack=( logline -- d )
-tags=editor,subroutine,nosymbol
-zero R0..R5 (12 bytes)
-
-as a side-effect, this stashes the x register in memory at `z`, which other
-words may rely on.
-
-!!!pronounced: "wrap zap"
-#endif
-wrapzaps
-    stx z                       ; preserve Forth data stack pointer
-    tax
-    lda #0
-wrapzap01
-    dex
-    sta 0,x
-    bne wrapzap01
-    ldx z
-    rts
-
-;--------------------------------------------------------------
-#if 0
 name=WRAP^
-stack=( logline -- d )
+stack=( -- )
 tags=editor,primitive,nosymbol
 
  Reads a portion of the linewrap table above the requested
@@ -156,8 +133,9 @@ tags=editor,primitive,nosymbol
 !!!pronounced: "wrap-above"
 #endif
 wrapabove
-    lda #12                     ; # of bytes to clear
-    jsr wrapzaps
+    jsr wrapzap12               ; stash x, clear 12 bytes of register space
+
+;    ldy
     ldx #0
     stx n+1
     stx n
@@ -191,15 +169,23 @@ name=WRAPPASTE
 stack=( d1 d2 -- d )
 tags=editor,nosymbol
 
-Combines two linewrap tables into one.  It is expected that
+Combines three linewrap tables into one during a paste
 
-* "d2" contains the top of the screen
-* "d1" contains the remainder of the screen
-* There are at least 25 "1" (40-column) and "10" (80-column) bits available
+||portion of screen above current line|
+||`pwrap` linewrap associated with paste buffer|
+||portion of screen at and below current line|
 
 #endif
-wrappaste
-    jsr harvests6               ; TOS = D2H; N0 = D1L; N1 = D1H; N2 = D2L
+#include "align.i65"
+_wrappaste
+    jsr enter
+#include "page.i65"
+    .word wrapfetch
+#include "page.i65"
+    .word wrapzap               ; ( wrapl wraph 0 )
+#include "page.i65"
+    .word *+2
+    jsr harvests4               ; wrap -> N0 N1
     stx z
     lda tos+1
     bne wrappaste03             ; done already?
@@ -268,7 +254,7 @@ wrapdel03
 
 ;--------------------------------------------------------------
 #if 0
-name=+WRAP?
+name=WRAPCOPY?
 stack=( d -- d f )
 tags=editor,primitive,nosymbol
 Attempts to append the current logical linewrap to `pwrap`.
@@ -280,31 +266,34 @@ has been set by calling `linesa`
 |`n7l`||
 |`n7h`||
 #endif
-pluswrapq
+wrapcopyq
     stx z
     lda userpwrap+3             ; 25 lines already?
-    bne pluswrapq03             ; early exit
+    bne wrapcopyq03             ; early exit
     sec                         ; always shift in a `1`
     bit ACC+2*N7+1              ; copy 40|80 bit to `V` flag
     .byt $29
-pluswrapq00
+wrapcopyq00
     clv
-pluswrapq01
+wrapcopyq01
     ldx #<(-4)
     php
-pluswrapq02                     ; begin
+wrapcopyq02                     ; begin
     plp
     rol userpwrap+4-256,x
     php
     inx
-    bmi pluswrapq02             ; loop
+    bmi wrapcopyq02             ; loop
     plp
-    bne pluswrapq03
-    bvs pluswrapq00             ; maybe shift in a 0
-pluswrapq03
+    bne wrapcopyq03
+    bvs wrapcopyq00             ; maybe shift in a 0
+wrapcopyq03
     ldx z
     jmp stod01
-
+;stod01
+;    sbc #0
+;    tay
+;    jmp pushya
 
 ;--------------------------------------------------------------
 #if 0
@@ -401,9 +390,11 @@ Appends a copy of the current logical screen line to the paste buffer
 #endif
 #include "page.i65"
 __editcopy
+    .word xyzzy
+#include "page.i65"
     .word linesa
 #include "page.i65"
-    .word pluswrapq
+    .word wrapcopyq
 #include "pass.i65"
     .word pquerycolon
     .word _editcopier
@@ -466,49 +457,13 @@ tags=editor,nosymbol
 
 STOP-P
 
-Insert the paste buffer at the current logical line
+Insert paste buffer before current logical line
 
 ```
-:editpaste   ( -- )
-    paste @  logline
-    dup lineinfo drop over eos third - cmove
-    pwrap 2@ logline
-    begin
-        dup>r
-        lineinfo nip
-        wrap+ drop
-        r> logline+ dup 0=
-    until drop
-    logline wrap^ 2swap
-    wrap* wrap!
-    pad logline lineinfo eos over - cmove
-    paste ! ;
-
-:editpaste   ( -- )
-    paste @  linesa
-    nip tuck eoss
-    cmove
-
-                                ( paste addr size )
-    dup lineinfo drop over eos third - cmove
-    pwrap 2@ logline
-    begin
-        dup>r
-        lineinfo nip
-        wrap+ drop
-        r> logline+ dup 0=
-    until drop
-    logline wrap^ 2swap
-    wrap* wrap!
-    pad logline lineinfo eos over - cmove
-    paste ! ;
-
 :editpaste   ( -- )
     linesa nip dup>r  paste @
     r@ eoss  cmove
     pad r@ r@ eoss cmove
-
-
 ```
 #endif
 #include "page.i65"
@@ -539,27 +494,19 @@ __editpaste
 #include "page.i65"
     .word cmove
 #include "page.i65"
-    .word wrapabove
+    .word ten
+#include "page.i65"
+    .word _jiffies              ; delay 1/6 of a second for screen to catch up
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word _wrappaste            ; linewrap handler for `STOP-P`
 #include "page.i65"
     .word pwrap
 #include "page.i65"
     .word twofetch
-#include "page.i65"
-    .word ten
-#include "page.i65"
-    .word _jiffies
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word pluswrapeos
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word xyzzy
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
