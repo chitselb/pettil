@@ -1746,18 +1746,15 @@ tags=nucleus
  linewrap bits from the beginning of the block buffer or the jiffy
  clock
 
- msb addr+0
-
- 2sb addr+1
-
- lsb addr+2
+|msb|addr+0|
+|2sb|addr+1|
+|lsb|addr+2|
 
 ```
 : 3c@   ( addr -- d )
      dup 1+ @ swap c@ ;
+     c@+ swap @ ;
 
-```
-#endif
 threecfetch
     jsr slip
     ldy #2
@@ -1771,6 +1768,19 @@ fetchunders
     lda (tos),y
     sta stackh,x
     rts
+```
+#endif
+#include "align.i65"
+_threecfetch
+    jsr enter
+#include "page.i65"
+    .word cfetchplus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word fetch
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1788,9 +1798,8 @@ Order inverted to write timer last for EVENTS
 ```
 : 3c!    ( d addr -- )
     2dup c!  nip 1+ ! ;
+    swap c!+ ! ;
 
-```
-#endif
 threecstore
     ldy #2
     lda stackl+1,x              ; lsb
@@ -1802,18 +1811,32 @@ threecstore
     lda stackl,x                ; msb
     sta (tos),y
     jmp threedrop               ; discard 3 cells
+;[19]
 
-;    ldy #0
-;    lda stackl,x                ; msb
-;    sta (tos),y
-;    iny
-;    lda stackh+1,x              ; 2sb
-;    sta (tos),y
-;    iny
-;    lda stackl+1,x              ; lsb
-;    sta (tos),y
-;    inx                         ; discard 3 cells
-;    jmp twodrop
+threecstore
+    jsr harvests4
+    ldy #3
+threecstore01
+    lda ACC+2*N0,y
+    dey
+    sta (tos),y
+    bne threecstore01
+    lda ACC+2*N0,y
+    sta (tos),y
+    jmp drop ;[19]
+```
+#endif
+#include "align.i65"
+_threecstore
+    jsr enter
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word cstoreplus
+#include "page.i65"
+    .word store
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
