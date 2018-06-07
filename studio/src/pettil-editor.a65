@@ -183,41 +183,11 @@ wrapstar05
 
 ;--------------------------------------------------------------
 #if 0
-name=WRAP+
-stack=( d columns -- d' flag )
-tags=editor,primitive,nosymbol
-Append bits to the linewrap double `d` based on whether `columns`
-is 40 or 80.  For 80, a '10' bit pair is appended,  and for 40 a
-single '1' bit.  The return `flag` is zero if there are not yet 25
-bits of linewrap in `d'`
-
-!!!pronounced: "wrap-plus"
-#endif
-wrapplus
-    sec                         ; always shift in a 1
-wrapplus01
-    ldy stackh,x                ; check msb 25.  full?
-    bne wrapplus03
-    rol stackl+1,x              ; shift in a single bit
-    rol stackh+1,x
-    rol stackl,x
-    rol stackh,x
-    lda #40
-    cmp tos
-    sta tos                     ; so we only do this once
-    bcc wrapplus01              ; maybe shift in a 0 (if 80-column)
-    ldy stackh,x
-wrapplus03
-    tya
-    jmp put
-
-;--------------------------------------------------------------
-#if 0
 name=WRAPROLL
 stack=( logline 40|80 -- )
 tags=editor,nosymbol
 Rolls the screen linewrap table up one or two lines
-#endif
+
 wraproll
     stx z
     lda stackl,x
@@ -241,37 +211,28 @@ wraproll03
     bpl wraproll
     jmp twodrop
 
-;--------------------------------------------------------------
-#if 0
-name=LINEINFO
-stack=( logline -- addr 40|80 )
-tags=editor,nosymbol,primitive,nosymbol
-
-Returns the start address and length of the logical line.
- `logline` is a physical screen line that is assumed to
- point to the upper physical line if the line is 80 columns.
-
 #endif
-lineinfo
+wraproll
     stx z
-    ldx tos
-    lda WRAPLO,x
-    sta tos
-    lda LDTB1,x
-    sta tos+1
-    lda #40
+    bit ACC+2*N7+1              ; 40 or 80?
+    .byt $29                    ; AND # opcode
+wraproll01
+    clv
+    ldx ACC+2*N7
+    asl LDTB1,x
+wraproll02
     cpx #24
-    beq lineinfo01
-    ldy LDTB1+1,x
-    bmi lineinfo01
-    asl                         ; 80 char
-lineinfo01
+    bcs wraproll03
+    asl LDTB1+1,x
+    ror LDTB1,x
+    inx
+    bne wraproll02
+wraproll03
+    sec
+    ror LDTB1,x
+    bvs wraproll01
     ldx z
-    jmp push0a
-
-lineinfob
-    stx z
-    ldx tos
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -301,9 +262,14 @@ logline01
 ;--------------------------------------------------------------
 #if 0
 name=EOSS
-stack=( -- logline )
-tags=editor,primitive,nosymbol
+stack=( addr -- addr size )
+tags=editor,primitive
+ Returns the `size` in bytes from `addr` to the end of the screen
 
+```
+: eoss   ( addr -- addr size )
+    eoscr over - ;
+```
 #endif
 #include "align.i65"
 _eoss
@@ -311,7 +277,7 @@ _eoss
 #include "page.i65"
     .word eoscr
 #include "page.i65"
-    .word over
+    .word swap
 #include "page.i65"
     .word minus
 #include "pass.i65"
@@ -319,8 +285,8 @@ _eoss
 
 ;--------------------------------------------------------------
 #if 0
-name=LINEAS
-stack=( -- addr size )
+name=LINESA
+stack=( -- size addr )
 tags=editor,primitive
  Returns the `addr` of the logical line for the current physical cursor
  address.
@@ -329,124 +295,108 @@ The value returned is the first/top/upper line if this logical line has
 80 characters.
 
 #endif
-#include "align.i65"
-_lineas
-    jsr enter
-#include "page.i65"
-    .word linea
-#include "page.i65"
-    .word lines
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=LINEA
-stack=( -- addr )
-tags=editor,primitive
- Returns the `addr` of the logical line for the current physical cursor
- address.
-
-The value returned is the first/top/upper line if this logical line has
-80 characters.
-
-#endif
-linea
+linesa
     stx z
-    ldx TBLX                    ; $D8 = Current Cursor Physical Line Number
+    ldx TBLX
     inx
-linea01
+linesa01
     dex
-    ldy LDTB1,x                 ; $e0 = 25-byte screen wrap table
-    bpl linea01
+    ldy LDTB1,x
+    bpl linesa01
     stx ACC+2*N7                ; logical line
-    lda WRAPLO,x
-    ldx z
-    jmp pushya
-
-;--------------------------------------------------------------
-#if 0
-name=LINES
-stack=( -- size )
-tags=editor,primitive
- Returns the `size` of the logical line for the current physical cursor
- address, either `40` or `80`.
-
-#endif
-lines
-    stx z
+    lda #0
+    pha
     lda #40
-    ldx ACC+2*N7
-    asl LDTB1+1,x
-    ror LDTB1+1,x
-    bmi lines01
+    cpx #24
+    bcs linesa02                ; bottom line is never 80-chars
+    ldy LDTB1+1,x
+    bmi linesa02
     asl
-lines01
+linesa02
+    pha
     sta ACC+2*N7+1              ; 40|80
+    lda LDTB1,x
+    pha
+    lda WRAPLO,x
+    pha
     ldx z
-    jmp push0a
+    jmp tworfrom
 
 ;--------------------------------------------------------------
 #if 0
 name=+WRAP?
-stack=( -- f )
+stack=( d -- d f )
 tags=editor,primitive,nosymbol
-Returns `true` when 1 or 2 bits have been appended to `pwrap`
+Attempts to append the current logical linewrap to `pwrap`.
 
+Returns `true` when 1 or 2 bits have been appended to `pwrap`.  Assumes `n7`
+has been set by calling `linesa`
+|`pwrap`||
+|`pwraph`|`1` means 25 lines are in the buffer|
+|`n7l`||
+|`n7h`||
 #endif
-pluswrap
+pluswrapq
     stx z
-    lda userpwrap
-    bne pluswrap03
-    bit ACC+2*N7+1
-    sec
+    lda userpwrap+3             ; 25 lines already?
+    bne pluswrapq03             ; early exit
+    sec                         ; always shift in a `1`
+    bit ACC+2*N7+1              ; copy 40|80 bit to `V` flag
     .byt $29
-pluswrap00
+pluswrapq00
     clv
-pluswrap01
-    ldx #3
-pluswrap02
-    rol userpwrap,x
-    dex
-    bpl pluswrap02
-    lda userpwrap+1,x
-    bne pluswrap03
-    bvs pluswrap00
-pluswrap03
+pluswrapq01
+    ldx #<(-4)
+    php
+pluswrapq02                     ; begin
+    plp
+    rol userpwrap+4-256,x
+    php
+    inx
+    bmi pluswrapq02             ; loop
+    plp
+    bne pluswrapq03
+    bvs pluswrapq00             ; maybe shift in a 0
+pluswrapq03
+    ldx z
     jmp stod01
+
 
 ;--------------------------------------------------------------
 #if 0
-name=LOGLINE+
-stack=( logline -- logline+|0 )
+name=+WRAPEOS
+stack=( d1 d2 -- d3 )
 tags=editor,nosymbol
+Append the linewrap bits in `d2` to the linewrap bits in `d1` yielding `d3`
 
- Return the next logical line number or 0 after bottom of screen
-
-!!!pronounced "log-line-plus"
 #endif
-loglineplus
+#include "align.i65"
+pluswrapeos
+    jsr plugh
+    jsr harvests6
     stx z
-    lda #0
-    ldx tos
-loglineplus01
-    cpx #24
-    beq loglineplus02
-    inx
-    ldy LDTB1,x
-    bpl loglineplus01
-    txa
-loglineplus02
-    ldy #0
+    lda ACC+2*N0+1
+    bne pweos02
+    clc
+    ldx #<(-4)
+pweos01
+    rol tos+4,x
+    rol tos+1
+    rol ACC+2*N0
+    rol ACC+2*N0+1
+    bcc pweos01
+pweos02
     ldx z
-    jmp put
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
 name=EDITCOPIER
-stack=( -- )
+stack=( addr size -- )
 tags=editor,nosymbol
 
+: editcopier   ( size addr -- )
+    paste @  third cmove paste +! ;
 #endif
 #include "align.i65"
 _editcopier
@@ -454,13 +404,18 @@ _editcopier
 #include "page.i65"
     .word paste
 #include "page.i65"
-    .word under
+    .word fetch
 #include "page.i65"
-    .word plusstore
+    .word third
 #include "page.i65"
     .word cmove
+#include "page.i65"
+    .word paste
+#include "page.i65"
+    .word plusstore
 #include "pass.i65"
     .word exit
+
 
 ;--------------------------------------------------------------
 #if 0
@@ -502,21 +457,13 @@ Appends a copy of the current logical screen line to the paste buffer
 #endif
 #include "page.i65"
 __editcopy
-    .word xyzzy
+    .word linesa
 #include "page.i65"
-    .word linea
-#include "page.i65"
-    .word paste
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word lines
-#include "page.i65"
-    .word pluswrap
+    .word pluswrapq
 #include "pass.i65"
     .word pquerycolon
     .word _editcopier
-    .word threedrop
+    .word twodrop
 #include "pass.i65"
     .word exit
 
@@ -532,72 +479,36 @@ screen
 
 ```
 : editdel   ( -- )
-    editcopy  logline dup lineinfo >r >r
-    logline+ ?dup
-    if
-        lineinfo drop r> 33768 third -
-        2dup + >r cmove
-    then
-    r> r@ blank logline r> wraproll ;
-
-: editdel   ( -- )
-    editcopy logline dup lineinfo >r >r
-    logline+ lineinfo drop r> 33768 third -
-    2dup + >r cmove r> r@ blank logline r> wraproll ;
+    editcopy linesa 2up + 2dup eoss
+    dup>r cmove r> + swap blank
+    wraproll ;
 ```
 #endif
 #include "page.i65"
 __editdel
-    .word __editcopy            ; ( )
+    .word _editcopy            ; ( )
 #include "page.i65"
-    .word logline
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word lineinfo
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word loglineplus
-#include "page.i65"
-    .word qdup
-#include "pass.i65"
-    .word qbranch
-    .byt <(editdel01-*+1)
-#include "page.i65"
-    .word lineinfo
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word rfrom
-#include "pass.i65"
-    .word plit
-    .word VIDRAM+1000
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word minus
+    .word linesa
 #include "page.i65"
     .word twodup
 #include "page.i65"
     .word plus
 #include "page.i65"
-    .word tor
+    .word twodup
+#include "page.i65"
+    .word _eoss
+#include "page.i65"
+    .word duptor
 #include "page.i65"
     .word cmove
 #include "page.i65"
-editdel01
     .word rfrom
 #include "page.i65"
-    .word rfetch
+    .word plus
+#include "page.i65"
+    .word swap
 #include "page.i65"
     .word blank
-#include "page.i65"
-    .word logline
-#include "page.i65"
-    .word rfrom
 #include "page.i65"
     .word wraproll
 #include "pass.i65"
@@ -611,7 +522,7 @@ tags=editor,nosymbol
 
 STOP-P
 
-Insert the paste buffer above the current logical line
+Insert the paste buffer at the current logical line
 
 ```
 :editpaste   ( -- )
@@ -628,89 +539,83 @@ Insert the paste buffer above the current logical line
     wrap* wrap!
     pad logline lineinfo eos over - cmove
     paste ! ;
+
+:editpaste   ( -- )
+    paste @  linesa
+    nip tuck eoss
+    cmove
+
+                                ( paste addr size )
+    dup lineinfo drop over eos third - cmove
+    pwrap 2@ logline
+    begin
+        dup>r
+        lineinfo nip
+        wrap+ drop
+        r> logline+ dup 0=
+    until drop
+    logline wrap^ 2swap
+    wrap* wrap!
+    pad logline lineinfo eos over - cmove
+    paste ! ;
+
+:editpaste   ( -- )
+    linesa nip dup>r  paste @
+    r@ eoss  cmove
+    pad r@ r@ eoss cmove
+
+
 ```
 #endif
 #include "page.i65"
 __editpaste
+    .word linesa
+#include "page.i65"
+    .word nip
+#include "page.i65"
+    .word duptor
+#include "page.i65"
     .word paste
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word logline
+    .word rfetch
 #include "page.i65"
-    .word lineinfo
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word over
-#include "pass.i65"
-    .word plit
-    .word VIDRAM+1000
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word minus
+    .word _eoss
 #include "page.i65"
     .word cmove
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word _eoss
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word wrapabove
 #include "page.i65"
     .word pwrap
 #include "page.i65"
     .word twofetch
 #include "page.i65"
-    .word logline
+    .word ten
 #include "page.i65"
-editpaste01
-    .word duptor
+    .word _jiffies
 #include "page.i65"
-    .word lineinfo
+    .word xyzzy
 #include "page.i65"
-    .word nip
+    .word pluswrapeos
 #include "page.i65"
-    .word wrapplus
+    .word xyzzy
 #include "page.i65"
-    .word drop
+    .word xyzzy
 #include "page.i65"
-    .word rfrom
+    .word xyzzy
 #include "page.i65"
-    .word loglineplus
-#include "page.i65"
-    .word qdup
-#include "page.i65"
-    .word zeq
-#include "pass.i65"
-    .word qbranch
-    .byt <(editpaste01-*+1)
-#include "page.i65"
-    .word logline
-#include "page.i65"
-    .word wrapabove
-#include "page.i65"
-    .word wrapstar
-#include "page.i65"
-    .word wrapstore
-#include "page.i65"
-    .word _pad
-#include "page.i65"
-    .word logline
-#include "page.i65"
-    .word lineinfo
-#include "page.i65"
-    .word drop
-#include "pass.i65"
-    .word plit
-    .word VIDRAM+1000
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word paste
-#include "page.i65"
-    .word store
-#include "pass.i65"
-    .word exit
+    .word xyzzy
 
 ;--------------------------------------------------------------
 #if 0
@@ -902,27 +807,22 @@ tags=editor,nosymbol
 
 ```
 :editzilch   ( -- )
-     pad paste !  pwrap 4 erase ;
+     pad paste !  pwrap 4 erase  pwrap 1+! ;
 ```
 #endif
 #include "page.i65"
 __editzilch
     .word _pad
 #include "page.i65"
-    .word pwrap
-#include "page.i65"
-    .word peditzilch
+    .word paste
 #include "page.i65"
     .word store
+#include "page.i65"
+    .word pwrap
+#include "page.i65"
+    .word twooff
 #include "pass.i65"
     .word exit
-
-peditzilch
-    brk
-    .byt sub | ACC
-    .byt std | TOS
-    .byt std | TOS              ; zero `pwrap`, leave `paste`
-    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
