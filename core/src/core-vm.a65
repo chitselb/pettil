@@ -458,12 +458,14 @@ tags=nucleus
 : 3c@   ( addr -- d )
      dup 1+ @ swap c@ ;
      c@+ swap @ ;
+     @+ swap c@ ;
 
 threecfetch
     jsr slip
     ldy #2
     jsr fetchunders
     jmp cfetch
+;[11]
 
 fetchunders
     lda (tos),y         ; msb
@@ -635,16 +637,31 @@ wraprolls
 
 ;--------------------------------------------------------------
 #if 0
+name=WRAPUMAX
+stack=( -- )
+tags=editor,subroutine,nosymbol
+Iteratively double a 32-bit `wrapd` until it is left-aligned (as close to
+`umax` as possible without going over)
+
+!!!pronounced: "wrap umax"
+#endif
+wrapumax
+    jsr wraprolls
+    bpl wrapumax
+    rts
+
+;--------------------------------------------------------------
+#if 0
 name=WRAP@
 stack=( -- wrapd  )
 tags=primitive
-Retrieve the linewrap table at `$E1..F8` as a double
+Retrieve the 25-bit linewrap table at `$E0..F8` as a double
 
 #endif
 wrapfetch
     jsr wrapzap12
     ldy #$FF
-    ldx #ACC+2*R1               ; put it in `tos(hi) n0(lo)`
+    ldx #tos                    ; put it in `tos(hi) n0(lo)`
 wrapfetch01
     iny
     lda LDTB1,y
@@ -652,8 +669,9 @@ wrapfetch01
     jsr wraprolls
     beq wrapfetch01
     ldx z
-    jsr plants2
-    jmp next
+    ldy ACC+2*N0+1
+    lda ACC+2*N0
+    jmp pushya
 
 ;--------------------------------------------------------------
 #if 0
@@ -667,6 +685,22 @@ line, (always $80) it is not written to.  Only 24 bits are
 written to $E1-$F8, not 25.  Although unused, the most
 significant (2^24) bit may be set, as a framing bit, used
 to detect when the wrap double is full.
+
+wrapstore
+    brk
+    .byt ld | TOS
+    .byt st | N0
+    .byt pull
+    .byt rtn
+
+_wrapstore
+    jsr enter
+    .word tozp
+    .byt ACC+2*N0
+    .word drop
+
+    stx z
+    jsr pwrappaste01
 
 #endif
 wrapstore
@@ -1013,8 +1047,6 @@ qmkpkts02
 #include "page.i65"
    .word threeminus
 #include "page.i65"
-   .word xyzzy
-#include "page.i65"
    .word _threecfetch
 #include "page.i65"
    .word editingq
@@ -1024,7 +1056,7 @@ qmkpkts02
 #include "page.i65"
    .word benjamin
 #include "page.i65"
-   .word orx
+   .word orx                    ; the Cars guy
 #include "page.i65"
    .word wrapstore
 #include "pass.i65"
@@ -1122,6 +1154,7 @@ pupd2
 name=SUP
 stack=( vidram|blkbuf scr|blk -- )
 tags=forth-83,vm,nosymbol
+
 
 ```
 \ sprog of update

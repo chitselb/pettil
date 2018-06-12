@@ -54,6 +54,9 @@ rrot
 
 : um*   ( u2 u1 -- ud )
   0 tuck dup (um*) ;
+
+~ make this a primitive with `jsr wrapzaps`?
+    ;
 ```
 #endif
 #include "align.i65"
@@ -98,7 +101,7 @@ pumstar01
     ror ACC+2*N2                ; shift off low bit of multiplier
     bcc pumstar03
     clc
-    ldx #<(-4)
+    ldx #<(-4) ;$FC
 pumstar02                       ; add 32-bit multiplicand to 32-bit product
     lda <(ACC+4),x
     adc <(ACC+2*N0+4),x
@@ -2380,9 +2383,13 @@ max
 name=M*
 stack=( n1 n2 -- d )
 tags=nucleus
+Multiply two signed words, leaving the double product on the stack
 
- multiply two signed words, leaving the double product on the stack
-#endif
+```
+: m*   ( n1 n2 -- d )
+    2dup abs swap abs um*
+    2swap eor 0< if dnegate then ;
+
 mstar
     jsr mult
     jmp next
@@ -2423,6 +2430,39 @@ mult02
 mult03
     rts
 
+```
+
+
+
+#endif
+#include "align.i65"
+_mstar
+    jsr enter
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word abs
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word abs
+#include "page.i65"
+    .word _umstar
+#include "page.i65"
+    .word twoswap
+#include "page.i65"
+    .word xor
+#include "page.i65"
+    .word zlt
+#include "pass.i65"
+    .word qbranch
+    .byt <(mstar01-*+1)
+#include "page.i65"
+    .word dnegate
+#include "pass.i65"
+mstar01
+    .word exit
+
 ;--------------------------------------------------------------
 #if 0
 name=M*/
@@ -2433,8 +2473,26 @@ tags=nucleus
  that by n3 yielding a 16-bit quotient.  Remainder is ignored,
  all values are signed.
 
+~ 16-bit intermediate value? is this in the standard?
+
+```
+: m*/   ( n1 n2 n3 -- d )
+    >r m* r> m/ ;
+```
 #endif
-mstarslash
+#include "align.i65"
+_mstarslash
+    jsr enter
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word _mstar
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word _mslash
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -2444,9 +2502,15 @@ tags=forth-83,nucleus
 
  multiply two signed words
 #endif
-star
-    jsr mult
-    jmp drop
+#include "align.i65"
+_star
+    jsr enter
+#include "page.i65"
+    .word _mstar
+#include "page.i65"
+    .word drop
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -2514,11 +2578,26 @@ tags=forth-83,nucleus
 #endif
 slash
     jsr doslashmod
-    ;       lda stack,x
-    ;       sta stack+2,x
-    ;       lda stack+1,x
-    ;       sta stack+3,x
-    jmp drop
+    jmp nip
+
+;--------------------------------------------------------------
+#if 0
+name=M/
+stack=( n1 n2 -- n3 )
+tags=forth-83,nucleus
+
+ n3 is the floor of the quotient of n1 divided
+ by the divisor n2.  An error condition results
+ if the divisor is zero or if the quotient falls
+ outside the range {-32,768 ... 32,767}.
+#endif
+#include "align.i65"
+_mslash
+    jsr enter
+#include "page.i65"
+    .word drop                  ; effectively divides by 1; broken! ~~fix
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -2555,23 +2634,6 @@ tags=forth-83,nucleus
 
 #endif
 starslashmod
-    jsr dostarslashmod
-    jmp next
-dostarslashmod
-    ;       lda stack+1,x
-    pha
-    ;       lda stack,x
-    pha
-    inx
-    inx
-    jsr mult
-    dex
-    dex
-    pla
-    ;       sta stack,x
-    pla
-    ;       sta stack+1,x
-;    jmp domslash
 
 ;--------------------------------------------------------------
 #if 0
@@ -2592,12 +2654,7 @@ tags=forth-83,nucleus
 
 #endif
 starslash
-    jsr dostarslashmod
-    ;       lda stack,x
-    ;       sta stack+2,x
-    ;       lda stack+1,x
-    ;       sta stack+3,x
-    jmp drop
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
