@@ -19,7 +19,6 @@ name=CLRSCR
 stack=( -- )
 tags=editor
 Clear the screen
-
 #endif
 #include "align.i65"
 _clrscr
@@ -62,333 +61,196 @@ flipscr01
 
 ;--------------------------------------------------------------
 #if 0
-name=LINESA
-stack=( -- size addr )
-tags=editor,primitive
- Returns the `addr` of the logical line for the current physical cursor
- address.
-
-The value returned is the first/top/upper line if this logical line has
-80 characters.
-
-#endif
-linesa
-    stx z
-    ldx TBLX
-    inx
-linesa01
-    dex
-    ldy LDTB1,x
-    bpl linesa01
-    stx ACC+2*N7                ; logical line
-    lda #0
-    pha
-    lda #40
-    cpx #LPERSCR-1
-    bcs linesa02                ; bottom line is never 80-chars
-    ldy LDTB1+1,x
-    bmi linesa02
-    asl
-linesa02
-    pha
-    sta ACC+2*N7+1              ; 40|80
-    lda LDTB1,x
-    pha
-    lda WRAPLO,x
-    pha
-    ldx z
-    jmp tworfrom
-
-;--------------------------------------------------------------
-#if 0
-name=EOSS
-stack=( addr -- addr size )
-tags=editor,primitive
- Returns the `size` in bytes from `addr` to the end of the screen
-
-```
-: eoss   ( addr -- addr size )
-    eoscr over - ;
-```
-#endif
-#include "align.i65"
-_eoss
-    jsr enter
-#include "page.i65"
-    .word eoscr
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word minus
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=WRAPPASTE
-stack=( -- )
+name=WRAP*
+stack=( d1 d2 -- d )
 tags=editor,nosymbol
-Combine three linewrap tables into one during a paste
 
-|`wrap@`|above current line|
-|`pwrap`|paste buffer|
-|`wrap@`|current line to `eos`|
+Combines two linewrap tables into one.  It is expected that
+
+* "d2" contains the top of the screen
+* "d1" contains the remainder of the screen
+* There are at least 25 "1" (40-column) and "10" (80-column) bits available
 
 #endif
-#include "align.i65"
-_wrappaste
-    jsr enter
-#include "page.i65"
-    .word wrapfetch
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word lsb
-#include "page.i65"
-    .word benjamin
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word pwrap
-#include "page.i65"
-    .word twostore
-#include "page.i65"
-    .word pwrap
-#include "page.i65"
-    .word twofetch
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word pwrappaste
-
-pwrappaste
-    jsr wrapzap12
-    jsr harvests8               ; wrap -> N0 N1
+wrapstar
+    jsr harvests6               ; TOS = D2H; N0 = D1L; N1 = D1H; N2 = D2L
     stx z
-    ldx #ACC+2*N0
-    jsr wrapumax                ; left-align `wrap@` bits in `n0..n1`
-    ldx #ACC+2*N2
-    jsr wrapumax                ; left-align `pwrap` bits in `n2..n3`
+    lda tos+1
+    bne wrapstar03              ; done already?
+wrapstar01
+    sec                         ; make sure we stop eventually
+    ldy #4
+    jsr wrapstar04
+    bit n+3
+    bpl wrapstar01              ; 0000 0000 0000 0000 0110 1011 1111   1111 1111 1111 1110 1111 0000 0000 0000
+wrapstar02                      ; 0001 1111 1111 1101 1111 1010 1111
+    clc
+    ldy #6
+    jsr wrapstar04
+    rol tos
+    rol tos+1
+    beq wrapstar02
+wrapstar03
     ldx z
-    jmp exit
+    dex
+    lda n+4
+    sta stackl,x
+    lda n+5
+    sta stackh,x
+    jmp next
 
-;--------------------------------------------------------------
-#if 0
-name=WRAPUMAX
-stack=( -- )
-tags=editor,subroutine,nosymbol
-Iteratively double a 32-bit `wrapd` until it is left-aligned (as close to
-`umax` as possible without going over)
-
-!!!pronounced: "wrap umax"
-#endif
-wrapumax
-    jsr wraprolls
-    bpl wrapumax
+wrapstar04
+    ldx #0
+wrapstar05
+    rol n,x
+    inx
+    dey
+    bne wrapstar05
     rts
 
 ;--------------------------------------------------------------
 #if 0
-name=WRAPPEND
-stack=( -- )
-tags=editor,subroutine,nosymbol
-Work out a wrap bit
+name=WRAP+
+stack=( d columns -- d' flag )
+tags=editor,primitive,nosymbol
+Append bits to the linewrap double `d` based on whether `columns`
+is 40 or 80.  For 80, a '10' bit pair is appended,  and for 40 a
+single '1' bit.  The return `flag` is zero if there are not yet 25
+bits of linewrap in `d'`
 
-!!!pronounced: "wrap-pend"
+!!!pronounced: "wrap-plus"
 #endif
-wrappend
-    ldy #$FF
-    ldx #4
-wrappend01
-    iny
-    cpy ACC+2*N7
-    beq wrappend02
-    lda $e0,y
-    asl
-    jsr wraprolls
-    ror
-    sta $e0,y
-
-wrappend02
-    jsr wraprolls
-    bpl wrapumax
-    rts
+wrapplus
+    sec                         ; always shift in a 1
+wrapplus01
+    ldy stackh,x                ; check msb 25.  full?
+    bne wrapplus03
+    rol stackl+1,x              ; shift in a single bit
+    rol stackh+1,x
+    rol stackl,x
+    rol stackh,x
+    lda #40
+    cmp tos
+    sta tos                     ; so we only do this once
+    bcc wrapplus01              ; maybe shift in a 0 (if 80-column)
+    ldy stackh,x
+wrapplus03
+    tya
+    jmp put
 
 ;--------------------------------------------------------------
 #if 0
-name=WRAPDEL
+name=WRAPROLL
 stack=( logline 40|80 -- )
 tags=editor,nosymbol
-Rolls the screen linewrap table up one or two lines when deleting a logical
-line in the `editor`
-
+Rolls the screen linewrap table up one or two lines
 #endif
-wrapdel
+wraproll
     stx z
-    bit ACC+2*N7+1              ; 40 or 80?
-    .byt $29                    ; AND # opcode
-wrapdel01
-    clv
-    ldx ACC+2*N7
+    lda stackl,x
+    tax
     asl LDTB1,x
-wrapdel02
-    cpx #LPERSCR-1
-    bcs wrapdel03
+wraproll02
+    cpx #24
+    bcs wraproll03
     asl LDTB1+1,x
     ror LDTB1,x
     inx
-    bne wrapdel02
-wrapdel03
+    bne wraproll02
+wraproll03
     sec
     ror LDTB1,x
-    bvs wrapdel01
     ldx z
-    jmp next
-;[31]
+    ;clc
+    lda tos
+    sbc #40
+    sta tos
+    bpl wraproll
+    jmp twodrop
 
 ;--------------------------------------------------------------
 #if 0
-name=WRAPCOPY?
-stack=( d -- d f )
-tags=editor,secondary,nosymbol
-Attempts to append the current logical linewrap to `pwrap`.  Uses 40|80 flag in `n7`
+name=LINEINFO
+stack=( logline -- addr 40|80 )
+tags=editor,nosymbol,primitive,nosymbol
 
-Returns a flag,
-`false` if the paste buffer is full,
-`true` if 1 or 2 bits were appended.
+Returns the start address and length of the logical line.
+ `logline` is a physical screen line that is assumed to
+ point to the upper physical line if the line is 80 columns.
 
-|`pwrap`||
-|`pwraph`|`1` means 25 lines are in the buffer|
-|`n7l`||
-|`n7h`||
 #endif
-#include "align.i65"
-_wrapcopyq
-    jsr enter
-#include "page.i65"
-    .word pwrap
-#include "page.i65"
-    .word twofetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
+lineinfo
     stx z
-    lda userpwrap+3             ; 25 lines already?
-    bne wrapcopyq03             ; early exit
-    sec                         ; always shift in a `1`
-    bit ACC+2*N7+1              ; copy 40|80 bit to `V` flag
-    .byt $29
-wrapcopyq00
-    clv
-wrapcopyq01
-    ldx #<(-4)
-    php
-wrapcopyq02                     ; begin
-    plp
-    rol userpwrap+4-256,x
-    php
+    ldx tos
+    lda WRAPLO,x
+    sta tos
+    lda LDTB1,x
+    sta tos+1
+    lda #40
+    cpx #24
+    beq lineinfo01
+    ldy LDTB1+1,x
+    bmi lineinfo01
+    asl                         ; 80 char
+lineinfo01
+    ldx z
+    jmp push0a
+
+lineinfob
+    stx z
+    ldx tos
+
+;--------------------------------------------------------------
+#if 0
+name=LOGLINE
+stack=( -- logline )
+tags=editor,nosymbol,primitive,nosymbol
+ Returns the physical line number of the logical line where the
+ PET cursor is currently located.  The `logline` value returned
+ is the first/top/upper line if the logical line has 80 characters.
+
+ From this position, [[leapfrogging forward|LOGLINE+]] down the
+ screen will always return logical line addresses (with
+ wraptable bit7 set), never continuation lines.
+#endif
+logline
+    stx z
+    ldx TBLX                    ; $d8 = Current Cursor Physical Line Number
     inx
-    bmi wrapcopyq02             ; loop
-    plp
-    bne wrapcopyq03
-    bvs wrapcopyq00             ; maybe shift in a 0
-wrapcopyq03
+logline01
+    dex
+    ldy LDTB1,x                 ; $e0 = 25-byte screen wrap table
+    bpl logline01
+    txa
     ldx z
-    jmp stod01
-;stod01
-;    sbc #0
-;    tay
-;    jmp pushya
+    jmp push0a
 
 ;--------------------------------------------------------------
 #if 0
-name=+WRAPEOS
-stack=( d1 d2 -- d3 )
+name=LOGLINE+
+stack=( logline -- logline+|0 )
 tags=editor,nosymbol
-Append the linewrap bits in `d2` to the linewrap bits in `d1` yielding `d3`
 
+ Return the next logical line number or 0 after bottom of screen
+
+!!!pronounced "log-line-plus"
 #endif
-#include "align.i65"
-pluswrapeos
-    jsr plugh
-    jsr harvests6
+loglineplus
     stx z
-    lda ACC+2*N0+1
-    bne pweos02
-    clc
-    ldx #<(-4)
-pweos01
-    rol tos+4,x
-    rol tos+1
-    rol ACC+2*N0
-    rol ACC+2*N0+1
-    bcc pweos01
-pweos02
+    lda #0
+    ldx tos
+loglineplus01
+    cpx #24
+    beq loglineplus02
+    inx
+    ldy LDTB1,x
+    bpl loglineplus01
+    txa
+loglineplus02
+    ldy #0
     ldx z
-    jmp next
+    jmp put
 
-;--------------------------------------------------------------
-#if 0
-name=EDITCOPIER
-stack=( 40|80 addr -- )
-tags=editor,nosymbol
-Append the text of the current logical line to the `paste` buffer.  Wrap bits
-are handled separately, see `wrapcopy?`
-
-```
-: editcopier   ( 40|80 addr -- )
-    paste @  third cmove paste +! ;
-```
-#endif
-#include "align.i65"
-_editcopier
-    jsr enter
-#include "page.i65"
-    .word paste
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word paste
-#include "page.i65"
-    .word plusstore
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EDITCOPY
-stack=( -- )
-tags=editor,nosymbol
-STOP-C Copy Line
-
-Appends a copy of the current logical screen line to the paste buffer
-
-```
-: editcopy
-:editcopy
-    ...
-```
-#endif
-#include "align.i65"
-_editcopy
-    jsr enter
-    ;fall through
 ;--------------------------------------------------------------
 #if 0
 name=:EDITCOPY
@@ -403,20 +265,43 @@ Appends a copy of the current logical screen line to the paste buffer
     logline lineinfo >r paste @  r@ cmove
     paste r@ +!
     pwrap 2@ r> 40/mod nip wrap+ pwrap 2! ;
-
-:editcopy
-    linea paste @ lines  paste under +!  cmove ;
 ```
 #endif
 #include "page.i65"
 __editcopy
-    .word linesa
+    .word logline
 #include "page.i65"
-    .word _wrapcopyq
-#include "pass.i65"
-    .word pquerycolon
-    .word _editcopier
-    .word twodrop
+    .word lineinfo
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word paste
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word paste
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+    .word pwrap
+#include "page.i65"
+    .word twofetch
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word wrapplus
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word pwrap
+#include "page.i65"
+    .word twostore
 #include "pass.i65"
     .word exit
 
@@ -432,38 +317,74 @@ screen
 
 ```
 : editdel   ( -- )
-    editcopy linesa 2up + 2dup eoss
-    dup>r cmove r> + swap blank
-    wrapdel ;
+    editcopy  logline dup lineinfo >r >r
+    logline+ ?dup
+    if
+        lineinfo drop r> 33768 third -
+        2dup + >r cmove
+    then
+    r> r@ blank logline r> wraproll ;
+
+: editdel   ( -- )
+    editcopy logline dup lineinfo >r >r
+    logline+ lineinfo drop r> 33768 third -
+    2dup + >r cmove r> r@ blank logline r> wraproll ;
 ```
 #endif
 #include "page.i65"
 __editdel
-    .word _editcopy             ; append logical line at cursor to `pad`
+    .word __editcopy            ; ( )
 #include "page.i65"
-    .word linesa                ; get `size` and `addr` of current line
+    .word logline
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word lineinfo
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word loglineplus
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word qbranch
+    .byt <(editdel01-*+1)
+#include "page.i65"
+    .word lineinfo
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word rfrom
+#include "pass.i65"
+    .word plit
+    .word VIDRAM+1000
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word minus
 #include "page.i65"
     .word twodup
 #include "page.i65"
     .word plus
 #include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word _eoss
-#include "page.i65"
-    .word duptor
+    .word tor
 #include "page.i65"
     .word cmove
 #include "page.i65"
+editdel01
     .word rfrom
 #include "page.i65"
-    .word plus
-#include "page.i65"
-    .word swap
+    .word rfetch
 #include "page.i65"
     .word blank
 #include "page.i65"
-    .word wrapdel               ; linewrap handler for `STOP-D`
+    .word logline
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word wraproll
 #include "pass.i65"
     .word exit
 
@@ -475,45 +396,104 @@ tags=editor,nosymbol
 
 STOP-P
 
-Insert paste buffer before current logical line
+Insert the paste buffer above the current logical line
 
 ```
 :editpaste   ( -- )
-    linesa nip dup>r  paste @   ( vidaddr paste R; vidaddr )
-    r@ eoss  cmove              \ concatenate rest of screen to `paste`
-    pad r@ r@ eoss cmove        \ fill to end of screen from `pad`
-    wrappaste ;
+    paste @  logline
+    dup lineinfo drop over eos third - cmove
+    pwrap 2@ logline
+    begin
+        dup>r
+        lineinfo nip
+        wrap+ drop
+        r> logline+ dup 0=
+    until drop
+    logline wrap^ 2swap
+    wrap* wrap!
+    pad logline lineinfo eos over - cmove
+    paste ! ;
 ```
 #endif
 #include "page.i65"
 __editpaste
-    .word linesa
-#include "page.i65"
-    .word nip
-#include "page.i65"
-    .word duptor
-#include "page.i65"
     .word paste
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word rfetch
+    .word logline
 #include "page.i65"
-    .word _eoss
+    .word lineinfo
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word over
+#include "pass.i65"
+    .word plit
+    .word VIDRAM+1000
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word minus
 #include "page.i65"
     .word cmove
+#include "page.i65"
+    .word pwrap
+#include "page.i65"
+    .word twofetch
+#include "page.i65"
+    .word logline
+#include "page.i65"
+editpaste01
+    .word duptor
+#include "page.i65"
+    .word lineinfo
+#include "page.i65"
+    .word nip
+#include "page.i65"
+    .word wrapplus
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word loglineplus
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word zeq
+#include "pass.i65"
+    .word qbranch
+    .byt <(editpaste01-*+1)
+#include "page.i65"
+    .word logline
+#include "page.i65"
+    .word wrapabove
+#include "page.i65"
+    .word wrapstar
+#include "page.i65"
+    .word wrapstore
 #include "page.i65"
     .word _pad
 #include "page.i65"
-    .word rfetch
+    .word logline
 #include "page.i65"
-    .word rfetch
+    .word lineinfo
 #include "page.i65"
-    .word _eoss
+    .word drop
+#include "pass.i65"
+    .word plit
+    .word VIDRAM+1000
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
 #include "page.i65"
     .word cmove
 #include "page.i65"
-    .word _wrappaste            ; linewrap handler for `STOP-P`
+    .word paste
+#include "page.i65"
+    .word store
 #include "pass.i65"
     .word exit
 
@@ -522,16 +502,25 @@ __editpaste
 name=:EDITNOWRAP
 stack=( -- )
 tags=editor,nosymbol
-Reset the linewrap table and force this packet to be a screen
+
+ reset the linewrap table and force this block to be a screen
+ even if it was a data packet
 
 ~#packrat
 #endif
 #include "align.i65"
 __editnowrap
-    .word _nowrap
-#include "pass.i65"
-    .word peditnowrap
-peditnowrap
+    .word *+2
+    txa
+    ldx #24
+editnowrap01
+    asl $e0,x
+    sec
+    ror $e0,x
+    dex
+    bpl editnowrap01
+    tax
+    inx
     ldy #1
     lda (ACC+2*N8),y
     ora #$80
@@ -698,7 +687,7 @@ tags=editor,nosymbol
 
 ```
 :editzilch   ( -- )
-     pad paste !  pwrap 4 erase  pwrap 1+! ;
+     pad paste !  pwrap 4 erase ;
 ```
 #endif
 #include "page.i65"
@@ -711,7 +700,9 @@ __editzilch
 #include "page.i65"
     .word pwrap
 #include "page.i65"
-    .word twooff
+    .word four
+#include "page.i65"
+    .word erase
 #include "pass.i65"
     .word exit
 
@@ -879,15 +870,8 @@ scan for shifted spaces
      vidram b/scr + vidram
      do
        i c@ $60 =
-       if $E0 i c! then
+       if $e0 i c! then
     loop ;
-
-peditspace
-    ldy #0
-    lda (tos),y
-    eor #$60
-    bne +
-
 ```
 #endif
 #include "page.i65"
@@ -917,7 +901,7 @@ editspace01
     .byt <(editspace02-*+1)
 #include "page.i65"
     .word clit
-    .byte $E0
+    .byte $e0
 #include "page.i65"
     .word i
 #include "page.i65"
