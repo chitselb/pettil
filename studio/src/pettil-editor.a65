@@ -141,40 +141,68 @@ _wrappaste
 #include "page.i65"
     .word wrapfetch
 #include "page.i65"
-    .word true
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word lsb
-#include "page.i65"
-    .word benjamin
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word pwrap
-#include "page.i65"
-    .word twostore
-#include "page.i65"
     .word pwrap
 #include "page.i65"
     .word twofetch
 #include "page.i65"
-    .word xyzzy
+    .word paste
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word slashmod40
+#include "page.i65"
+    .word nip                   ; ( wrap@d pwrapd pastelines -- )
 #include "page.i65"
     .word pwrappaste
+#include "pass.i65"
+    .word exit
 
 pwrappaste
     jsr wrapzap12
-    jsr harvests8               ; wrap -> N0 N1
+    jsr harvests10              ; wrap -> N0 N1
     stx z
-    ldx #ACC+2*N0
+
+    ldx #ACC+2*N0               ; point to `wrap@`
     jsr wrapumax                ; left-align `wrap@` bits in `n0..n1`
-    ldx #ACC+2*N2
+    ldy #$00
+    jsr pwrapbitsalt            ; lower entry point, doesn't test line `0`
+
+    ldx #ACC+2*N2               ; let's look at `pwrap`
     jsr wrapumax                ; left-align `pwrap` bits in `n2..n3`
+    ;clc
+    tya
+    adc ACC+2*N4                ; # of 40-char lines in paste buffer
+    sta ACC+2*N7
+    jsr pwrapbits
+    ldx #ACC+2*N0               ; back to `wrap@`
+    lda #LPERSCR
+    sta ACC+2*N7
+    jsr pwrapbits
     ldx z
-    jmp exit
+    jmp drop
+
+pwrapbits
+    iny
+    cpy ACC+2*N7
+    bcs pwrapbits09
+pwrapbitsalt
+    jsr pwrapbit
+    bcc pwrapbits               ; bra
+pwrapbits09
+    dey
+    rts
+
+pwrapbit
+    lda LDTB1,y
+    asl
+    jsr wraprolls
+    ror
+    sta LDTB1,y
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -187,33 +215,6 @@ Iteratively double a 32-bit `wrapd` until it is left-aligned (as close to
 !!!pronounced: "wrap umax"
 #endif
 wrapumax
-    jsr wraprolls
-    bpl wrapumax
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=WRAPPEND
-stack=( -- )
-tags=editor,subroutine,nosymbol
-Work out a wrap bit
-
-!!!pronounced: "wrap-pend"
-#endif
-wrappend
-    ldy #$FF
-    ldx #4
-wrappend01
-    iny
-    cpy ACC+2*N7
-    beq wrappend02
-    lda $e0,y
-    asl
-    jsr wraprolls
-    ror
-    sta $e0,y
-
-wrappend02
     jsr wraprolls
     bpl wrapumax
     rts
@@ -253,7 +254,7 @@ wrapdel03
 ;--------------------------------------------------------------
 #if 0
 name=WRAPCOPY?
-stack=( d -- d f )
+stack=( -- f )
 tags=editor,secondary,nosymbol
 Attempts to append the current logical linewrap to `pwrap`.  Uses 40|80 flag in `n7`
 
@@ -265,52 +266,47 @@ Returns a flag,
 |`pwraph`|`1` means 25 lines are in the buffer|
 |`n7l`||
 |`n7h`||
+
+```
+: wrapcopy?
+    pwrap 2@ (wrapcopy?) ;
+```
 #endif
 #include "align.i65"
-_wrapcopyq
-    jsr enter
-#include "page.i65"
-    .word pwrap
-#include "page.i65"
-    .word twofetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
+wrapcopyq
+    brk
+    .byt set | N0
+    .word userpwrap+4
+    .byt popd | N0
+    .byt st | N3
+    .byt popd | N0
+    .byt st | N2
+    .byt sub | ACC
+    .byt push
+    .byt rtn
+pwrapcopyq
     stx z
-    lda userpwrap+3             ; 25 lines already?
-    bne wrapcopyq03             ; early exit
-    sec                         ; always shift in a `1`
+    ldx #ACC+2*N2
+    sec
     bit ACC+2*N7+1              ; copy 40|80 bit to `V` flag
-    .byt $29
-wrapcopyq00
+    .byt $29                    ; AND # opcode
+pwrapcopyq01
     clv
-wrapcopyq01
-    ldx #<(-4)
-    php
-wrapcopyq02                     ; begin
-    plp
-    rol userpwrap+4-256,x
-    php
-    inx
-    bmi wrapcopyq02             ; loop
-    plp
-    bne wrapcopyq03
-    bvs wrapcopyq00             ; maybe shift in a 0
-wrapcopyq03
+    ;
+    lda ACC+2*N3+1
+    bne pwrapcopyq02
+    dec tos+1
+    jsr wraprolls
+    ;clc
+    bvs pwrapcopyq01
+pwrapcopyq02
     ldx z
-    jmp stod01
-;stod01
-;    sbc #0
-;    tay
-;    jmp pushya
+    brk
+    .byt ld | N2
+    .byt std | N0
+    .byt ld | N3
+    .byt std | N0
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -412,7 +408,7 @@ Appends a copy of the current logical screen line to the paste buffer
 __editcopy
     .word linesa
 #include "page.i65"
-    .word _wrapcopyq
+    .word wrapcopyq
 #include "pass.i65"
     .word pquerycolon
     .word _editcopier
@@ -481,7 +477,8 @@ Insert paste buffer before current logical line
 :editpaste   ( -- )
     linesa nip dup>r  paste @   ( vidaddr paste R; vidaddr )
     r@ eoss  cmove              \ concatenate rest of screen to `paste`
-    pad r@ r@ eoss cmove        \ fill to end of screen from `pad`
+    pad r@ r> eoss cmove        \ fill to end of screen from `pad`
+    linesa nip dup>r  paste @   (  )
     wrappaste ;
 ```
 #endif
@@ -507,7 +504,7 @@ __editpaste
 #include "page.i65"
     .word rfetch
 #include "page.i65"
-    .word rfetch
+    .word rfrom
 #include "page.i65"
     .word _eoss
 #include "page.i65"
@@ -752,9 +749,7 @@ Deletes the current screen from the packet buffer.  The edit
 screen is replaced by the first available of:
 
 * The next screen in the packet buffer, if it already exists
-
 * The previous screen in the packet buffer
-
 * Screen 0 is blanked and written to the packet buffer
 
 ```
