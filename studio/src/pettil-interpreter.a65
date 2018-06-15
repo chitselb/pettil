@@ -206,99 +206,6 @@ backslash
 
 ;--------------------------------------------------------------
 #if 0
-name=?REFILL.SETUP
-stack=( blk -- buf )
-tags=interpreter,nosymbol
-* 'force refill' check first -- exit to outer caller ( of INTERPRET )
-* 'end of line/buffer' check next
-* 'processing' do nothing else, exit
-
-* `TRUE` refilled
-* `FALSE` did not refill
-
-* set things up BLK IN SPAN (n5 n6 n7)
-* blk=0 ? TIB : TIB+80 (n4)
-
-: refill?   ( -- flag )
-    #out \ aka span 2+
-    refillq09
-
-
-$C4 PNT 16-bit address of current line
-$C6 PNTR position of cursor along line
-$D4 DFLTN current device# (set to 3)
-$D5 LNMX length of current line
-
-    lin dup 1+! @
-    25 <
-    if
-        lin @                   ( lin )
-        dup >bit blkbuf + cbit@ ( lin flag )
-        swap 24 = or            ( flag )
-        if
-            forty
-        else
-            lin 1+! eighty
-        then                    ( 40|80 )
-        dup    LNMX c!
-        3      DFLTN c!
-        @lin @ PNT dup dup>r 3c@ >r >r !
-        0      PNTR c!          ( 40|80 )
-        cas2buf over 2dup expect -trailing
-        r> r> r> 3c!            ( restore screen cursor )
-        @lin +!
-        span @  #lin !
-    then ;
-
-LNMX
-
-This word relies on user variables `blk` `in` and `span` being adjacent and
-in the right order in the userarea block ~#userorder
-
-
-
-```
-\ ?refill - reloads either TIB or SIB when SPAN = 0
-: ?refill.setup   ( span+2 buf -- flag )
-    blk @  ?: sib tib
-    span @  0=
-    if
-        refill
-        exit
-    then
-
-    span @  >in @  >
-    if
-        \ end of line
-    then ;
-```
-#endif
-qrefillsetup
-    brk
-    .byt ld | TOS               ; buf
-    .byt st | N6                ; where the REFILL is going, if there is one
-    .byt pull                   ; 80
-    .byt st | N5                ; number of chars to EXPECT, if we REFILL
-    .byt pull                   ; span
-    .byt popd | TOS             ; @span
-    .byt st | N4
-    .byt popd | TOS             ; @in
-    .byt st | N3
-    .byt popd | TOS             ; @blk
-    .byt st | N2
-    .byt st | TOS
-    .byt rtn
-    lda userspan
-    jmp nplus
-
-                                ; Screen input happens here.
-                                ; Now is the time on Sprockets when we set up
-                                ; a fake screen somewhere in the `blkbuf` and
-                                ; point CHRIN to that, with the same `80 expect`
-                                ; that keyboard uses. `N5` points to SIB
-
-;--------------------------------------------------------------
-#if 0
 name=INTERPRET
 stack=( -- )
 tags=fig,forth-83,interpreter,nosymbol
@@ -519,6 +426,16 @@ _abort
 name=LOAD
 stack=( u -- )
 tags=interpreter,forth-83
+Redirect the input stream to screen `u` of Forth source and `interpret` it.
+
+* 1 is the lowest block which may be loaded, as 0 is the keyboard
+* `load` will not create empty blocks
+* `u` must be presently available in `vmbuf`
+* error conditions (`BLOCK OUT OF RANGE`)
+** `u` < 1
+** `u` >= `#blk`
+
+
 
  The contents of >IN and BLK , which locate the current input
  stream, are saved.  The input stream is then redirected to
@@ -542,6 +459,8 @@ tags=interpreter,forth-83
     then ;
 
 : load   ( blk -- )
+    0 #blk @ third between? 0= 8 ?error
+    0 over < #blk @ third > or
   \ checks requested block within range 0 .. #blk or error message
   \ pushes >in and blk to return stack
   \ resets >in
@@ -559,13 +478,17 @@ tags=interpreter,forth-83
 _load
     jsr enter
 #include "page.i65"
-    .word twodup
+    .word zero
+#include "page.i65"
+    .word tuck
 #include "page.i65"
     .word numblk
 #include "page.i65"
     .word fetch
 #include "page.i65"
-;    .word betweenq             ; use `within` instead ~wut?
+    .word third
+#include "page.i65"
+    .word betweenq
 #include "page.i65"
     .word zeq
 #include "pass.i65"
