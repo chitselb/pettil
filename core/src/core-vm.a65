@@ -663,27 +663,11 @@ written to $E1-$F8, not 25.  Although unused, the most
 significant (2^24) bit may be set, as a framing bit, used
 to detect when the wrap double is full.
 
-wrapstore
-    brk
-    .byt ld | TOS
-    .byt st | N0
-    .byt pull
-    .byt rtn
-
-_wrapstore
-    jsr enter
-    .word tozp
-    .byt ACC+2*N0
-    .word drop
-
-    stx z
-    jsr pwrappaste01
-
 #endif
 wrapstore
     jsr harvests2
-    txa
-    ldx #LPERSCR-1
+    stx z
+    ldx #ACC+2*R1
 wrapstore01
     asl LDTB1,x
     lsr tos+1
@@ -693,7 +677,7 @@ wrapstore01
     ror LDTB1,x
     dex
     bne wrapstore01
-    tax                         ; restore stack pointer
+    ldx z
     jmp drop
 
 ;--------------------------------------------------------------
@@ -911,6 +895,47 @@ scredidx
 
 ;--------------------------------------------------------------
 #if 0
+name=DWRAP@
+stack=( -- wrapd  )
+tags=vm,ext,nosymbol
+
+~#packrat
+#endif
+#include "align.i65"
+_dwrapfetch
+    jsr enter
+#include "page.i65"
+   .word _threecfetch
+#include "page.i65"
+   .word benjamin
+#include "page.i65"
+   .word orx                    ; the Cars guy
+#include "pass.i65"
+   .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BUFWRAP
+stack=( -- addr  )
+tags=vm,ext,nosymbol
+address of 3-byte area where `wrapd` is stored in the block buffer
+
+~#packrat
+#endif
+#include "align.i65"
+_bufwrap
+    jsr enter
+#include "page.i65"
+   .word blkbuf
+#include "page.i65"
+   .word bperscr
+#include "page.i65"
+   .word plus
+#include "pass.i65"
+   .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=BLOCK
 stack=( blk -- buf )
 tags=vm,fig,forth-79,forth-83
@@ -946,7 +971,7 @@ user is in the editor or not, and whether the packet is screen or data.
     isscr?
     if
         3-under <n8 3- 3c@
-        edting?
+        editing?
         if
             wrap!
         else
@@ -1020,20 +1045,16 @@ qmkpkts02
    .word threeminusunder
 #include "pass.i65"
    .word zpfrom
-   .byt ACC+2*N8
+   .byt ACC+2*N8                ; `pkt`
 #include "page.i65"
    .word threeminus
 #include "page.i65"
-   .word _threecfetch
+   .word _dwrapfetch
 #include "page.i65"
    .word editingq
 #include "pass.i65"
     .word qbranch
     .byt <(blk01-*+1)
-#include "page.i65"
-   .word benjamin
-#include "page.i65"
-   .word orx                    ; the Cars guy
 #include "page.i65"
    .word wrapstore
 #include "pass.i65"
@@ -1041,13 +1062,9 @@ qmkpkts02
     .byt <(blk02-*+1)
 #include "page.i65"
 blk01
-   .word blkbuf
+   .word _bufwrap
 #include "page.i65"
-   .word bperscr
-#include "page.i65"
-   .word plus
-#include "page.i65"
-   .word _threecstore
+   .word twostore               ; includes leading `1` bit for line 0
 #include "page.i65"
 blk02
    .word dashrot
@@ -1344,13 +1361,9 @@ upd01
     .word qbranch
     .byt <(upd03-*+1)
 #include "page.i65"
-    .word blkbuf
+    .word _bufwrap
 #include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word _threecfetch
+    .word twofetch
 #include "page.i65"
 upd03
     .word blkbuf
