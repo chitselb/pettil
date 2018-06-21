@@ -354,6 +354,8 @@ _pktsize
     .word fetch
 #include "page.i65"
     .word psize
+#include "page.i65"
+   .word twominus
 #include "pass.i65"
     .word exit
 
@@ -364,7 +366,10 @@ stack=( pkt.header -- pkt.size )
 tags=vm,ext,nosymbolIf
 Return just the size of the `pkt.header` on the stack
 
-~#packrat
+```
+: psize    ( header -- size )
+    $7FFF and ;
+```
 #endif
 psize
     lda tos+1
@@ -384,6 +389,8 @@ Return the `pkt` address of block `u`,
 ~wut? return a 0 if there are less than `n` packets?
 
 ```
+: >pkt
+    dup prev !
     blkbuf 2-
     begin
         over
@@ -392,9 +399,6 @@ Return the `pkt` address of block `u`,
         @+ psize - 2-
     repeat
     nip >n8 ;
-
-    .byt set
-    .word
 ```
 ~#packrat
 #endif
@@ -617,7 +621,7 @@ pass in `c` flag and `x` as starting address,
 
 appends linewrap bit to a zeropage double beginning at `x`
 
-!!!pronounced: "wrap zap"
+!!!pronounced: "wrap rolls"
 #endif
 wraprolls
     rol 0,x
@@ -626,6 +630,26 @@ wraprolls
     rol 3,x
     rts
 ;[9]
+
+;--------------------------------------------------------------
+#if 0
+name=WRAPUMAX
+stack=( -- )
+tags=editor,subroutine,nosymbol
+Iteratively double a 32-bit `wrapd` until it is left-aligned (as close to
+`umax` as possible without going over)
+
+!!!pronounced: "wrap umax"
+#endif
+wrapumax
+    sec
+    lda 3,x
+    bmi wrapumax02
+wrapumax01
+    jsr wraprolls
+    bpl wrapumax01
+wrapumax02
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -663,7 +687,6 @@ written to $E1-$F8, not 25.  Although unused, the most
 significant (2^24) bit may be set, as a framing bit, used
 to detect when the wrap double is full.
 
-#endif
 wrapstore
     jsr harvests2
     stx z
@@ -676,6 +699,25 @@ wrapstore01
     ror n
     ror LDTB1,x
     dex
+    bne wrapstore01
+    ldx z
+    jmp drop
+#endif
+wrapstore
+    jsr swaps
+    jsr harvests2
+    stx z
+    ldx #tos
+    jsr wrapumax
+    ldx #<(-25)
+wrapstore01
+    txa
+    asl <(LDTB1+25),x
+    ldx #tos
+    jsr wraprolls
+    tax
+    ror <(LDTB1+25),x
+    inx
     bne wrapstore01
     ldx z
     jmp drop
@@ -970,7 +1012,7 @@ user is in the editor or not, and whether the packet is screen or data.
     nip dup pkt.size 2- tuck -
     isscr?
     if
-        3-under <n8 3- 3c@
+        3-under <n8 3- dwrap@
         editing?
         if
             wrap!
@@ -1024,14 +1066,15 @@ qmkpkts02
    .word pquerycolon
    .word blank
    .word erase
-#include "page.i65"
-   .word nip
+
+
+
+
+
 #include "page.i65"
    .word dup
 #include "page.i65"
    .word _pktsize
-#include "page.i65"
-   .word twominus
 #include "page.i65"
    .word tuck
 #include "page.i65"
@@ -1187,8 +1230,6 @@ _sup
     .word _topkt
 #include "page.i65"
     .word _pktsize
-#include "page.i65"
-    .word twominus
 #include "page.i65"
     .word bperbuf
 #include "page.i65"
