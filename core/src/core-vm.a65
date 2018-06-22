@@ -687,21 +687,6 @@ written to $E1-$F8, not 25.  Although unused, the most
 significant (2^24) bit may be set, as a framing bit, used
 to detect when the wrap double is full.
 
-wrapstore
-    jsr harvests2
-    stx z
-    ldx #ACC+2*R1
-wrapstore01
-    asl LDTB1,x
-    lsr tos+1
-    ror tos
-    ror n+1
-    ror n
-    ror LDTB1,x
-    dex
-    bne wrapstore01
-    ldx z
-    jmp drop
 #endif
 wrapstore
     jsr swaps
@@ -958,7 +943,7 @@ _dwrapfetch
 ;--------------------------------------------------------------
 #if 0
 name=BUFWRAP
-stack=( -- addr  )
+stack=( wrapd -- )
 tags=vm,ext,nosymbol
 address of 3-byte area where `wrapd` is stored in the block buffer
 
@@ -975,6 +960,54 @@ _bufwrap
    .word plus
 #include "pass.i65"
    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BUFWRAP
+stack=( wrapd -- )
+tags=vm,ext,nosymbol
+address of 3-byte area where `wrapd` is stored in the block buffer
+
+~#packrat
+#endif
+#include "align.i65"
+_bufwrapstore
+    jsr enter
+#include "page.i65"
+    .word _bufwrap
+#include "page.i65"
+   .word _threecstore
+#include "pass.i65"
+   .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=EMPTY-BUFFERS
+stack=( -- )
+tags=i/o,forth-83
+Unassign all virtual memory.  UPDATEed blocks are not written
+to mass storage.
+
+```
+: empty-buffers   ( -- )
+    blkbuf 2-  dup vmbuf !  off  blk off  scr off  #blk! ;
+```
+#endif
+#include "align.i65"
+_emptybuffers
+    jsr enter
+#include "page.i65"
+    .word blkbuf
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word _scr0
+#include "page.i65"
+    .word _numblkstore
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1013,12 +1046,7 @@ user is in the editor or not, and whether the packet is screen or data.
     isscr?
     if
         3-under <n8 3- dwrap@
-        editing?
-        if
-            wrap!
-        else
-            blkbuf b/scr + 3c!
-        then
+        editing? ?: wrap! bufwrap!
     then
     -rot
     uncompressed? ?: cmove rldecode ;
@@ -1057,6 +1085,8 @@ qmkpkts02
    .word vidram
    .word blkbuf
 #include "page.i65"
+   .word nip
+#include "page.i65"
    .word dup
 #include "page.i65"
    .word bperbuf
@@ -1066,11 +1096,6 @@ qmkpkts02
    .word pquerycolon
    .word blank
    .word erase
-
-
-
-
-
 #include "page.i65"
    .word dup
 #include "page.i65"
@@ -1096,18 +1121,9 @@ qmkpkts02
 #include "page.i65"
    .word editingq
 #include "pass.i65"
-    .word qbranch
-    .byt <(blk01-*+1)
-#include "page.i65"
+   .word pquerycolon
    .word wrapstore
-#include "pass.i65"
-    .word branch
-    .byt <(blk02-*+1)
-#include "page.i65"
-blk01
-   .word _bufwrap
-#include "page.i65"
-   .word twostore               ; includes leading `1` bit for line 0
+   .word _bufwrapstore
 #include "page.i65"
 blk02
    .word dashrot
@@ -1415,36 +1431,6 @@ upd03
 #include "pass.i65"
 upd02
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EMPTY-BUFFERS
-stack=( -- )
-tags=i/o,forth-83
-Unassign all virtual memory.  UPDATEed blocks are not written
-to mass storage.
-
-```
-: empty-buffers   ( -- )
-    blkbuf 2-  dup vmbuf !  off  blk off  scr off  #blk! ;
-```
-#endif
-#include "align.i65"
-_emptybuffers
-    jsr enter
-#include "page.i65"
-    .word blkbuf
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word _scr0
-#include "page.i65"
-    .word _numblkstore
-#include "pass.i65"
-    .word exit
-
 
 ;--------------------------------------------------------------
 #if 0
