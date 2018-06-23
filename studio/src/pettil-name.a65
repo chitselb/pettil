@@ -256,6 +256,18 @@ E16D  49 01       EOR #$01      ; toggle quote flag
 E16F  85 CD       STA $CD
 E171  A9 22       LDA #$22
 E173  60          RTS
+
+: ?refill
+    span @ ?exit
+    blk@
+    if
+        in c@+  'PNTR c!        \ cursor column
+        c@  dup 'TBLX c! 40*    \ cursor physical line
+        blk@ block  + 'PNT !    \ buffer address
+        3 'DFLTN c!             \ input from screen (#3)
+        (?refill)
+    then
+    query ;
 ```
 #endif
 #include "align.i65"
@@ -270,35 +282,42 @@ _qrefill
 #include "page.i65"
     .word blkfetch
 #include "pass.i65"
-    .word qbranch
+    .word qbranch               ; keyboard? go directly to `query`
     .byt <(qrefill01-*+1)
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word blkfetch
-#include "page.i65"
-    .word _block
-#include "pass.i65"
-    .word clit
-    .byt PNT                    ; ($C4) pointer current screen line address
-#include "page.i65"
-    .word store
 #include "page.i65"
     .word in
 #include "page.i65"
-    .word cfetchplus
+    .word cfetchplus            ; `in.l` cursor offset on logical line
 #include "pass.i65"
     .word clit
     .byt PNTR                   ; $C6 Cursor Column on Current Line
 #include "page.i65"
     .word cstore
 #include "page.i65"
-    .word cfetch
+    .word cfetch                ; `in.h` cursor physical line number
+#include "page.i65"
+    .word dup
 #include "pass.i65"
     .word clit
     .byt TBLX                   ; $D8 Current Cursor Physical Line Number
 #include "page.i65"
     .word cstore
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N7
+#include "page.i65"
+    .word fortytimes
+#include "page.i65"
+    .word blkfetch
+#include "page.i65"
+    .word _block
+#include "page.i65"
+    .word plus
+#include "pass.i65"
+    .word clit
+    .byt PNT                    ; ($C4) pointer current screen line address
+#include "page.i65"
+    .word store
 #include "page.i65"
     .word three                 ; get input from screen device #3
 #include "pass.i65"
@@ -307,9 +326,11 @@ _qrefill
 #include "page.i65"
     .word cstore
 #include "page.i65"
-    .word pqrefill
+    .word _bufwrap
 #include "page.i65"
-    .word xyzzy
+    .word _dwrapfetch
+#include "page.i65"
+    .word pqrefill
 #include "page.i65"
 qrefill01
     .word _query
@@ -338,8 +359,30 @@ tags=interpreter,nosymbol
 
 #endif
 pqrefill
-    jsr plugh
-    jmp next
+    jsr swaps
+    jsr harvests2
+    stx z
+    ldx #tos
+    jsr wrapumax
+    ldy ACC+2*N7
+    lda #40
+    iny
+pqrefill01
+    dey
+    bmi pqrefill03
+    jsr wrapumax01
+    bmi pqrefill01              ; bra
+pqrefill03
+    bcs pqrefill04
+    inc ACC+2*N7
+    sec
+pqrefill04
+    inc ACC+2*N7
+    sta ACC+2*N7+1              ; 40|80
+    sbc #1
+    sta INDX                    ; $A1 Count of chars of line input from screen
+    ldx z
+    jmp drop
 
 
 ;--------------------------------------------------------------
