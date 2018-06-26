@@ -48,6 +48,24 @@ skipscan04
 
 ;--------------------------------------------------------------
 #if 0
+name=?LINE+
+stack=( -- )
+tags=forth-83,interpreter,nosymbol
+Adds 1 or 2 to `in` msb, the line counter
+
+Advances through the fake screen when loading from `blkbuf`
+
+#endif
+qlineplus
+    bit LNMX                    ; elsewhere (probably 'stream) must set LNMX
+    inc userin+1
+    bvc qlineplus01             ; 40|80 character line?
+    inc userin+1
+qlineplus01
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
 name=?REFILL
 stack=( -- )
 tags=interpreter,nosymbol
@@ -273,56 +291,16 @@ _qrefill
     .word _qexit
 #include "page.i65"
     .word _query
+#include "page.i65"
+    .word blkfetch
 #include "pass.i65"
+    .word qbranch
+    .byt <(qrefill01-*+1)
+#include "page.i65"
+    .word qlineplus
+#include "pass.i65"
+qrefill01
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(?REFILL)
-stack=( -- )
-tags=interpreter,nosymbol
-|Three possible states coming in|<|<|h
-|1|span is 0||
-|2|||
-|3|||
-
-* 'force refill' check first -- exit to outer caller ( of INTERPRET )
-* 'end of line/buffer' check next
-
-    lda userin
-    sta PNTR                    ; $C6
-    lda userin+1
-    sta TBLX                    ; $D8
-    lda #39
-    sta LNMX                    ; $D5 39 or 79
-
-#endif
-pqrefill
-    jsr swaps
-    jsr harvests2
-    stx z
-    ldx #tos
-    jsr wrapumax
-    ldy ACC+2*N7
-    lda #40
-    iny
-pqrefill01
-    dey
-    bmi pqrefill03
-    jsr wrapumax01
-    bmi pqrefill01              ; bra
-pqrefill03
-    bcs pqrefill04
-    inc ACC+2*N7
-    sec
-pqrefill04
-    inc ACC+2*N7
-    sta ACC+2*N7+1              ; 40|80
-    sbc #1
-    sta INDX                    ; $A1 Count of chars of line input from screen
-    ldx z
-    jmp drop
-
 
 ;--------------------------------------------------------------
 #if 0
@@ -351,8 +329,9 @@ phases of the outer interpreter.
      ?refill 'stream swap >n6 2drop
      dup skip dup>r 1- <n6 +
      swap scan r> - >n8 dup
-     if  over c! in 1+!
-     dup \ something for nip
+     if
+        over c! in 1+!
+        dup                     \ something for nip
      then nip ;
 ```
 #endif
