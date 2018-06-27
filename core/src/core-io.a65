@@ -223,17 +223,25 @@ ptickstream
     lda #3
     sta DFLTN                   ; $AF Default Input Device
     lda tos
+    sta userspan
     sta LNMX                    ; $D5 logical line length (39 or 79)
     lda userin
     sta PNTR                    ; $C6 cursor column on current line
-    lda userin+1
+    lda userlin
+    sta TBLX                    ; $D8 cursor physical line number
     cmp #LPERSCR
-    bcc ptickstream01
+    bit LNMX
+    inc userlin
+    bvc ptickstream01
+    inc userlin
+ptickstream01
+    jsr plugh
+    bcc ptickstream02
+    jsr plugh
     inx
     inx
     jmp putnotc
-ptickstream01
-    sta TBLX                    ; $D8 cursor physical line number
+ptickstream02
     jmp next
 
 ;--------------------------------------------------------------
@@ -263,16 +271,84 @@ invoke `query` to acquire keyboard input from the user.
 : query   ( buf len -- )
     'stream expect ;
 ```
+; a more general solutionm, untested
+tblcursor
+    .byt PNT+1, PNT, PNTR, LNMX, TBLX, DFTLN
+
+curstash
+    ldy #0
+    stx z
+lo1
+    lda tblcursor,y
+    tax
+    lda 0,x
+    pha
+    iny
+    cpy #<(curstash-tblcursor)
+    bne lo1
+    ldx z
+    jmp next
+
+currestore
+    ldy #<(curstash-tblcursor-1)
+    stx z
+lo2
+    lda tblcursor,y
+    tax
+    pla
+    sta 0,x
+    dey
+    bpl lo2
+    ldx z
+    jmp next
+
 #endif
 #include "align.i65"
 _query
     jsr enter
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word cursorfetch
+#include "page.i65"
     .word _tickstream
 #include "page.i65"
     .word expect
+#include "page.i65"
+    .word cursorrestore
 #include "pass.i65"
     .word exit
+
+cursorfetch
+    lda PNT+1
+    pha
+    lda PNT
+    pha
+    lda PNTR
+    pha
+    lda LNMX
+    pha
+    lda TBLX
+    pha
+    lda DFLTN
+    pha
+    jmp next
+
+cursorrestore
+    pla
+    sta DFLTN
+    pla
+    sta TBLX
+    pla
+    sta LNMX
+    pla
+    sta PNTR
+    pla
+    sta PNT
+    pla
+    sta PNT+1
+
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
