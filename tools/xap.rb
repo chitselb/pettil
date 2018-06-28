@@ -345,7 +345,7 @@ puts @label   if @label == "STUDIO"
     end
 
     def hex4out(addr)
-# puts addr.to_s(16).rjust(4,'0')
+#puts addr,addr.to_s(16).rjust(4,'0')
         return addr.to_s(16).rjust(4,'0')
     end
 
@@ -374,6 +374,54 @@ puts @label   if @label == "STUDIO"
         monfile = File.open("./tmp/"+outputfile,'w') do |file|
             labels.each do |label, addr|
                 file.write("al C:#{hex4out addr} .#{label}\n")
+            end
+        end
+    end
+
+    # outputs a csv file for performance tuning
+
+    def write_symtab_file(outputfile,forthwordhash)
+        sortedbylen = forthwordhash.sort_by {|wordname, stuff| stuff.symbol.length.chr+stuff.symbol}
+        symfile = File.open("./tmp/"+outputfile,'wb')
+        sortedbylen.each do |wordname, stuff|
+            if !(stuff.symbol_table_entry.nil?) && !(stuff.tags.index "nosymbol")
+               # puts hex4out(stuff.symbol.length)+\
+               # ' '+hex4out(stuff.name.length)+' '+stuff.name+'   '+stuff.symbol
+
+
+#puts stuff.symbol.length.to_s+'   '+stuff.symbol_table_entry.to_s \
+#                            unless stuff.symbol_table_entry.nil?
+            end
+            symfile.write stuff.symbol_table_entry   unless stuff.tags.index "nosymbol"
+        end
+        symfile.write [0,0,0].pack("C*")        # null length ends pettil.sym
+    end
+    def write_size_file(outputfile,forthwordhash)
+        sizefile = File.open("./tmp/"+outputfile,'w')
+        forthwordhash.each do |wordname,stuff|
+            sizeline = ["#{wordname}","#{stuff.size}"].to_csv
+            sizefile.write sizeline
+        end
+    end
+
+    def write_xpet_csvfile(outputfile,forthwordhash)
+        puts forthwordhash
+        csvfile = File.open("./tmp/"+outputfile,'w') do |file|
+            forthwordhash.each do |wordname, stuff|
+                t = "'" + ((stuff.addr.nil?) ? '' : hex4out(stuff.addr).upcase)
+                s = ((stuff.flags.nil?)) ? '' : stuff.flags.join(",")
+                a = stuff.symbol
+                d = wordname.sub(a,'')
+                outline = ["#{stuff.label}","#{stuff.symbol}","#{wordname}",\
+                    "#{d}",\
+                    t,\
+#                    "#{stuff.stack}",\
+                    "#{stuff.tags.join(",")}",\
+                    s,\
+#                    "#{stuff.vocabulary}",\
+#                    "#{stuff.name}",\
+                    "#{stuff.size}"].to_csv
+                file.write outline
             end
         end
     end
@@ -581,5 +629,8 @@ puts "finis"
 
     # output word names for pearson cruncher
     write_pearson_file "pearson.txt",all_words
+
+    # kick out a csv file of symbols and addresses for performance tuning
+    write_xpet_csvfile "pettil.csv",all_words
 
     exit
