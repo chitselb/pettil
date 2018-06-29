@@ -34,7 +34,7 @@ skipscan01
     cpy userspan                ; Carry true at end of line
     bcc skipscan02
     lda #0                      ; oh, we done
-    sta userspan
+    sta userspan                ; `span off`
     beq skipscan04
 skipscan02
     lda (ACC+2*N6),y            ; get char from buffer
@@ -44,7 +44,7 @@ skipscan03
 skipscan04
     sty userin                  ; found char !, move `in`
     tya
-    jmp put0a
+    jmp put0a                   ;( offset )
 
 ;--------------------------------------------------------------
 #if 0
@@ -313,7 +313,7 @@ phases of the outer interpreter.
 _name
     jsr enter
 #include "page.i65"
-    .word _qrefill
+    .word _tikstreem
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -358,5 +358,201 @@ name01
     .word nip
 #include "pass.i65"
     .word exit
+
+;--------------------------------------------------------------
+#if 0
+name='STREEM
+stack=( -- )
+tags=outer,extra
+Sets up the input stream, refilling from the keyboard or `vmbuf` as needed.
+
+```
+
+: 'streem   ( -- )
+    \ set n6 to point to linebuf tib or sib
+    blk@ ?: sib tib >n6 drop
+    span @  ?exit
+    refill ;
+
+: refill
+    <n6 blk@ ?: linesize 80 expect ;
+
+```
+#endif
+#include "align.i65"
+_tikstreem
+    jsr enter
+#include "page.i65"
+    .word blkfetch
+#include "pass.i65"
+    .word pquerycolon
+    .word sib
+    .word tib
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N6
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word span
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word _refill
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=REFILL
+stack=( -- )
+tags=outer,extra
+Sets up the input stream, refilling from the keyboard or `vmbuf` as needed.
+
+```
+: refill
+    <n6 blk@ ?: linesize 80 expect ;
+
+    ?refill 'stream drop >n6 drop
+     dup skip dup>r 1- <n6 +
+     swap scan r> - >n8 dup
+     if
+        over c! in 1+!
+        dup                     \ something for nip
+     then nip ;
+```
+#endif
+#include "align.i65"
+_refill
+    jsr enter
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N6               ; tib or sib
+#include "page.i65"
+    .word cursorfetch
+#include "page.i65"
+refill02
+    .word blkfetch
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word pquerycolon
+    .word _linesize
+    .word eighty
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word qbranch
+    .byt <(refill02-*+1)
+#include "page.i65"
+    .word expect
+#include "page.i65"
+refill01
+    .word cursorrestore
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=LINESIZE
+stack=( blk -- size )
+tags=outer,extra
+Sets up the input stream, refilling from the keyboard or `vmbuf` as needed.
+
+```
+: linesize
+    block  lin 40*  +
+    dup 'PNT !
+    lin bufwrap >bit cbit@
+    ?: forty eighty
+    -trailing nip ;
+
+ptickstream
+    lda #3
+    sta DFLTN                   ; $AF Default Input Device
+    lda tos
+    sta userspan
+    sta LNMX                    ; $D5 logical line length (39 or 79)
+    lda userin
+    sta PNTR                    ; $C6 cursor column on current line
+    lda userlin
+    sta TBLX                    ; $D8 cursor physical line number
+    cmp #LPERSCR
+    bit LNMX
+    inc userlin
+    bvc ptickstream01
+    inc userlin
+ptickstream01
+    bcc ptickstream02
+    jsr plugh
+    inx
+    inx
+    jmp putnotc
+ptickstream02
+    jmp next
+```
+#endif
+#include "align.i65"
+_linesize
+    jsr enter
+#include "page.i65"
+    .word _block
+#include "page.i65"
+    .word lin
+#include "page.i65"
+    .word fortytimes
+#include "page.i65"
+    .word plus                  ;( addr )
+#include "page.i65"
+    .word lin
+#include "page.i65"
+    .word _bufwrap
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word cbitfetch             ;( addr wrapbit )
+
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word pquerycolon
+    .word oneplusstore
+    .word twoplusstore
+
+#include "pass.i65"
+    .word pquerycolon
+    .word forty
+    .word eighty
+#include "page.i65"
+    .word dashtrailing
+#include "page.i65"
+    .word ptikstreem
+#include "pass.i65"
+    .word exit
+
+ptikstreem
+    lda #3
+    sta DFLTN                   ; $AF Default Input Device
+
+    lda stackl,x
+    sta PNT
+    lda stackh,x
+    sta PNT+1
+
+    lda tos
+    sta userspan
+    sta LNMX                    ; $D5 logical line length (39 or 79)
+    lda userin
+    sta PNTR                    ; $C6 cursor column on current line
+    lda userlin
+    sta TBLX                    ; $D8 cursor physical line number
+    jmp nip
+
 
 #print (*-skip)

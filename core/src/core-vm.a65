@@ -381,13 +381,9 @@ stack=( u -- pkt )
 tags=vm,ext
 Return the `pkt` address of block `u`,
 * set `n8` to `pkt`
-* set `prev` to `u`
-
-~wut? return a 0 if there are less than `n` packets?
 
 ```
 : >pkt
-    dup prev !
     blkbuf 2-
     begin
         over
@@ -402,12 +398,6 @@ Return the `pkt` address of block `u`,
 #include "align.i65"
 _topkt
     jsr enter
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word prev
-#include "page.i65"
-    .word store
 #include "page.i65"
     .word blkbuf
 #include "page.i65"
@@ -1019,18 +1009,21 @@ user is in the editor or not, and whether the packet is screen or data.
      while
         pkt+
     repeat
-    >pkt
-    editing?  ?: vidram blkbuf
+    >pkt                        \ sets `n8`
+    editing?  ?: vidram blkbuf  ( addr )
+    nip                         \ don't need `pkt` address
+    prev 2@ =                   \ blkbuf already loaded?
+    editing? 0= and  ?exit
+    blk @ prev !                \ inhibit redundant reloading
     dup b/buf isscr?
     ?: blank erase
-    editing?  ?: vidram blkbuf
-    nip dup pkt.size 2- tuck -
+    dup pkt.size tuck -
     isscr?
-    if
+    if                          \ handle linewrap for screen packets
         3-under <n8 3- dwrap@
         editing? ?: wrap! bufwrap!
     then
-    -rot
+    -rot                        \ unpack or copy the contents to vidram|blkbuf
     uncompressed? ?: cmove rldecode ;
 ```
 ~#packrat
@@ -1061,62 +1054,82 @@ qmkpkts01
 qmkpkts02
     .word _topkt
 #include "page.i65"
-   .word editingq
+    .word editingq
 #include "pass.i65"
-   .word pquerycolon
-   .word vidram
-   .word blkbuf
+    .word pquerycolon
+    .word vidram
+    .word blkbuf
 #include "page.i65"
-   .word nip
+    .word nip
 #include "page.i65"
-   .word dup
+    .word prev
 #include "page.i65"
-   .word bperbuf
+    .word twofetch
 #include "page.i65"
-   .word isscrq
+    .word eq
+#include "page.i65"
+    .word editingq
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word blkfetch
+#include "page.i65"
+    .word prev
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word isscrq
 #include "pass.i65"
-   .word pquerycolon
-   .word blank
-   .word erase
+    .word pquerycolon
+    .word blank
+    .word erase
 #include "page.i65"
-   .word dup
+    .word dup
 #include "page.i65"
-   .word _pktsize
+    .word _pktsize
 #include "page.i65"
-   .word tuck
+    .word tuck
 #include "page.i65"
-   .word minus
+    .word minus
 #include "page.i65"
-   .word isscrq
+    .word isscrq
 #include "pass.i65"
     .word qbranch
     .byt <(blk02-*+1)
 #include "page.i65"
-   .word threeminusunder
+    .word threeminusunder
 #include "pass.i65"
-   .word zpfrom
-   .byt ACC+2*N8                ; `pkt`
+    .word zpfrom
+    .byt ACC+2*N8               ; `pkt`
 #include "page.i65"
-   .word threeminus
+    .word threeminus
 #include "page.i65"
-   .word _dwrapfetch
+    .word _dwrapfetch
 #include "page.i65"
-   .word editingq
+    .word editingq
 #include "pass.i65"
-   .word pquerycolon
-   .word wrapstore
-   .word _bufwrapstore
+    .word pquerycolon
+    .word wrapstore
+    .word _bufwrapstore
 #include "page.i65"
 blk02
-   .word dashrot
+    .word dashrot
 #include "page.i65"
-   .word uncompressedq
+    .word uncompressedq
 #include "pass.i65"
-   .word pquerycolon
-   .word cmove
-   .word rldecode
+    .word pquerycolon
+    .word cmove
+    .word rldecode
 #include "pass.i65"
-   .word exit
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
