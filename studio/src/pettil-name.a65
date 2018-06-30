@@ -48,13 +48,153 @@ skipscan04
 
 ;--------------------------------------------------------------
 #if 0
-name=?REFILL
+name=NAME
+stack=( char -- nfa|0 )
+tags=outer,extra
+Parse the next `word` from the `input stream`.  Return `false` if the
+`input stream` is exhausted, or the `nfa` of the found word, built
+directly within the input stream.  Advance `in` past the parsed `word`.
+
+Leading delimiters are ignored.   If the delimiter is not found the value of
+IN is the size of the input stream.  If the delimiter is found IN is
+ adjusted to indicate the offset to the character following
+ the delimiter.  `span` is unmodified.
+
+In PETTIL `name` replaces the function of Forth-83 //required// reserved
+word `word`, which is //omitted//.
+
+As much of the `ugly` as I could for the `blk` conspiracy goes in here.
+Isolating conspiracy support in as few words as possible will hopefully
+reduce overall system complexity and present clear transitions between the
+phases of the outer interpreter.
+
+```
+: name   ( char -- nfa|0 )
+     'stream
+     dup skip dup>r 1- <n6 +
+     swap scan r> - >n8 dup
+     if
+        over c! in 1+!
+        dup                     \ something for nip
+     then nip ;
+```
+#endif
+#include "align.i65"
+_name
+    jsr enter
+#include "page.i65"
+    .word _tickstream
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word skip                  ; start of name
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word oneminus
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N6               ; buf
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word scan                  ; end of name (and/or buffer)
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word minus
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N8               ; name.len
+#include "page.i65"
+    .word dup
+#include "pass.i65"
+    .word qbranch
+    .byt <(name01-*+1)
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word cstore                ; prepend name in buffer with name.len
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word oneplusstore          ; move `in` past the space that stopped us
+#include "page.i65"
+    .word dup                   ; something for `nip` to consume
+#include "page.i65"
+name01
+    .word nip
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name='STREAM
 stack=( -- )
-tags=interpreter,nosymbol
-|Three possible states coming in|<|<|h
-|1|span is 0||
-|2|||
-|3|||
+tags=outer,extra,nosymbol
+Sets up the input stream, refilling from the keyboard or `vmbuf` as needed.
+
+```
+
+: 'stream   ( -- )
+    \ set n6 to point to linebuf tib or sib
+    blk@ ?: sib tib >n6 drop
+    span @  ?exit
+    refill ;
+
+: refill
+    <n6 blk@ ?: linesize 80 expect ;
+
+```
+#endif
+#include "align.i65"
+_tickstream
+    jsr enter
+#include "page.i65"
+;    .word lperscr
+#include "page.i65"
+;    .word lin
+#include "page.i65"
+;    .word ult
+#include "pass.i65"
+;    .word qbranch
+;    .byt <(tikstreem01-*+1)
+#include "page.i65"
+    .word blkfetch
+#include "pass.i65"
+    .word pquerycolon
+    .word sib
+    .word tib
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N6
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word span
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word _refill
+#include "pass.i65"
+    .word exit
+
+#include "page.i65"
+tikstreem01
+    .word xyzzy
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=REFILL
+stack=( -- )
+tags=outer,extra
+Sets up the input stream, refilling from the keyboard or `vmbuf` as needed.
 
 * 'force refill' check first -- exit to outer caller ( of INTERPRET )
 * 'end of line/buffer' check next
@@ -72,12 +212,6 @@ tags=interpreter,nosymbol
 * SEQ ASCII file //(future support planned)//
 ** continuous text stream from SEQ file //(future support planned)//
 
-```
-: ?refill   ( -- )
-    span @ ?exit
-    query ;
-```
-
 * 'force refill' check first -- exit to outer caller ( of INTERPRET )
 * 'end of line/buffer' check next
 * 'processing' do nothing else, exit
@@ -88,11 +222,12 @@ tags=interpreter,nosymbol
 * set things up BLK IN SPAN (n5 n6 n7)
 * blk=0 ? TIB : TIB+80 (n4)
 
-: refill?   ( -- flag )
-    #out \ aka span 2+
-    refillq09
+This word relies on user variables `blk` `in` and `span` being adjacent and
+in the right order in the userarea block ~#userorder
 
 
+
+```
 $C4 PNT 16-bit address of current line
 $C6 PNTR position of cursor along line
 $D4 DFLTN current device# (set to 3)
@@ -118,33 +253,6 @@ $D5 LNMX length of current line
         @lin +!
         span @  #lin !
     then ;
-
-LNMX
-
-This word relies on user variables `blk` `in` and `span` being adjacent and
-in the right order in the userarea block ~#userorder
-
-
-
-```
-\ ?refill - reloads either TIB or SIB when SPAN = 0
-: ?refill.setup   ( span+2 buf -- flag )
-    blk @  ?: sib tib
-    span @  0=
-    if
-        refill
-        exit
-    then
-
-    span @  >in @  >
-    if
-        \ end of line
-    then ;
-
-
-    lda #3
-    sta $AF
-
 
 FFCF  4C 15 F2    JMP $F215     ; CHRIN
 
@@ -257,161 +365,6 @@ E16F  85 CD       STA $CD
 E171  A9 22       LDA #$22
 E173  60          RTS
 
-: ?refill
-    span @ ?exit
-    query ;
-```
-#endif
-#include "align.i65"
-_qrefill
-    jsr enter
-#include "page.i65"
-    .word span
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word _query
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=NAME
-stack=( char -- nfa|0 )
-tags=outer,extra
-Parse the next `word` from the `input stream`.  Return `false` if the
-`input stream` is exhausted, or the `nfa` of the found word, built
-directly within the input stream.  Advance `in` past the parsed `word`.
-
-Leading delimiters are ignored.   If the delimiter is not found the value of
-IN is the size of the input stream.  If the delimiter is found IN is
- adjusted to indicate the offset to the character following
- the delimiter.  `span` is unmodified.
-
-In PETTIL `name` replaces the function of Forth-83 //required// reserved
-word `word`, which is //omitted//.
-
-As much of the `ugly` as I could for the `blk` conspiracy goes in here.
-Isolating conspiracy support in as few words as possible will hopefully
-reduce overall system complexity and present clear transitions between the
-phases of the outer interpreter.
-
-```
-: name   ( char -- nfa|0 )
-     ?refill 'stream drop >n6 drop
-     dup skip dup>r 1- <n6 +
-     swap scan r> - >n8 dup
-     if
-        over c! in 1+!
-        dup                     \ something for nip
-     then nip ;
-```
-#endif
-#include "align.i65"
-_name
-    jsr enter
-#include "page.i65"
-    .word _tikstreem
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word skip                  ; start of name
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word oneminus
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N6               ; buf
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word scan                  ; end of name (and/or buffer)
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word minus
-#include "pass.i65"
-    .word tozp
-    .byt ACC+2*N8               ; name.len
-#include "page.i65"
-    .word dup
-#include "pass.i65"
-    .word qbranch
-    .byt <(name01-*+1)
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word cstore                ; prepend name in buffer with name.len
-#include "page.i65"
-    .word in
-#include "page.i65"
-    .word oneplusstore          ; move `in` past the space that stopped us
-#include "page.i65"
-    .word dup                   ; something for `nip` to consume
-#include "page.i65"
-name01
-    .word nip
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name='STREEM
-stack=( -- )
-tags=outer,extra
-Sets up the input stream, refilling from the keyboard or `vmbuf` as needed.
-
-```
-
-: 'streem   ( -- )
-    \ set n6 to point to linebuf tib or sib
-    blk@ ?: sib tib >n6 drop
-    span @  ?exit
-    refill ;
-
-: refill
-    <n6 blk@ ?: linesize 80 expect ;
-
-```
-#endif
-#include "align.i65"
-_tikstreem
-    jsr enter
-#include "page.i65"
-    .word blkfetch
-#include "pass.i65"
-    .word pquerycolon
-    .word sib
-    .word tib
-#include "pass.i65"
-    .word tozp
-    .byt ACC+2*N6
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word span
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word _refill
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=REFILL
-stack=( -- )
-tags=outer,extra
-Sets up the input stream, refilling from the keyboard or `vmbuf` as needed.
-
-```
 : refill
     <n6 blk@ ?: linesize 80 expect ;
 
@@ -450,7 +403,7 @@ refill02
     .word expect
 #include "page.i65"
 refill01
-    .word cursorrestore
+    .word cursorstore
 #include "pass.i65"
     .word exit
 
@@ -532,11 +485,11 @@ _linesize
 #include "page.i65"
     .word dashtrailing
 #include "page.i65"
-    .word ptikstreem
+    .word ptickstream
 #include "pass.i65"
     .word exit
 
-ptikstreem
+ptickstream
     lda #3
     sta DFLTN                   ; $AF Default Input Device
 
