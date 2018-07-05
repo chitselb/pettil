@@ -377,10 +377,9 @@ psize
 ;--------------------------------------------------------------
 #if 0
 name=>PKT
-stack=( u -- pkt )
+stack=( u -- )
 tags=vm,ext
-Return the `pkt` address of block `u`,
-* set `n8` to `pkt`
+Set `n8` to `pkt` address of block `u`
 
 ```
 : >pkt
@@ -391,7 +390,7 @@ Return the `pkt` address of block `u`,
         1-under
         @+ psize - 2-
     repeat
-    nip >n8 ;
+    n8 ! ;
 ```
 ~#packrat
 #endif
@@ -422,12 +421,12 @@ topktb01
 #include "pass.i65"
     .word branch
     .byt <(topktb01-*+1)
-#include "page.i65"
-topktb02
-    .word nip
 #include "pass.i65"
-    .word tozp
+topktb02
+    .word clit
     .byt ACC+2*N8
+#include "page.i65"
+    .word store
 #include "pass.i65"
     .word exit
 
@@ -898,7 +897,10 @@ name=DWRAP@
 stack=( -- wrapd  )
 tags=vm,ext,nosymbol
 
-~#packrat
+```
+: dwrap@   ( -- wrapd )
+    3c@ benjamin or ;
+```
 #endif
 #include "align.i65"
 _dwrapfetch
@@ -1003,6 +1005,42 @@ user is in the editor or not, and whether the packet is screen or data.
 |>|^ not [[SCRPKT?]]|[[BLKBUF]] initialized to nulls<br>1024 bytes of data expanded to [[BLKBUF]]|
 
 ```
+: ?mkpkts   ( u -- )
+    begin                       \ make packets loop
+        #blk @ over 1+ <
+     while
+        pkt+
+    repeat
+    >pkt drop ;                 \ sets `n8`
+
+: curbuf   ( -- buf )
+    editing? ?: vidram blkbuf ;
+
+: block   ( u -- addr )
+    ?mkpkts curbuf              ( addr )
+    prev 2@ =
+    editing? 0= and  ?exit      \ block already loaded?
+    blk @ prev !                \ inhibit redundant reloading
+    dup b/buf  isscr?
+    ?: blank erase              \ wipe the buffer
+    dup pkt.size tuck -
+    isscr?
+    if
+        3-under <n8 3- dwrap@
+        editing?  ?: wrap! bufwrap!
+    then
+    -rot uncompressed?
+    ?: cmove rldecode ;
+
+: curpkt   ( -- )
+    editing? ?: scr prev
+    >pkt drop ;
+
+: update   ( -- )
+    curpkt
+
+    bufwrap dwrap!
+
 : block   ( u -- addr )
     begin                       \ make packets loop
         #blk @ over 1+ <
@@ -1059,8 +1097,6 @@ qmkpkts02
     .word pquerycolon
     .word vidram
     .word blkbuf
-#include "page.i65"
-    .word nip
 #include "page.i65"
     .word prev
 #include "page.i65"
@@ -1242,9 +1278,9 @@ _sup
 #include "page.i65"
     .word _pktsize
 #include "page.i65"
-    .word bperbuf
+    .word nip
 #include "page.i65"
-    .word twonip
+    .word bperbuf
 #include "page.i65"
     .word vmbuf
 #include "page.i65"
@@ -1316,6 +1352,78 @@ sup03
 
 ;--------------------------------------------------------------
 #if 0
+name=BOTTOM
+stack=( -- )
+tags=vm
+returns the actual bottom of `vmbuf` even when a screen has been prepended
+by using `STOP-DEL` (cut screen) in the editor
+
+```
+: bottom   ( -- addr )
+    vmbuf @ dup @               ( vmbuf size )
+    ?dup
+    if
+        psize -
+    then ;
+```
+#endif
+#include "align.i65"
+_bottom
+    jsr enter
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word qbranch
+    .byt <(bottom01-*+1)
+#include "page.i65"
+    .word psize
+#include "page.i65"
+    .word minus
+#include "pass.i65"
+bottom01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=FLOOR
+stack=( -- addr )
+tags=forth-83,vm
+
+```
+: floor   ( -- addr )
+    <n8 dup @ psize - 2+ ;
+```
+~#packrat
+#endif
+#include "align.i65"
+_floor
+    jsr enter
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N8
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word psize
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word twoplus
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=UPDATE
 stack=( -- )
 tags=forth-83,vm
@@ -1343,11 +1451,15 @@ tests:
 ~\ fill blkbuf all with '!'
 
 ```
+
+<n8 3- drwap@                   \ get wrap from the packet
+editing? ?: wrap! bufwrap!      \ block
+
+
 : update   ( -- )
     \ source is either `vidram` or `blkbuf`
     \ target is always pkt.floor
-    editing? ?: scr blk
-    @ >pkt drop
+    editing? ?: scr blk  @ >pkt
     editing?
     if
         isscr?
@@ -1358,15 +1470,29 @@ tests:
         \   nothing to do -- vidram can't hold data block
         then
     else
-upd01
         isscr?
         if
             blkbuf 1000 + 3c@
         then
         blkbuf prev sup
-    then
-upd02
-;
+    then ;
+
+\ replace packet `scr`
+: bottom
+    vmbuf @ dup @               ( vmbuf size )
+    ?dup
+    if
+        psize -
+    then ;
+
+: floor
+    <n8 dup @ psize - 2+ ;
+
+: update   ( -- )
+( bottom ) ( bottom - 1024 + floor ) ( floor - bottom )
+
+    cmove
+    rlencode
 ```
 ~#packrat
 #endif
@@ -1383,8 +1509,6 @@ _update
     .word fetch
 #include "page.i65"
     .word _topkt
-#include "page.i65"
-    .word drop
 #include "page.i65"
     .word editingq
 #include "pass.i65"

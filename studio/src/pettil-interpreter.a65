@@ -206,80 +206,54 @@ backslash
 
 ;--------------------------------------------------------------
 #if 0
+name=INTERPRET.CFA
+stack=( cfa -1|+1 -- )
+tags=interpreter,nosymbol
+
+```
+: interpret.cfa
+    compiling? <>
+    ?: execute xt, ;
+```
+#endif
+#include "align.i65"
+_interpretcfa
+    jsr enter
+#include "page.i65"
+    .word compilingq
+#include "page.i65"
+    .word ne
+#include "pass.i65"
+    .word pquerycolon
+    .word execute
+    .word _xtcomma
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=INTERPRET
 stack=( -- )
 tags=fig,forth-83,interpreter,nosymbol
-The Forth interpreter loop
+The Forth interpreter loop in PETTIL uses a lazy-loading approach.  Turning
+`span` off triggers `name` to refill either the `tib` (from the keyboard) or
+`sib` (when loading) buffer with the next line of input.  When `name` returns
+`0`, `interpret` exits (to `quit` or `load`).
 
-Interpret only exits (without flags) when the one-line input buffer is empty
+* at the end of a line in interactive mode
+* at the end of a screen when loading
 
-
-consistent eager-loaded approach
-[[TIB]] source comes already loaded from [[QUIT]]
-[[BLK]] source comes already loaded from [[BLOCK]]
-[[SCR]] source will eager-load each line from the block buffer, already loaded
-by [[BLOCK]]
+If `name` returns an `nfa`, then `found?` will search the dictionary or try
+parse it as a `number` if it is not found. Depending on `compiling?` state,
+`cfa`s and numbers are either compiled or executed.
 
 ```
-create jumptable  next ,   dlit ,  drop ,  droplit ,
-                \ double  double,  single    single,
 : interpret   ( -- )
     begin
-        ?stack                  \ make sure things are okay
-        blk 'n2 6 cmove
-        \ refill? leaves false when we're loading a screen
-        \ refill? leaves true right after it does : QUERY  TIB 80 EXPECT ;
-        <.N8 ( flag ) ?: exit query  ?exit  \ get out if we refilled TIB buffer
-                                \ get something in the line buffer
-                                \ N8 contains SPAN after REFILL?
-        bl name   ( addr )
-        dup c@    ( addr len )  \ WORD returns both zeroes zero when EOT
+        ?stack  bl name  ?dup
     while
-        found ?dup
-        if        ( cfa findflag )
-            \               find -1    find +1
-            \             ____________________
-            \ state -1   | compile     execute
-            \ state 0    | execute     execute
-            compiling? <>  ?: execute ,xt
-        else      ( here )
-            number
-            jumptable  dpl @ 0< 2*  compiling? + 2* -
-            @ execute
-        then
-    repeat
-    drop ;
-
-: interpret
-    begin
-        ?stack  ?refill
-        bl name  ?dup           ( nfa true | 0(eob) false )
-    while
-        found ?dup              ( nfa -1|0|1 [ -1|1 ])
-        if  compiling? <>  ?:  execute ,xt
-        else
-            number
-            jumptable
-            dpl @ 0< 2*
-            compiling? + 2* -
-            @ execute
-        then
-    repeat  [compile] \ ;       \ span off
-
-: interpret   ( -- )
-    begin
-        ?stack
-        bl name  ?dup           ( nfa true | 0(eob) false )
-    while
-        found ?dup              ( cfa -1|0|1 [ -1|1 ])
-        if  compiling?  <>      \ compiling & normal            ,xt
-                                \ interpret & normal            execute
-                                \ compiling & immediate         execute
-                                \ interpret & immediate         execute
-            ?: execute ,xt      ( -- )
-        else
-            number
-        then
+        found?  ?dup
+        ?: interpret.cfa number
     repeat ;
 ```
 #endif
@@ -303,24 +277,10 @@ interpret01
 #include "page.i65"             ;( cfa 1 ; found, immediate )
     .word qdup
 #include "pass.i65"
-    .word qbranch
-    .byt <(interpret02-*+1)
-#include "page.i65"
-    .word compilingq
-#include "page.i65"
-    .word ne
-#include "pass.i65"
     .word pquerycolon
-    .word execute
-    .word _xtcomma
-#include "pass.i65"
-    .word branch
-    .byt <(interpret03-*+1)
-#include "page.i65"
-interpret02
+    .word _interpretcfa
     .word _number
 #include "pass.i65"
-interpret03
     .word branch
     .byt <(interpret01-*+1)
 #include "pass.i65"
