@@ -319,58 +319,64 @@ rldecode06
 ;--------------------------------------------------------------
 #if 0
 name=PKT.SIZE
-stack=( -- packet size )
-tags=vm,nosymbol
-Return `pkt` address and `size` of the packet in `n8`
+stack=( pkt -- pkt size )
+tags=vm,ext,nosymbol
+Return unaltered `pkt` and `size` of this packet
 
 ```
-: pkt.size   ( -- pkt size )
-    <n8 dup @ $7ff and ;
-
-    jsr slip
-    ldy #0
-    lda (tos),y
-    pha
-    iny
-    lda (tos),y
-    pha
-    jmp rfrom
+: pkt.size    ( pkt -- pkt size )
+    dup @ psize ;
 ```
-pronounced: "packet-size"
-~#packrat
 #endif
 #include "align.i65"
 _pktsize
     jsr enter
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N8
 #include "page.i65"
     .word dup
 #include "page.i65"
     .word fetch
 #include "page.i65"
     .word psize
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=PKT.NXT
+stack=( pkt -- pkt' )
+tags=vm,ext,nosymbol
+Return next
+
+```
+: pkt.next    ( pkt -- pkt' )
+    pkt.size - ;
+```
+#endif
+#include "align.i65"
+_pktnxt
+    jsr enter
 #include "page.i65"
-   .word twominus
+    .word _pktsize
+#include "page.i65"
+    .word minus
 #include "pass.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
 name=PSIZE
-stack=( pkt.header -- pkt.size )
-tags=vm,ext,nosymbolIf
-Return just the size of the `pkt.header` on the stack
+stack=( header -- addr )
+tags=vm,ext,nosymbol
+Return size of this packet header
 
 ```
-: psize    ( header -- size )
-    $7FFF and ;
+: psize  ( header -- size )
+    $7FF and ;
 ```
 #endif
 psize
     lda tos+1
-    and #$07
+    and #7
     sta tos+1
     jmp next
 
@@ -389,10 +395,10 @@ Set `n8` to `pkt` address of block `u`
     while
         1-under
         @+ psize - 2-
+        dup @ psize -
     repeat
     n8 ! ;
 ```
-~#packrat
 #endif
 #include "align.i65"
 _topkt
@@ -411,13 +417,7 @@ topktb01
 #include "page.i65"
     .word oneminusunder
 #include "page.i65"
-    .word fetchplus
-#include "page.i65"
-    .word psize
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word twominus
+    .word _pktnxt
 #include "pass.i65"
     .word branch
     .byt <(topktb01-*+1)
@@ -730,10 +730,8 @@ _scr0
 name=#BLK!
 stack=( -- )
 tags=vm,nosymbol
-Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
+Reset `vmbuf` pointer and `#blk` by running through all packets
 
-~ It should also validate flags and max-lengths, error out on corrupt VMBUF
-~wut?  throw a `bad vm packet` error if a length/flag is off the reservation
 ```
 : #blk!   ( -- )
     #blk off  blkbuf 2-
@@ -745,8 +743,15 @@ Reset virtual memory user variables for `LOAD-BUFFERS` or `EMPTY-BUFFERS`
     repeat
     vmbuf ! ;
 
+: #blk!   ( -- )
+    #blk off  blkbuf 2-
+    begin
+        dup pkt.nxt tuck <>
+    while
+        #blk 1+!
+    repeat
+    vmbuf ! ;
 ```
-~#packrat
 #endif
 #include "align.i65"
 _numblkstore
@@ -761,11 +766,7 @@ _numblkstore
     .word twominus
 #include "page.i65"
 numblkstore01
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word psize
+    .word _pktsize
 #include "page.i65"
     .word qdup
 #include "pass.i65"
@@ -916,6 +917,26 @@ _dwrapfetch
 
 ;--------------------------------------------------------------
 #if 0
+name=PKTWRAP
+stack=( -- addr )
+tags=vm,ext,nosymbol
+address of 3-byte area where `wrapd` is stored in the block buffer
+
+~#packrat
+#endif
+#include "align.i65"
+_pktwrap
+    jsr enter
+#include "pass.i65"
+   .word zpfrom
+   .byt ACC+2*N8
+#include "page.i65"
+   .word threeminus
+#include "pass.i65"
+   .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=BUFWRAP
 stack=( wrapd -- )
 tags=vm,ext,nosymbol
@@ -985,24 +1006,10 @@ _emptybuffers
 
 ;--------------------------------------------------------------
 #if 0
-name=BLOCK
-stack=( blk -- buf )
-tags=vm,fig,forth-79,forth-83
-Retrieves and decompresses a screen or data block from the [[VMBUF]]
-[[region|PETTIL system memory map]]. This is PETTIL's top of the food
-chain for reading packets, the antonym of [[UPDATE]] (which writes
-packets).
+name=?MKPKTS
+stack=( u -- )
+tags=vm,nosymbol
 
-The table below summarizes how `BLOCK` functions based on whether the
-user is in the editor or not, and whether the packet is screen or data.
-
-|^[[EDITING?]] |<|packet# sets [[SCR]]<br>returns [[VIDRAM]]|
-|>|^ [[SCRPKT?]]|[[VIDRAM]] initialized to spaces<br>linewrap stored to zero page<br>write 1000-byte packet to [[VIDRAM]]|
-|>|^ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;not [[SCRPKT?]]|[[VIDRAM]] initialized to nulls<br>zero page linewrap table set to all 40-column<br>displays first 1000 characters of data block|
-||<|<|
-|^not [[EDITING?]] |<|packet# sets [[BLK]]<br>returns [[BLKBUF]]|
-|>|^ [[SCRPKT?]]|[[BLKBUF]] initialized to spaces<br>linewrap stored in first three bytes of [[BLKBUF]]<br>followed by 1000-bytes of screencodes|
-|>|^ not [[SCRPKT?]]|[[BLKBUF]] initialized to nulls<br>1024 bytes of data expanded to [[BLKBUF]]|
 
 ```
 : ?mkpkts   ( u -- )
@@ -1011,10 +1018,45 @@ user is in the editor or not, and whether the packet is screen or data.
      while
         pkt+
     repeat
-    >pkt drop ;                 \ sets `n8`
+    >pkt ;                 \ sets `n8`
 
-: curbuf   ( -- buf )
-    editing? ?: vidram blkbuf ;
+#endif
+#include "align.i65"
+_qmkpkts
+    jsr enter
+#include "page.i65"
+qmkpkts01
+    .word numblk
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word lt
+#include "pass.i65"
+    .word qbranch
+    .byt <(qmkpkts02-*+1)
+#include "page.i65"
+    .word _pktplus
+#include "pass.i65"
+    .word branch
+    .byt <(qmkpkts01-*+1)
+#include "page.i65"
+qmkpkts02
+    .word _topkt
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BLOCK
+stack=( blk -- buf )
+tags=vm,fig,forth-79,forth-83
+Unpack a screen or data packet from `vmbuf` to `blkbuf` or `vidram`
+
+```
 
 : block   ( u -- addr )
     ?mkpkts curbuf              ( addr )
@@ -1070,26 +1112,8 @@ user is in the editor or not, and whether the packet is screen or data.
 _block
     jsr enter
 #include "page.i65"
-qmkpkts01
-    .word numblk
+    .word _qmkpkts
 #include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word lt
-#include "pass.i65"
-    .word qbranch
-    .byt <(qmkpkts02-*+1)
-#include "page.i65"
-    .word _pktplus
-#include "pass.i65"
-    .word branch
-    .byt <(qmkpkts01-*+1)
-#include "page.i65"
-qmkpkts02
     .word _topkt
 #include "page.i65"
     .word editingq
@@ -1352,73 +1376,27 @@ sup03
 
 ;--------------------------------------------------------------
 #if 0
-name=BOTTOM
+name=VMBOTTOM
 stack=( -- )
 tags=vm
-returns the actual bottom of `vmbuf` even when a screen has been prepended
-by using `STOP-DEL` (cut screen) in the editor
+Return the lowest used address of `vmbuf` (including prepended `STOP-DEL`
+screen packet, if present)
 
 ```
-: bottom   ( -- addr )
+: vmbottom   ( -- addr )
     vmbuf @ dup @               ( vmbuf size )
-    ?dup
-    if
-        psize -
-    then ;
+    psize - ;
 ```
 #endif
 #include "align.i65"
-_bottom
+_vmbottom
     jsr enter
 #include "page.i65"
     .word vmbuf
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word qdup
-#include "pass.i65"
-    .word qbranch
-    .byt <(bottom01-*+1)
-#include "page.i65"
-    .word psize
-#include "page.i65"
-    .word minus
-#include "pass.i65"
-bottom01
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=FLOOR
-stack=( -- addr )
-tags=forth-83,vm
-
-```
-: floor   ( -- addr )
-    <n8 dup @ psize - 2+ ;
-```
-~#packrat
-#endif
-#include "align.i65"
-_floor
-    jsr enter
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N8
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word psize
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word twoplus
+    .word _pktnxt
 #include "pass.i65"
     .word exit
 
@@ -1452,9 +1430,14 @@ tests:
 
 ```
 
-<n8 3- drwap@                   \ get wrap from the packet
+<n8 3- drwap@                   \ get wrap from the packet (block)
+
+<n8 3- dwrap!                   \ set packet wrap (update)
+
 editing? ?: wrap! bufwrap!      \ block
 
+vmbottom dup 1024 - <n8 pkt.size dup>r +under r> - third - 2+
+cmove
 
 : update   ( -- )
     \ source is either `vidram` or `blkbuf`
@@ -1477,24 +1460,7 @@ editing? ?: wrap! bufwrap!      \ block
         blkbuf prev sup
     then ;
 
-\ replace packet `scr`
-: bottom
-    vmbuf @ dup @               ( vmbuf size )
-    ?dup
-    if
-        psize -
-    then ;
-
-: floor
-    <n8 dup @ psize - 2+ ;
-
-: update   ( -- )
-( bottom ) ( bottom - 1024 + floor ) ( floor - bottom )
-
-    cmove
-    rlencode
 ```
-~#packrat
 #endif
 #include "align.i65"
 _update
@@ -1509,6 +1475,46 @@ _update
     .word fetch
 #include "page.i65"
     .word _topkt
+#include "page.i65"
+    .word _vmbottom
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word minus
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N8
+#include "page.i65"
+    .word _pktsize
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word plusunder
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word xyzzy
+
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+;vmbottom dup 1024 - <n8 pkt.size dup>r +under r> - third -
 #include "page.i65"
     .word editingq
 #include "pass.i65"
