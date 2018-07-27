@@ -703,25 +703,48 @@ _nowrap
 
 ;--------------------------------------------------------------
 #if 0
-name=SCR0
-stack=( -- )
+name=BUF?
+stack=( -- buf )
 tags=vm,nosymbol
-Reset [[SCR]] and [[BLK]] to screen/block 0.
+Return address of buffer
+
 
 ```
-: scr0   ( -- )
-    blk off  scr off ;
+: buf?   ( -- buf )
+    editing? ?: vidram blkbuf ;
 ```
 #endif
 #include "align.i65"
-_scr0
+_bufq
     jsr enter
 #include "page.i65"
-    .word scr
+    .word editingq
+#include "pass.i65"
+    .word pquerycolon
+    .word vidram
+    .word blkbuf
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DIRTYBUF
+stack=( -- )
+tags=vm,nosymbol
+Mark `blkbuf` dirty to force `block` to reload from `vmbuf`
+
+```
+: dirtybuf   ( -- )
+    prev on ;
+```
+#endif
+#include "align.i65"
+_dirtybuf
+    jsr enter
 #include "page.i65"
-    .word four
+    .word prev
 #include "page.i65"
-    .word erase
+    .word on
 #include "pass.i65"
     .word exit
 
@@ -744,7 +767,8 @@ Reset `vmbuf` pointer and `#blk` by running through all packets
     vmbuf ! ;
 
 : #blk!   ( -- )
-    #blk off  blkbuf 2-
+    #blk 8 erase  dirtybuf
+    blkbuf 2-
     begin
         dup pkt.nxt tuck <>
     while
@@ -759,7 +783,11 @@ _numblkstore
 #include "page.i65"
     .word numblk
 #include "page.i65"
-    .word off
+    .word eight
+#include "page.i65"
+    .word erase
+#include "page.i65"
+    .word _dirtybuf
 #include "page.i65"
     .word blkbuf
 #include "page.i65"
@@ -998,8 +1026,6 @@ _emptybuffers
 #include "page.i65"
     .word off
 #include "page.i65"
-    .word _scr0
-#include "page.i65"
     .word _numblkstore
 #include "pass.i65"
     .word exit
@@ -1105,6 +1131,17 @@ Unpack a screen or data packet from `vmbuf` to `blkbuf` or `vidram`
     then
     -rot                        \ unpack or copy the contents to vidram|blkbuf
     uncompressed? ?: cmove rldecode ;
+: block   ( n -- addr )
+    ?mkpkts  buf? prev 2@
+    editing? 0= and  ?exit
+    blk@ prev !  dup b/buf
+    isscr? ?: blank erase
+    dup pkt.size tuck - isscr?
+    if
+        3-under <n8 3- dwrap@
+        editing? wrap! bufwrap!
+    then
+    uncompressed? ?: cmove rldecode ;
 ```
 ~#packrat
 #endif
@@ -1114,13 +1151,7 @@ _block
 #include "page.i65"
     .word _qmkpkts
 #include "page.i65"
-    .word _topkt
-#include "page.i65"
-    .word editingq
-#include "pass.i65"
-    .word pquerycolon
-    .word vidram
-    .word blkbuf
+    .word _bufq
 #include "page.i65"
     .word prev
 #include "page.i65"
@@ -1384,8 +1415,7 @@ screen packet, if present)
 
 ```
 : vmbottom   ( -- addr )
-    vmbuf @ dup @               ( vmbuf size )
-    psize - ;
+    vmbuf @ pkt.nxt ;
 ```
 #endif
 #include "align.i65"
@@ -1440,8 +1470,13 @@ vmbottom dup 1024 - <n8 pkt.size dup>r +under r> - third - 2+
 cmove
 
 : update   ( -- )
-    \ source is either `vidram` or `blkbuf`
-    \ target is always pkt.floor
+    \ source is either (isscr?) `vidram` or `blkbuf`
+    editing? 2* isscr? xor 2*  ( -4 -2 0 2 )
+
+
+
+
+
     editing? ?: scr blk  @ >pkt
     editing?
     if
@@ -1915,8 +1950,6 @@ _ploadverify
     .word twostore
 #include "page.i65"
     .word preaddata
-#include "page.i65"
-    .word _scr0
 #include "page.i65"
     .word _numblkstore
 #include "pass.i65"
