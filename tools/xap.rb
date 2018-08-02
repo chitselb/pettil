@@ -405,7 +405,7 @@ puts @label   if @label == "STUDIO"
     end
 
     def write_xpet_csvfile(outputfile,forthwordhash)
-        puts forthwordhash
+#        puts forthwordhash
         csvfile = File.open("./tmp/"+outputfile,'w') do |file|
             forthwordhash.each do |wordname, stuff|
                 t = "'" + ((stuff.addr.nil?) ? '' : hex4out(stuff.addr).upcase)
