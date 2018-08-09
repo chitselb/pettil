@@ -12,7 +12,7 @@ clean:
 	mkdir ./tmp/
 
 launch: clean pettil
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+0 \
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 \
 	-x ~/Documents/dev/commodore/vice-3.2/src/xpet \
 		-CRTChwscale \
 		-CRTCfilter 2 \
@@ -22,7 +22,6 @@ launch: clean pettil
 		-moncommand pettil.mon \
 		-warp \
 	pettil.prg \
-	| tee -a ~/t.t \
  &
 #	/usr/local/bin/xpet \
 		-verbose \
