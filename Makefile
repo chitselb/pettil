@@ -11,18 +11,27 @@ clean:
 	rm -rf ./tmp/
 	mkdir ./tmp/
 
+hhgttg:
+	xpet -config chitselb.xpet.v32
+#	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
+
 launch: clean pettil
+# ~/Documents/dev/commodore/vice-3.2/src/
 	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 \
-	-x ~/Documents/dev/commodore/vice-3.2/src/xpet \
-		-CRTChwscale \
-		-CRTCfilter 2 \
-		-fullscreen \
-		-verbose \
-		-1 ../tapes/2017-02.tap \
-		-moncommand pettil.mon \
-		-warp \
-	pettil.prg \
- &
+	-x /home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
+		-directory /home/chitselb/Documents/dev/commodore/vice-3.2/data/PET/ \
+		-config chitselb.xpet &
+#		-CRTChwscale \
+#		-CRTCfilter 2 \
+#		-verbose \
+#		-1 ../tapes/j.tap \
+#		-moncommand pettil.mon \
+#		-warp \
+#		-monlog pettil-mon.log \
+#		-verbose \
+#	pettil.prg \
+#		-logfile pettil-xpet.log \
+
 #	/usr/local/bin/xpet \
 		-verbose \
 		-1 ../tapes/2017-02.tap \
