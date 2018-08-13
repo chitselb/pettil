@@ -1,7 +1,7 @@
 
 SHELL = /bin/bash
 
-all:  clean pettil launch tiddlypettil
+all:  clean pettil launch # tiddlypettil
 
 compile: clean pettil tiddlypettil
 
@@ -17,10 +17,11 @@ hhgttg:
 
 launch: clean pettil
 # ~/Documents/dev/commodore/vice-3.2/src/
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 \
-	-x /home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
-		-directory /home/chitselb/Documents/dev/commodore/vice-3.2/data/PET/ \
-		-config chitselb.xpet &
+	pwd
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
+	/usr/local/bin/xpet \
+		-directory data/PET/ \
+		-config data/chitselb.xpet &
 #		-CRTChwscale \
 #		-CRTCfilter 2 \
 #		-verbose \
