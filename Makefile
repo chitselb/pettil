@@ -11,10 +11,6 @@ clean:
 	rm -rf ./tmp/
 	mkdir ./tmp/
 
-hhgttg:
-	xpet -config chitselb.xpet.v32
-#	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
-
 launch: clean pettil
 # ~/Documents/dev/commodore/vice-3.2/src/
 	pwd
