@@ -564,9 +564,7 @@ wrapzap12
 name=WRAPZAPS
 stack=( x -- 0 )
 tags=editor,subroutine,nosymbol
-Does not alter data stack pointer, but `x` is safely stored in `z`
-
-|pass:|A|bytes to clear|
+|pass:|A|# of bytes to clear|
 |return:|A|0|
 ||Z|stack|
 
@@ -631,7 +629,8 @@ Retrieve the 25-bit linewrap table at `$E0..F8` as a double
 
 #endif
 wrapfetch
-    jsr wrapzap12
+    jsr wrapzap12               ; ~wut? possible C=64 porting issue? 
+    ;stx z
     ldy #$FF
     ldx #tos                    ; put it in `tos(hi) n0(lo)`
 wrapfetch01
@@ -1485,6 +1484,85 @@ _updvidscr
 
 ;--------------------------------------------------------------
 #if 0
+name=TWONKY
+stack=( -- )
+tags=vm
+test area for update
+
+```
+: twonky   ( -- )
+    vmbottom b/buf - vidram tuck b/scr -trailing rlencode
+
+    vmbottom b/buf - 
+    editing? ?: vidram blkbuf     tuck
+    editing? ?: b/scr b/buf       - 
+    editing? ?: -trailing -nulls  rlencode
+
+    editing?
+    if
+        vidram tuck b/scr -trailing
+    else
+        blkbuf tuck b/buf -nulls
+    then
+    rlencode
+
+n4                                vmbottom-1024
+
+
+
+    setup-moves
+                                from = vmbottom - 1024
+                                to = 
+    cmove                       \ open up space, move everything down to
+                                \ squeeze in #bytes that were rlencoded 
+                                \ or uncompressed
+    cmove> \ 
+    set-header
+    set-wrap
+    ;
+```
+#endif
+#include "align.i65"
+_twonky
+    jsr enter
+#include "page.i65"
+    .word _vmbottom
+#include "page.i65"
+    .word bperbuf
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word editingq
+#include "pass.i65"
+    .word pquerycolon
+    .word vidram
+    .word blkbuf
+#include "page.i65"
+    .word tuck
+#include "page.i65"
+    .word editingq
+#include "pass.i65"
+    .word pquerycolon
+    .word bperscr
+    .word bperbuf
+#include "page.i65"
+    .word editingq
+#include "pass.i65"
+    .word pquerycolon
+    .word dashtrailing
+    .word dashnulls
+#include "page.i65"
+#include "page.i65"
+    .word nip
+#include "page.i65"
+    .word rlencode
+#include "page.i65"
+    .word xyzzy
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=UPDATE
 stack=( -- )
 tags=forth-83,vm
@@ -1522,8 +1600,24 @@ editing? ?: wrap! bufwrap!      \ block
 vmbottom dup 1024 - <n8 pkt.size dup>r +under r> - third - 2+
 cmove
 
+
+length of old packet
+length of new packet
+vmbottom (vmbuf minus the screen-paste buffer, if present)
+
+
 : update   ( -- )
     editing? 2* isscr? xor 2+ +@execute ;
+
+case editing? isscr?            \ editing screen packet
+    vidram vmbot 1000 - >n. 1000 rlencode
+                                \ how long is new packet?
+    wrap@  
+case editing? !isscr?           \ viewing first 1000 bytes of data packet (read-only)
+
+case !editing? isscr?
+
+case !editing? !isscr?
 
     scr @ >pkt
 

@@ -7,6 +7,19 @@ compile: clean pettil tiddlypettil
 
 doc: tiddlypettil publish
 
+mypet:
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
+	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
+		-directory ./data/PET/ \
+		-config ./data/sdl2_chitselb.vicerc &
+
+xpet8032:
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
+	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
+		-verbose \
+		-directory ./data/PET/ \
+		-config ./data/sdl2_8032.vicerc &
+
 clean:
 	rm -rf ./tmp/
 	mkdir ./tmp/
