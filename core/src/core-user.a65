@@ -246,7 +246,16 @@ name=#BLK
 tags=uservar,vm
 stack=( -- addr )
 !!!User variable
-Number of virtual memory packets
+Number of virtual memory packets used in `vmbuf`. 
+
+There is usually `00` at this address.  
+
+!!sub-basement.
+In the editor, `STOP-DEL` and `STOP-INS` use this to temporarily store the header of a dangly packet for cutting/pasting an entire screen of code.  `#blk` does not count this screen buffer.  
+
+!!sub-basement dungeon underground parking, lower deck.
+In the editor, `vmbottom` points to the address below the screen paste buffer as a region for `update` to fabricate the replacement packet.
+
 #endif
 numblk
     jsr uservar
@@ -257,8 +266,42 @@ numblk
 name=SCR
 stack=( -- addr )
 tags=uservar
-The address of a user variable containing the
-number of the screen most recently LISTed or EDITed
+!!!User variable
+Packet number of screen most recently LISTed or EDITed
+
+Three user variables each track a packet index: `scr`, `prev` and `blk`
+
+* `scr` used by ''editor''
+** set by `edit` 
+** currently visible screen
+** associates with contents of `vidram`
+** used by `editor` vocabulary's `l` `p` and `n`
+** used by `STOP-HOME` `STOP-UP` and `STOP-DOWN` editor commands
+* `prev` used by ''virtual memory''
+** set by `block`
+** reset by `empty-buffers`
+** read by `update`
+** associates with contents of `blkbuf`
+** `blkbuf` reload is inhibited when not `editing?`
+** set by `block`
+** `-1` `blkbuf` is invalid
+** `0` block/screen 0 loaded in `blkbuf` 
+** `>0` block/screen loaded in `blkbuf` 
+* `blk` used by ''interpret''
+** current input source
+** connects `blkbuf` with `sib`
+** `0` input from keyboard `tib`
+** `>0` loading from `blkbuf` and `sib`
+
+|^`scr`|^`0`|^`pkt` #0 is loaded in `vidram`|
+|~|`> 0`|^`pkt` is loaded in `vidram`|
+|^`prev`|^`-1`|^`blkbuf` invalid|
+|~|^`0`|^`pkt` #0 is loaded in `blkbuf`|
+|~|^`> 0`|^`pkt` is loaded in `blkbuf`|
+|~|~|afawef|
+|^`blk`|^`0`|^input from keyboard|
+|~|`> 0`|^actively loading from `blk`|
+
 #endif
 scr
     jsr uservar
@@ -269,8 +312,13 @@ scr
 name=PREV
 stack=( -- addr )
 tags=uservar
-The address of a user variable containing the
-number of the block most recently loaded
+!!!User variable
+Packet number of block currently loaded
+
+!!!Detecting block already loaded
+Unless `editing?` is true, `block` exits without unpacking if `prev` matches the requested value.
+`update` uses `prev` if `editing?` is false, (else `scr`)
+
 #endif
 prev
     jsr uservar

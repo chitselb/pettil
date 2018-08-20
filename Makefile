@@ -1,7 +1,7 @@
 
 SHELL = /bin/bash
 
-all:  clean pettil launch # tiddlypettil
+all:  clean pettil launch tiddlypettil
 
 compile: clean pettil tiddlypettil
 
@@ -12,6 +12,11 @@ mypet:
 	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
 		-directory ./data/PET/ \
 		-config ./data/sdl2_chitselb.vicerc &
+
+vic20:
+	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xvic \
+		-directory ./data/VIC20/ \
+		-config ./data/sdl2_vic20.vicerc &
 
 xpet8032:
 	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
@@ -33,11 +38,19 @@ launch: clean pettil
 		-config data/x11_chitselb.vicerc &
 
 # gnome-ui 3.1
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
+#	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
 	/usr/bin/xpet \
 		-directory data/PET/ \
 		-moncommand pettil.mon \
 		-config data/x11_chitselb.vicerc &
+
+# gnome-ui 3.1
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
+	/usr/bin/xpet \
+		-directory data/PET/ \
+		-moncommand pettil.mon \
+		-config data/x11_4032.vicerc \
+		pettil.prg &
 
 # sdl2 3.2
 #	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \

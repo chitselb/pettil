@@ -342,6 +342,52 @@ _pktsize
 
 ;--------------------------------------------------------------
 #if 0
+name=PKT.THIS
+stack=( -- pkt size )
+tags=vm,ext,nosymbol
+Return header address and size for current packet in `n8`
+
+```
+: pkt.this    ( -- pkt size )
+    <n8 pkt.size ;
+```
+#endif
+#include "align.i65"
+_pktthis
+    jsr enter
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N8
+#include "page.i65"
+    .word _pktsize
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=PKT.WRAP
+stack=( -- addr )
+tags=vm,ext,nosymbol
+Return `addr` of 3-byte linewrap bits for current screen `pkt` in `vmbuf`
+
+```
+: pkt.wrap   ( -- addr )
+    <n8 3- ;
+```
+#endif
+#include "align.i65"
+_pktwrap
+    jsr enter
+#include "pass.i65"
+   .word zpfrom
+   .byt ACC+2*N8
+#include "page.i65"
+   .word threeminus
+#include "pass.i65"
+   .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=PKT.NXT
 stack=( pkt -- pkt' )
 tags=vm,ext,nosymbol
@@ -370,7 +416,7 @@ tags=vm,ext,nosymbol
 Return size of this packet header
 
 ```
-: psize  ( header -- size )
+: psize   ( header -- size )
     $7FF and ;
 ```
 #endif
@@ -421,8 +467,10 @@ topktb01
 #include "pass.i65"
     .word branch
     .byt <(topktb01-*+1)
-#include "pass.i65"
+#include "page.i65"
 topktb02
+    .word nip
+#include "pass.i65"
     .word clit
     .byt ACC+2*N8
 #include "page.i65"
@@ -944,32 +992,15 @@ _dwrapfetch
 
 ;--------------------------------------------------------------
 #if 0
-name=PKTWRAP
+name=BUF.WRAP
 stack=( -- addr )
 tags=vm,ext,nosymbol
-address of 3-byte area where `wrapd` is stored in the block buffer
+Return `addr` of 3-byte linewrap bits in `blkbuf`
 
-~#packrat
-#endif
-#include "align.i65"
-_pktwrap
-    jsr enter
-#include "pass.i65"
-   .word zpfrom
-   .byt ACC+2*N8
-#include "page.i65"
-   .word threeminus
-#include "pass.i65"
-   .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=BUFWRAP
-stack=( wrapd -- )
-tags=vm,ext,nosymbol
-address of 3-byte area where `wrapd` is stored in the block buffer
-
-~#packrat
+```
+: buf.wrap   ( -- addr )
+    blkbuf b/scr + ;
+```
 #endif
 #include "align.i65"
 _bufwrap
@@ -985,12 +1016,15 @@ _bufwrap
 
 ;--------------------------------------------------------------
 #if 0
-name=BUFWRAP!
+name=BUF.WRAP!
 stack=( wrapd -- )
 tags=vm,ext,nosymbol
-address of 3-byte area where `wrapd` is stored in the block buffer
+Store 24-bit `wrapd` in `blkbuf` just beyond the screen image (+`b/scr`) 
 
-~#packrat
+```
+: buf.wrap!   ( wrapd -- )
+    buf.wrap 3c! ;
+```
 #endif
 #include "align.i65"
 _bufwrapstore
@@ -1037,7 +1071,7 @@ tags=vm,nosymbol
 
 
 ```
-: ?mkpkts   ( u -- )
+: ?mkpkts   ( u -- u )
     begin                       \ make packets loop
         #blk @ over 1+ <
      while
@@ -1070,6 +1104,8 @@ qmkpkts01
     .byt <(qmkpkts01-*+1)
 #include "page.i65"
 qmkpkts02
+    .word dup
+#include "page.i65"
     .word _topkt
 #include "pass.i65"
     .word exit
@@ -1131,17 +1167,36 @@ Unpack a screen or data packet from `vmbuf` to `blkbuf` or `vidram`
     -rot                        \ unpack or copy the contents to vidram|blkbuf
     uncompressed? ?: cmove rldecode ;
 
-: block   ( n -- addr )
-    ?mkpkts  buf? prev 2@ =
+: block   ( u -- addr )
+    \ if it's what's in `prev` already, there is no more to be done
+    prev 2dup @ over =  editing? 0= and  
+
+
+
+
+
+    ?mkpkts
+    buf?
+    prev 2@ =
     editing? 0= and  ?exit
-    blk@ prev !  dup b/buf
-    isscr? ?: blank erase
-    dup pkt.size tuck - isscr?
+    dup b/buf
+    isscr?  ?: blank erase
+    blk@ prev !
+    <n8 2dup pkt.size nip
+    isscr?
     if
-        3-under <n8 3- dwrap@
-        editing? wrap! bufwrap!
+        pkt.wrap dwrap@
+        editing? ?: wrap! bufwrap!
     then
-    uncompressed? ?: cmove rldecode ;
+    uncompressed?
+    ?: cmove rldecode ;
+
+: block
+    ?mkpkts
+    prev buf? over @
+    2swap under ! =
+    editing? 0= and  ?exit
+
 ```
 ~#packrat
 #endif
@@ -1151,27 +1206,37 @@ _block
 #include "page.i65"
     .word _qmkpkts
 #include "page.i65"
-    .word _bufq
-#include "page.i65"
+    .word editingq
+#include "pass.i65"
+    .word pquerycolon
+    .word scr
     .word prev
 #include "page.i65"
-    .word twofetch
+    .word _bufq
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoswap
+#include "page.i65"
+    .word under
+#include "page.i65"
+    .word store
 #include "page.i65"
     .word eq
 #include "page.i65"
     .word editingq
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word andx
-#include "page.i65"
+#include "pass.i65"
+    .word pquerycolon
+    .word drop
     .word _qexit
 #include "page.i65"
-    .word blkfetch
+;    .word zeq
 #include "page.i65"
-    .word prev
+;    .word andx
 #include "page.i65"
-    .word store
+;    .word _qexit
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -1183,25 +1248,28 @@ _block
     .word blank
     .word erase
 #include "page.i65"
-    .word dup
+    .word xyzzy
 #include "page.i65"
-    .word _pktsize
+    .word _pktthis              ; buf -- buf pkt size
 #include "page.i65"
-    .word tuck
+    .word twominus
 #include "page.i65"
-    .word minus
+    .word duptor
+#include "page.i65"
+    .word minus                 ; buf -- buf floor
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word rfrom
 #include "page.i65"
     .word isscrq
 #include "pass.i65"
     .word qbranch
     .byt <(blk02-*+1)
 #include "page.i65"
-    .word threeminusunder
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N8               ; `pkt`
-#include "page.i65"
     .word threeminus
+#include "page.i65"
+    .word _pktwrap
 #include "page.i65"
     .word _dwrapfetch
 #include "page.i65"
@@ -1489,9 +1557,45 @@ stack=( -- )
 tags=vm
 test area for update
 
+
+    editing? 2* isscr? xor 2+
+?dup if
+
+|1:|~editing|isscr|blkbuf|b/scr|-trailing|blkbuf b/scr + 3c@|updwrap+|
+|2:|~editing|~isscr|blkbuf|b/buf|-nulls|.|.|
+|3:|editing|isscr|vidram|b/scr|-trailing|wrap@|updwrap+|
+
+: coroutine
+    2r> >r @+ execute r> 2>r ;
+
+vmbottom b/buf -
+
+# create new packet at `vmbottom 1024 -`
+1: blkbuf tuck b/scr -trailing
+2: blkbuf tuck b/buf -nulls
+3: vidram tuck b/scr -trailing
+
+
+# if screen, append wrap
+
+then
+
+
 ```
 : twonky   ( -- )
+0 editing data (do nothing)
+1 blkbuf scr
+    blkbuf b/scr + 3c@  updwrap+
+2 blkbuf data
+3 editing scr
+    wrap@ updwrap+
+
+
     vmbottom b/buf - vidram tuck b/scr -trailing rlencode
+
+
+
+
 
     vmbottom b/buf - 
     editing? ?: vidram blkbuf     tuck
@@ -1505,6 +1609,9 @@ test area for update
         blkbuf tuck b/buf -nulls
     then
     rlencode
+    append wrap bits, if applicable 
+    (either editing? `wrap@` or `blkbuf b/scr + 3c@`)
+
 
 n4                                vmbottom-1024
 
@@ -1688,11 +1795,8 @@ _update
     .word twoplus
 #include "page.i65"
     .word minus
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N8
 #include "page.i65"
-    .word _pktsize
+    .word _pktthis
 #include "page.i65"
     .word duptor
 #include "page.i65"
