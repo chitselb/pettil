@@ -727,29 +727,6 @@ wrapstore01
 
 ;--------------------------------------------------------------
 #if 0
-name=NOWRAP
-stack=( -- )
-tags=editor,nosymbol
-
- reset the linewrap table and force this block to be a screen
- even if it was a data packet
-
-~#packrat
-#endif
-#include "align.i65"
-_nowrap
-    jsr enter
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word true
-#include "page.i65"
-    .word wrapstore
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=BUF?
 stack=( -- buf )
 tags=vm,nosymbol
@@ -947,25 +924,48 @@ _pktplus
 ;--------------------------------------------------------------
 #if 0
 name=SCREDIDX
-stack=( -- index  )
+stack=( -- index )
 tags=vm,ext,nosymbol
 return `index`:
-0 quitmode; data
-2 quitmode; scr
-4 editmode; data
-6 editmode; scr
+0 interpret data
+2 interpret isscr?
+4 editing? data
+6 editing? isscr?
 
-~#packrat
-#endif
-scredidx
     ldy #1
+    bit userediting
     lda (ACC+2*N8),y
-    asl
+    php
+    pla
+    rol
+    rol
+    rol
+    and #3
+    jmp push0a
+
+    ldy #1
+    lda (ACC+2*N8),y            ; pkt header msb
+    asl                         ; isscr? bit to carry flag
     tya
     and userediting
     rol
-    asl
+    asl                         ; 00|02|04|06
     jmp push0a
+
+    editing? 2* isscr? xor 2+ 2*
+
+~wut unused code [14]
+#endif
+scredidx
+    ldy #1
+    lda (ACC+2*N8),y            ; pkt header msb
+    asl                         ; isscr? bit to carry flag
+    tya
+    and userediting
+    rol
+    asl                         ; 00|02|04|06
+    jmp push0a
+;[14]
 
 ;--------------------------------------------------------------
 #if 0
@@ -1066,9 +1066,8 @@ _emptybuffers
 ;--------------------------------------------------------------
 #if 0
 name=?MKPKTS
-stack=( u -- )
+stack=( u -- u )
 tags=vm,nosymbol
-
 
 ```
 : ?mkpkts   ( u -- u )
@@ -1102,12 +1101,8 @@ qmkpkts01
 #include "pass.i65"
     .word branch
     .byt <(qmkpkts01-*+1)
-#include "page.i65"
-qmkpkts02
-    .word dup
-#include "page.i65"
-    .word _topkt
 #include "pass.i65"
+qmkpkts02
     .word exit
 
 ;--------------------------------------------------------------
@@ -1144,67 +1139,32 @@ Unpack a screen or data packet from `vmbuf` to `blkbuf` or `vidram`
 
     bufwrap dwrap!
 
-: block   ( u -- addr )
-    begin                       \ make packets loop
-        #blk @ over 1+ <
-     while
-        pkt+
-    repeat
-    >pkt                        \ sets `n8`
-    editing?  ?: vidram blkbuf  ( addr )
-    nip                         \ don't need `pkt` address
-    prev 2@ =                   \ blkbuf already loaded?
-    editing? 0= and  ?exit
-    blk @ prev !                \ inhibit redundant reloading
-    dup b/buf isscr?
-    ?: blank erase
-    dup pkt.size tuck -
-    isscr?
-    if                          \ handle linewrap for screen packets
-        3-under <n8 3- dwrap@
-        editing? ?: wrap! bufwrap!
-    then
-    -rot                        \ unpack or copy the contents to vidram|blkbuf
-    uncompressed? ?: cmove rldecode ;
-
-: block   ( u -- addr )
-    \ if it's what's in `prev` already, there is no more to be done
-    prev 2dup @ over =  editing? 0= and  
-
-
-
-
-
-    ?mkpkts
-    buf?
-    prev 2@ =
-    editing? 0= and  ?exit
-    dup b/buf
-    isscr?  ?: blank erase
-    blk@ prev !
-    <n8 2dup pkt.size nip
-    isscr?
-    if
-        pkt.wrap dwrap@
-        editing? ?: wrap! bufwrap!
-    then
-    uncompressed?
-    ?: cmove rldecode ;
-
 : block
     ?mkpkts
-    prev buf? over @
-    2swap under ! =
-    editing? 0= and  ?exit
-
+    editing? ?: scr prev
+    buf? over @ 2swap under ! =
+    editing? ?: drop ?exit
+    dup b/buf 
+    isscr? ?: blank erase
+    pkt.this 2- dup>r - over r> 
+    isscr?
+    if
+        3- pkt.wrap dwrap@ 
+        editing? ?: wrap! buf.wrap!
+    then
+    uncompressed? ?: cmove rldecode ;
 ```
-~#packrat
+2018-08-21T19:15:36
 #endif
 #include "align.i65"
 _block
     jsr enter
 #include "page.i65"
     .word _qmkpkts
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word _topkt
 #include "page.i65"
     .word editingq
 #include "pass.i65"
@@ -1232,12 +1192,6 @@ _block
     .word drop
     .word _qexit
 #include "page.i65"
-;    .word zeq
-#include "page.i65"
-;    .word andx
-#include "page.i65"
-;    .word _qexit
-#include "page.i65"
     .word dup
 #include "page.i65"
     .word bperbuf
@@ -1247,8 +1201,6 @@ _block
     .word pquerycolon
     .word blank
     .word erase
-#include "page.i65"
-    .word xyzzy
 #include "page.i65"
     .word _pktthis              ; buf -- buf pkt size
 #include "page.i65"
@@ -1267,9 +1219,9 @@ _block
     .word qbranch
     .byt <(blk02-*+1)
 #include "page.i65"
-    .word threeminus
+    .word threeminus            ; don't decode 24-bit linewrap to buffer
 #include "page.i65"
-    .word _pktwrap
+    .word _pktwrap              ; <n8 3-
 #include "page.i65"
     .word _dwrapfetch
 #include "page.i65"
@@ -1474,11 +1426,43 @@ sup03
 ;--------------------------------------------------------------
 #if 0
 name=VMBOTTOM
-stack=( -- )
+stack=( -- addr )
 tags=vm
-Return the lowest used address of `vmbuf` (including prepended `STOP-DEL`
-screen packet, if present)
+Return the lowest used address of `vmbuf`, including the `STOP-DEL` / `STOP-INS` pseudopacket, if it is present. Even further down, 1026 bytes below `vmbottom`, is the floor of the replacement packet during `update`.    Think of it as the dungeon sub-basement underground parking garage, lower level, of the `vmbuf` region.  The `addr` returned by `vmbottom` is itself the floor address of the `STOP-DEL` / `STOP-INS` packet, should such a thing be present.  This other temporary packet is exactly the size of one screen (or data block! yes, data blocks may be cut/pasted intact!)
 
+So, on a system with many packets, this is how memory might look:
+zeropage <-- $0000
+stack <--    $0100
+buffers <--  $0200
+basic <--    $0400
+core
+fence <--    $1A80
+user definitions
+here <--     $203B
+free memory
+
+update.pkt.new <-- $3EEC
+    This region persists only during `update` through `pkt.replace`. Since `update` is also invoked inside the editor, there needs to be a way of keeping it from clobbering the `STOP-DEL` / `STOP-INS` screen buffer, should there be one.  The `update.pkt.new` buffer is created by `update` and contains the new packet.  Once it replaces the original packet, this memory may be reused.
+
+vmbottom <-- $42EE
+    `vmbuf @ pkt.nxt` If `vmbuf` contains 0, the `pkt.nxt` will have no effect on the address, because subtracting zero doesn't do much.
+
+vmbuf <--    $4616 ($0328)
+edit.pkt.del-ins <-- also
+    if an edit.pkt.del-ins exists, `vmbuf @` is nonzero.  Instead, it is the header for the screen or data packet most recently cut by `STOP-DEL` in the editor.  Once it replaces the original packet, it remains intact so that repeated `STOP-INS` could insert multiple copies of the same screen or data block.
+
+pktn <--     $4738 ($8122)
+...
+pkt4
+pkt3
+pkt2
+pkt1
+pkt0 <--     $54FE              ( blkbuf 2- )
+blkbuf <--   $5500
+symtab <--   $5900
+studio <--   $6A00
+vidram <--   $8000
+    and the rest is hardware
 ```
 : vmbottom   ( -- addr )
     vmbuf @ pkt.nxt ;
@@ -1750,6 +1734,65 @@ case !editing? !isscr?
         then
         blkbuf prev sup
     then ;
+
+
+_twonky
+    jsr enter
+    .word _vmbottom
+    .word bperbuf
+    .word minus
+    .word editingq
+    .word pquerycolon
+    .word vidram
+    .word blkbuf
+    .word tuck
+    .word editingq
+    .word pquerycolon
+    .word bperscr
+    .word bperbuf
+    .word editingq
+    .word pquerycolon
+    .word dashtrailing
+    .word dashnulls
+    .word nip
+    .word rlencode
+    .word xyzzy
+    .word exit
+
+* create new packet at vmbottom - 1024
+( from to howmany )
+    rlencode
+
+* isscr? if
+    concatenate linewrap ( editing? ?: wrap@ 3c@ )
+then
+
+* make actual amount of room for new packet
+from vmbottom-1024 to pkt.next
+calculate size delta oldsize - newsize
+( start end delta )
+    +move
+
+* set new packet header
+** isscr? flag
+** uncompressed? flag
+** size+2
+
+* move new packet into place
+( pktnew ) 
+    pkt.replace
+( from to howmany )
+    cmove
+
+might be useful having a word, here horribly named, `pkt.replace ( `pktnew` -- ) to replace the packet at `n8` with the packet below `pktnew`
+
+: pkt.replace ( pktnew -- )
+
+
+: update   ( -- )
+    prev
+    editing? ?: vidram blkbuf
+    editing? ?: scr prev
 
 ```
 #endif
