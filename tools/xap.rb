@@ -408,7 +408,7 @@ puts @label   if @label == "STUDIO"
 #        puts forthwordhash
         csvfile = File.open("./tmp/"+outputfile,'w') do |file|
             forthwordhash.each do |wordname, stuff|
-                t = "'" + ((stuff.addr.nil?) ? '' : hex4out(stuff.addr).upcase)
+                t = ((stuff.addr.nil?) ? '' : hex4out(stuff.addr).upcase)
                 s = ((stuff.flags.nil?)) ? '' : stuff.flags.join(",")
                 a = stuff.symbol
                 d = wordname.sub(a,'')

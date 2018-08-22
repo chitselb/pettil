@@ -1038,6 +1038,56 @@ _bufwrapstore
 
 ;--------------------------------------------------------------
 #if 0
+name=SCR.PREV?
+stack=( -- addr )
+tags=secondary,i/o,vm,nosymbol
+Return either `scr` or `prev` based on `editing?`
+
+```
+: scr.prev?   ( -- addr )
+    editing? ?: scr prev ;
+```
+#endif
+#include "align.i65"
+_scrprevq
+    jsr enter
+#include "page.i65"
+   .word editingq
+#include "pass.i65"
+    .word pquerycolon
+    .word scr
+    .word prev
+#include "pass.i65"
+   .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=PKT.CUR
+stack=( -- )
+tags=secondary,i/o,vm,nosymbol
+Traverse the packet chain from top to button until we reach packet `scr` or packet `prev` (depending on the value of `editing?`).  Sets `n8`, shared by
+`update` and `block`.
+
+```
+: pkt.cur   ( -- )
+    editing? ?: scr prev @
+    >pkt ;
+```
+#endif
+#include "align.i65"
+_pktcur
+    jsr enter
+#include "page.i65"
+    .word _scrprevq
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _topkt
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=EMPTY-BUFFERS
 stack=( -- )
 tags=i/o,forth-83
@@ -1139,20 +1189,23 @@ Unpack a screen or data packet from `vmbuf` to `blkbuf` or `vidram`
 
     bufwrap dwrap!
 
-: block
+: block   ( u -- buf )
     ?mkpkts
-    editing? ?: scr prev
-    buf? over @ 2swap under ! =
-    editing? ?: drop ?exit
-    dup b/buf 
-    isscr? ?: blank erase
-    pkt.this 2- dup>r - over r> 
-    isscr?
+    scr.prev? buf? over @
+    2swap under ! 
+    <> editing? or
     if
-        3- pkt.wrap dwrap@ 
-        editing? ?: wrap! buf.wrap!
-    then
-    uncompressed? ?: cmove rldecode ;
+        pkt.cur
+        dup b/buf 
+        isscr? ?: blank erase
+        pkt.this 2- dup>r - over r> 
+        isscr?
+        if
+            3- pkt.wrap dwrap@ 
+            editing? ?: wrap! buf.wrap!
+        then
+        uncompressed? ?: cmove rldecode
+    then ;
 ```
 2018-08-21T19:15:36
 #endif
@@ -1162,15 +1215,7 @@ _block
 #include "page.i65"
     .word _qmkpkts
 #include "page.i65"
-    .word dup
-#include "page.i65"
-    .word _topkt
-#include "page.i65"
-    .word editingq
-#include "pass.i65"
-    .word pquerycolon
-    .word scr
-    .word prev
+    .word _scrprevq
 #include "page.i65"
     .word _bufq
 #include "page.i65"
@@ -1184,13 +1229,16 @@ _block
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word eq
+    .word ne
 #include "page.i65"
     .word editingq
+#include "page.i65"
+    .word orx
 #include "pass.i65"
-    .word pquerycolon
-    .word drop
-    .word _qexit
+    .word qbranch
+    .byt <(blk03-*+1)
+#include "page.i65"
+    .word _pktcur
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -1238,6 +1286,7 @@ blk02
     .word cmove
     .word rldecode
 #include "pass.i65"
+blk03
     .word exit
 
 ;--------------------------------------------------------------
@@ -1617,6 +1666,8 @@ n4                                vmbottom-1024
 _twonky
     jsr enter
 #include "page.i65"
+    .word _pktcur
+#include "page.i65"
     .word _vmbottom
 #include "page.i65"
     .word bperbuf
@@ -1631,18 +1682,17 @@ _twonky
 #include "page.i65"
     .word tuck
 #include "page.i65"
-    .word editingq
+    .word isscrq
 #include "pass.i65"
     .word pquerycolon
     .word bperscr
     .word bperbuf
 #include "page.i65"
-    .word editingq
+    .word isscrq
 #include "pass.i65"
     .word pquerycolon
     .word dashtrailing
     .word dashnulls
-#include "page.i65"
 #include "page.i65"
     .word nip
 #include "page.i65"
@@ -1800,7 +1850,7 @@ might be useful having a word, here horribly named, `pkt.replace ( `pktnew` -- )
 _update
     jsr enter
 #include "page.i65"
-    .word xyzzy
+    .word exit
 #include "pass.i65"
     .word plit
     .word updbrtbl
