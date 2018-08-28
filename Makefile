@@ -8,7 +8,7 @@ compile: clean pettil tiddlypettil
 doc: tiddlypettil publish
 
 mypet:
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x43+290+28 -x \
 	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
 		-directory ./data/PET/ \
 		-config ./data/sdl2_chitselb.vicerc &
@@ -45,7 +45,7 @@ launch: clean pettil
 		-config data/x11_chitselb.vicerc &
 
 # gnome-ui 3.1
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x43+290+28 -x \
 	/usr/bin/xpet \
 		-directory data/PET/ \
 		-moncommand pettil.mon \

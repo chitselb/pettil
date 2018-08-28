@@ -172,21 +172,24 @@ casbuf
 ;--------------------------------------------------------------
 #if 0
 name=RLENCODE
-stack=( from to size -- targend uncompressed? )
+stack=( from to size -- size uncompressed? )
 tags=vm,sweet16
 This works a lot like `cmove` with its `from to howmany` stack signature, but
 the target is a `packet` of `virtual memory` that can be permanently stored
-to cassette tape.  The other difference is the two return values provided by
-`rlencode`.
+to cassette tape.
 
-* `targend` End of the compressed|stored output
+|PETTIL/Sweet16 Registers|<|<|<|<|<|<|<|h
+|^ACC|^TOS|^N0|^N1|^N2|^N3|^N4|^N5|h
+|^x|^x|^x|^x|^x|^x|^x|^x|
+|^N6|^N7|^N8|^EXT|^SP|^CPR|^RSLT|^PC|h
+|^x|^x|^x|^x|^x|^x|^x|^x|
+
 * `uncompressed?` Flag reveals whether RLE compression was used.
 
 encode length {srclen} bytes from source address {srcaddr} to
 target address {targaddr}.  Return target end address {targend}
 #endif
 rlencode
-    ; tos   src (pristine)
     ; n0    src (in)
     ; n1    size (in)
     ; n2    targ (out)
@@ -245,23 +248,28 @@ rlencode04                      ; overflow/end of input
     .byt br , <(rlencode01-*-2)
 
 rlencode06                      ; win
-    .byt ld | N2                ; targ (out)
-    .byt st | TOS
-    .byt sub | ACC
-    .byt push
+    .byt sub | ACC              ; 0 = not uncompressed? (so, hopefully compressed then!)
+    .byt bs, <(rlencode08-*-2)
     .byt nxt
-;    rlencode
-;( targend uncompressed?        ; floor  pkt )
+;( uncompressed?        ; floor  pkt )
+
+rlencode08
+    .byt st | TOS
+    .byt ld | N2
+    .byt sub | N7
+    .byt push
+    .byt rs
 
 rlencode07                      ; lose - copy
     .byt ld | TOS
     .byt st | N0                ; keep pristine TOS
     .byt ld | R11               ; return original `size`
     .byt add | N7               ; +pristine targ
-    .byt st | TOS
-    .byt set | ACC
+    .byt st | N2                ; `update` uses `n2-n7` to get new size
+    .byt set | ACC              ; `uncompressed?` is true
     .word $4000
-    .byt push
+    .byt bs, <(rlencode08-*-2)
+
     .byt ld | N0                ; from
     .byt push
     .byt ld | N7                ; to
@@ -677,7 +685,7 @@ Retrieve the 25-bit linewrap table at `$E0..F8` as a double
 
 #endif
 wrapfetch
-    jsr wrapzap12               ; ~wut? possible C=64 porting issue? 
+    jsr wrapzap12               ; ~wut? possible C=64 porting issue?
     ;stx z
     ldy #$FF
     ldx #tos                    ; put it in `tos(hi) n0(lo)`
@@ -1016,10 +1024,32 @@ _bufwrap
 
 ;--------------------------------------------------------------
 #if 0
+name=BUF.WRAP@
+stack=( wrapd -- )
+tags=vm,ext,nosymbol
+
+
+```
+: buf.wrap@   ( -- wrapd  )
+    buf.wrap dwrap@ ;
+```
+#endif
+#include "align.i65"
+_bufwrapfetch
+    jsr enter
+#include "page.i65"
+    .word _bufwrap
+#include "page.i65"
+   .word _dwrapfetch
+#include "pass.i65"
+   .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=BUF.WRAP!
 stack=( wrapd -- )
 tags=vm,ext,nosymbol
-Store 24-bit `wrapd` in `blkbuf` just beyond the screen image (+`b/scr`) 
+Store 24-bit `wrapd` in `blkbuf` just beyond the screen image (+`b/scr`)
 
 ```
 : buf.wrap!   ( wrapd -- )
@@ -1192,16 +1222,16 @@ Unpack a screen or data packet from `vmbuf` to `blkbuf` or `vidram`
 : block   ( u -- buf )
     ?mkpkts
     scr.prev? buf? over @
-    2swap under ! 
+    2swap under !
     <> editing? or
     if
         pkt.cur
-        dup b/buf 
+        dup b/buf
         isscr? ?: blank erase
-        pkt.this 2- dup>r - over r> 
+        pkt.this 2- dup>r - over r>
         isscr?
         if
-            3- pkt.wrap dwrap@ 
+            3- pkt.wrap dwrap@
             editing? ?: wrap! buf.wrap!
         then
         uncompressed? ?: cmove rldecode
@@ -1354,123 +1384,6 @@ pupd2
     .byt ext
     .word plants6
     .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=SUP
-stack=( vidram|blkbuf scr|blk -- )
-tags=forth-83,vm,nosymbol
-
-
-```
-\ sprog of update
-: sup ( vidram|blkbuf -- )
-    @ >pkt pkt.size b/buf 2nip vmbuf
-    (upd1) cmove                ;( source vmbuf floor )
-    rot tuck
-    isscr?
-    if
-        b/scr -trailing
-    else
-        b/buf -nulls
-    then
-    nip rlencode
-          ?: b/scr b/buf
-    isscr?  ?: -trailing -nulls nip
-    rlencode
-    isscr?
-    if
-( wrapd vmbuf' uncompressed? targend )
-        >r twoswap r@ 3c! r> 3+
-    then
-
-
-    rlencode
-    editing? vidram and
-    (upd2)
-    uncompressed?  ?: cmove rlencode ;
-#endif
-#include "align.i65"
-_sup
-    jsr enter
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _topkt
-#include "page.i65"
-    .word _pktsize
-#include "page.i65"
-    .word nip
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word pupd1
-#include "page.i65"
-    .word cmove                 ; temporarily allocate 1K space in the packet
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word tuck
-#include "page.i65"
-    .word isscrq
-#include "pass.i65"
-    .word qbranch
-    .byt <(sup01-*+1)
-#include "page.i65"
-    .word bperscr
-#include "page.i65"
-    .word dashtrailing
-#include "pass.i65"
-    .word branch
-    .byt <(sup02-*+1)
-#include "page.i65"
-sup01
-    .word bperbuf
-#include "page.i65"
-    .word dashnulls
-#include "page.i65"
-sup02
-    .word nip
-#include "page.i65"
-    .word rlencode              ; attempt to run-length encode the buffer
-#include "page.i65"
-    .word isscrq
-#include "pass.i65"
-    .word qbranch
-    .byt <(sup03-*+1)
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word twoswap
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word _threecstore           ; append linewrap
-#include "page.i65"
-    .word threeplus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-sup03
-    .word twoplusunder
-#include "page.i65"
-    .word pupd2
-#include "page.i65"
-    .word twominus
-#include "page.i65"
-    .word cmovegt               ; move the bottom of `vmbuf` back up
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word store                 ; set `vmbuf`
-#include "pass.i65"
-    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1630,9 +1543,9 @@ then
 
 
 
-    vmbottom b/buf - 
+    vmbottom b/buf -
     editing? ?: vidram blkbuf     tuck
-    editing? ?: b/scr b/buf       - 
+    editing? ?: b/scr b/buf       -
     editing? ?: -trailing -nulls  rlencode
 
     editing?
@@ -1642,25 +1555,21 @@ then
         blkbuf tuck b/buf -nulls
     then
     rlencode
-    append wrap bits, if applicable 
+    append wrap bits, if applicable
     (either editing? `wrap@` or `blkbuf b/scr + 3c@`)
-
-
-n4                                vmbottom-1024
-
-
-
-    setup-moves
-                                from = vmbottom - 1024
-                                to = 
-    cmove                       \ open up space, move everything down to
-                                \ squeeze in #bytes that were rlencoded 
-                                \ or uncompressed
-    cmove> \ 
-    set-header
-    set-wrap
+    updomojodojo
+    +move
+                                \ leave precisely enough room in `vmbuf`
+    cmove>
+                                \ move new packet into place
+    <n8 !
+                                \ update packet header
     ;
 ```
+
+|from|to|howmany|`+move`|
+|from|to|howmany|`cmove`|
+|flags|size|<|`!`|
 #endif
 #include "align.i65"
 _twonky
@@ -1674,11 +1583,7 @@ _twonky
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word editingq
-#include "pass.i65"
-    .word pquerycolon
-    .word vidram
-    .word blkbuf
+    .word _bufq
 #include "page.i65"
     .word tuck
 #include "page.i65"
@@ -1696,11 +1601,101 @@ _twonky
 #include "page.i65"
     .word nip
 #include "page.i65"
-    .word rlencode
+    .word rlencode              ; ( uncompressed? size )
+#include "page.i65"
+    .word isscrq
 #include "page.i65"
     .word xyzzy
 #include "pass.i65"
+    .word qbranch
+    .byt <(update02-*+1)
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word plusunder             ; set `isscr?` bit in new header
+#include "page.i65"
+    .word editingq
+#include "pass.i65"
+    .word pquerycolon
+    .word wrapfetch
+    .word _bufwrapfetch
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N2
+#include "page.i65"
+    .word _threecstore
+#include "page.i65"
+    .word threeplus             ; add 3 to `size`
+#include "page.i65"
+update02
+    .word xyzzy
+#include "page.i65"
+    .word twoplus               ; ( flags size.new )
+#include "page.i65"
+    .word _pktthis              ;( flags size.new pkt size )
+#include "page.i65"
+    .word twodup                ;( flags size.new pkt size pkt size )
+#include "page.i65"
+    .word minus                 ;( uncompressed? size floor )
+#include "page.i65"
+    .word twoplus               ;( flags size.new pkt size.old pkt.floor )
+#include "page.i65"
+    .word updomojodojo
+#include "page.i65"
+    .word _plusmove
+#include "page.i65"
+    .word cmove                 ;( flags size.new )
+#include "page.i65"
+    .word orx
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N8
+#include "page.i65"
+    .word store
+#include "pass.i65"
     .word exit
+
+; `n2-n7` is new    packet size -2
+; vmbottom-1024     bottom
+; pkt.next          top, up to but not including pkt.floor
+; oldsize-newsize
+;    +move
+; vmbottom-1024
+; floor
+; newsize
+;    cmove
+; size              new packet size
+;    editing? vidram and or <n7 !
+
+;--------------------------------------------------------------
+#if 0
+name=UPDOMOJODOJO
+stack=( -- )
+tags=vm,nosymbol
+test area for update
+
+|PETTIL/Sweet16 Registers|<|<|<|<|<|<|<|h
+|^ACC|^TOS|^N0|^N1|^N2|^N3|^N4|^N5|h
+|^x|^x|^x|^x|^x|^x|^x|^x|
+|^N6|^N7|^N8|^EXT|^SP|^CPR|^RSLT|^PC|h
+|^x|^x|^x|^x|^x|^x|^x|^x|
+
+>5600 41 41 42 42 43 43 44 44 45 45 46 46 47 47 48 48 49 49 4a 4a 4b 4b 4c 4c 4d 4d 4e 4e 4f 4f 50 50 51 51 52 52 53 53 54 54
+
+#endif
+updomojodojo
+    jsr harvests6               ;2os -> n0
+    brk                         ;( -- )
+    .byt ld | N2                ; n2-n7
+    .byt sub | N7               ; size-2 of new packet
+    .byt st | N0                ;??
+    .byt sub | TOS              ; delta
+    .byt inr | ACC
+    .byt inr | ACC              ; 2+ for new packet header
+    .byt st | N1
+    .byt ld | N7
+    .byt push
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -1753,7 +1748,7 @@ vmbottom (vmbuf minus the screen-paste buffer, if present)
 case editing? isscr?            \ editing screen packet
     vidram vmbot 1000 - >n. 1000 rlencode
                                 \ how long is new packet?
-    wrap@  
+    wrap@
 case editing? !isscr?           \ viewing first 1000 bytes of data packet (read-only)
 
 case !editing? isscr?
@@ -1763,7 +1758,7 @@ case !editing? !isscr?
     scr @ >pkt
 
     blk @ >pkt
-    
+
 
 
 
@@ -1785,30 +1780,6 @@ case !editing? !isscr?
         blkbuf prev sup
     then ;
 
-
-_twonky
-    jsr enter
-    .word _vmbottom
-    .word bperbuf
-    .word minus
-    .word editingq
-    .word pquerycolon
-    .word vidram
-    .word blkbuf
-    .word tuck
-    .word editingq
-    .word pquerycolon
-    .word bperscr
-    .word bperbuf
-    .word editingq
-    .word pquerycolon
-    .word dashtrailing
-    .word dashnulls
-    .word nip
-    .word rlencode
-    .word xyzzy
-    .word exit
-
 * create new packet at vmbottom - 1024
 ( from to howmany )
     rlencode
@@ -1829,7 +1800,7 @@ calculate size delta oldsize - newsize
 ** size+2
 
 * move new packet into place
-( pktnew ) 
+( pktnew )
     pkt.replace
 ( from to howmany )
     cmove
@@ -1932,7 +1903,7 @@ _update
 #include "page.i65"
     .word scr
 #include "page.i65"
-    .word _sup
+;    .word _sup
 #include "pass.i65"
     .word branch
     .byt <(upd02-*+1)
@@ -1952,7 +1923,7 @@ upd03
 #include "page.i65"
     .word prev
 #include "page.i65"
-    .word _sup
+;    .word _sup
 #include "pass.i65"
 upd02
     .word exit
