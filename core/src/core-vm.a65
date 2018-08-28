@@ -1498,33 +1498,34 @@ _updvidscr
 
 ;--------------------------------------------------------------
 #if 0
-name=TWONKY
+name=UPDATE
 stack=( -- )
-tags=vm
-test area for update
+tags=fig,forth-79,forth-83,vm
+Copies and compresses from either the `vidram` or `blkbuf` into a
+[[virtual memory packet buffer|PETTIL system memory map]].  `update`
+is the antonym of `block` (which retrieves from `vmbuf`).
+
+tests:
+~\ block 0
+~\ nonzero block numbers
+~\ empty block
+~\ blank block
+~\ screen 1000+3 in blkbuf
+~\ for all combinations of `isscr?` and `editing?`
+~\ for both packet types
+~\ with and without compression
+~\ fill blkbuf half with $DEADBEEF
+~\ fill blkbuf all with $DEADBEEF
+~\ fill blkbuf half with '!'
+~\ fill blkbuf all with '!'
+~\ fill screen with 80-column uncompressable ($555555 wrap)
+~\ fill screen with normal source code
+~\ fill screen half with '!'
+~\ fill blkbuf all with '!'
+~\ fill blkbuf all with '!'
 
 
-    editing? 2* isscr? xor 2+
-?dup if
 
-|1:|~editing|isscr|blkbuf|b/scr|-trailing|blkbuf b/scr + 3c@|updwrap+|
-|2:|~editing|~isscr|blkbuf|b/buf|-nulls|.|.|
-|3:|editing|isscr|vidram|b/scr|-trailing|wrap@|updwrap+|
-
-: coroutine
-    2r> >r @+ execute r> 2>r ;
-
-vmbottom b/buf -
-
-# create new packet at `vmbottom 1024 -`
-1: blkbuf tuck b/scr -trailing
-2: blkbuf tuck b/buf -nulls
-3: vidram tuck b/scr -trailing
-
-
-# if screen, append wrap
-
-then
 
 
 ```
@@ -1572,7 +1573,7 @@ then
 |flags|size|<|`!`|
 #endif
 #include "align.i65"
-_twonky
+_update
     jsr enter
 #include "page.i65"
     .word _pktcur
@@ -1604,8 +1605,6 @@ _twonky
     .word rlencode              ; ( uncompressed? size )
 #include "page.i65"
     .word isscrq
-#include "page.i65"
-    .word xyzzy
 #include "pass.i65"
     .word qbranch
     .byt <(update02-*+1)
@@ -1615,6 +1614,8 @@ _twonky
     .word plusunder             ; set `isscr?` bit in new header
 #include "page.i65"
     .word editingq
+#include "page.i65"
+    .word xyzzy
 #include "pass.i65"
     .word pquerycolon
     .word wrapfetch
@@ -1628,25 +1629,23 @@ _twonky
     .word threeplus             ; add 3 to `size`
 #include "page.i65"
 update02
-    .word xyzzy
-#include "page.i65"
     .word twoplus               ; ( flags size.new )
 #include "page.i65"
     .word _pktthis              ;( flags size.new pkt size )
 #include "page.i65"
-    .word twodup                ;( flags size.new pkt size pkt size )
+    .word twoover               ;( flags size.new pkt size.old flags size.new )
 #include "page.i65"
-    .word minus                 ;( uncompressed? size floor )
-#include "page.i65"
-    .word twoplus               ;( flags size.new pkt size.old pkt.floor )
+    .word orx                   ;( flags size.new pkt size.old hdr.new )
 #include "page.i65"
     .word updomojodojo
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word plusstore
 #include "page.i65"
     .word _plusmove
 #include "page.i65"
     .word cmove                 ;( flags size.new )
-#include "page.i65"
-    .word orx
 #include "pass.i65"
     .word zpfrom
     .byt ACC+2*N8
@@ -1655,284 +1654,50 @@ update02
 #include "pass.i65"
     .word exit
 
-; `n2-n7` is new    packet size -2
-; vmbottom-1024     bottom
-; pkt.next          top, up to but not including pkt.floor
-; oldsize-newsize
-;    +move
-; vmbottom-1024
-; floor
-; newsize
-;    cmove
-; size              new packet size
-;    editing? vidram and or <n7 !
-
 ;--------------------------------------------------------------
 #if 0
 name=UPDOMOJODOJO
-stack=( -- )
+stack=( hdr -- hdr  from to howmany  bottom top delta )
 tags=vm,nosymbol
 test area for update
 
 |PETTIL/Sweet16 Registers|<|<|<|<|<|<|<|h
 |^ACC|^TOS|^N0|^N1|^N2|^N3|^N4|^N5|h
-|^x|^x|^x|^x|^x|^x|^x|^x|
+|^|^hdr|^|^size.new|^|^size.old|^|^|
 |^N6|^N7|^N8|^EXT|^SP|^CPR|^RSLT|^PC|h
-|^x|^x|^x|^x|^x|^x|^x|^x|
+|^|^targ0|^pkt|^|^|^|^|^|
+|^9OS|^8OS|^7OS|^6OS|^5OS|^4OS|^3OS|^2OS|h
+|^|^|^|^|^flags.new|^size.new|^pkt|^size.old|
 
 >5600 41 41 42 42 43 43 44 44 45 45 46 46 47 47 48 48 49 49 4a 4a 4b 4b 4c 4c 4d 4d 4e 4e 4f 4f 50 50 51 51 52 52 53 53 54 54
 
 #endif
 updomojodojo
-    jsr harvests6               ;2os -> n0
-    brk                         ;( -- )
-    .byt ld | N2                ; n2-n7
-    .byt sub | N7               ; size-2 of new packet
-    .byt st | N0                ;??
-    .byt sub | TOS              ; delta
+    jsr harvests8
+    brk
+    .byt ld | N3
+    .byt sub | N1
+    .byt st | N0                ; delta
+    .byt add | N7
+    .byt push                   ; `from`
+    .byt ld | N8
+    .byt sub | N1
     .byt inr | ACC
-    .byt inr | ACC              ; 2+ for new packet header
-    .byt st | N1
-    .byt ld | N7
-    .byt push
+    .byt inr | ACC
+    .byt push                   ; `to`
+    .byt ld | N1
+    .byt push                   ; `howmany`
+    .byt ld | N7                ;targ0
+    .byt push                   ; 1st param for +move
+    .byt ld | N8
+    .byt sub | N3
+    .byt inr | ACC
+    .byt inr | ACC              ;pkt.floor
+    .byt push                   ; 2nd param for +move
+    .byt ld | N0
+    .byt push                   ; `delta`
+    .byt push                   ; second copy for `vmbuf +!`
     .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=UPDATE
-stack=( -- )
-tags=forth-83,vm
-Copies and compresses from either the `vidram` or `blkbuf` into a
-[[virtual memory packet buffer|PETTIL system memory map]].  `update`
-is the antonym of `block` (which retrieves from `vmbuf`).
-
-tests:
-~\ block 0
-~\ nonzero block numbers
-~\ empty block
-~\ blank block
-~\ screen 1000+3 in blkbuf
-~\ for all combinations of `isscr?` and `editing?`
-~\ for both packet types
-~\ with and without compression
-~\ fill blkbuf half with $DEADBEEF
-~\ fill blkbuf all with $DEADBEEF
-~\ fill blkbuf half with '!'
-~\ fill blkbuf all with '!'
-~\ fill screen with 80-column uncompressable ($555555 wrap)
-~\ fill screen with normal source code
-~\ fill screen half with '!'
-~\ fill blkbuf all with '!'
-~\ fill blkbuf all with '!'
-
-```
-
-<n8 3- drwap@                   \ get wrap from the packet (block)
-
-<n8 3- dwrap!                   \ set packet wrap (update)
-
-editing? ?: wrap! bufwrap!      \ block
-
-vmbottom dup 1024 - <n8 pkt.size dup>r +under r> - third - 2+
-cmove
-
-
-length of old packet
-length of new packet
-vmbottom (vmbuf minus the screen-paste buffer, if present)
-
-
-: update   ( -- )
-    editing? 2* isscr? xor 2+ +@execute ;
-
-case editing? isscr?            \ editing screen packet
-    vidram vmbot 1000 - >n. 1000 rlencode
-                                \ how long is new packet?
-    wrap@
-case editing? !isscr?           \ viewing first 1000 bytes of data packet (read-only)
-
-case !editing? isscr?
-
-case !editing? !isscr?
-
-    scr @ >pkt
-
-    blk @ >pkt
-
-
-
-
-    editing? ?: scr blk  @ >pkt
-    editing?
-    if
-        isscr?
-        if
-            wrap@
-            vidram scr sup
-        \ else
-        \   nothing to do -- vidram can't hold data block
-        then
-    else
-        isscr?
-        if
-            blkbuf 1000 + 3c@
-        then
-        blkbuf prev sup
-    then ;
-
-* create new packet at vmbottom - 1024
-( from to howmany )
-    rlencode
-
-* isscr? if
-    concatenate linewrap ( editing? ?: wrap@ 3c@ )
-then
-
-* make actual amount of room for new packet
-from vmbottom-1024 to pkt.next
-calculate size delta oldsize - newsize
-( start end delta )
-    +move
-
-* set new packet header
-** isscr? flag
-** uncompressed? flag
-** size+2
-
-* move new packet into place
-( pktnew )
-    pkt.replace
-( from to howmany )
-    cmove
-
-might be useful having a word, here horribly named, `pkt.replace ( `pktnew` -- ) to replace the packet at `n8` with the packet below `pktnew`
-
-: pkt.replace ( pktnew -- )
-
-
-: update   ( -- )
-    prev
-    editing? ?: vidram blkbuf
-    editing? ?: scr prev
-
-```
-#endif
-#include "align.i65"
-_update
-    jsr enter
-#include "page.i65"
-    .word exit
-#include "pass.i65"
-    .word plit
-    .word updbrtbl
-#include "page.i65"
-    .word editingq
-#include "page.i65"
-    .word twostar
-#include "page.i65"
-    .word isscrq
-#include "page.i65"
-    .word xor
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word _plusfetchexec
-#include "pass.i65"
-    .word exit
-
-    .word editingq
-#include "pass.i65"
-    .word pquerycolon
-    .word scr
-    .word prev
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _topkt
-#include "page.i65"
-    .word _vmbottom
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word bperbuf
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word _pktthis
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word plusunder
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word xyzzy
-
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-;vmbottom dup 1024 - <n8 pkt.size dup>r +under r> - third -
-#include "page.i65"
-    .word editingq
-#include "pass.i65"
-    .word qbranch
-    .byt <(upd01-*+1)
-#include "page.i65"
-    .word isscrq
-#include "pass.i65"
-    .word qbranch
-    .byt <(upd02-*+1)
-#include "page.i65"
-    .word wrapfetch
-#include "page.i65"
-    .word vidram
-#include "page.i65"
-    .word scr
-#include "page.i65"
-;    .word _sup
-#include "pass.i65"
-    .word branch
-    .byt <(upd02-*+1)
-#include "page.i65"
-upd01
-    .word isscrq
-#include "pass.i65"
-    .word qbranch
-    .byt <(upd03-*+1)
-#include "page.i65"
-    .word _bufwrap
-#include "page.i65"
-    .word twofetch
-#include "page.i65"
-upd03
-    .word blkbuf
-#include "page.i65"
-    .word prev
-#include "page.i65"
-;    .word _sup
-#include "pass.i65"
-upd02
-    .word exit
-
-updbrtbl
-    .word next
-    .word next
-    .word next
-    .word next
 
 ;--------------------------------------------------------------
 #if 0
