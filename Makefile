@@ -45,7 +45,7 @@ launch: clean pettil
 		-config data/x11_chitselb.vicerc &
 
 # gnome-ui 3.1
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x43+290+28 -x \
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x46+136+28 -x \
 	/usr/bin/xpet \
 		-directory data/PET/ \
 		-moncommand pettil.mon \
