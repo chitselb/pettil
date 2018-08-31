@@ -537,8 +537,11 @@ __edittopscr
 name=:EDITQUIT
 stack=( -- )
 tags=editor,nosymbol
-STOP-_   Quit the editor
-STOP-Q
+STOP-_   Exit the editor
+    update current packet
+STOP-Q   Quit the editor
+    vmbuf off
+
 
 ```
 :editquit   ( -- )
@@ -546,8 +549,15 @@ STOP-Q
 ```
 #endif
 #include "page.i65"
-__editquit
+__editexit
     .word _update
+#include "page.i65"
+__editquit
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word off
 #include "page.i65"
     .word editing
 #include "page.i65"
@@ -819,16 +829,8 @@ __editzilch
 #if 0
 name=:EDITDELSCR
 stack=( -- )
-tags=editor,nosymbol,unimplemented
-
- STOP-DEL delete the current screen.  restore from next, then prev, then blank
-
-Deletes the current screen from the packet buffer.  The edit
-screen is replaced by the first available of:
-
-* The next screen in the packet buffer, if it already exists
-* The previous screen in the packet buffer
-* Screen 0 is blanked and written to the packet buffer
+tags=editor,nosymbol
+`STOP-DEL` cuts  the current screen.  After updating the current packet to the screen buffer, the screen immediately after this (or a new, blank screen) will be presented to the user.
 
 ```
 :editdelscr   ( scr -- packet )
@@ -837,30 +839,71 @@ screen is replaced by the first available of:
     #blk! scr @ #blk @ 1- max
     >edit ;
 ```
-~wut? write this
 #endif
 #include "page.i65"
 __editdelscr
+    .word _update
+#include "page.i65"
+    .word _pktthis
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "pass.i65"
+    .word peditdelscr
+#include "page.i65"
+    .word next
+#include "page.i65"
+    .word next
+#include "page.i65"
+    .word next
+#include "pass.i65"
     .word exit
+
+peditdelscr
+    jsr harvests6
+    brk
+    .byt ld | TOS
+    .byt st | N3                ; size
+    .byt ld | N1                ; vmbuf
+    .byt sub | N3
+    .byt inr | ACC
+    .byt inr | ACC              ; vmbuf size - 2+
 
 ;--------------------------------------------------------------
 #if 0
 name=:EDITINSSCR
 stack=( -- )
-tags=editor,nosymbol,unimplemented
+tags=editor,nosymbol
 
  insert a new, blank screen
 
 ```
-:editinsscr   ( scr -- packet )
+:editinsscr   ( -- )
     update vmbuf @ scr @ >pkt
 
 ```
-~wut? fix this
-~ still a little goofy when inserting multiple screens
 #endif
 #include "page.i65"
 __editinsscr
+    .word _update
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word next
+#include "page.i65"
+    .word next
+#include "page.i65"
+    .word next
+#include "page.i65"
+    .word next
+#include "pass.i65"
+    .word exit
+
     .word _update
 #include "page.i65"
     .word vmbuf
@@ -1055,10 +1098,16 @@ editbranch
     pla
     jmp jumpay
 
+;--------------------------------------------------------------
+#if 0
+name=EDITCMD
+tags=editor,data,nosymbol
+editor menu commands (no `cfa`)
+#endif
 editcmd
     .word editspace03           ; 0 = `nada`
-    .word __editquit
-    .word __editquit
+    .word __editexit            ; update and leave
+    .word __editquit            ; just leave
     .word __editindex
     .word __editsave
     .word __editload
@@ -1080,7 +1129,7 @@ editcmd
 ;--------------------------------------------------------------
 #if 0
 name=EDITMENU
-tags=editor,nosymbol
+tags=editor,data,nosymbol
 editor menu commands (no `cfa`)
 #endif
 editmenu
@@ -1209,14 +1258,16 @@ _plusedit
 name=EDIT
 stack=( scr -- )
 tags=editor
-PETTIL's editor leverages the absolutely wonderful ROM screen editor on the PET, using the `STOP` key as a substitute for escape, not present on early PET keyboards.  It's a little wonky if you're used to editors on modern systems.  Here is the `edit` help screen:
+PETTIL's editor leverages the absolutely wonderful ROM screen editor of the PET.  There is no `ESC` button on PET graphics keyboards, and you won't find one on the VIC-20 or C=64 either, so we'll just be using the `STOP` key instead.  There are things about the editor that might seem a little wonky at first, especially if you're used to editors on modern systems.
+
+Here is the editor help screen, which shows up when someone presses `STOP-?` in the editor:
 [img width=95% [edithelpscreen.png]]
 
 There is a line buffer, which begins at `pad` and grows upward. It contains zero or more lines (up to a maximum of `height` lines) of text. Everything here operates in 40 or 80 byte chunks. The linewrap information is in user variable `pwrap`
 
 Separate from the line buffer is the screen buffer, which is an exact replica of whatever is on entire screen when the programmer types `STOP-DEL` in the editor.  This is a screen `cut` operation.  The screen will move forward to the next screen or append a new, blank screen when `STOP-DEL` happens in the last packet.  The temporary screen buffer gets located in RAM below `vmbuf` and holds exactly one packet.  Unlike the line buffer, data blocks may be copied and pasted using this mechanism.
 
-The `STOP-INS` command creates a new packet in front of the current screen and replaces the screen contents with whatever is in the screen buffer.  If the screen buffer is empty, a new, blank screen is inserted. The programmer might type `STOP-DEL` then `STOP-INS` more than twice to make multiple copies of a screen, say, for an animation sequence.
+The `STOP-INS` command inserts a new packet that comes just before the current screen, with whatever is in the screen buffer.  If the screen buffer is empty, a new, blank screen is inserted. The programmer might type `STOP-DEL` then `STOP-INS` more than twice to make multiple copies of a screen, say, for an animation sequence.
 
 |^key / word|^description|h
 |^`STOP-Z`|^zap line buffer|
