@@ -49,6 +49,7 @@ launch: clean pettil
 	/usr/bin/xpet \
 		-directory data/PET/ \
 		-moncommand pettil.mon \
+		-warp \
 		-config data/x11_4032.vicerc \
 		pettil.prg &
 
