@@ -187,12 +187,13 @@ _tickstream
 
 ;--------------------------------------------------------------
 #if 0
-name=CURSOR!
+name=CURSOR@
 stack=( -- )
-tags=primitive,extra
+tags=primitive,extra,nosymbol
+Fetch hardware cursor (to return stack)
 
 #endif
-cursorstore
+cursorfetch
     lda PNT+1
     pha
     lda PNT
@@ -209,12 +210,15 @@ cursorstore
 
 ;--------------------------------------------------------------
 #if 0
-name=CURSOR@
+name=CURSOR!
 stack=( -- )
 tags=primitive,extra
+Set hardware cursor (from return stack)
+
+This is a lighter version pending implementation of general cursor words: `:cursor` `<cursor` `=cursor` `>cursor`
 
 #endif
-cursorfetch
+cursorstore
     pla
     sta DFLTN
     pla
@@ -227,7 +231,6 @@ cursorfetch
     sta PNT
     pla
     sta PNT+1
-
     jmp next
 
 ;--------------------------------------------------------------
@@ -415,6 +418,46 @@ E173  60          RTS
         over c! in 1+!
         dup                     \ something for nip
      then nip ;
+
+: refill   ( -- )
+    blk@  if cursor@ then       \ possibly load stack with h/w cursor (5 cells)
+    <n6                         ( tib )          \ keyboard mode
+                                ( cursor sib )   \ ...or when loading
+    begin
+        line.size               ( buf siz )
+        ?dup
+    until
+    expect                      ( -- | -- cursor )
+    blk@  if cursor! then  ;
+
+: refill
+    blk@ if
+        cursor@ <n6 line.size
+        expect
+        cursor!
+    else
+        <n6 80
+        expect
+    then ;
+
+: line.setup
+    blk@ if
+        cursor@
+        sib
+        3
+          blk@ block lin 40* +
+          0 0 0 0 cursor!
+    else
+        tib eighty
+    then ;
+
+
+: refill   ( -- )
+    line.setup                  ( ?cursor buf size )
+    expect                      ( ?cursor )
+    blk@ if cursor! then ;      ( -- )
+
+
 ```
 #endif
 #include "align.i65"
@@ -427,7 +470,7 @@ _refill
     .word blkfetch
 #include "pass.i65"
     .word pquerycolon
-    .word cursorstore
+    .word cursorfetch
     .word next
 #include "page.i65"
 refill02
@@ -449,21 +492,116 @@ refill02
     .word blkfetch
 #include "pass.i65"
     .word pquerycolon
-    .word cursorfetch
+    .word cursorstore
     .word next
 #include "pass.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=LINESIZE
-stack=( blk -- size )
+name=>LINE
+stack=( -- addr size )
 tags=outer,extra
-Sets up the input stream, refilling from the keyboard or `vmbuf` as needed.
+Return `addr` and `size` of line# `lin`
+
+```
+: >line    ( -- addr size )
+    blk@ block lin 40* +
+    lin bufwrap >bit cbit@
+    ?: forty eighty
+    -trailing nip ;
+
+ptickstream
+    lda #3
+    sta DFLTN                   ; $AF Default Input Device
+    lda tos
+    sta userspan
+    sta LNMX                    ; $D5 logical line length (39 or 79)
+    lda userin
+    sta PNTR                    ; $C6 cursor column on current line
+    lda userlin
+    sta TBLX                    ; $D8 cursor physical line number
+    cmp #LPERSCR
+    bit LNMX
+    inc userlin
+    bvc ptickstream01
+    inc userlin
+ptickstream01
+    bcc ptickstream02
+    jsr plugh
+    inx
+    inx
+    jmp putnotc
+ptickstream02
+    jmp next
+
+: line.size   ( u -- 40|80 )
+    block lin 40* +
+    lin buf.wrap >bit cbit@
+    in 1+ over ?: 1+! 2+!
+    ?: 40 80
+    -trailing ('stream) ;
+```
+#endif
+#include "align.i65"
+_toline
+    jsr enter
+#include "page.i65"
+    .word blkfetch
+#include "page.i65"
+    .word _block
+#include "page.i65"
+    .word lin
+#include "page.i65"
+    .word fortytimes
+#include "page.i65"
+    .word plus                  ;( line.addr )
+#include "page.i65"
+    .word lin
+#include "page.i65"
+    .word _bufwrap
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word cbitfetch             ;( addr wrapbit )
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word oneplus               ; 'lin is high byte of `in`
+#include "page.i65"
+    .word over
+#include "pass.i65"
+    .word pquerycolon           ; `lin` points to next line
+    .word oneplusstore          ; 40 column
+    .word twoplusstore          ; 80 column
+#include "pass.i65"
+    .word pquerycolon
+    .word forty
+    .word eighty
+#include "page.i65"
+    .word dashtrailing
+#include "page.i65"
+    .word nip                   ; ( addr size )
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=LINESIZE
+stack=( -- size )
+tags=outer,extra
+Return `size` of either a line input from the keyboard
+or when loading, set hardware cursor to line# `lin` of `blk`
+advances `lin`
 
 ```
 : linesize
-    block  lin 40*  +
+    blk@
+    if
+        >line
+    else
+    then
+        block  lin 40*  +
     dup 'PNT !
     lin bufwrap >bit cbit@
     ?: forty eighty

@@ -97,7 +97,7 @@ cr
 #if 0
 name=EXPECT
 stack=( addr +n -- )
-tags=forth-83,i/o
+tags=primitive,forth-83,i/o
 ''Forth-83:''//  EXPECT       addr +n --                    M,83
        Receive characters and store each into memory.  The transfer
        begins at addr proceeding towards higher addresses one byte
@@ -108,6 +108,8 @@ tags=forth-83,i/o
        zero.  All characters actually received and stored into
        memory will be displayed, with the "return" displaying as a
        space.  See:  SPAN  "9.5.2 EXPECT"//
+
+Caller may set up hardware (with `cursor!`) prior to `expect`.  The hardware cursor state that `CHRIN` uses establishes context for input streams from either `vmbuf` when loading or `tib` in keyboard input mode.
 
 |Receive characters and store each into memory.|check.|
 |The transfer begins at `addr` proceeding towards higher addresses|check.|
@@ -130,7 +132,7 @@ expect01
     jsr CHRIN                   ; preserves `x` register!
     cmp #CR
     beq expect02
-    sta (n),y
+    sta (ACC+2*N0),y
     iny
     cpy tos                     ; check maxwidth, typically 80
     bcc expect01
@@ -138,6 +140,30 @@ expect02
     sty userspan                ; set `span`
 ;   ldx z
     jmp drop
+
+;--------------------------------------------------------------
+#if 0
+name=>.C
+stack=( -- )
+tags=forth-83,i/o,nosymbol
+Emits a character
+
+
+```
+: >.c   ( c == ; addr -- )
+\ : .cparent <builds c,
+   does> c@  emit ;
+```
+#endif
+#include "align.i65"
+dodotc
+    jsr dodoes
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word emit
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -151,15 +177,9 @@ Emits a space character
    bl emit ;
 ```
 #endif
-#include "align.i65"
-_space
-    jsr enter
-#include "page.i65"
-    .word bl
-#include "page.i65"
-    .word emit
-#include "pass.i65"
-    .word exit
+space
+    jsr dodotc
+    .byt SPACE
 
 ;--------------------------------------------------------------
 #if 0
@@ -190,7 +210,7 @@ _spaces
     .byt <(spaces02-*+1)
 #include "page.i65"
 spaces01
-    .word _space
+    .word space
 #include "pass.i65"
     .word ploop
     .byt <(spaces01-*+1)
@@ -617,7 +637,7 @@ _dot
 tse                             ; type, space, exit
     .word type                  ; ( )
 #include "page.i65"
-    .word _space                ; ( )
+    .word space                ; ( )
 #include "pass.i65"
     .word exit
 
