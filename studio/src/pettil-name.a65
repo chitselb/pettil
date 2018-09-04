@@ -74,6 +74,61 @@ _nfastore
 
 ;--------------------------------------------------------------
 #if 0
+name=!STREAM
+stack=( -- )
+tags=outer,extra,nosymbol
+Set up input stream, refilling from the keyboard or `vmbuf` as needed.
+
+```
+
+: (stream)   ( -- )
+    \ set n6 to point to linebuf tib or sib
+    blk@ ?: sib tib >n6 drop
+    span @  ?exit
+    refill ;
+
+: (stream)   ( -- )
+    \ set n6 to point to linebuf tib or sib
+    blk@ ?: sib tib  n6 !
+    span @  ?exit
+
+    refill
+    ( buf size )    expect ;
+
+
+
+: refill
+    <n6 blk@ ?: linesize 80 expect ;
+
+```
+#endif
+#include "align.i65"
+_pstream
+    jsr enter
+#include "page.i65"
+    .word blkfetch
+#include "pass.i65"
+    .word pquerycolon
+    .word sib
+    .word tib
+#include "pass.i65"
+    .word clit
+    .byt ACC+2*N6
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word span
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word _refill
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=NAME
 stack=( char -- nfa|0 )
 tags=outer,extra
@@ -96,17 +151,31 @@ phases of the outer interpreter.
 
 ```
 : name   ( char -- nfa|0 )
-     'stream
-     dup skip dup>r 1- <n6 +
-     swap scan r> - >n8 dup
-     ?: nfa! nip ;
+    !stream dup if
+    dup skip dup>r 1- <n6 +
+    swap scan r> - >n8 dup
+    ?: nfa! nip ;
+: name   ( char -- nfa|0 )
+    'stream? dup
+    if
+        dup skip
+        dup>r 1- <n6 +
+        swap scan
+        r> - >n8
+    then
+
+name=NFA!
+stack=( addr size -- nfa )
+
+
+
 ```
 #endif
 #include "align.i65"
 _name
     jsr enter
 #include "page.i65"
-    .word _setstream
+    .word _pstream
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -138,61 +207,6 @@ _name
     .word _nfastore             ; put count byte in line buffer
                                 ; bump `in` past token-terminating whitespace
     .word nip                   ; or... we have length = 0, discard addr
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=!STREAM
-stack=( -- )
-tags=outer,extra,nosymbol
-Set up input stream, refilling from the keyboard or `vmbuf` as needed.
-
-```
-
-: !stream   ( -- )
-    \ set n6 to point to linebuf tib or sib
-    blk@ ?: sib tib >n6 drop
-    span @  ?exit
-    refill ;
-
-: !stream   ( -- )
-    \ set n6 to point to linebuf tib or sib
-    blk@ ?: sib tib  n6 !
-    span @  ?exit
-
-    refill
-    ( buf size )    expect ;
-
-
-
-: refill
-    <n6 blk@ ?: linesize 80 expect ;
-
-```
-#endif
-#include "align.i65"
-_setstream
-    jsr enter
-#include "page.i65"
-    .word blkfetch
-#include "pass.i65"
-    .word pquerycolon
-    .word sib
-    .word tib
-#include "pass.i65"
-    .word clit
-    .byt ACC+2*N6
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word span
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word _refill
 #include "pass.i65"
     .word exit
 
