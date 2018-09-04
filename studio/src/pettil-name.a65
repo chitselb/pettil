@@ -55,7 +55,7 @@ Replace the ` ` before a name in the buffer with its count byte; bump `in`
 
 ```
 : nfa!   ( addr size -- nfa )
-    over c!  in 1+! ;
+    over c!  in 1+! ; [13]
 ```
 #endif
 #include "align.i65"
@@ -68,7 +68,7 @@ _nfastore
 #include "page.i65"
     .word in
 #include "page.i65"
-    .word oneplusstore
+    .word oneplusstore          ; move `in` past the name-ending whitespace
 #include "pass.i65"
     .word exit
 
@@ -106,7 +106,7 @@ phases of the outer interpreter.
 _name
     jsr enter
 #include "page.i65"
-    .word _tickstream
+    .word _setstream
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -132,28 +132,39 @@ _name
     .word tozp
     .byt ACC+2*N8               ; name.len
 #include "page.i65"
-    .word dup
+    .word dup                   ; ( addr siz siz )
 #include "pass.i65"
     .word pquerycolon
-    .word _nfastore
-    .word nip
+    .word _nfastore             ; put count byte in line buffer
+                                ; bump `in` past token-terminating whitespace
+    .word nip                   ; or... we have length = 0, discard addr
 #include "pass.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name='STREAM
+name=!STREAM
 stack=( -- )
 tags=outer,extra,nosymbol
-Sets up the input stream, refilling from the keyboard or `vmbuf` as needed.
+Set up input stream, refilling from the keyboard or `vmbuf` as needed.
 
 ```
 
-: 'stream   ( -- )
+: !stream   ( -- )
     \ set n6 to point to linebuf tib or sib
     blk@ ?: sib tib >n6 drop
     span @  ?exit
     refill ;
+
+: !stream   ( -- )
+    \ set n6 to point to linebuf tib or sib
+    blk@ ?: sib tib  n6 !
+    span @  ?exit
+
+    refill
+    ( buf size )    expect ;
+
+
 
 : refill
     <n6 blk@ ?: linesize 80 expect ;
@@ -161,7 +172,7 @@ Sets up the input stream, refilling from the keyboard or `vmbuf` as needed.
 ```
 #endif
 #include "align.i65"
-_tickstream
+_setstream
     jsr enter
 #include "page.i65"
     .word blkfetch

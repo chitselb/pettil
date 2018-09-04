@@ -247,10 +247,16 @@ If `name` returns an `nfa`, then `found?` will search the dictionary or try
 parse it as a `number` if it is not found. Depending on `compiling?` state,
 `cfa`s and numbers are either compiled or executed.
 
+|^condition|^exit|^mode|^buffer|h
+|^blk = 0|^end of line|^interactive|^tib|
+|^blk > 0|^end of screen|^loading|^sib|
+
 ```
 : interpret   ( -- )
     begin
         ?stack  bl name  ?dup
+        \ when blk=0, we get 0 here at end of line
+        \ when blk>0, we get 0 here at end of screen
     while
         found?  ?dup
         ?: interpret.cfa number
@@ -303,19 +309,17 @@ interpret04
 name=QUIT
 stack=( -- )
 tags=secondary,forth-79,forth-83,interpreter
-This is the infinite outer interpreter loop:
-      - resets the return stack (RP!)
-      - outputs a carriage return (CR)
-      - waits for a line of input (QUERY)
-      - interprets that line
+`quit` will accept and `interpret` an infinite number of lines typed in from the keyboard in interactive mode.
+
+This is the infinite outer interpreter loop.  PETTIL uses a lazy loading scheme such that when `interpret` finds it has nothing in the buffer (`span` is 0) it will reload the buffer.
 
 ```
 : quit
     rp! blk 12 erase            \ erases line editing uservars
     begin                       \ `interpret` will get new line from keyboard
         interpret
-        compiling? 0=
-        if  ." OK" then
+        compiling? blk@ or 0=
+         if  ." OK" then
     again ;
 ```
 #endif
@@ -336,6 +340,10 @@ quit01                          ; BEGIN
     .word _interpret            ; outer interpreter main loop
 #include "page.i65"
     .word compilingq
+#include "page.i65"
+    .word blkfetch
+#include "page.i65"
+    .word orx
 #include "page.i65"
     .word zeq
 #include "page.i65"
@@ -359,18 +367,12 @@ quit02
 name=ABORT
 stack=( -- )
 tags=secondary,fig,forth-79,forth-83,interpreter,startup
-* Clears data stack
-* Resets vocabulary to [[CORE]]
-* performs a [[QUIT]]
+* Clear data stack
+* Reset `current` and `vocabs` vocabulary to `forth`
+* perform `quit`
 
-Pretty standard fare, this is where things begin in the outer interpreter.
-Errors display as either a numbered error (CORE) or a message (TDICT)
+`abort` sets up and starts `quit` to bgin an interactive session.
 
-```
-    ldx usersp0
-    dex
-
-```
 #endif
 #include "align.i65"
 _abort
@@ -437,6 +439,11 @@ Redirect the input stream to screen `u` of Forth source and `interpret` it.
   2r>  blk 2! ( >in ! ) ;
 
 
+* check that `u` is in range of loaded blocks `0 < u < #blk`
+* push `blk` `in` `span` to return stack
+* interpret
+* pop `blk` `in` `span` from  return stack
+
 : load   ( u -- )
     0 #blk @ third between? 0= 8 ?error
     blk tuck 3@>r !+ 2off prev on
@@ -465,17 +472,17 @@ _load
 #include "page.i65"
     .word blk
 #include "page.i65"
-    .word tuck
+    .word tuck                  ;( blk u blk )
 #include "page.i65"
     .word threefetchtor         ; stash `blk` `in` `span` on return stack
 #include "page.i65"
-    .word _storeplus            ; `scr` to `blk`
+    .word _storeplus            ; `u` to `blk`
 #include "page.i65"
     .word twooff                ; `in` and `span` both off
 #include "page.i65"
     .word prev
 #include "page.i65"
-    .word on                    ; mark `blkbuf` dirty (`blk <> prev`)
+    .word on                    ; forces `block` to load buffer
 #include "page.i65"
     .word _interpret            ; interpret has two clients, `load` and `quit`
 #include "page.i65"
