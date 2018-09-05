@@ -1,0 +1,115 @@
+tags: static kernel
+title: CHRIN $FFCF
+
+```
+FFCF  4C 15 F2    JMP $F215     ; CHRIN
+
+;input a byte
+F215  A5 AF       LDA $AF       ; input device (default = #0, keyboard)
+F217  D0 0B       BNE $F224
+                                ; it is keyboard #0.
+F219  A5 C6       LDA $C6       ; position of cursor along line
+F21B  85 A4       STA $A4       ; cursor column
+F21D  A5 D8       LDA $D8       ; screen line of cursor
+F21F  85 A3       STA $A3       ; cursor row
+F221  4C 16 E1    JMP $E116
+
+F224  C9 03       CMP #$03      ; is it the screen, perhaps?
+F226  D0 09       BNE $F231
+                                ; it is screen #3.
+;get from the screen
+F228  85 AC       STA $AC       ; copy of device #3
+F22A  A5 D5       LDA $D5       ; length of current line (39 or 79)
+F22C  85 A1       STA $A1       ; count of chars of line input from screen
+F22E  4C 16 E1    JMP $E116
+
+F231  B0 29       BCS $F25C     ; is device > #3?
+                                ; it is tape #1 or #2.
+;get from cassette #1 or cassette #2
+F233  86 AD       STX $AD       ; stash the X-register before tape i/o
+F235  20 49 F2    JSR $F249     ; advance tape buffer pointer
+F238  48          PHA           ; this is it! this is the input byte!
+F239  20 49 F2    JSR $F249     ; advance tape buffer pointer
+F23C  D0 05       BNE $F243
+F23E  A9 40       LDA #$40
+F240  20 C4 FB    JSR $FBC4     ; flag contents of A into ST byte
+
+F243  D6 BA       DEC $BA,X
+F245  A6 AD       LDX $AD       ; restore X register
+F247  68          PLA           ; pop the input byte
+F248  60          RTS
+
+F249  20 4B F8    JSR $F84B
+F24C  D0 0B       BNE $F259
+F24E  20 9A F8    JSR $F89A
+F251  A6 D4       LDX $D4
+F253  A9 00       LDA #$00
+F255  95 BA       STA $BA,X
+F257  F0 F0       BEQ $F249
+F259  B1 D6       LDA ($D6),Y
+F25B  60          RTS
+;get from an IEEE device
+F25C  A5 96       LDA $96 ...
+
+;chrin from screen device #3
+E116  98          TYA
+E117  48          PHA
+E118  8A          TXA
+E119  48          PHA
+E11A  A5 AC       LDA $AC       ; input from screen (#3) or from keyboard (#0) flag
+E11C  F0 A1       BEQ $E0BF     ; is it the keyboard?
+                                ; it is screen #3.
+E11E  A4 C6       LDY $C6       ; position of cursor along line
+E120  B1 C4       LDA ($C4),Y   ; pointer to screen RAM position of start of current line
+E122  85 D9       STA $D9       ; last key input
+E124  29 3F       AND #$3F
+E126  06 D9       ASL $D9       ; C = set if RVS char
+E128  24 D9       BIT $D9
+E12A  10 02       BPL $E12E     ; N = set if shifted char
+E12C  09 80       ORA #$80
+
+E12E  90 04       BCC $E134
+E130  A6 CD       LDX $CD       ; Quote flag: 0 = direct cursor, else control chars printed
+E132  D0 04       BNE $E138     ; quote mode
+
+E134  70 02       BVS $E138
+E136  09 40       ORA #$40
+
+E138  E6 C6       INC $C6       ; scoot the cursor along to the right
+E13A  20 67 E1    JSR $E167     ; check for quote toggle
+E13D  C4 A1       CPY $A1       ; count of chars of line input from screen
+E13F  D0 17       BNE $E158     ; we are done, unless 39th/79th char reached
+
+E141  A9 00       LDA #$00
+E143  85 AC       STA $AC       ; input from screen (#3) or from keyboard (#0) flag
+E145  A9 0D       LDA #$0D
+E147  A6 AF       LDX $AF       ; Input device (default = #0, keyboard)
+E149  E0 03       CPX #$03      ; is it the screen?
+E14B  F0 06       BEQ $E153
+E14D  A6 B0       LDX $B0       ; Output device (default = #3, screen)
+E14F  E0 03       CPX #$03
+E151  F0 03       BEQ $E156
+
+E153  20 02 E2    JSR $E202     ; output a character to the screen
+
+E156  A9 0D       LDA #$0D
+
+E158  85 D9       STA $D9       ; last key input
+E15A  68          PLA
+E15B  AA          TAX
+E15C  68          PLA
+E15D  A8          TAY
+E15E  A5 D9       LDA $D9       ; last key input
+E160  C9 DE       CMP #$DE      ; ~what? translate `pi` char to $FF diagonal quarterblock char
+E162  D0 02       BNE $E166
+E164  A9 FF       LDA #$FF
+E166  60          RTS
+
+E167  C9 22       CMP #$22      ; is it a quote?
+E169  D0 08       BNE $E173     ; nope? bye
+E16B  A5 CD       LDA $CD       ; quote flag: 0 = not in quotes
+E16D  49 01       EOR #$01      ; toggle quote flag
+E16F  85 CD       STA $CD
+E171  A9 22       LDA #$22
+E173  60          RTS
+```

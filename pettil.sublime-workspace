@@ -16,86 +16,21 @@
 			}
 		},
 		{
-			"contents": "2018-09-03T08:21:58-04:00\n\n\n---> interactive mode --->\nabort\n. reset data stack\n. reset return stack\n. clear `vocabs`\n    quit\n    . set `blk` `in` `span` to 0\n        interpret\n            name\n        . returns 0 at end of line (interactive mode)\n\n---> loading virtual memory --->\nload\n. push current `blk` `in` `span`\n    interpret\n        name\n        . returns 0 at end of screen (loading mode)\n. pop `blk` `in` `span`\n\n; # design pattern #\nmains\n    jmp pitcher\n_main\n    lda #>(next-1)\n    pha\n    lda #<(next-1)\n    pha\n    ;fall through\npitcher\n                                ; the object pushes its parameters to return stack\n    lda parm1\n    pha\n    lda parm2\n    pha\n    lda parmn\n    pha\n\n    lda #>catcher               ; and the addr-1 of its method (also a subroutine)\n    pha\n    lda #<catcher\n    pha\n    rts                         ; control passed to method.  `parmn` now top of return stack\n\ncatcher\n    pla\n    sta parmn\n    pla\n    sta parm2\n    pla\n    sta parm1\n    rts\n\n\n\n\n\n\n2018-09-03T06:42:28-04:00\n`load` is top priority\n\n: load\n    interpret\n        name\n            'stream             ( buf size )\n            refill\n                cursor@\n                cursor!\n\n\n2018-09-03T01:07:03-04:00\n`load`\n `quit`\nboth working/integrated\n`refill`\n`block`\n`update`\n`sib`\n`tib`\n`cursor!`\n`cursor@`\n`=cursor` -- try this\n`('stream)`\n`line.size`\n\nobject:\n\nA `cursor` is a 6-byte datatype of the machine cursor\nit can be fetched from firmware to stack:  `cursor@`\n    ( -- a b c d ef )\nit can be set in firmware:  `cursor!`\n    ( a b c d ef -- )\nit can be fetched from an address `@cursor`\n    ( addr -- a b c d ef )\nit can be stored to an address `!cursor`\n    ( a b c d ef addr -- )\n\n`a` af dfltn default device number\n`b` d8 tblx physical line\n`c` d5 lnmx 40|80 logical line length\n`d` c6 pntr column on current line\n`ef` c4 pnt screen line addr\n\n`cursor:`\n\nit can be fetched from firmware to stack:  `cursor@`\n    ( -- a b c d ef )\n\ncode cursor@\n    jsr slip\n    jsr wrapzap12               ; clear those high bytes\n    lda PNT\n    sta tos\n    lda PNT+1\n    sta tos+1\n    lda PNT\n    sta tos\n    lda PNT\n    sta tos\n    lda PNT\n    sta tos\n    lda PNT\n    sta tos\n    lda PNT\n    sta tos\n    jsr plants10  ( n3.dfltn n2.tblx n1.lnmx n0.pntr pnt )\n    jsr plants10  ( n3.dfltn n2.tblx n1.lnmx n0.pntr pnt )\n    jmp next\n\n```\ncursor: foo\n@foo            \\ fetch *full* cursor we want\n=cursor          \\ exchange with live cursor\nsib 80 expect\n=cursor\n!foo\n\naf              ; default input device (0 or 3)\n    ac\nc6              ;\n    a4\nd8\n    a3\nd5\n    a1\nc4              ; PNT 2-byte pointer to logical line\n    d9\nCD              ; quote flag\n\nFFCF  4C 15 F2    JMP $F215     ; CHRIN\n\n;input a byte\nF215  A5 AF       LDA $AF       ; input device (default = #0, keyboard)\nF217  D0 0B       BNE $F224\n                                ; it is keyboard #0.\nF219  A5 C6       LDA $C6       ; position of cursor along line\nF21B  85 A4       STA $A4       ; cursor column\nF21D  A5 D8       LDA $D8       ; screen line of cursor\nF21F  85 A3       STA $A3       ; cursor row\nF221  4C 16 E1    JMP $E116\n\nF224  C9 03       CMP #$03      ; is it the screen, perhaps?\nF226  D0 09       BNE $F231\n                                ; it is screen #3.\n;get from the screen\nF228  85 AC       STA $AC       ; copy of device #3\nF22A  A5 D5       LDA $D5       ; length of current line (39 or 79)\nF22C  85 A1       STA $A1       ; count of chars of line input from screen\nF22E  4C 16 E1    JMP $E116\n\nF231  B0 29       BCS $F25C     ; is device > #3?\n                                ; it is tape #1 or #2.\n;get from cassette #1 or cassette #2\nF233  86 AD       STX $AD       ; stash the X-register before tape i/o\nF235  20 49 F2    JSR $F249     ; advance tape buffer pointer\nF238  48          PHA           ; this is it! this is the input byte!\nF239  20 49 F2    JSR $F249     ; advance tape buffer pointer\nF23C  D0 05       BNE $F243\nF23E  A9 40       LDA #$40\nF240  20 C4 FB    JSR $FBC4     ; flag contents of A into ST byte\n\nF243  D6 BA       DEC $BA,X\nF245  A6 AD       LDX $AD       ; restore X register\nF247  68          PLA           ; pop the input byte\nF248  60          RTS\n\nF249  20 4B F8    JSR $F84B\nF24C  D0 0B       BNE $F259\nF24E  20 9A F8    JSR $F89A\nF251  A6 D4       LDX $D4\nF253  A9 00       LDA #$00\nF255  95 BA       STA $BA,X\nF257  F0 F0       BEQ $F249\nF259  B1 D6       LDA ($D6),Y\nF25B  60          RTS\n;get from an IEEE device\nF25C  A5 96       LDA $96 ...\n\n;chrin from screen device #3\nE116  98          TYA\nE117  48          PHA\nE118  8A          TXA\nE119  48          PHA\nE11A  A5 AC       LDA $AC       ; input from screen (#3) or from keyboard (#0) flag\nE11C  F0 A1       BEQ $E0BF     ; is it the keyboard?\n                                ; it is screen #3.\nE11E  A4 C6       LDY $C6       ; position of cursor along line\nE120  B1 C4       LDA ($C4),Y   ; pointer to screen RAM position of start of current line\nE122  85 D9       STA $D9       ; last key input\nE124  29 3F       AND #$3F\nE126  06 D9       ASL $D9       ; C = set if RVS char\nE128  24 D9       BIT $D9\nE12A  10 02       BPL $E12E     ; N = set if shifted char\nE12C  09 80       ORA #$80\n\nE12E  90 04       BCC $E134\nE130  A6 CD       LDX $CD       ; Quote flag: 0 = direct cursor, else control chars printed\nE132  D0 04       BNE $E138     ; quote mode\n\nE134  70 02       BVS $E138\nE136  09 40       ORA #$40\n\nE138  E6 C6       INC $C6       ; scoot the cursor along to the right\nE13A  20 67 E1    JSR $E167     ; check for quote toggle\nE13D  C4 A1       CPY $A1       ; count of chars of line input from screen\nE13F  D0 17       BNE $E158     ; we are done, unless 39th/79th char reached\n\nE141  A9 00       LDA #$00\nE143  85 AC       STA $AC       ; input from screen (#3) or from keyboard (#0) flag\nE145  A9 0D       LDA #$0D\nE147  A6 AF       LDX $AF       ; Input device (default = #0, keyboard)\nE149  E0 03       CPX #$03      ; is it the screen?\nE14B  F0 06       BEQ $E153\nE14D  A6 B0       LDX $B0       ; Output device (default = #3, screen)\nE14F  E0 03       CPX #$03\nE151  F0 03       BEQ $E156\n\nE153  20 02 E2    JSR $E202     ; output a character to the screen\n\nE156  A9 0D       LDA #$0D\n\nE158  85 D9       STA $D9       ; last key input\nE15A  68          PLA\nE15B  AA          TAX\nE15C  68          PLA\nE15D  A8          TAY\nE15E  A5 D9       LDA $D9       ; last key input\nE160  C9 DE       CMP #$DE      ; ~what? translate `pi` char to $FF diagonal quarterblock char\nE162  D0 02       BNE $E166\nE164  A9 FF       LDA #$FF\nE166  60          RTS\n\nE167  C9 22       CMP #$22      ; is it a quote?\nE169  D0 08       BNE $E173     ; nope? bye\nE16B  A5 CD       LDA $CD       ; quote flag: 0 = not in quotes\nE16D  49 01       EOR #$01      ; toggle quote flag\nE16F  85 CD       STA $CD\nE171  A9 22       LDA #$22\nE173  60          RTS\n\n\ncursorstore\n    lda PNT+1\n    pha\n    lda PNT\n    pha\n    lda PNTR\n    pha\n    lda LNMX\n    pha\n    lda TBLX\n    pha\n    lda DFLTN\n    pha\n    jmp next\n\n;--------------------------------------------------------------\n#if 0\nname=CURSOR:\nstack=( dfltn tblx lnmx pntr pnt \"name\" == @AF @D8 @D5 @C6 @C4 )\ntags=primitive,extra,nosymbol\nCreate cursor object \"name\" in the dictionary containing 5 stack elements:\n\n|AF|DFLTN|^default input device<br\n|D8|TBLX|\n|D5|LNMX|\n|C6|PNTR|\n|C4|PNT|\n\n```\n: cursor:   ( dfltn tblx lnmx pntr pnt \"name\" == ; -- @AF @D8 @D5 @C6 @C4 )\n    <builds 2>r 2>r c, r> c, r> c, r> c, r> ,\n    does> 4 0 do c@+ swap loop @ ;\n```\n#endif\n#include \"align.i65\"\n_createcursor\n    jsr enter\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname==CURSOR\nstack=( dfltn tblx lnmx pntr pnt -- @AF @D8 @D5 @C6 @C4 )\ntags=primitive,extra,nosymbol\nexchange hardward cursor with one on the stack\n\n#endif\ncursorexch\n    pla\n    sta DFLTN\n    pla\n    sta TBLX\n    pla\n    sta LNMX\n    pla\n    sta PNTR\n    pla\n    sta PNT\n    pla\n    sta PNT+1\n\n    jmp next\n\n\n\n```\n\n\nrelated words\n\n2018-09-02T21:34:20-04:00\nNEXT:\n\ng\nz\nd;m 0 ff;m 130 17f;m 694 6a1;m 1e0 21f;z\n\ng\nz\nd;m 0 ff;m 130 17f;m 694 6a1;m 1e0 21f;z\n\nPDE:\ndis 1;dis 2;dis 3;dis 4;en 5;g\n<enter>\ndis 1;dis 2;dis 3;en 4;dis 5;g\n<enter>\nz\n<enter>\n\n\n\nsys64790\ndL\"pettil.prg\":\nalt-w\nshift-run\nalt-w\n_\nstop-dn\nstop-?\n\n\nEXIT:\n\ndis 1;dis 2;dis 3;dis 4;en 5;g\ndis 1;dis 2;dis 3;en 4;dis 5;g\nz\nd;m 0 ff;m 130 17f;m 694 6a1;m 1e0 21f;z\n\n\ndis 1;dis 2;dis 3;dis 4;en 5\nd;m 0 ff;m 1e0 21f;g\ndis 1;dis 2;dis 3;en 4;dis 5\nd;m 0 ff;m 1e0 21f;g\nz\nd;m 0 ff;m 1e0 21f;z\n\n\n2018-09-02T02:17:22-04:00\n\n\n2018-09-02T01:47:43-04:00 `load`\nPROBLEM\nhas something to do with code referencing `lin`\n1st line of text works okay as top line (line#0)\nalso works okay with one blank line above it (line#1),\nfails with two (or more) lines above (line#2+)\n`expect` does not have correct args on 2nd line containing text\nignores 2nd and subsequent lines containing text\n\nSOLUTIONS\nlook at `lin` `userlin`\ntrace `line.size` `('stream)`\ncheck `expect` args\n\n\nwrap\n\nupdate   ( -- )\nblock   ( u -- buf )\nwrap!   ( wrapd -- )\nwrap@   ( -- wrapd )\nwraprolls\ncore-vm.a65\nwrapzap12\nwrapzaps\nwrapumax\n: nowrap   true true wrap! ;\ndwrap@\n?mkpkts   ( u -- )\n>pkt\npkt.next\npkt.size   ( pkt -- pkt size )\npsize\n\n\n\nvidram\n\n\n\n\n\n: interpret   ( -- )\n    begin\n        ?stack\n        bl name ?dup\n    while\n        found? ?dup\n        ?: token number\n    repeat ;\n\n: name   ( char -- nfa|0 )\n    'stream\n    dup skip dup>r 1- <n6 +\n    swap scan r> - >n8 dup\n    ?: nfa! nip ;\n\n: 'stream   ( -- )\n    blk@ ?: sib tib >n6 drop\n    span @  ?exit  ?ok\n\n\n: refill\n    <n6 blk@ ?: linesize 80 expect ;\n    buf.buf+82\n    blk@ ?: nip drop\n    ?refill.setup\n    0= if\n    n5 2@ expect ;\n\n_refill\n    jsr enter\n#include \"pass.i65\"\n    .word zpfrom\n    .byt ACC+2*N6               ; tib or sib\n#include \"page.i65\"\n    .word cursorfetch\n#include \"page.i65\"\nrefill02\n    .word blkfetch\n#include \"page.i65\"\n    .word qdup\n#include \"pass.i65\"\n    .word pquerycolon\n    .word _linesize\n    .word eighty\n#include \"page.i65\"\n    .word qdup\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(refill02-*+1)\n#include \"page.i65\"\n    .word expect\n#include \"page.i65\"\nrefill01\n    .word cursorstore\n#include \"pass.i65\"\n    .word exit\n\n\n\ncursorstore   ( -- )\n    pla\n    sta DFLTN\n    pla\n    sta TBLX\n    pla\n    sta LNMX\n    pla\n    sta PNTR\n    pla\n    sta PNT\n    pla\n    sta PNT+1\n\n    jmp next\n\n",
-			"file": "moshpit.txt",
-			"file_size": 10191,
-			"file_write_time": 131804829557586289,
+			"file": "t.1",
 			"settings":
 			{
-				"buffer_size": 10393,
-				"encoding": "UTF-8",
+				"buffer_size": 29298,
 				"line_ending": "Unix"
 			}
 		},
 		{
-			"file": "studio/src/pettil-interpreter.a65",
+			"contents": "banana splits -- queen bee\n#f2778d pink\n#71a668 green\n#f2dd72 yellow\n#f2b6a0 pink\n#d95f43 red\n\n\n\n2018-09-04T20:10:00-04:00\nchecked out earliest 9/1 \"Thurgood Marshall\" commit as branch foo\ncompare working `interpret` vs. googlesheet rewrite\n\n`in` `span` `n6`=tib|sib `tos`=char\n\nReturns either an offset to where `char` is either skipped or scanned.  Returns 0 at end of line\n\ncode skip\n    lda #$F0                    ; BEQ opcode\n    .byt $2C                    ; fall through\nscan\n    lda #$D0                    ; BNE opcode\n    ;\n    sta skipscan03              ; #selfmodifying\n    ldy userin                  ; `in` pick up where we left off\n    dey                         ; undo in advance the thing we are about to do\nskipscan01\n    iny\n    cpy userspan                ; Carry true at end of line\n    bcc skipscan02\n    lda #0                      ; oh, we done\n    sta userspan                ; `span off`\n    beq skipscan04              ; bra\nskipscan02\n    lda (ACC+2*N6),y            ; get char from buffer\n    eor tos                     ; compare to character we seek\nskipscan03\n    bvc skipscan01              ; dummy opcode, BEQ(skip) BNE(scan)\nskipscan04\n    sty userin                  ; found char !, move `in`\n    tya\n    jmp put0a                   ;( offset )\n\n\n\n: name   ( char -- nfa|0 )\n     ('stream)                  ( char )\n     dup skip dup>r 1- <n6 +\n     swap scan r> - >n8 dup\n     ?: nfa! nip ;\n\n\n: interpret   ( -- )\n    begin\n        ?stack  bl name ?dup\n    while\n        found?  ?dup\n        ?: interpret.cfa number\n    repeat ;\n\n#include \"page.i65\"\n    .word blkfetch\n#include \"page.i65\"\n    .word span\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word orx\n#include \"page.i65\"\n    .word zeq\n\n\n: interpret   ( -- )\n    begin\n        ?stack  ('stream)\n        blk@ span @ or\n    while\n    bl name  ?dup\n        \\ when blk=0, we get 0 here at end of line\n        \\ when blk>0, we get 0 here at end of screen\n        found?  ?dup\n        ?: interpret.cfa number\n    repeat ;\n\n: interpret   ( -- )\n    begin\n        ?stack\n        ('stream)\n        blk@ span @ or\n    while\n        bl name  ?dup\n        \\ when blk=0, we get 0 here at end of line\n        \\ when blk>0, we get 0 here at end of screen\n        found?  ?dup\n        ?: interpret.cfa number\n    repeat ;\n\n* populate `tib` or `sib`\n** `blk@ if`\n** populate `sib`\n** `else`\n** `tib 80 expect`\n** `then`\n* load `n6` with `tib` or `sib`\n: ('stream)   ( -- )\n\n\n2018-09-04T04:01:44-04:00\n\nin\n    low byte is horizontal position within line buffer (0..span)\n    high byte is physical line # `lin` (0..height)\n\n    `skip` `scan` increase the value of `in`\n    `name` increments `in` at end of token\n\nlin\n    `line.size`increments by 1 or 2 (before `expect`)\n    `?loading` checks for end of screen (after `expect`)\n\nblk\n    set by `load`\n    `(stream)` resets `blk` when `lin` reaches `height`\n    `name` exits with `false` when `blk @ span@ or` is false\n\nprev\n    `block` exits early without rldecode when `blk @ prev @ =` is true\n    set to `true` by `load`\n\n`n6` contains `sib` or `tib` line buffer\n\n\nname     ( char -- nfa|0 )\n    ( char )\n!stream   ( -- f )\n    ( char f )\n\nexit name     ( char -- nfa|0 )\n\n\n\n\\ probably not work\n: 'stream?   ( -- f )\n    blk@ ?: sib tib  n6 !    \\ set n6 to point to linebuf tib or sib\n    span @  ?exit\n\n    refill\n    ( buf size )    expect ;\n\n\\ probably not work\n: name   ( char -- nfa|0 )\n     !stream\n     dup skip dup>r 1- <n6 +\n     swap scan r> - >n8 dup\n     ?: nfa! nip ;\n\n\n\n. returns 0 at end of screen (loading mode)\n    !stream\n    . populate `n6` with\n        refill \\ is no longer query\n        . increment `lin`\n        . push hardware cursor to return stack\n        . set up a cursor\n            !cursor\n            expect\n            . call `CHRIN` to load `sib` buffer\n            . exit expect\n        . pop hardware cursor\n        . exit refill\n    exit 'stream\nexit name\n\n2018-09-04T02:24:06-04:00\n\n\n2018-09-03T08:21:58-04:00\n\n\n---> loading virtual memory --->\n\n. calculate start of line address `lin 40* blkbuf +`\n\n\nload\n. push current `blk` `in` `span`\n    interpret\n    . test `lin` = `height` (exit with `0`)\n        name\n        . returns 0 at end of screen (loading mode)\n            !stream\n            . populate `n6` with\n                refill \\ is no longer query\n                . increment `lin`\n                . when `lin` reaches `height`, turn `blk` off to signify we are done\n                . push hardware cursor to return stack\n                . set up a cursor\n                    !cursor\n                    expect\n                    . call `CHRIN` to load `sib` buffer\n                    . exit expect\n                . pop hardware cursor\n                . exit refill\n            exit 'stream\n        exit name\n    . find? (or try number) and either compile or execute\n    exit interpret\nexit load\n\n. pop `blk` `in` `span`\n. exit load\n\n---> interactive mode --->\nabort\n. reset data stack\n. clear `vocabs`\n    quit\n    . reset return stack\n    . `blk` `in` `span` `#out` `#line` `editing` off\n        interpret\n        begin\n        . . check stack over/underflow\n            name\n        . . is a name available?\n        while\n        . . is this name in the dictionary?\n            found?\n        . . handle it like a boss\n            ?: execute.or.compile number\n        . . interactive mode and end of line? (blk|span)=0 ?\n            blk@ span @ or 0=\n        until\n        exit interpret\n\n        . repeat\n            name\n            . returns 0 at end of line (interactive mode)\n                refill\n                - does not increment `lin`\n                - does not push hardware cursor to return stack\n                - does not set up a cursor\n                -   !cursor\n                    expect\n                    . call `CHRIN` to load `tib` buffer\n                    . exit expect\n                - does not pop hardware cursor\n                exit refill\n            exit name\n\n: interpret   ( -- )\n    begin\n        ?stack  bl name  ?dup\n        \\ when blk=0, we get 0 here at end of line\n        \\ when blk>0, we get 0 here at end of screen\n    while\n        found?  ?dup\n        ?: interpret.cfa number\n        blk@ span @ or 0=\n    until ;\n\n\n; # design pattern #\nmains\n    jmp pitcher\n\n_main\n    lda #>(next-1)\n    pha\n    lda #<(next-1)\n    pha\n    ;fall through\npitcher\n                                ; the object pushes its parameters to return stack\n    lda parm1\n    pha\n    lda parm2\n    pha\n    lda parmn\n    pha\n\n    lda #>catcher               ; and the addr-1 of its method (also a subroutine)\n    pha\n    lda #<catcher\n    pha\n    rts                         ; control passed to method.  `parmn` now top of return stack\n\ncatcher\n    pla\n    sta parmn\n    pla\n    sta parm2\n    pla\n    sta parm1\n    rts\n\n\n\n\n\n\n2018-09-03T06:42:28-04:00\n`load` is top priority\n\n: load\n    interpret\n        name\n            'stream             ( buf size )\n            refill\n                cursor@\n                cursor!\n\n\n2018-09-03T01:07:03-04:00\n`load`\n `quit`\nboth working/integrated\n`refill`\n`block`\n`update`\n`sib`\n`tib`\n`cursor!`\n`cursor@`\n`=cursor` -- try this\n`('stream)`\n`line.size`\n\nobject:\n\nA `cursor` is a 6-byte datatype of the machine cursor\nit can be fetched from firmware to stack:  `cursor@`\n    ( -- a b c d ef )\nit can be set in firmware:  `cursor!`\n    ( a b c d ef -- )\nit can be fetched from an address `@cursor`\n    ( addr -- a b c d ef )\nit can be stored to an address `!cursor`\n    ( a b c d ef addr -- )\n\n`a` af dfltn default device number\n`b` d8 tblx physical line\n`c` d5 lnmx 40|80 logical line length\n`d` c6 pntr column on current line\n`ef` c4 pnt screen line addr\n\n`cursor:`\n\nit can be fetched from firmware to stack:  `cursor@`\n    ( -- a b c d ef )\n\ncode cursor@\n    jsr slip\n    jsr wrapzap12               ; clear those high bytes\n    lda PNT\n    sta tos\n    lda PNT+1\n    sta tos+1\n    lda PNT\n    sta tos\n    lda PNT\n    sta tos\n    lda PNT\n    sta tos\n    lda PNT\n    sta tos\n    lda PNT\n    sta tos\n    jsr plants10  ( n3.dfltn n2.tblx n1.lnmx n0.pntr pnt )\n    jsr plants10  ( n3.dfltn n2.tblx n1.lnmx n0.pntr pnt )\n    jmp next\n\n```\ncursor: foo\n@foo            \\ fetch *full* cursor we want\n=cursor          \\ exchange with live cursor\nsib 80 expect\n=cursor\n!foo\n\naf              ; default input device (0 or 3)\n    ac\nc6              ;\n    a4\nd8\n    a3\nd5\n    a1\nc4              ; PNT 2-byte pointer to logical line\n    d9\nCD              ; quote flag\n\nFFCF  4C 15 F2    JMP $F215     ; CHRIN\n\n;input a byte\nF215  A5 AF       LDA $AF       ; input device (default = #0, keyboard)\nF217  D0 0B       BNE $F224\n                                ; it is keyboard #0.\nF219  A5 C6       LDA $C6       ; position of cursor along line\nF21B  85 A4       STA $A4       ; cursor column\nF21D  A5 D8       LDA $D8       ; screen line of cursor\nF21F  85 A3       STA $A3       ; cursor row\nF221  4C 16 E1    JMP $E116\n\nF224  C9 03       CMP #$03      ; is it the screen, perhaps?\nF226  D0 09       BNE $F231\n                                ; it is screen #3.\n;get from the screen\nF228  85 AC       STA $AC       ; copy of device #3\nF22A  A5 D5       LDA $D5       ; length of current line (39 or 79)\nF22C  85 A1       STA $A1       ; count of chars of line input from screen\nF22E  4C 16 E1    JMP $E116\n\nF231  B0 29       BCS $F25C     ; is device > #3?\n                                ; it is tape #1 or #2.\n;get from cassette #1 or cassette #2\nF233  86 AD       STX $AD       ; stash the X-register before tape i/o\nF235  20 49 F2    JSR $F249     ; advance tape buffer pointer\nF238  48          PHA           ; this is it! this is the input byte!\nF239  20 49 F2    JSR $F249     ; advance tape buffer pointer\nF23C  D0 05       BNE $F243\nF23E  A9 40       LDA #$40\nF240  20 C4 FB    JSR $FBC4     ; flag contents of A into ST byte\n\nF243  D6 BA       DEC $BA,X\nF245  A6 AD       LDX $AD       ; restore X register\nF247  68          PLA           ; pop the input byte\nF248  60          RTS\n\nF249  20 4B F8    JSR $F84B\nF24C  D0 0B       BNE $F259\nF24E  20 9A F8    JSR $F89A\nF251  A6 D4       LDX $D4\nF253  A9 00       LDA #$00\nF255  95 BA       STA $BA,X\nF257  F0 F0       BEQ $F249\nF259  B1 D6       LDA ($D6),Y\nF25B  60          RTS\n;get from an IEEE device\nF25C  A5 96       LDA $96 ...\n\n;chrin from screen device #3\nE116  98          TYA\nE117  48          PHA\nE118  8A          TXA\nE119  48          PHA\nE11A  A5 AC       LDA $AC       ; input from screen (#3) or from keyboard (#0) flag\nE11C  F0 A1       BEQ $E0BF     ; is it the keyboard?\n                                ; it is screen #3.\nE11E  A4 C6       LDY $C6       ; position of cursor along line\nE120  B1 C4       LDA ($C4),Y   ; pointer to screen RAM position of start of current line\nE122  85 D9       STA $D9       ; last key input\nE124  29 3F       AND #$3F\nE126  06 D9       ASL $D9       ; C = set if RVS char\nE128  24 D9       BIT $D9\nE12A  10 02       BPL $E12E     ; N = set if shifted char\nE12C  09 80       ORA #$80\n\nE12E  90 04       BCC $E134\nE130  A6 CD       LDX $CD       ; Quote flag: 0 = direct cursor, else control chars printed\nE132  D0 04       BNE $E138     ; quote mode\n\nE134  70 02       BVS $E138\nE136  09 40       ORA #$40\n\nE138  E6 C6       INC $C6       ; scoot the cursor along to the right\nE13A  20 67 E1    JSR $E167     ; check for quote toggle\nE13D  C4 A1       CPY $A1       ; count of chars of line input from screen\nE13F  D0 17       BNE $E158     ; we are done, unless 39th/79th char reached\n\nE141  A9 00       LDA #$00\nE143  85 AC       STA $AC       ; input from screen (#3) or from keyboard (#0) flag\nE145  A9 0D       LDA #$0D\nE147  A6 AF       LDX $AF       ; Input device (default = #0, keyboard)\nE149  E0 03       CPX #$03      ; is it the screen?\nE14B  F0 06       BEQ $E153\nE14D  A6 B0       LDX $B0       ; Output device (default = #3, screen)\nE14F  E0 03       CPX #$03\nE151  F0 03       BEQ $E156\n\nE153  20 02 E2    JSR $E202     ; output a character to the screen\n\nE156  A9 0D       LDA #$0D\n\nE158  85 D9       STA $D9       ; last key input\nE15A  68          PLA\nE15B  AA          TAX\nE15C  68          PLA\nE15D  A8          TAY\nE15E  A5 D9       LDA $D9       ; last key input\nE160  C9 DE       CMP #$DE      ; ~what? translate `pi` char to $FF diagonal quarterblock char\nE162  D0 02       BNE $E166\nE164  A9 FF       LDA #$FF\nE166  60          RTS\n\nE167  C9 22       CMP #$22      ; is it a quote?\nE169  D0 08       BNE $E173     ; nope? bye\nE16B  A5 CD       LDA $CD       ; quote flag: 0 = not in quotes\nE16D  49 01       EOR #$01      ; toggle quote flag\nE16F  85 CD       STA $CD\nE171  A9 22       LDA #$22\nE173  60          RTS\n\n\ncursorstore\n    lda PNT+1\n    pha\n    lda PNT\n    pha\n    lda PNTR\n    pha\n    lda LNMX\n    pha\n    lda TBLX\n    pha\n    lda DFLTN\n    pha\n    jmp next\n\n;--------------------------------------------------------------\n#if 0\nname=CURSOR:\nstack=( dfltn tblx lnmx pntr pnt \"name\" == @AF @D8 @D5 @C6 @C4 )\ntags=primitive,extra,nosymbol\nCreate cursor object \"name\" in the dictionary containing 5 stack elements:\n\n|AF|DFLTN|^default input device<br\n|D8|TBLX|\n|D5|LNMX|\n|C6|PNTR|\n|C4|PNT|\n\n```\n: cursor:   ( dfltn tblx lnmx pntr pnt \"name\" == ; -- @AF @D8 @D5 @C6 @C4 )\n    <builds 2>r 2>r c, r> c, r> c, r> c, r> ,\n    does> 4 0 do c@+ swap loop @ ;\n```\n#endif\n#include \"align.i65\"\n_createcursor\n    jsr enter\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname==CURSOR\nstack=( dfltn tblx lnmx pntr pnt -- @AF @D8 @D5 @C6 @C4 )\ntags=primitive,extra,nosymbol\nexchange hardward cursor with one on the stack\n\n#endif\ncursorexch\n    pla\n    sta DFLTN\n    pla\n    sta TBLX\n    pla\n    sta LNMX\n    pla\n    sta PNTR\n    pla\n    sta PNT\n    pla\n    sta PNT+1\n\n    jmp next\n\n\n\n```\n\n\nrelated words\n\n2018-09-02T21:34:20-04:00\nNEXT:\n\ng\nz\nd;m 0 ff;m 130 17f;m 694 6a1;m 1e0 21f;z\n\ng\nz\nd;m 0 ff;m 130 17f;m 694 6a1;m 1e0 21f;z\n\nPDE:\ndis 1;dis 2;dis 3;dis 4;en 5;g\n<enter>\ndis 1;dis 2;dis 3;en 4;dis 5;g\n<enter>\nz\n<enter>\n\n\n\nsys64790\ndL\"pettil.prg\":\nalt-w\nshift-run\nalt-w\n_\nstop-dn\nstop-?\n\n\nEXIT:\n\ndis 1;dis 2;dis 3;dis 4;en 5;g\ndis 1;dis 2;dis 3;en 4;dis 5;g\nz\nd;m 0 ff;m 130 17f;m 694 6a1;m 1e0 21f;z\n\n\ndis 1;dis 2;dis 3;dis 4;en 5\nd;m 0 ff;m 1e0 21f;g\ndis 1;dis 2;dis 3;en 4;dis 5\nd;m 0 ff;m 1e0 21f;g\nz\nd;m 0 ff;m 1e0 21f;z\n\n\n2018-09-02T02:17:22-04:00\n\n\n2018-09-02T01:47:43-04:00 `load`\nPROBLEM\nhas something to do with code referencing `lin`\n1st line of text works okay as top line (line#0)\nalso works okay with one blank line above it (line#1),\nfails with two (or more) lines above (line#2+)\n`expect` does not have correct args on 2nd line containing text\nignores 2nd and subsequent lines containing text\n\nSOLUTIONS\nlook at `lin` `userlin`\ntrace `line.size` `('stream)`\ncheck `expect` args\n\n\nwrap\n\nupdate   ( -- )\nblock   ( u -- buf )\nwrap!   ( wrapd -- )\nwrap@   ( -- wrapd )\nwraprolls\ncore-vm.a65\nwrapzap12\nwrapzaps\nwrapumax\n: nowrap   true true wrap! ;\ndwrap@\n?mkpkts   ( u -- )\n>pkt\npkt.next\npkt.size   ( pkt -- pkt size )\npsize\n\n\n\nvidram\n\n\n\n\n\n: interpret   ( -- )\n    begin\n        ?stack\n        bl name ?dup\n    while\n        found? ?dup\n        ?: token number\n    repeat ;\n\n: name   ( char -- nfa|0 )\n    'stream\n    dup skip dup>r 1- <n6 +\n    swap scan r> - >n8 dup\n    ?: nfa! nip ;\n\n: 'stream   ( -- )\n    blk@ ?: sib tib >n6 drop\n    span @  ?exit  ?ok\n\n\n: refill\n    <n6 blk@ ?: linesize 80 expect ;\n    buf.buf+82\n    blk@ ?: nip drop\n    ?refill.setup\n    0= if\n    n5 2@ expect ;\n\n_refill\n    jsr enter\n#include \"pass.i65\"\n    .word zpfrom\n    .byt ACC+2*N6               ; tib or sib\n#include \"page.i65\"\n    .word cursorfetch\n#include \"page.i65\"\nrefill02\n    .word blkfetch\n#include \"page.i65\"\n    .word qdup\n#include \"pass.i65\"\n    .word pquerycolon\n    .word _linesize\n    .word eighty\n#include \"page.i65\"\n    .word qdup\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(refill02-*+1)\n#include \"page.i65\"\n    .word expect\n#include \"page.i65\"\nrefill01\n    .word cursorstore\n#include \"pass.i65\"\n    .word exit\n\n\n\ncursorstore   ( -- )\n    pla\n    sta DFLTN\n    pla\n    sta TBLX\n    pla\n    sta LNMX\n    pla\n    sta PNTR\n    pla\n    sta PNT\n    pla\n    sta PNT+1\n\n    jmp next\n\n",
+			"file": "/home/chitselb/Documents/dev/commodore/moshpit.txt",
+			"file_size": 16137,
+			"file_write_time": 131805944497968523,
 			"settings":
 			{
-				"buffer_size": 12962,
-				"encoding": "UTF-8",
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"contents": "Searching 33 files for \"lsb\" (regex)\n\n/home/chitselb/Documents/dev/commodore/pettil/core/src/core-extra.a65:\n  475      clc\n  476      .byt $24                    ; BIT zp opcode\n  477: lsb\n  478      sec\n  479      lda tos\n  ...\n  491  ;--------------------------------------------------------------\n  492  #if 0\n  493: name=LSB\n  494  stack=( u -- c )\n  495  tags=extra\n  496  Returns the low byte of a cell\n  497  #endif\n  498: lsb\n  499      lda tos\n  500      .byt $2C                    ; BIT abs opcode\n\n/home/chitselb/Documents/dev/commodore/pettil/core/src/core-vm.a65:\n  499  |msb|addr+0|\n  500  |2sb|addr+1|\n  501: |lsb|addr+2|\n  502  \n  503  ```\n  ...\n  548  |msb|addr|\n  549  |2sb|addr+1|\n  550: |lsb|addr+2|\n  551  \n  552  Order inverted to write timer last for EVENTS, and to find the bits from\n\n/home/chitselb/Documents/dev/commodore/pettil/core/src/sweet16.a65:\n   98      STX R14L       ;INDICATE \"PRIOR RESULT REG\"\n   99      LSR\n  100:     LSR            ;OPCODE*2 TO LSB'S\n  101      LSR\n  102      TAY            ;TO Y REG FOR INDEXING\n  ...\n  303      STA R0H,Y\n  304      STY R14L        ;LAST RESULT REG*2\n  305:     ROL R14H        ;CARRY TO LSB\n  306      RTS\n  307  NXT\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-assembler.a65:\n  354      .byt st | N0\n  355      .byt ldd | TOS\n  356:     .byt st | N1                ; n+2=modes.lsb n+3=modes.msb\n  357      .byt sub | ACC\n  358      .byt push\n  ...\n  362                                  ;  0 | 1  right side (odd) is 16-bit\n  363                                  ; ---+--- left side is 8-bit\n  364:                                 ;  2 | 3  bottom half has $8x modes.lsb\n  365  decode00\n  366      ldy #2                      ; assume bottom half\n  367      sty tos                     ; assume 16-bit\n  368:     lda n+2                     ; the lsb of the modes, please\n  369      bmi decode01                ; $8x? (group 2,3)\n  370      ldy #0\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-compiler.a65:\n    4  ;--------------------------------------------------------------\n    5  #if 0\n    6: name=HERELSB\n    7  stack=( -- c )\n    8  tags=compiler,nosymbol\n    .\n   10  #endif\n   11  #include \"align.i65\"\n   12: herelsb\n   13      lda userdp\n   14      jmp push0a\n   ..\n  118  : nextpage   ( -- )\n  119      ['] page here !\n  120:     $100 herelsb - dp +! ;\n  121  ```\n  122  #endif\n  ...\n  135      .word $100\n  136  #include \"page.i65\"\n  137:     .word herelsb\n  138  #include \"page.i65\"\n  139      .word minus\n  ...\n 2110      .word exit\n 2111  \n 2112: #print (*-herelsb)\n 2113  \n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-dictionary.a65:\n 1695  \n 1696  `symtail` is where new symbols are appended.  Like the 6502 stack pointer, it\n 1697: points to where the next byte (the `lsb` of a `cfa`) is to be written when the\n 1698  next symbol is created.\n 1699  \n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-number.a65:\n  741      .byt ACC+2*N6\n  742  #include \"page.i65\"\n  743:     .word lsb\n  744  #include \"page.i65\"\n  745      .word zero\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-utils.a65:\n  143  : .4h   ( u -- )\n  144      dup msb .h\n  145:     lsb .h ;\n  146  ```\n  147  #endif\n  ...\n  156      .word _doth\n  157  #include \"page.i65\"\n  158:     .word lsb\n  159  #include \"page.i65\"\n  160      .word _doth\n  ...\n  193          if\n  194              dup msb .h\n  195:             dup lsb .h\n  196          then\n  197          c@+ space .h\n\n20 matches across 8 files\n",
-			"settings":
-			{
-				"buffer_size": 3562,
-				"line_ending": "Unix",
-				"name": "Find Results",
-				"scratch": true
-			}
-		},
-		{
-			"file": "core/src/core-extra.a65",
-			"settings":
-			{
-				"buffer_size": 11533,
-				"encoding": "UTF-8",
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"file": "core/src/core-double.a65",
-			"settings":
-			{
-				"buffer_size": 10929,
-				"encoding": "UTF-8",
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"file": "core/src/core-io.a65",
-			"settings":
-			{
-				"buffer_size": 15601,
-				"encoding": "UTF-8",
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"file": "t.t",
-			"settings":
-			{
-				"buffer_size": 15770,
-				"encoding": "UTF-8",
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"file": "core/src/core-vm.a65",
-			"settings":
-			{
-				"buffer_size": 43966,
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"file": "studio/src/pettil-name.a65",
-			"settings":
-			{
-				"buffer_size": 17866,
-				"encoding": "UTF-8",
+				"buffer_size": 16234,
 				"line_ending": "Unix"
 			}
 		}
@@ -156,55 +91,58 @@
 	},
 	"console":
 	{
-		"height": 0.0,
+		"height": 158.0,
 		"history":
 		[
 		]
 	},
 	"distraction_free":
 	{
-		"menu_visible": true,
-		"show_minimap": true,
+		"menu_visible": false,
+		"show_minimap": false,
 		"show_open_files": true,
-		"show_tabs": true,
-		"side_bar_visible": true,
-		"status_bar_visible": true
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
 	},
 	"expanded_folders":
 	[
 		"/home/chitselb/Documents/dev/commodore/pettil",
-		"/home/chitselb/Documents/dev/commodore/pettil/core",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio/src"
+		"/home/chitselb/Documents/dev/commodore/pettil/docs",
+		"/home/chitselb/Documents/dev/commodore/pettil/docs/figforth"
 	],
 	"file_history":
 	[
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-locals.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/moshpit.txt",
+		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-interpreter.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-name.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/pettil-core.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/docs/statictiddlers/$palettesMMM.tid",
+		"/home/chitselb/Documents/dev/commodore/pettil/docs/statictiddlers/$palettesVorth.tid",
+		"/home/chitselb/Documents/dev/commodore/pettil/docs/statictiddlers/$palettesQueenBee.tid",
+		"/mnt/data/chitselb/Documents/dev/commodore/pettil/docs/statictiddlers/$palettesVorth.tid",
+		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-studio.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-inner.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/t.t",
+		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-vm.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-extra.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-double.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-io.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-locals.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-editor.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-utils.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-interpreter.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/Makefile",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-io.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-inner.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-name.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/inc/cbm.def",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-nucleus.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/pettil.dbg",
 		"/home/chitselb/Documents/dev/commodore/pettil/foo.bar",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-vm.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/moshpit.txt",
 		"/home/chitselb/Documents/dev/commodore/pettil/pettil.mon",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-user.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-studio.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/test-general.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-double.a65",
 		"/home/chitselb/pettil/data/sdl2_chitselb.vicerc",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-user.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-compiler.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-dictionary.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-extra.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/tmp/pettil.mon",
 		"/home/chitselb/Documents/dev/commodore/pettil/tools/xap.rb",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/sweet16.a65",
@@ -217,7 +155,6 @@
 		"/home/chitselb/Documents/dev/commodore/pettil/tmp/t.csv",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-assembler.a65",
 		"/mnt/data/chitselb/Documents/dev/commodore/pettil/Makefile",
-		"/home/chitselb/Documents/dev/commodore/pettil/t.t",
 		"/home/chitselb/Documents/dev/commodore/vice-3.2/src/arch/unix/x11/gnome/uimon.c",
 		"/mnt/data/chitselb/Documents/dev/commodore/pettil/pettil.mon",
 		"/mnt/data/chitselb/Documents/dev/commodore/pettil/foo.mon",
@@ -317,6 +254,36 @@
 		"case_sensitive": false,
 		"find_history":
 		[
+			"pettil-name.a65",
+			"stream",
+			"_interpret",
+			"_nfastore",
+			"name=QUERY",
+			"_load",
+			"setstream",
+			"lin[^egdkl]",
+			"\\.word orx",
+			"orx",
+			"lin[^egdkl]",
+			"lin[^egdk]",
+			"lin[^egd]",
+			"lin[^eg]",
+			"lin[^e]",
+			"lin",
+			"_setstream",
+			"_name",
+			"n6",
+			"spstore",
+			"_quit",
+			"put0a",
+			"cswap",
+			"tickstream",
+			"_refill",
+			"_quit",
+			"_abort",
+			"numfetch",
+			"numtor",
+			"#r>",
 			"lsb",
 			"join",
 			"split",
@@ -414,37 +381,7 @@
 			"homes",
 			"clrscr",
 			"\\$93",
-			"clrscr",
-			"_space",
-			"\\$20",
-			"BL",
-			"dodashbuf",
-			"_space",
-			"dodoes",
-			".word emit",
-			"clrscr",
-			"_info",
-			"userlin",
-			"twoplusstore",
-			"userin",
-			"_refill",
-			"blkfetch",
-			".word lin$",
-			"twoswap",
-			"ffcf",
-			"_linesize",
-			"c4",
-			"userlin",
-			"^lin$",
-			"_linesize",
-			"lin",
-			"_deadbeef",
-			"^_gt",
-			"^gt",
-			"gt",
-			"^ge",
-			"ge",
-			"_ge"
+			"clrscr"
 		],
 		"highlight": true,
 		"in_selection": false,
@@ -487,7 +424,7 @@
 	"groups":
 	[
 		{
-			"selected": 1,
+			"selected": 2,
 			"sheets":
 			[
 				{
@@ -516,237 +453,54 @@
 						"translation.y": 79919.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 8,
-					"type": "text"
-				},
-				{
-					"buffer": 1,
-					"file": "moshpit.txt",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 10393,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								154,
-								154
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/Text/Plain text.tmLanguage",
-							"tab_size": 4,
-							"translate_tabs_to_spaces": true
-						},
-						"translation.x": 0.0,
-						"translation.y": 36.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 0,
-					"type": "text"
-				},
-				{
-					"buffer": 2,
-					"file": "studio/src/pettil-interpreter.a65",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 12962,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								11132,
-								11132
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/Text/Plain text.tmLanguage",
-							"tab_size": 4,
-							"translate_tabs_to_spaces": true
-						},
-						"translation.x": 0.0,
-						"translation.y": 8353.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 3,
-					"type": "text"
-				},
-				{
-					"buffer": 3,
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 3562,
-						"regions":
-						{
-							"match":
-							{
-								"flags": 112,
-								"regions":
-								[
-									[
-										186,
-										189
-									],
-									[
-										326,
-										329
-									],
-									[
-										431,
-										434
-									],
-									[
-										627,
-										630
-									],
-									[
-										710,
-										713
-									],
-									[
-										988,
-										991
-									],
-									[
-										1168,
-										1171
-									],
-									[
-										1379,
-										1382
-									],
-									[
-										1669,
-										1672
-									],
-									[
-										1849,
-										1852
-									],
-									[
-										2129,
-										2132
-									],
-									[
-										2244,
-										2247
-									],
-									[
-										2372,
-										2375
-									],
-									[
-										2487,
-										2490
-									],
-									[
-										2598,
-										2601
-									],
-									[
-										2828,
-										2831
-									],
-									[
-										3056,
-										3059
-									],
-									[
-										3242,
-										3245
-									],
-									[
-										3349,
-										3352
-									],
-									[
-										3480,
-										3483
-									]
-								],
-								"scope": ""
-							}
-						},
-						"selection":
-						[
-							[
-								189,
-								189
-							]
-						],
-						"settings":
-						{
-							"color_scheme": "Packages/BetterFindBuffer/FindResults.hidden-tmTheme",
-							"detect_indentation": false,
-							"line_numbers": false,
-							"output_tag": 1,
-							"result_base_dir": "",
-							"result_file_regex": "^([^ \t].*):$",
-							"result_line_regex": "^ +([0-9]+):",
-							"scroll_past_end": true,
-							"syntax": "Packages/Default/Find Results.hidden-tmLanguage"
-						},
-						"translation.x": 0.0,
-						"translation.y": 0.0,
-						"zoom_level": 1.0
-					},
 					"stack_index": 2,
 					"type": "text"
 				},
 				{
-					"buffer": 4,
-					"file": "core/src/core-extra.a65",
-					"semi_transient": false,
+					"buffer": 1,
+					"file": "t.1",
+					"semi_transient": true,
 					"settings":
 					{
-						"buffer_size": 11533,
+						"buffer_size": 29298,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								8630,
-								8630
+								0,
+								0
 							]
 						],
 						"settings":
 						{
-							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"syntax": "Packages/Diff/Diff.sublime-syntax",
 							"tab_size": 4,
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 8352.0,
+						"translation.y": 0.0,
 						"zoom_level": 1.0
 					},
 					"stack_index": 1,
 					"type": "text"
 				},
 				{
-					"buffer": 5,
-					"file": "core/src/core-double.a65",
+					"buffer": 2,
+					"file": "/home/chitselb/Documents/dev/commodore/moshpit.txt",
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 10929,
+						"buffer_size": 16234,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								8911,
-								8911
+								48,
+								48
 							]
 						],
 						"settings":
@@ -756,130 +510,10 @@
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 8405.0,
+						"translation.y": 0.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 4,
-					"type": "text"
-				},
-				{
-					"buffer": 6,
-					"file": "core/src/core-io.a65",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 15601,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								14192,
-								14192
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/Text/Plain text.tmLanguage",
-							"tab_size": 4,
-							"translate_tabs_to_spaces": true
-						},
-						"translation.x": 0.0,
-						"translation.y": 12725.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 7,
-					"type": "text"
-				},
-				{
-					"buffer": 7,
-					"file": "t.t",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 15770,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								15131,
-								15131
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/Perl/Perl.sublime-syntax",
-							"tab_size": 4,
-							"translate_tabs_to_spaces": true
-						},
-						"translation.x": 0.0,
-						"translation.y": 10062.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 6,
-					"type": "text"
-				},
-				{
-					"buffer": 8,
-					"file": "core/src/core-vm.a65",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 43966,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								13464,
-								13464
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/Text/Plain text.tmLanguage",
-							"tab_size": 4,
-							"translate_tabs_to_spaces": true
-						},
-						"translation.x": 0.0,
-						"translation.y": 10727.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 9,
-					"type": "text"
-				},
-				{
-					"buffer": 9,
-					"file": "studio/src/pettil-name.a65",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 17866,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								3188,
-								3188
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/Text/Plain text.tmLanguage",
-							"tab_size": 4,
-							"translate_tabs_to_spaces": true
-						},
-						"translation.x": 0.0,
-						"translation.y": 1421.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 5,
+					"stack_index": 0,
 					"type": "text"
 				}
 			]
@@ -887,7 +521,7 @@
 	],
 	"incremental_find":
 	{
-		"height": 27.0
+		"height": 40.0
 	},
 	"input":
 	{
