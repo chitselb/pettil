@@ -46,29 +46,41 @@ skipscan04
     tya
     jmp put0a                   ;( offset )
 
+
 ;--------------------------------------------------------------
 #if 0
-name=NFA!
-stack=( addr size -- nfa )
+name=?LOADING
+stack=( -- )
 tags=outer,extra,nosymbol
-Replace the ` ` before a name in the buffer with its count byte; bump `in`
+If loading, restore the cursor and increment `lin` etc.. This executes just after `sib` line input buffer was filled by `expect`
+
 
 ```
-: nfa!   ( addr size -- nfa )
-    over c!  in 1+! ; [13]
+: ?loading   ( -- )
+    blk@ 0= ?exit
+    rdrop \ the thing that called us
+    cursor!
+
+    in 1+ 1+!
+    lin  height @
+
+
+
 ```
 #endif
 #include "align.i65"
-_nfastore
+_qloading
     jsr enter
 #include "page.i65"
-    .word over
+    .word blkfetch
 #include "page.i65"
-    .word cstore
+    .word zeq
 #include "page.i65"
-    .word in
+    .word _qexit
 #include "page.i65"
-    .word oneplusstore          ; move `in` past the name-ending whitespace
+    .word rdrop
+#include "page.i65"
+    .word cursorstore
 #include "pass.i65"
     .word exit
 
@@ -80,26 +92,12 @@ tags=outer,extra,nosymbol
 Set up input stream, refilling from the keyboard or `vmbuf` as needed.
 
 ```
-
 : (stream)   ( -- )
-    \ set n6 to point to linebuf tib or sib
-    blk@ ?: sib tib >n6 drop
-    span @  ?exit
-    refill ;
-
-: (stream)   ( -- )
-    \ set n6 to point to linebuf tib or sib
-    blk@ ?: sib tib  n6 !
-    span @  ?exit
-
-    refill
-    ( buf size )    expect ;
-
-
-
-: refill
-    <n6 blk@ ?: linesize 80 expect ;
-
+    blk@ ?: sib tib  >n6        ( _ib )
+    span @ ?exit
+    blk@ ?: line.size eighty    ( _ib size )
+    expect
+    ?loading ;
 ```
 #endif
 #include "align.i65"
@@ -112,10 +110,8 @@ _pstream
     .word sib
     .word tib
 #include "pass.i65"
-    .word clit
+    .word tozp
     .byt ACC+2*N6
-#include "page.i65"
-    .word store
 #include "page.i65"
     .word span
 #include "page.i65"
@@ -123,90 +119,17 @@ _pstream
 #include "page.i65"
     .word _qexit
 #include "page.i65"
-    .word _refill
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=NAME
-stack=( char -- nfa|0 )
-tags=outer,extra
-Parse the next `word` from the `input stream`.  Return `false` if the
-`input stream` is exhausted, or the `nfa` of the found word, built
-directly within the input stream.  Advance `in` past the parsed `word`.
-
-Leading delimiters are ignored.   If the delimiter is not found the value of
-IN is the size of the input stream.  If the delimiter is found IN is
- adjusted to indicate the offset to the character following
- the delimiter.  `span` is unmodified.
-
-In PETTIL `name` replaces the function of Forth-83 //required// reserved
-word `word`, which is //omitted//.
-
-As much of the `ugly` as I could for the `blk` conspiracy goes in here.
-Isolating conspiracy support in as few words as possible will hopefully
-reduce overall system complexity and present clear transitions between the
-phases of the outer interpreter.
-
-```
-: name   ( char -- nfa|0 )
-    !stream dup if
-    dup skip dup>r 1- <n6 +
-    swap scan r> - >n8 dup
-    ?: nfa! nip ;
-: name   ( char -- nfa|0 )
-    'stream? dup
-    if
-        dup skip
-        dup>r 1- <n6 +
-        swap scan
-        r> - >n8
-    then
-
-name=NFA!
-stack=( addr size -- nfa )
-
-
-
-```
-#endif
-#include "align.i65"
-_name
-    jsr enter
+    .word blkfetch
 #include "page.i65"
-    .word _pstream
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word skip                  ; start of name
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word oneminus
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N6               ; buf
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word scan                  ; end of name (and/or buffer)
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word minus
-#include "pass.i65"
-    .word tozp
-    .byt ACC+2*N8               ; name.len
-#include "page.i65"
-    .word dup                   ; ( addr siz siz )
+    .word qdup
 #include "pass.i65"
     .word pquerycolon
-    .word _nfastore             ; put count byte in line buffer
-                                ; bump `in` past token-terminating whitespace
-    .word nip                   ; or... we have length = 0, discard addr
+    .word _linesize
+    .word eighty
+#include "page.i65"
+    .word expect
+#include "page.i65"
+    .word _qloading
 #include "pass.i65"
     .word exit
 
@@ -614,59 +537,30 @@ _toline
 #if 0
 name=LINESIZE
 stack=( -- size )
-tags=outer,extra
+tags=outer,extra,nosymbol
 Return `size` of either a line input from the keyboard
 or when loading, set hardware cursor to line# `lin` of `blk`
 advances `lin`
 
 ```
-: linesize
-    blk@
-    if
-        >line
-    else
-    then
-        block  lin 40*  +
-    dup 'PNT !
-    lin bufwrap >bit cbit@
-    ?: forty eighty
-    -trailing nip ;
-
-ptickstream
-    lda #3
-    sta DFLTN                   ; $AF Default Input Device
-    lda tos
-    sta userspan
-    sta LNMX                    ; $D5 logical line length (39 or 79)
-    lda userin
-    sta PNTR                    ; $C6 cursor column on current line
-    lda userlin
-    sta TBLX                    ; $D8 cursor physical line number
-    cmp #LPERSCR
-    bit LNMX
-    inc userlin
-    bvc ptickstream01
-    inc userlin
-ptickstream01
-    bcc ptickstream02
-    jsr plugh
-    inx
-    inx
-    jmp putnotc
-ptickstream02
-    jmp next
-
-: line.size   ( u -- 40|80 )
+: line.size   ( -- size )
+    cursor@ !loading
+    <n6
     block lin 40* +
     lin buf.wrap >bit cbit@
     in 1+ over ?: 1+! 2+!
     ?: 40 80
-    -trailing ('stream) ;
+    -trailing ;
 ```
 #endif
 #include "align.i65"
 _linesize
     jsr enter
+#include "page.i65"
+    .word cursorfetch
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N6
 #include "page.i65"
     .word _block
 #include "page.i65"
@@ -693,7 +587,6 @@ _linesize
     .word pquerycolon
     .word oneplusstore
     .word twoplusstore
-
 #include "pass.i65"
     .word pquerycolon
     .word forty
@@ -701,19 +594,27 @@ _linesize
 #include "page.i65"
     .word dashtrailing
 #include "page.i65"
-    .word ptickstream
+    .word setloading
 #include "pass.i65"
     .word exit
 
-ptickstream
+;--------------------------------------------------------------
+#if 0
+name=!LOADING
+stack=( -- )
+tags=primitive,outer,extra,nosymbol
+Return `size` of either a line input from the keyboard
+or when loading, set hardware cursor to line# `lin` of `blk`
+advances `lin`
+
+#endif
+setloading
     lda #3
     sta DFLTN                   ; $AF Default Input Device
-
     lda stackl,x
     sta PNT
     lda stackh,x
     sta PNT+1
-
     lda tos
     sta userspan
     sta LNMX                    ; $D5 logical line length (39 or 79)
@@ -723,5 +624,91 @@ ptickstream
     sta TBLX                    ; $D8 cursor physical line number
     jmp nip
 
+;--------------------------------------------------------------
+#if 0
+name=NAME
+stack=( char -- nfa|0 )
+tags=outer,extra
+Parse the next `word` from the `input stream`.  Return `false` if the
+`input stream` is exhausted, or the `nfa` of the found word, built
+directly within the input stream.  Advance `in` past the parsed `word`.
+
+Leading delimiters are ignored.   If the delimiter is not found the value of
+IN is the size of the input stream.  If the delimiter is found IN is
+ adjusted to indicate the offset to the character following
+ the delimiter.  `span` is unmodified.
+
+In PETTIL `name` replaces the function of Forth-83 //required// reserved
+word `word`, which is //omitted//.
+
+As much of the `ugly` as I could for the `blk` conspiracy goes in here.
+Isolating conspiracy support in as few words as possible will hopefully
+reduce overall system complexity and present clear transitions between the
+phases of the outer interpreter.
+
+```
+: name   ( char -- nfa|0 )
+    !stream
+    dup skip dup>r 1- <n6 +
+    swap scan r> - >n8 dup
+    ?: nfa! nip ;
+
+: name   ( char -- nfa|0 )
+    'stream
+    dup skip
+    dup>r 1- <n6 +
+    swap scan
+    r> - >n8 ( len )
+    nfa! ;
+name=NFA!
+stack=( addr size -- nfa )
+
+: name   ( u -- nfa|0 )
+    (stream) dup
+    skip dup>r 1- <n6 + swap
+    scan r> - >n8
+    over c!  in 1+! ;
+
+```
+#endif
+#include "align.i65"
+_name
+    jsr enter
+#include "page.i65"
+    .word _pstream
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word skip                  ; start of name
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word oneminus
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N6               ; buf
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word scan                  ; end of name (and/or buffer)
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word minus
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N8               ; name.len
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word oneplusstore          ; move `in` past the name-ending whitespace
+#include "pass.i65"
+    .word exit
 
 #print (*-skip)

@@ -253,6 +253,18 @@ parse it as a `number` if it is not found. Depending on `compiling?` state,
         ?: interpret.cfa number
         blk@ span @ or 0=
     until ;
+
+: interpret   ( -- )
+    begin
+        ?stack  ('stream)
+        blk@ span @ or
+    while
+    bl name  ?dup
+        \ when blk=0, we get 0 here at end of line
+        \ when blk>0, we get 0 here at end of screen
+        found?  ?dup
+        ?: interpret.cfa number
+    repeat ;
 ```
 #endif
 #include "align.i65"
@@ -262,22 +274,7 @@ _interpret
 interpret01
     .word qstack
 #include "page.i65"
-    .word bl
-#include "page.i65"
-    .word _name                 ;( nfa | 0 )
-#include "page.i65"
-    .word qdup
-#include "pass.i65"
-    .word qbranch
-    .byt <(interpret04-*+1)
-#include "page.i65"             ;( nfa 0 ; not found )
-    .word _foundq               ;( cfa -1 ; found, normal )
-#include "page.i65"             ;( cfa 1 ; found, immediate )
-    .word qdup
-#include "pass.i65"
-    .word pquerycolon
-    .word _interpretcfa
-    .word _number
+    .word _ptickstream
 #include "page.i65"
     .word blkfetch
 #include "page.i65"
@@ -286,10 +283,25 @@ interpret01
     .word fetch
 #include "page.i65"
     .word orx
-#include "page.i65"
-    .word zeq
 #include "pass.i65"
     .word qbranch
+    .byt <(interpret04-*+1)
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word _name                 ;( nfa | 0 )
+#include "page.i65"
+    .word qdup
+#include "page.i65"             ;( nfa 0 ; not found )
+    .word _foundq               ;( cfa -1 ; found, normal )
+#include "page.i65"             ;( cfa 1 ; found, immediate )
+    .word qdup
+#include "pass.i65"
+    .word pquerycolon
+    .word _interpretcfa
+    .word _number
+#include "pass.i65"
+    .word branch
     .byt <(interpret01-*+1)
 #include "pass.i65"
 interpret04
@@ -467,7 +479,7 @@ _load
 #include "page.i65"
     .word threefetchtor         ; stash `blk` `in` `span` on return stack
 #include "page.i65"
-    .word _storeplus            ; `u` to `blk`
+    .word _storeplus            ; just like `blk !  in`
 #include "page.i65"
     .word twooff                ; `in` and `span` both off
 #include "page.i65"
