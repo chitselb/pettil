@@ -92,10 +92,10 @@ tags=outer,extra,nosymbol
 Set up input stream, refilling from the keyboard or `vmbuf` as needed.
 
 ```
-: (stream)   ( -- )
-    blk@ ?: sib tib  >n6        ( _ib )
+: ?refill   ( c -- c )
     span @ ?exit
-    blk@ ?: line.size eighty    ( _ib size )
+    blk@ ?: sib tib  >n6        ( _ib )
+    blk@ ?dup ?: line.size eighty    ( _ib size )
     expect
     ?loading ;
 ```
@@ -299,6 +299,12 @@ ptickstream02
     ?: 40 80
     -trailing ('stream) ;
 ```
+: >line   ( sib blk -- sib size )
+    block lin 40* +  <n6
+    lin buf.wrap >bit cbit@
+    in 1+  over ?: 1+! 2+!
+    ?: forty eighty  -trailing
+    cursor@ !cursor ;
 #endif
 #include "align.i65"
 _toline
@@ -464,10 +470,45 @@ Return `size` of either a line input from the keyboard
 or when loading, set hardware cursor to line# `lin` of `blk`
 advances `lin`
 
+
+: ?refill   ( c -- c )
+    span @ ?exit
+    blk@ ?: sib tib  >n6        ( _ib )
+    blk@ ?dup ?: line.size eighty    ( _ib size )
+    expect
+    ?loading ;
+
 #endif
 #include "align.i65"
 _qrefill
     jsr enter
+#include "page.i65"
+    .word span
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word blkfetch
+#include "pass.i65"
+    .word pquerycolon
+    .word sib
+    .word tib
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N6               ; `n6` line input buffer (`sib` or `tib`)
+#include "page.i65"
+    .word blkfetch
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word pquerycolon
+    .word _linesize
+    .word eighty
+#include "page.i65"
+    .word expect
+#include "page.i65"
+    .word _qloading
 #include "pass.i65"
     .word exit
 
@@ -484,18 +525,22 @@ advances `lin`
 setloading
     lda #3
     sta DFLTN                   ; $AF Default Input Device
-    lda stackl,x
-    sta PNT
-    lda stackh,x
-    sta PNT+1
+    lda userlin
+    cmp userheight
+    bcc setloading01
+    lda #0
+    sta userblk                 ; end of screen reached
+setloading01
+    sta TBLX                    ; $D8 cursor physical line number
     lda tos
-    sta userspan
     sta LNMX                    ; $D5 logical line length (39 or 79)
     lda userin
     sta PNTR                    ; $C6 cursor column on current line
-    lda userlin
-    sta TBLX                    ; $D8 cursor physical line number
-    jmp nip
+    lda stackl,x
+    sta PNT                     ; ($C4) pointer start of current screen line
+    lda stackh,x
+    sta PNT+1
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -537,7 +582,7 @@ name=NFA!
 stack=( addr size -- nfa )
 
 : name   ( u -- nfa|0 )
-    ('stream) dup
+    ?refill ( u -- u ) dup
     skip dup>r 1- <n6 + swap
     scan r> - >n8
     over c!  in 1+! ;
