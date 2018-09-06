@@ -298,6 +298,9 @@ Return `size` of either a line input from the keyboard
 or when loading, set hardware cursor to line# `lin` of `blk`
 advances `lin`
 
+`n6` needs to be set
+
+
 
 : ?refill   ( -- )
     span @ ?exit
@@ -315,24 +318,18 @@ _qrefill
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word blkfetch
+    .word _qexit                ; exit if something is in this line buffer?
 #include "pass.i65"
-    .word pquerycolon
-    .word sib
-    .word tib
-#include "pass.i65"
-    .word tozp
-    .byt ACC+2*N6               ; `n6` line input buffer (`sib` or `tib`)
+    .word zpfrom
+    .byt ACC+2*N6               ; line buffer address sib|tib
 #include "page.i65"
     .word blkfetch
 #include "page.i65"
     .word qdup
 #include "pass.i65"
     .word pquerycolon
-    .word _linesize
-    .word eighty
+    .word _linesize             ; ( sib blk -- sib size )
+    .word eighty                ; ( tib -- tib 80 )
 #include "page.i65"
     .word expect
 #include "page.i65"
@@ -342,25 +339,9 @@ _qrefill
 
 ;--------------------------------------------------------------
 #if 0
-name=NAME
-stack=( char -- nfa|0 )
-tags=outer,extra
-Parse the next `word` from the `input stream`.  Return `false` if the
-`input stream` is exhausted, or the `nfa` of the found word, built
-directly within the input stream.  Advance `in` past the parsed `word`.
-
-Leading delimiters are ignored.   If the delimiter is not found the value of
-IN is the size of the input stream.  If the delimiter is found IN is
- adjusted to indicate the offset to the character following
- the delimiter.  `span` is unmodified.
-
-In PETTIL `name` replaces the function of Forth-83 //required// reserved
-word `word`, which is //omitted//.
-
-As much of the `ugly` as I could for the `blk` conspiracy goes in here.
-Isolating conspiracy support in as few words as possible will hopefully
-reduce overall system complexity and present clear transitions between the
-phases of the outer interpreter.
+name=PARSENAME
+stack=( -- nfa|0 )
+tags=secondary,outer,extra,nosymbol
 
 ```
 : name   ( char -- nfa|0 )
@@ -380,45 +361,30 @@ phases of the outer interpreter.
 name=NFA!
 stack=( addr size -- nfa )
 
-: parse
+: parsename
+    skip dup 1- <n6 +
+    scan rot - >n8
+    over c!  in 1+!
+
     skip
     scan
     - >n8
     c!
 
+* set n6 line buffer addr
+* set n7 delimiter char
+* refill the line buffer (if empty)
 
-: name   ( u -- nfa|0 )
-    n7 !
-    ?refill
-    blk @ span @ or dup
-    if
-        skip dup 1- <n6 +
-        scan rot - >n8
-        over c!  in 1+!
-    else
-        0
-    then ;
 
+: parsename
+    skip dup 1- <n6 +
+    scan rot - >n8
+    over c!  in 1+!
 ```
 #endif
 #include "align.i65"
-_name
+_parsename
     jsr enter
-#include "pass.i65"
-    .word plit
-    .byt ACC+2*N7               ; delim char
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word _qrefill
-#include "page.i65"
-    .word blkfetch
-#include "page.i65"
-    .word span
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word orx
 #include "page.i65"
     .word dup
 #include "pass.i65"
@@ -452,8 +418,72 @@ _name
     .word in
 #include "page.i65"
     .word oneplusstore          ; move `in` past the name-ending whitespace
+
+;--------------------------------------------------------------
+#if 0
+name=NAME
+stack=( char -- nfa|0 )
+tags=outer,extra
+Parse the next `word` from the `input stream`.  Return `false` if the input stream is exhausted, or returns the `nfa` of the found word, which will be a counted string somewhere in `tib` or `sib`.
+
+Leading delimiters are ignored.   If the delimiter `char` is not found the value of `in` will be the size of the input stream.  If `char` is found, `in` will point to the character following the delimiter. When the end of the input line is reached, `parsename` clears `span` to let us exit.  Similarly, `line.size` will clear `blk` when `lin` reaches the `height` physical line of `blkbuf` to exit after loading a screen.
+
+This is one of PETTIL's slight departures from the Forth-83 standard.  In PETTIL `name` replaces the //required// reserved word `word`. The reason is that PETTIL uses a lazy loading design while the standard uses active loading.
+
+|What is a WORD?|<|<|h
+|1|word|entry in the Forth dictionary|
+|2|word|16 bits of memory|
+|3|word|an English word|
+|4|word|//required// reserved Forth-83 standard word to parse the input stream|
+|5|word|things Cameo say before `up`|
+
+Here we see that `word` means (at least) five things, and we are dispensing with one of those (meaning #4) by renaming `word` to `name` and altering the stack diagram slightly.
+
+* set `n6` line buffer addr
+* set `n7` delimiter char
+* refill the line buffer (if empty)
+* test if line buffer (and screen buffer, if loading) exhausted
+* set `n8` length
+* return `false` or `nfa`
+* Advance `in` past the parsed `word`.
+
+```
+: name   ( char -- nfa|0 )
+    blk@ ?: sib tib  n6 2!
+    ?refill
+    blk @ span @ or
+    ?: parsename 0 ;
+```
+#endif
+#include "align.i65"
+_name
+    jsr enter
+#include "page.i65"
+    .word blkfetch
 #include "pass.i65"
-name01
+    .word pquerycolon
+    .word sib
+    .word tib
+#include "pass.i65"
+    .word clit
+    .byt ACC+2*N6               ; `n6` line input buffer (`sib` or `tib`)
+#include "page.i65"
+    .word twostore              ; `n7` delim char
+#include "page.i65"
+    .word _qrefill
+#include "page.i65"
+    .word blkfetch
+#include "page.i65"
+    .word span
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word orx
+#include "pass.i65"
+    .word pquerycolon
+    .word _parsename
+    .word zero
+#include "pass.i65"
     .word exit
 
 ;--------------------------------------------------------------
