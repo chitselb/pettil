@@ -98,101 +98,18 @@ advances `lin`
 
 ```
 : line.size   ( -- size )
-    cursor@ !loading
-    <n6
-    block lin 40* +
+    cursor@ <n6 block lin 40* +
     lin buf.wrap >bit cbit@
     in 1+ over ?: 1+! 2+!
     ?: 40 80
     -trailing ;
 
-: >line    ( -- addr size )
-    blk@ block lin 40* +
-    lin bufwrap >bit cbit@
-    ?: forty eighty
-    -trailing nip ;
-
-_pstream
-    jsr enter
-    .word blkfetch
-    .word pquerycolon
-    .word sib
-    .word tib
-    .word tozp
-    .byt ACC+2*N6
-    .word span
-    .word fetch
-    .word _qexit
-    .word blkfetch
-    .word qdup
-    .word pquerycolon
-    .word _linesize
-    .word eighty
-    .word expect
-    .word _qloading
-    .word exit
-
-ptickstream
-    lda #3
-    sta DFLTN                   ; $AF Default Input Device
-    lda tos
-    sta userspan
-    sta LNMX                    ; $D5 logical line length (39 or 79)
-    lda userin
-    sta PNTR                    ; $C6 cursor column on current line
-    lda userlin
-    sta TBLX                    ; $D8 cursor physical line number
-    cmp #LPERSCR
-    bit LNMX
-    inc userlin
-    bvc ptickstream01
-    inc userlin
-ptickstream01
-    bcc ptickstream02
-    jsr plugh
-    inx
-    inx
-    jmp putnotc
-ptickstream02
-    jmp next
-
-: line.size   ( u -- 40|80 )
-    block lin 40* +
+: line.size   ( -- size )
+    <n6 block lin 40* +
     lin buf.wrap >bit cbit@
     in 1+ over ?: 1+! 2+!
     ?: 40 80
-    -trailing ('stream) ;
-
-: >line   ( sib blk -- sib size )
-    block lin 40* +  <n6
-    lin buf.wrap >bit cbit@
-    in 1+  over ?: 1+! 2+!
-    ?: forty eighty  -trailing
-    cursor@ !cursor ;
-
-_toline
-    jsr enter
-    .word blkfetch
-    .word _block
-    .word lin
-    .word fortytimes
-    .word plus                  ;( line.addr )
-    .word lin
-    .word _bufwrap
-    .word tobit
-    .word cbitfetch             ;( addr wrapbit )
-    .word in
-    .word oneplus               ; 'lin is high byte of `in`
-    .word over
-    .word pquerycolon           ; `lin` points to next line
-    .word oneplusstore          ; 40 column
-    .word twoplusstore          ; 80 column
-    .word pquerycolon
-    .word forty
-    .word eighty
-    .word dashtrailing
-    .word nip                   ; ( addr size )
-    .word exit
+    -trailing ;
 ```
 #endif
 #include "align.i65"
@@ -203,6 +120,8 @@ _linesize
 #include "pass.i65"
     .word zpfrom
     .byt ACC+2*N6
+#include "page.i65"
+    .word swap
 #include "page.i65"
     .word _block
 #include "page.i65"
@@ -243,71 +162,18 @@ _linesize
 ;--------------------------------------------------------------
 #if 0
 name=?REFILL
-stack=( char -- char )
+stack=( -- )
 tags=primitive,outer,extra,nosymbol
 Load either `sib` or `tib` with a logical line of input.
 
-tib|sib (n6)
-
-!!blk
-blk?
-`block` tests `blk` = `prev` to skip unpacking part
-!blk
-`load` sets `blk` to index of an available packet (positive unsigned)
-0blk
-`quit` sets `blk` to 0 (interactive session)
-`?refill` sets block to 0 after interpreting last line
-
-!!in
-in?
-!in
-0in
-`quit` sets in to 0 (interactive session)
-
-!! lin
-lin?
-!lin
-0lin
-
-!!span
-span?
-!span
-0span
-
-!!prev
-prev?
-!prev
-`#blk!` sets `prev` -1 to
-0prev
-
-scr
-prev
-blk
-in
- lin
-span
-
-
-
-Is span off?
-
-Do we want to turn span off?
-
-Return `size` of either a line input from the keyboard
-or when loading, set hardware cursor to line# `lin` of `blk`
-advances `lin`
-
-`n6` needs to be set
-
-
-
+```
 : ?refill   ( -- )
     span @ ?exit
     blk@ ?: sib tib  >n6        ( _ib )
     blk@ ?dup ?: line.size eighty    ( _ib size )
     expect
     ?loading ;
-
+```
 #endif
 #include "align.i65"
 _qrefill
@@ -376,7 +242,33 @@ _parsename
 #include "page.i65"
     .word rot
 #include "page.i65"
-    .word minus
+    .word minus                 ; length
+#include "page.i65"
+    .word dup
+#include "pass.i65"
+    .word pquerycolon
+    .word _setnfa
+    .word nip
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=!NFA
+stack=( char -- nfa|0 )
+tags=secondary,outer,extra,nosymbol
+* set `n8` to len
+* set length in line buffer
+* increment `in` past space after token
+
+```
+: !nfa   ( nfa len -- nfa )
+    >n8 over c!  in 1+! ;
+```
+#endif
+#include "align.i65"
+_setnfa
+    jsr enter
 #include "pass.i65"
     .word tozp
     .byt ACC+2*N8               ; name.len
@@ -387,7 +279,7 @@ _parsename
 #include "page.i65"
     .word in
 #include "page.i65"
-    .word oneplusstore          ; move `in` past the name-ending whitespace
+    .word oneplusstore
 #include "pass.i65"
     .word exit
 
@@ -423,7 +315,7 @@ Here we see that `word` means (at least) five things, and we are dispensing with
 : name   ( char -- nfa|0 )
     blk@ ?: sib tib  n6 2!
     ?refill
-    blk @ span @ or
+    blk@ span @ or
     ?: parsename 0 ;
 ```
 #endif
