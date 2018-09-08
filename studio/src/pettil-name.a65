@@ -61,9 +61,7 @@ If loading, restore the cursor and increment `lin` etc.. This executes just afte
 ```
 : ?loading   ( -- )
     blk@ 0= ?exit
-    r>
-    cursor!
-    >r ;
+    0 =cursor ;
 
     in 1+ 1+!
     lin  height @
@@ -79,11 +77,9 @@ _qloading
 #include "page.i65"
     .word _qexit
 #include "page.i65"
-    .word rfrom
+    .word zero
 #include "page.i65"
-    .word cursorstore
-#include "page.i65"
-    .word tor
+    .word exchgcursor
 #include "pass.i65"
     .word exit
 
@@ -109,14 +105,13 @@ advances `lin`
     lin buf.wrap >bit cbit@
     in 1+ over ?: 1+! 2+!
     ?: 40 80
-    -trailing ;
+    -trailing
+    =cursor !loading ;
 ```
 #endif
 #include "align.i65"
 _linesize
     jsr enter
-#include "page.i65"
-    .word cursorfetch
 #include "pass.i65"
     .word zpfrom
     .byt ACC+2*N6
@@ -154,6 +149,10 @@ _linesize
     .word eighty
 #include "page.i65"
     .word dashtrailing
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word exchgcursor
 #include "page.i65"
     .word setloading
 #include "pass.i65"
@@ -352,52 +351,6 @@ _name
 
 ;--------------------------------------------------------------
 #if 0
-name=CURSOR@
-stack=( -- )
-tags=primitive,extra,nosymbol
-Stash hardware cursor to return stack
-
-#endif
-cursorfetch
-    lda PNT+1
-    pha
-    lda PNT
-    pha
-    lda PNTR
-    pha
-    lda LNMX
-    pha
-    lda TBLX
-    pha
-    lda DFLTN
-    pha
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=CURSOR!
-stack=( -- )
-tags=primitive,extra
-Restore hardware cursor from return stack
-
-#endif
-cursorstore
-    pla
-    sta DFLTN
-    pla
-    sta TBLX
-    pla
-    sta LNMX
-    pla
-    sta PNTR
-    pla
-    sta PNT
-    pla
-    sta PNT+1
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
 name=!LOADING
 stack=( -- )
 tags=primitive,outer,extra,nosymbol
@@ -425,5 +378,58 @@ setloading01
     lda stackh,x
     sta PNT+1
     jmp next
+
+;--------------------------------------------------------------
+#if 0
+name==CURSOR
+stack=( addr|0 -- )
+tags=primitive,outer,extra
+Exchange six bytes in `cursor` user variable with six bytes at `addr` . When arg is 0, swap `cursor` with zeropage firmware cursor instead of six consecutive bytes elsewhere
+
+exchgcursor
+    stx z
+    ldx #5
+    ldy #0
+excur01
+    lda tos+1
+    bne excur02
+    lda firmwarecursor,x
+    sta tos
+excur02
+    lda (tos),y
+    pha
+    lda usercursor,x
+    sta (tos),y
+    pla
+    sta usercursor,x
+    dex
+    bpl excur01
+    ldx z
+    jmp drop
+
+#endif
+exchgcursor
+    stx z
+    ldx #<(-6)
+    ldy #0
+excur01
+    lda tos+1
+    bne excur02
+    ldy firmwarecursor-250,x
+excur02
+    lda (tos),y
+    pha
+    lda usercursor-250,x
+    sta (tos),y
+    iny
+    pla
+    sta usercursor-250,x
+    inx
+    bmi excur01
+    ldx z
+    jmp drop
+
+firmwarecursor
+    .byt LNMX,PNT,PNT+1,PNTR,TBLX,DFLTN
 
 #print (*-skip)
