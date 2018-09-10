@@ -145,13 +145,10 @@ _nextpage
 ;--------------------------------------------------------------
 #if 0
 name=PAGEMARGIN
-stack=( -- )
+stack=( `margin` == ; -- )
 tags=compiler,nosymbol,pads
-Moves [[DP]] to the next page if it is past the margin, to
-work around the NMOS jmp ($xxFF) bug.  The value of `margin`
-is the highest usable address within a page, which is `$xxFC`
-by default.  The `margin` is located in the code immediately
-following the call to `PAGEMARGIN`.
+Compile `page` if the `lsb` of `dp` is past the `margin` (inline), to avoid the NMOS jmp ($xxFF) bug.  The value of `margin` is the highest usable address within a page, which is `$xxFC` by default.  The `margin` is located in the code immediately following the call to `pagemargin`.
+
 #endif
 pagemargin
     ldy #1
@@ -213,7 +210,7 @@ dictionary stream at page boundaries
 
 ```
 : xt,   ( xt -- )
-    $fc ?page  , ;
+    $FD pagemargin  , ;
 ```
 #endif
 #include "align.i65"
@@ -221,7 +218,7 @@ _xtcomma
     jsr enter
 #include "pass.i65"
     .word pagemargin
-    .byt $fd
+    .byt $FD
 #include "page.i65"
     .word _comma
 #include "pass.i65"
@@ -467,25 +464,16 @@ _semi
 ;--------------------------------------------------------------
 #if 0
 name=?:
-stack=( "name1" "name2" -- )
+stack=( "name1" "name2" == ; flag -- )
 tags=compiler,ext
 flags=immediate
-Immediate word that compiles its own runtime word (?:) and two branches. The first branch is the true
-branch, and the second is the false branch.  One of those is executed by (?:) at runtime.
-
-Used in the form
+Immediate word, compiles the CFA of `(?:)` followed by the CFA of a word to execute when `flag` is `true` and the CFA to execute when `flag` is false (six bytes).  Used in the form:  `( flag ) :? this that` which works the same as:  `( flag ) if this else that then` (ten bytes)
 
 ```
-( flag ) :? this that
-
-is equivalent to
-
-if this else that then
-
 : ?:   ( "name1" "name2" -- )
     ?comp  $f8 ?page [compile] (?:) ' , ' , ; immediate
 ```
-~ fix this page management.  $f8 is overkill
+~ Fix this page management.  $f8 is overkill.  When `(?:)` is at $xxFA the page pointer gets bumped twice, first by `padjust` and again when `exit` executes
 #endif
 #include "align.i65"
 _querycolon
