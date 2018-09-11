@@ -60,11 +60,10 @@ If loading, restore the cursor and increment `lin` etc.. This executes just afte
 
 ```
 : ?loading   ( -- )
-    blk@ 0= ?exit
-    0 =cursor ;
-
-    in 1+ 1+!
-    lin  height @
+    blk@
+    if
+        0 =cursor
+    then ;
 ```
 #endif
 #include "align.i65"
@@ -72,15 +71,15 @@ _qloading
     jsr enter
 #include "page.i65"
     .word blkfetch
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word _qexit
+#include "pass.i65"
+    .word qbranch
+    .word <(qloading01-*+1)
 #include "page.i65"
     .word zero
 #include "page.i65"
     .word exchgcursor
 #include "pass.i65"
+qloading01
     .word exit
 
 ;--------------------------------------------------------------
@@ -93,20 +92,11 @@ or when loading, set hardware cursor to line# `lin` of `blk`
 advances `lin`
 
 ```
-: line.size   ( -- size )
-    cursor@ <n6 block lin 40* +
+: line.size   ( u -- size|0 )
+    <n6 swap block  lin 40* +   \ (C4)
     lin buf.wrap >bit cbit@
-    in 1+ over ?: 1+! 2+!
-    ?: 40 80
-    -trailing ;
-
-: line.size   ( -- size )
-    <n6 block lin 40* +
-    lin buf.wrap >bit cbit@
-    in 1+ over ?: 1+! 2+!
-    ?: 40 80
-    -trailing
-    =cursor !loading ;
+    in 1+ over  ?: 1+! 2+!
+    ?: forty eighty  -trailing ; \ D5
 ```
 #endif
 #include "align.i65"
@@ -149,33 +139,32 @@ _linesize
     .word eighty
 #include "page.i65"
     .word dashtrailing
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word exchgcursor
-#include "page.i65"
-    .word setloading
 #include "pass.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=?REFILL
-stack=( -- )
+name=REFILL?
+stack=( -- size|0 )
 tags=primitive,outer,extra,nosymbol
-Load either `sib` or `tib` with a logical line of input.
+Load either `sib` or `tib` with a logical line of input.  An interactive session always return the value 80.  Zero will only be returned when `loading?` from a screen.  Otherwise the return value  is the number of characters, after `-trailing` spaces are removed, on the current logical line of the `blk` that is loading.
+
+|^`prev`|^reset by `#blk!`|^set and|^tested by `block`|
+|^`blk`|^set by `load`|^reset by `!loading`|^tested|
+|^`in`|^reset by `expect`|^set by `skip` `scan`,|^final value at eol = `??`|
+|^`lin`|^reset by `expect`|^set by `line.size` tested/cleared by `??`|
+|^`span`|^set by `expect`|^tested/cleared by `??`|
+
 
 ```
-: ?refill   ( -- )
-    span @ ?exit
-    blk@ ?: sib tib  >n6        ( _ib )
-    blk@ ?dup ?: line.size eighty    ( _ib size )
-    expect
-    ?loading ;
+: refill?   ( -- size|0 )
+    span @ ?exit  <n6 blk@
+    ?dup ?: line.size eighty  tuck
+    ?loading !loading expect ?loading ;
 ```
 #endif
 #include "align.i65"
-_qrefill
+_refillq
     jsr enter
 #include "page.i65"
     .word span
@@ -195,6 +184,12 @@ _qrefill
     .word _linesize             ; ( sib blk -- sib size )
     .word eighty                ; ( tib -- tib 80 )
 #include "page.i65"
+    .word tuck
+#include "page.i65"
+    .word _qloading
+#include "page.i65"
+    .word setloading
+#include "page.i65"
     .word expect
 #include "page.i65"
     .word _qloading
@@ -203,7 +198,7 @@ _qrefill
 
 ;--------------------------------------------------------------
 #if 0
-name=PARSENAME
+name=NAME.PARSE
 stack=( -- nfa|0 )
 tags=secondary,outer,extra,nosymbol
 
@@ -216,14 +211,17 @@ tags=secondary,outer,extra,nosymbol
 * move `in` past trailing space
 
 ```
-: parsename   ( -- nfa|0 )
+: name.parse   ( -- nfa|0 )
     skip dup 1- <n6 +
-    scan rot - >n8
-    over c!  in 1+! ;
+    scan rot -
+    dup ?: !nfa nip ;
+
+: !nfa
+    >n8 over c!  in 1+! ;
 ```
 #endif
 #include "align.i65"
-_parsename
+_nameparse
     jsr enter
 #include "page.i65"
     .word skip                  ; start of name
@@ -289,7 +287,7 @@ stack=( char -- nfa|0 )
 tags=outer,extra
 Parse the next `word` from the `input stream`.  Return `false` if the input stream is exhausted, or returns the `nfa` of the found word, which will be a counted string somewhere in `tib` or `sib`.
 
-Leading delimiters are ignored.   If the delimiter `char` is not found the value of `in` will be the size of the input stream.  If `char` is found, `in` will point to the character following the delimiter. When the end of the input line is reached, `parsename` clears `span` to let us exit.  Similarly, `line.size` will clear `blk` when `lin` reaches the `height` physical line of `blkbuf` to exit after loading a screen.
+Leading delimiters are ignored.   If the delimiter `char` is not found the value of `in` will be the size of the input stream.  If `char` is found, `in` will point to the character following the delimiter. When the end of the input line is reached, `name.parse` clears `span` to let us exit.  Similarly, `line.size` will clear `blk` when `lin` reaches the `height` physical line of `blkbuf` to exit after loading a screen.
 
 This is one of PETTIL's slight departures from the Forth-83 standard.  In PETTIL `name` replaces the //required// reserved word `word`. The reason is that PETTIL uses a lazy loading design while the standard uses active loading.
 
@@ -310,12 +308,22 @@ Here we see that `word` means (at least) five things, and we are dispensing with
 * return `false` or `nfa`
 * Advance `in` past the parsed `word`.
 
+Three variables
+
+||0|non-0|reset|set|test|h
+|prev||||||
+|scr||||||
+|blk|`quit`|`load`||||
+
+
 ```
 : name   ( char -- nfa|0 )
-    blk@ ?: sib tib  n6 2!
-    ?refill
-    blk@ span @ or
-    ?: parsename 0 ;
+    blk@ ?: sib tib  n6 2!      \ set line buffer (`tib` or `sib`)
+                                \ and word delimiter (`bl`)
+    ?refill dup
+    if
+        name.parse
+    then ;
 ```
 #endif
 #include "align.i65"
@@ -333,20 +341,14 @@ _name
 #include "page.i65"
     .word twostore              ; `n7` delim char
 #include "page.i65"
-    .word _qrefill
-#include "page.i65"
-    .word blkfetch
-#include "page.i65"
-    .word span
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word orx
+    .word _refillq              ; ( nfa|0 )
 #include "pass.i65"
-    .word pquerycolon
-    .word _parsename
-    .word zero
+    .word qbranch
+    .byt <(name02-*+1)
+#include "page.i65"
+    .word _nameparse
 #include "pass.i65"
+name02
     .word exit
 
 ;--------------------------------------------------------------
@@ -358,12 +360,16 @@ Return `size` of either a line input from the keyboard
 or when loading, set hardware cursor to line# `lin` of `blk`
 advances `lin`
 
+* test `blk` - do not reroute cursor unless `loading?`
+* reset `blk` when `lin` reaches 25
 #endif
 setloading
+    lda userblk
+    beq setloading02            ; exit unless `loading?`
     lda #3
     sta DFLTN                   ; $AF Default Input Device
     lda userlin
-    cmp userheight
+    cmp #LPERSCR
     bcc setloading01
     lda #0
     sta userblk                 ; end of screen reached
@@ -377,59 +383,7 @@ setloading01
     sta PNT                     ; ($C4) pointer start of current screen line
     lda stackh,x
     sta PNT+1
+setloading02
     jmp next
-
-;--------------------------------------------------------------
-#if 0
-name==CURSOR
-stack=( addr|0 -- )
-tags=primitive,outer,extra
-Exchange six bytes in `cursor` user variable with six bytes at `addr` . When arg is 0, swap `cursor` with zeropage firmware cursor instead of six consecutive bytes elsewhere
-
-exchgcursor
-    stx z
-    ldx #5
-    ldy #0
-excur01
-    lda tos+1
-    bne excur02
-    lda firmwarecursor,x
-    sta tos
-excur02
-    lda (tos),y
-    pha
-    lda usercursor,x
-    sta (tos),y
-    pla
-    sta usercursor,x
-    dex
-    bpl excur01
-    ldx z
-    jmp drop
-
-#endif
-exchgcursor
-    stx z
-    ldx #<(-6)
-    ldy #0
-excur01
-    lda tos+1
-    bne excur02
-    ldy firmwarecursor-250,x
-excur02
-    lda (tos),y
-    pha
-    lda usercursor-250,x
-    sta (tos),y
-    iny
-    pla
-    sta usercursor-250,x
-    inx
-    bmi excur01
-    ldx z
-    jmp drop
-
-firmwarecursor
-    .byt LNMX,PNT,PNT+1,PNTR,TBLX,DFLTN
 
 #print (*-skip)

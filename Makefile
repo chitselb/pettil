@@ -52,6 +52,7 @@ launch: clean pettil
 		-warp \
 		-config data/x11_4032.vicerc \
 		pettil.prg &
+#		-keybuf "dL\x22pettil.prg\x22\x0drun\x0dinfo\x0dvmdump\x0d" &
 
 # sdl2 3.2
 #	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
