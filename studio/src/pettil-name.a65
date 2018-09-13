@@ -52,6 +52,41 @@ skipscan04
 
 ;--------------------------------------------------------------
 #if 0
+name=!LOADING
+stack=( -- )
+tags=primitive,outer,extra,nosymbol
+Return `size` of either a line input from the keyboard
+or when loading, set hardware cursor to line# `lin` of `blk`
+advances `lin`
+
+* test `blk` - do not reroute cursor unless `loading?`
+* reset `blk` when `lin` reaches 25
+#endif
+setloading
+    lda userblk
+    beq setloading02            ; exit unless `loading?`
+    lda #3
+    sta DFLTN                   ; $AF Default Input Device
+    lda userlin
+    cmp #LPERSCR
+    bcc setloading01
+    lda #0
+    sta userblk                 ; end of screen reached
+setloading01
+    sta TBLX                    ; $D8 cursor physical line number
+    lda tos
+    sta LNMX                    ; $D5 logical line length (39 or 79)
+    lda userin
+    sta PNTR                    ; $C6 cursor column on current line
+    lda stackl,x
+    sta PNT                     ; ($C4) pointer start of current screen line
+    lda stackh,x
+    sta PNT+1
+setloading02
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
 name=?LOADING
 stack=( -- )
 tags=outer,extra,nosymbol
@@ -139,6 +174,23 @@ _linesize
 
 ;--------------------------------------------------------------
 #if 0
+name=LINE.MORE?
+stack=( -- span )
+tags=primitive,outer,extra,nosymbol
+
+```
+: line.more?   ( -- flag )
+    span @ blk@ or ;
+```
+#endif
+#include "align.i65"
+linemoreq
+    lda userspan
+    ora userblk
+    jmp push0a
+
+;--------------------------------------------------------------
+#if 0
 name=REFILL?
 stack=( -- span )
 tags=primitive,outer,extra,nosymbol
@@ -158,7 +210,7 @@ Load either `sib` or `tib` with a logical line of input.  An interactive session
         begin
             sib line.size
             0 =cursor  !loading expect  0 =cursor
-            span @ blk@ 0= or
+            line.more?
         until
     else
         tib eighty expect
@@ -207,6 +259,8 @@ refillq01
     .word zero
 #include "page.i65"
     .word exchgcursor
+#include "page.i65"
+    .word linemoreq
 #include "pass.i65"
     .word qbranch
     .byt <(refillq01-*+1)
@@ -359,40 +413,5 @@ _name
     .word false
 #include "pass.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=!LOADING
-stack=( -- )
-tags=primitive,outer,extra,nosymbol
-Return `size` of either a line input from the keyboard
-or when loading, set hardware cursor to line# `lin` of `blk`
-advances `lin`
-
-* test `blk` - do not reroute cursor unless `loading?`
-* reset `blk` when `lin` reaches 25
-#endif
-setloading
-    lda userblk
-    beq setloading02            ; exit unless `loading?`
-    lda #3
-    sta DFLTN                   ; $AF Default Input Device
-    lda userlin
-    cmp #LPERSCR
-    bcc setloading01
-    lda #0
-    sta userblk                 ; end of screen reached
-setloading01
-    sta TBLX                    ; $D8 cursor physical line number
-    lda tos
-    sta LNMX                    ; $D5 logical line length (39 or 79)
-    lda userin
-    sta PNTR                    ; $C6 cursor column on current line
-    lda stackl,x
-    sta PNT                     ; ($C4) pointer start of current screen line
-    lda stackh,x
-    sta PNT+1
-setloading02
-    jmp next
 
 #print (*-skip)
