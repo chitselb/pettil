@@ -8,38 +8,68 @@
 	"buffers":
 	[
 		{
+			"file": "studio/src/pettil-interpreter.a65",
+			"settings":
+			{
+				"buffer_size": 13623,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "docs/figforth/forth32k.4.a65",
+			"settings":
+			{
+				"buffer_size": 100895,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"contents": "; pettil-name.a65\n#echo .       pettil-name.a65           Text parser\n;\" cursor@ cursor! !loading skip scan ?loading 'stream? linesize refill? name\n;\" nfa!\n\n;--------------------------------------------------------------\n#if 0\nname=SKIP\nstack=( delim -- offset )\ntags=nosymbol\n`addr1` is the starting address in the input stream where up\nto `size1` bytes are skipped *WHILE* they match `delim`.  Returns\n`addr2` as the address of the first non-matching character and\n`count2` as the remaining number of bytes in the buffer.\n#endif\nskip\n    lda #$F0                    ; BEQ opcode\n    .byt $2C                    ; BIT abs\n    ;fall through\n;--------------------------------------------------------------\n#if 0\nname=SCAN\nstack=( -- offset )\ntags=self-modifying,nosymbol\nPass through the input stream until `delim` either matches (or for `skip`, does not match).  Leave the `offset` into the line buffer on the stack.\n\nN6 line buffer\nN7 char delimiter\n#endif\nscan\n    lda #$D0                    ; BNE opcode\n    sta skipscan03              ; #selfmodifying\n    ldy userin                  ; `in`\n    dey\nskipscan01\n    iny\n    cpy userspan                ; Carry true at end of line\n    bcc skipscan02\n    lda #0                      ; oh, we done\n    sta userspan                ; `span off`\n;    sta userin\n    beq skipscan04\nskipscan02\n    lda (ACC+2*N6),y            ; get char from buffer\n    eor ACC+2*N7                ; compare to character we seek\nskipscan03\n    bvc skipscan01              ; dummy opcode, BEQ(skip) BNE(scan)\nskipscan04\n    sty userin                  ; found char !, move `in`\n    tya\n    jmp push0a                  ;( offset )\n\n;--------------------------------------------------------------\n#if 0\nname=?LOADING\nstack=( -- )\ntags=outer,extra,nosymbol\nIf loading, restore the cursor and increment `lin` etc.. This executes just after `sib` line input buffer was filled by `expect`\n\n\n```\n: ?loading   ( -- )\n    blk@\n    if\n        0 =cursor\n    then ;\n```\n#endif\n#include \"align.i65\"\n_qloading\n    jsr enter\n#include \"page.i65\"\n    .word blkfetch\n#include \"pass.i65\"\n    .word qbranch\n    .word <(qloading01-*+1)\n#include \"page.i65\"\n    .word zero\n#include \"page.i65\"\n    .word exchgcursor\n#include \"pass.i65\"\nqloading01\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=LINESIZE\nstack=( -- size )\ntags=outer,extra,nosymbol\nReturn `size` of either a line input from the keyboard\nor when loading, set hardware cursor to line# `lin` of `blk`\nadvances `lin`\n\n```\n: line.size   ( sib blk -- sib size|0 )\n    block  lin 40* +            \\ (C4)\n    lin buf.wrap >bit cbit@\n    in 1+ over  ?: 1+! 2+!\n    ?: forty eighty  -trailing ; \\ D5\n```\n#endif\n#include \"align.i65\"\n_linesize\n    jsr enter\n#include \"page.i65\"\n    .word _block\n#include \"page.i65\"\n    .word lin\n#include \"page.i65\"\n    .word fortytimes\n#include \"page.i65\"\n    .word plus                  ;( addr )\n#include \"page.i65\"\n    .word lin\n#include \"page.i65\"\n    .word _bufwrap\n#include \"page.i65\"\n    .word tobit\n#include \"page.i65\"\n    .word cbitfetch             ;( addr wrapbit )\n#include \"page.i65\"\n    .word in\n#include \"page.i65\"\n    .word oneplus\n#include \"page.i65\"\n    .word over\n#include \"page.i65\"\n    .word pquerycolon\n    .word oneplusstore\n    .word twoplusstore\n#include \"pass.i65\"\n    .word pquerycolon\n    .word forty\n    .word eighty\n#include \"page.i65\"\n    .word dashtrailing\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=REFILL?\nstack=( -- span )\ntags=primitive,outer,extra,nosymbol\nLoad either `sib` or `tib` with a logical line of input.  An interactive session always return the value 80.  Return value is the width of the line.  Zero will only be returned when `loading?` at the end of a screen.\n\n* `refill?` will refill the proper line buffer, if needed\n** return 0 if no more input is available\n*** EOL in an interactive session\n*** EOS when loading\n** otherwise it leaves something useful and non-0, like span\n\n```\n: refill?   ( -- size|0 )\n    span @ ?dup ?exit\n    blk@\n    if\n        begin\n            sib line.size\n            0 =cursor  !loading expect  0 =cursor\n            span @ blk@ 0= or\n        until\n    else\n        tib eighty expect\n    then  span @ ;\n\n\n: refill?   ( -- size|0 )\n    span @ ?dup ?exit\n    blk@ ?: sib tib >n6  \n    blk@ ?dup\n    if \n        begin\n            line.size\n            0 =cursor  !loading expect  0 =cursor\n            span @ blk@ 0= or\n        until\n    else\n        tib eighty expect\n    then  span @ ;\n\n```\n#endif\n#include \"align.i65\"\n_refillq\n    jsr enter\n#include \"page.i65\"\n    .word span\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word qdup\n#include \"page.i65\"\n    .word _qexit                ; exit if something is in this line buffer?\n#include \"page.i65\"\n    .word blkfetch\n#include \"pass.i65\"\n    .word pquerycolon\n    .word sib\n    .word tib\n#include \"pass.i65\"\n    .word tozp\n    .byt ACC+2*N6\n#include \"page.i65\"\n    .word blkfetch\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(refillq02-*+1)\n#include \"page.i65\"\nrefillq01\n    .word blkfetch\n#include \"page.i65\"\n    .word _linesize             ; ( sib blk -- sib size )\n#include \"page.i65\"\n    .word zero\n#include \"page.i65\"\n    .word exchgcursor\n#include \"page.i65\"\n    .word setloading\n#include \"page.i65\"\n    .word expect\n#include \"page.i65\"\n    .word zero\n#include \"page.i65\"\n    .word exchgcursor\n#include \"page.i65\"\n    .word span\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word blkfetch\n#include \"page.i65\"\n    .word zeq\n#include \"page.i65\"\n    .word orx\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(refillq01-*+1)\n#include \"pass.i65\"\n    .word branch\n    .byt <(refillq03-*+1)\n#include \"page.i65\"\nrefillq02\n    .word tib\n#include \"pass.i65\"\n    .word eighty\n#include \"page.i65\"\n    .word expect\n#include \"pass.i65\"\nrefillq03\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=NAME.PARSE\nstack=( -- nfa|0 )\ntags=secondary,outer,extra,nosymbol\n\n* set n6 line buffer addr\n* set n7 delimiter char\n* refill the line buffer (if empty)\n* skip/scan move `in` past token\n* set n8 token length\n* put length before text in buffer\n* move `in` past trailing space\n\n```\n: name.parse   ( -- nfa|0 )\n    skip dup 1- <n6 +\n    scan rot -\n    dup ?: !nfa nip ;\n\n: !nfa\n    >n8 over c!  in 1+! ;\n```\n#endif\n#include \"align.i65\"\n_nameparse\n    jsr enter\n#include \"page.i65\"\n    .word skip                  ; start of name\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n    .word oneminus\n#include \"pass.i65\"\n    .word zpfrom\n    .byt ACC+2*N6               ; buf\n#include \"page.i65\"\n    .word plus\n#include \"page.i65\"\n    .word scan                  ; end of name (and/or buffer)\n#include \"page.i65\"\n    .word rot\n#include \"page.i65\"\n    .word minus                 ; length\n#include \"page.i65\"\n    .word dup\n#include \"pass.i65\"\n    .word pquerycolon\n    .word _setnfa\n    .word nip\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=!NFA\nstack=( char -- nfa|0 )\ntags=secondary,outer,extra,nosymbol\n* set `n8` to len\n* set length in line buffer\n* increment `in` past space after token\n\n```\n: !nfa   ( nfa len -- nfa )\n    >n8 over c!  in 1+! ;\n```\n#endif\n#include \"align.i65\"\n_setnfa\n    jsr enter\n#include \"pass.i65\"\n    .word tozp\n    .byt ACC+2*N8               ; name.len\n#include \"page.i65\"\n    .word over\n#include \"page.i65\"\n    .word cstore\n#include \"page.i65\"\n    .word in\n#include \"page.i65\"\n    .word oneplusstore\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=NAME\nstack=( char -- nfa|0 )\ntags=outer,extra\nParse the next `word` from the `input stream`.  Return `false` if the input stream is exhausted, or returns the `nfa` of the found word, which will be a counted string somewhere in `tib` or `sib`.\n\nLeading delimiters are ignored.   If the delimiter `char` is not found the value of `in` will be the size of the input stream.  If `char` is found, `in` will point to the character following the delimiter. When the end of the input line is reached, `name.parse` clears `span` to let us exit.  Similarly, `line.size` will clear `blk` when `lin` reaches the `height` physical line of `blkbuf` to exit after loading a screen.\n\nThis is one of PETTIL's slight departures from the Forth-83 standard.  In PETTIL `name` replaces the //required// reserved word `word`. The reason is that PETTIL uses a lazy loading design while the standard uses active loading.\n\n|What is a WORD?|<|<|h\n|1|word|entry in the Forth dictionary|\n|2|word|16 bits of memory|\n|3|word|an English word|\n|4|word|//required// reserved Forth-83 standard word to parse the input stream|\n|5|word|things Cameo say before `up`|\n\nHere we see that `word` means (at least) five things, and we are dispensing with one of those (meaning #4) by renaming `word` to `name` and altering the stack diagram slightly.\n\n* set `n7` delimiter char\n* `refill?` will refill the proper line buffer, if needed\n\n* test if line buffer (and screen buffer, if loading) exhausted\n* set `n8` length\n* return `false` or `nfa`\n* Advance `in` past the parsed `word`.\n\n\n```\n: name   ( char -- nfa|0 )\n    n7 !                        \\ set word delimiter (`bl`)\n    refill? ?: name.parse false ;\n```\n#endif\n#include \"align.i65\"\n_name\n    jsr enter\n#include \"pass.i65\"\n    .word clit\n    .byt ACC+2*N7\n#include \"page.i65\"\n    .word store                 ; `n7` delim char\n#include \"page.i65\"\n    .word _refillq\n#include \"pass.i65\"\n    .word pquerycolon\n    .word _nameparse\n    .word false\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=!LOADING\nstack=( -- )\ntags=primitive,outer,extra,nosymbol\nReturn `size` of either a line input from the keyboard\nor when loading, set hardware cursor to line# `lin` of `blk`\nadvances `lin`\n\n* test `blk` - do not reroute cursor unless `loading?`\n* reset `blk` when `lin` reaches 25\n#endif\nsetloading\n    lda userblk\n    beq setloading02            ; exit unless `loading?`\n    lda #3\n    sta DFLTN                   ; $AF Default Input Device\n    lda userlin\n    cmp #LPERSCR\n    bcc setloading01\n    lda #0\n    sta userblk                 ; end of screen reached\nsetloading01\n    sta TBLX                    ; $D8 cursor physical line number\n    lda tos\n    sta LNMX                    ; $D5 logical line length (39 or 79)\n    lda userin\n    sta PNTR                    ; $C6 cursor column on current line\n    lda stackl,x\n    sta PNT                     ; ($C4) pointer start of current screen line\n    lda stackh,x\n    sta PNT+1\nsetloading02\n    jmp next\n\n#print (*-skip)\n",
 			"file": "studio/src/pettil-name.a65",
+			"file_size": 10282,
+			"file_write_time": 131812354886573053,
 			"settings":
 			{
-				"buffer_size": 10639,
+				"buffer_size": 10747,
 				"encoding": "UTF-8",
 				"line_ending": "Unix"
 			}
 		},
 		{
-			"file": "core/src/pettil-core.a65",
+			"contents": "Searching 33 files for \"qloading\" (regex, case sensitive)\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-name.a65:\n   68  #endif\n   69  #include \"align.i65\"\n   70: _qloading\n   71      jsr enter\n   72  #include \"page.i65\"\n   ..\n   74  #include \"pass.i65\"\n   75      .word qbranch\n   76:     .word <(qloading01-*+1)\n   77  #include \"page.i65\"\n   78      .word zero\n   ..\n   80      .word exchgcursor\n   81  #include \"pass.i65\"\n   82: qloading01\n   83      .word exit\n   84  \n   ..\n  227  #include \"page.i65\"\n  228  qrefill02\n  229:     .word _qloading\n  230  #include \"page.i65\"\n  231      .word setloading\n  ...\n  233      .word expect\n  234  #include \"page.i65\"\n  235:     .word _qloading\n  236  #include \"pass.i65\"\n  237      .word exit\n\n5 matches in 1 file\n\n\nSearching 33 files for \"n6\" (regex, case sensitive)\n\n/home/chitselb/Documents/dev/commodore/pettil/core/src/core-vm.a65:\n  197      ; n4    repeat\n  198      ; n5    prev\n  199:     ; n6    $100\n  200      ; n7    targ (pristine)\n  201      ; r11   size (pristine)\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-dictionary.a65:\n  460  ```\n  461  : (filter).rewind   ( -- )\n  462:     <n6 >n3 drop ;\n  463      <n4 0=\n  464      if  <n5 <n7 2+ !+ >n5 drop\n  ...\n  550  `n5l` seeking vocab\n  551  `n5h` vocabs index\n  552: `n6` buf\n  553  `n7` seeking name\n  554  `n8l` current length\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-name.a65:\n   94  ```\n   95  : line.size   ( u -- size|0 )\n   96:     <n6 swap block  lin 40* +   \\ (C4)\n   97      lin buf.wrap >bit cbit@\n   98      in 1+ over  ?: 1+! 2+!\n   ..\n  159  ```\n  160  : ?refill   ( -- )\n  161:     span @ ?exit  <n6 blk@\n  162      ?dup ?: line.size eighty  tuck\n  163      ?loading !loading expect ?loading ;\n  164  \n  165  : ?refill   ( -- )\n  166:     span @ ?exit  <n6 blk@\n  167      ?dup ?: line.size eighty  tuck\n  168      ?loading !loading expect ?loading ;\n  ...\n  172      span @ ?dup ?exit\n  173  \n  174:       <n6\n  175      begin\n  176          blk@ ?dup\n  ...\n  183      ?loading !loading expect ?loading ;\n  184  \n  185:     <n6\n  186      span @ ?exit\n  187  \n  ...\n  243  tags=secondary,outer,extra,nosymbol\n  244  \n  245: * set n6 line buffer addr\n  246  * set n7 delimiter char\n  247  * refill the line buffer (if empty)\n  ...\n  253  ```\n  254  : name.parse   ( -- nfa|0 )\n  255:     skip dup 1- <n6 +\n  256      scan rot -\n  257      dup ?: !nfa nip ;\n  ...\n  341  Here we see that `word` means (at least) five things, and we are dispensing with one of those (meaning #4) by renaming `word` to `name` and altering the stack diagram slightly.\n  342  \n  343: * set `n6` line buffer addr\n  344  * set `n7` delimiter char\n  345  * refill the line buffer (if empty)\n  ...\n  359  ```\n  360  : name   ( char -- nfa|0 )\n  361:     blk@ ?: sib tib  n6 2!      \\ set line buffer (`tib` or `sib`)\n  362                                  \\ and word delimiter (`bl`)\n  363      refill? dup\n  ...\n  378  #include \"pass.i65\"\n  379      .word clit\n  380:     .byt ACC+2*N6               ; `n6` line input buffer (`sib` or `tib`)\n  381  #include \"page.i65\"\n  382      .word twostore              ; `n7` delim char\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-number.a65:\n  133  Get next character, part of `number`.\n  134  \n  135: |^n6|^base c@|^//(unchanged)//|\n  136  |^n7|^addr|^//+1//|\n  137  |^n8|^length|^//(unchanged)//|\n  ...\n  153  \n  154  * n7 = addr\n  155: * n6 = base c@\n  156  * n8 = length\n  157  * r11 = 0\n  ...\n  452                                      \\ `n7` already has `addr`\n  453                                      \\ `n8` already has `len`\n  454:                                     \\ set `n6` to `base`\n  455                                      \\ push 0.\n  456      begin\n  ...\n  546                                      \\ disallow `rn`\n  547                                      \\ disallow another `#$%`\n  548:                                 \\ change 'n6l'\n  549  \n  550  :decimal\n\n17 matches across 4 files\n\n\nSearching 33 files for \"_interpret\" (regex, case sensitive)\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-interpreter.a65:\n  193  #endif\n  194  #include \"align.i65\"\n  195: _interpretcfa\n  196      jsr enter\n  197  #include \"page.i65\"\n  ...\n  259  #endif\n  260  #include \"align.i65\"\n  261: _interpret\n  262      jsr enter\n  263  #include \"page.i65\"\n  ...\n  279  #include \"pass.i65\"\n  280      .word pquerycolon\n  281:     .word _interpretcfa\n  282      .word _number\n  283  #include \"page.i65\"\n  ...\n  327  #include \"page.i65\"\n  328  quit01                          ; BEGIN\n  329:     .word _interpret            ; outer interpreter main loop\n  330  #include \"page.i65\"\n  331      .word compilingq\n  ...\n  474      .word on                    ; forces `block` to load buffer\n  475  #include \"page.i65\"\n  476:     .word _interpret            ; interpret has two clients, `load` and `quit`\n  477  #include \"page.i65\"\n  478      .word blk\n\n5 matches in 1 file\n\n\nSearching 33 files for \"_query\" (regex, case sensitive)\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-compiler.a65:\n  477  #endif\n  478  #include \"align.i65\"\n  479: _querycolon\n  480      jsr enter\n  481  #include \"page.i65\"\n\n1 match in 1 file\n\n\nSearching 33 files for \"expect\" (regex, case sensitive)\n\n/home/chitselb/Documents/dev/commodore/pettil/core/src/core-io.a65:\n  110         space.  See:  SPAN  \"9.5.2 EXPECT\"//\n  111  \n  112: Caller may set up hardware (with `cursor!`) prior to `expect`.  The hardware cursor state that `CHRIN` uses establishes context for input streams from either `vmbuf` when loading or `tib` in keyboard input mode.\n  113  \n  114  |Receive characters and store each into memory.|check.|\n  ...\n  124  \n  125  #endif\n  126: expect\n  127      jsr harvests2               ; `addr` to `n0`\n  128  ;   stx z                       ; thanks, `CHRIN`\n  129  ;   ldy #0                      ; thanks, `harvests`\n  130      sty userin                  ; `in coff`\n  131: expect01\n  132      jsr CHRIN                   ; preserves `x` register!\n  133      cmp #CR\n  134:     beq expect02\n  135      sta (ACC+2*N0),y\n  136      iny\n  137      cpy tos                     ; check maxwidth, typically 80\n  138:     bcc expect01\n  139: expect02\n  140      sty userspan                ; set `span`\n  141  ;   ldx z\n\n/home/chitselb/Documents/dev/commodore/pettil/core/src/pettil-core.a65:\n   69  #if (* <> $0410)\n   70  #echo PETTIL Build Error - Program counter is not at $0410!\n   71: #echo You moved something, didn't you?  PETTIL expected BASIC\n   72  #echo to transfer control here to kick things off.  This is a problem.\n   73  #endif (pettil address check)\n   ..\n  209  #if (* <> $04A6)\n  210  #echo PETTIL Build Error - Program counter is not at $04A6!\n  211: #echo You moved something, didn't you?  Sweet16 expected to\n  212  #echo load at $04A6 (1190).  This is a problem.\n  213  #echo .       program counter is now:\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-dictionary.a65:\n  231  any digit is present, BLOOMHASH will not return zero.\n  232  \n  233: This is expected to sparsely populate the 64-bit wide\n  234  bloom filter field, allowing FIND to bypass the symbol\n  235  table search if the bit is turned off.\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-editor.a65:\n 1159      ; M mixed upper/lowercase\n 1160      ; F find\n 1161:     ;\" : :editfind  ( -- ) update clrscr .\" enter string to find\" home sib 80 expect\n 1162      ;        (editfind) ;  \\ loads screen and locates cursor\n 1163      ; N next found\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-name.a65:\n   56  stack=( -- )\n   57  tags=outer,extra,nosymbol\n   58: If loading, restore the cursor and increment `lin` etc.. This executes just after `sib` line input buffer was filled by `expect`\n   59  \n   60  \n   ..\n  152  |^`prev`|^reset by `#blk!`|^set and|^tested by `block`|\n  153  |^`blk`|^set by `load`|^reset by `!loading`|^tested|\n  154: |^`in`|^reset by `expect`|^set by `skip` `scan`,|^final value at eol = `??`|\n  155: |^`lin`|^reset by `expect`|^set by `line.size` tested/cleared by `??`|\n  156: |^`span`|^set by `expect`|^tested/cleared by `??`|\n  157  \n  158  \n  ...\n  161      span @ ?exit  <n6 blk@\n  162      ?dup ?: line.size eighty  tuck\n  163:     ?loading !loading expect ?loading ;\n  164  \n  165  : ?refill   ( -- )\n  166      span @ ?exit  <n6 blk@\n  167      ?dup ?: line.size eighty  tuck\n  168:     ?loading !loading expect ?loading ;\n  169  \n  170  \n  ...\n  181  \n  182      ?dup ?: line.size eighty  tuck\n  183:     ?loading !loading expect ?loading ;\n  184  \n  185      <n6\n  ...\n  231      .word setloading\n  232  #include \"page.i65\"\n  233:     .word expect\n  234  #include \"page.i65\"\n  235      .word _qloading\n\n18 matches across 5 files\n\n\nSearching 33 files for \"_name\" (regex, case sensitive)\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-compiler.a65:\n  942      .byt '\"'\n  943  #include \"page.i65\"\n  944:     .word _name\n  945  #include \"page.i65\"\n  946      .word swap\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-dictionary.a65:\n  900      .word bl\n  901  #include \"page.i65\"\n  902:     .word _name\n  903  #include \"page.i65\"\n  904      .word bloom                 ; aka `symtail` +2\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-interpreter.a65:\n  121      jsr enter\n  122  #include \"page.i65\"\n  123:     .word _name\n  124  #include \"page.i65\"\n  125      .word in\n  ...\n  294      .word bl\n  295  #include \"page.i65\"\n  296:     .word _name                 ;( nfa | 0 )\n  297  #include \"page.i65\"\n  298      .word qdup\n  ...\n  534      .word bl\n  535  #include \"page.i65\"\n  536:     .word _name            ; ~~2\n  537  #include \"page.i65\"\n  538      .word dup\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-name.a65:\n  262  #endif\n  263  #include \"align.i65\"\n  264: _nameparse\n  265      jsr enter\n  266  #include \"page.i65\"\n  ...\n  368  #endif\n  369  #include \"align.i65\"\n  370: _name\n  371      jsr enter\n  372  #include \"pass.i65\"\n  ...\n  383  #include \"pass.i65\"\n  384      .word pquerycolon\n  385:     .word _nameparse\n  386      .word false\n  387  #include \"pass.i65\"\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-utils.a65:\n   83      .byt 34\n   84  #include \"page.i65\"\n   85:     .word _name\n   86  #include \"page.i65\"\n   87      .word oneplus\n\n9 matches across 5 files\n\n\nSearching 33 files for \"_qrefill\" (regex, case sensitive)\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-name.a65:\n  189  #endif\n  190  #include \"align.i65\"\n  191: _qrefill\n  192      jsr enter\n  193  #include \"page.i65\"\n  ...\n  376      .word store                 ; `n7` delim char\n  377  #include \"page.i65\"\n  378:     .word _qrefill\n  379  #include \"page.i65\"\n  380      .word span\n\n2 matches in 1 file\n\n\nSearching 33 files for \"expect\" (regex, case sensitive)\n\n/home/chitselb/Documents/dev/commodore/pettil/core/src/core-io.a65:\n  110         space.  See:  SPAN  \"9.5.2 EXPECT\"//\n  111  \n  112: Caller may set up hardware (with `cursor!`) prior to `expect`.  The hardware cursor state that `CHRIN` uses establishes context for input streams from either `vmbuf` when loading or `tib` in keyboard input mode.\n  113  \n  114  |Receive characters and store each into memory.|check.|\n  ...\n  124  \n  125  #endif\n  126: expect\n  127      jsr harvests2               ; `addr` to `n0`\n  128  ;   stx z                       ; thanks, `CHRIN`\n  129  ;   ldy #0                      ; thanks, `harvests`\n  130      sty userin                  ; `in coff`\n  131: expect01\n  132      jsr CHRIN                   ; preserves `x` register!\n  133      cmp #CR\n  134:     beq expect02\n  135      sta (ACC+2*N0),y\n  136      iny\n  137      cpy tos                     ; check maxwidth, typically 80\n  138:     bcc expect01\n  139: expect02\n  140      sty userspan                ; set `span`\n  141  ;   ldx z\n\n/home/chitselb/Documents/dev/commodore/pettil/core/src/pettil-core.a65:\n   69  #if (* <> $0410)\n   70  #echo PETTIL Build Error - Program counter is not at $0410!\n   71: #echo You moved something, didn't you?  PETTIL expected BASIC\n   72  #echo to transfer control here to kick things off.  This is a problem.\n   73  #endif (pettil address check)\n   ..\n  209  #if (* <> $04A6)\n  210  #echo PETTIL Build Error - Program counter is not at $04A6!\n  211: #echo You moved something, didn't you?  Sweet16 expected to\n  212  #echo load at $04A6 (1190).  This is a problem.\n  213  #echo .       program counter is now:\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-dictionary.a65:\n  231  any digit is present, BLOOMHASH will not return zero.\n  232  \n  233: This is expected to sparsely populate the 64-bit wide\n  234  bloom filter field, allowing FIND to bypass the symbol\n  235  table search if the bit is turned off.\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-editor.a65:\n 1159      ; M mixed upper/lowercase\n 1160      ; F find\n 1161:     ;\" : :editfind  ( -- ) update clrscr .\" enter string to find\" home sib 80 expect\n 1162      ;        (editfind) ;  \\ loads screen and locates cursor\n 1163      ; N next found\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-interpreter.a65:\n  235  ```\n  236  : query\n  237:     tib 80 expect ;\n  238  ```\n  239  #endif\n  ...\n  246      .word eighty\n  247  #include \"page.i65\"\n  248:     .word expect\n  249  #include \"pass.i65\"\n  250      .word exit\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-name.a65:\n   56  stack=( -- )\n   57  tags=outer,extra,nosymbol\n   58: If loading, restore the cursor and increment `lin` etc.. This executes just after `sib` line input buffer was filled by `expect`\n   59  \n   60  \n   ..\n  152  |^`prev`|^reset by `#blk!`|^set and|^tested by `block`|\n  153  |^`blk`|^set by `load`|^reset by `!loading`|^tested|\n  154: |^`in`|^reset by `expect`|^set by `skip` `scan`,|^final value at eol = `??`|\n  155: |^`lin`|^reset by `expect`|^set by `line.size` tested/cleared by `??`|\n  156: |^`span`|^set by `expect`|^tested/cleared by `??`|\n  157  \n  158  \n  ...\n  161      span @ ?exit  <n6 blk@\n  162      ?dup ?: line.size eighty  tuck\n  163:     ?loading !loading expect ?loading ;\n  164  \n  165  : ?refill   ( -- )\n  166      span @ ?exit  <n6 blk@\n  167      ?dup ?: line.size eighty  tuck\n  168:     ?loading !loading expect ?loading ;\n  169  \n  170  \n  ...\n  175  \n  176      else\n  177:         tib eighty expect \n  178          span @\n  179      then\n  ...\n  186  \n  187      ?dup ?: line.size eighty  tuck\n  188:     ?loading !loading expect ?loading ;\n  189  \n  190      <n6\n  ...\n  242      .word setloading\n  243  #include \"page.i65\"\n  244:     .word expect\n  245  #include \"page.i65\"\n  246      .word _qloading\n\n21 matches across 6 files\n\n\nSearching 33 files for \"expect\" (regex, case sensitive)\n\n/home/chitselb/Documents/dev/commodore/pettil/core/src/core-io.a65:\n  110         space.  See:  SPAN  \"9.5.2 EXPECT\"//\n  111  \n  112: Caller may set up hardware (with `cursor!`) prior to `expect`.  The hardware cursor state that `CHRIN` uses establishes context for input streams from either `vmbuf` when loading or `tib` in keyboard input mode.\n  113  \n  114  |Receive characters and store each into memory.|check.|\n  ...\n  124  \n  125  #endif\n  126: expect\n  127      jsr harvests2               ; `addr` to `n0`\n  128  ;   stx z                       ; thanks, `CHRIN`\n  129  ;   ldy #0                      ; thanks, `harvests`\n  130      sty userin                  ; `in coff`\n  131: expect01\n  132      jsr CHRIN                   ; preserves `x` register!\n  133      cmp #CR\n  134:     beq expect02\n  135      sta (ACC+2*N0),y\n  136      iny\n  137      cpy tos                     ; check maxwidth, typically 80\n  138:     bcc expect01\n  139: expect02\n  140      sty userspan                ; set `span`\n  141  ;   ldx z\n\n/home/chitselb/Documents/dev/commodore/pettil/core/src/pettil-core.a65:\n   69  #if (* <> $0410)\n   70  #echo PETTIL Build Error - Program counter is not at $0410!\n   71: #echo You moved something, didn't you?  PETTIL expected BASIC\n   72  #echo to transfer control here to kick things off.  This is a problem.\n   73  #endif (pettil address check)\n   ..\n  209  #if (* <> $04A6)\n  210  #echo PETTIL Build Error - Program counter is not at $04A6!\n  211: #echo You moved something, didn't you?  Sweet16 expected to\n  212  #echo load at $04A6 (1190).  This is a problem.\n  213  #echo .       program counter is now:\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-dictionary.a65:\n  231  any digit is present, BLOOMHASH will not return zero.\n  232  \n  233: This is expected to sparsely populate the 64-bit wide\n  234  bloom filter field, allowing FIND to bypass the symbol\n  235  table search if the bit is turned off.\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-editor.a65:\n 1159      ; M mixed upper/lowercase\n 1160      ; F find\n 1161:     ;\" : :editfind  ( -- ) update clrscr .\" enter string to find\" home sib 80 expect\n 1162      ;        (editfind) ;  \\ loads screen and locates cursor\n 1163      ; N next found\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-interpreter.a65:\n  235  ```\n  236  : query\n  237:     tib 80 expect ;\n  238  ```\n  239  #endif\n  ...\n  246      .word eighty\n  247  #include \"page.i65\"\n  248:     .word expect\n  249  #include \"pass.i65\"\n  250      .word exit\n\n/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-name.a65:\n   56  stack=( -- )\n   57  tags=outer,extra,nosymbol\n   58: If loading, restore the cursor and increment `lin` etc.. This executes just after `sib` line input buffer was filled by `expect`\n   59  \n   60  \n   ..\n  160          begin\n  161              sib line.size\n  162:             0 =cursor  !loading expect  0 =cursor\n  163              span @ blk@ 0= or\n  164          until\n  165      else\n  166:         tib eighty expect\n  167      then  span @ ;\n  168  ```\n  ...\n  196      .word setloading\n  197  #include \"page.i65\"\n  198:     .word expect\n  199  #include \"page.i65\"\n  200      .word zero\n  ...\n  213      .word eighty\n  214  #include \"page.i65\"\n  215:     .word expect\n  216  #include \"page.i65\"\n  217  refillq03\n\n17 matches across 6 files\n",
 			"settings":
 			{
-				"buffer_size": 30126,
-				"encoding": "UTF-8",
+				"buffer_size": 18348,
+				"line_ending": "Unix",
+				"name": "Find Results",
+				"scratch": true
+			}
+		},
+		{
+			"file": "core/src/core-io.a65",
+			"settings":
+			{
+				"buffer_size": 15601,
 				"line_ending": "Unix"
 			}
 		},
 		{
-			"file": "Makefile",
+			"file": "studio/src/pettil-compiler.a65",
 			"settings":
 			{
-				"buffer_size": 4591,
-				"encoding": "UTF-8",
+				"buffer_size": 42775,
 				"line_ending": "Unix"
 			}
 		},
 		{
-			"file": "data/x11_4032.vicerc",
+			"contents": "g\nz\nd;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n\n.C:093d   .plus:\n.C:093d  B5 20       LDA .stackl,X\n.C:093f   .plus01:\n.C:093f  18          CLC\n.C:0940  65 02       ADC .tos\n.C:0942  85 02       STA .tos\n.C:0944  B5 50       LDA .stackh,X\n.C:0946  65 03       ADC $03\n.C:0948  85 03       STA $03\n.C:094a  E8          INX\n.C:094b   .plus02:\n.C:094b  4C 86 00    JMP .next\n.C:094e   .abs:\n.C:094e  24 03       BIT $03\n.C:0950  10 F9       BPL .plus02\n.C:0952   .negate:\n.C:0952  A9 00       LDA #$00\n.C:0954  48          PHA\n.C:0955  A9 85       LDA #$85\n.C:0957  48          PHA\n.C:0958   .donegate:\n.C:0958  38          SEC\n.C:0959   .neg2:\n.C:0959  A5 02       LDA .tos\n.C:095b  49 FF       EOR #$FF\n.C:095d  69 00       ADC #$00\n.C:095f  85 02       STA .tos\n.C:0961  A5 03       LDA $03\n.C:0963  49 FF       EOR #$FF\n.C:0965  69 00       ADC #$00\n>C:0000  03 65 50 00  e9 07 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .eP........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  b4 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1a 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c bb  0c 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....l.....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 03 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 0d 53 03  00 00 00 00   .........nE........`.'....S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 0c   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  00 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 d7 18 23  19 3f 19 5f  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P..#.?._..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:093f  18          CLC            - A:B4 X:2C Y:00 SP:e8 N.-B...C  110404455\n(C:$093f) g\n#4 (Stop on  exec 008a)  127 008\n.C:008a  6C BD 0C    JMP ($0CBD)    - A:1B X:2D Y:00 SP:e8 N.-B....  110404488\n(C:$008a) z\n.C:114e  A9 02       LDA #$02       - A:1B X:2D Y:00 SP:e8 N.-B....  110404493\n(C:$114e) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:114e   .exit:\n.C:114e  A9 02       LDA #$02\n.C:1150   .exit04:\n.C:1150  18          CLC\n.C:1151   .exit05:\n.C:1151  85 8B       STA .ip\n.C:1153  68          PLA\n.C:1154  65 8B       ADC .ip\n.C:1156  A8          TAY\n.C:1157  68          PLA\n.C:1158   .exit01:\n.C:1158  69 00       ADC #$00\n.C:115a   .jumpay:\n.C:115a  85 8C       STA $8C\n.C:115c   .exit03:\n.C:115c  84 8B       STY .ip\n.C:115e  4C 8A 00    JMP .nexto\n.C:1161   .toforth:\n.C:1161  68          PLA\n.C:1162  C9 FF       CMP #$FF\n.C:1164  A8          TAY\n.C:1165  68          PLA\n.C:1166  C8          INY\n.C:1167  69 00       ADC #$00\n.C:1169  4C 5A 11    JMP .jumpay\n.C:116c   .page:\n.C:116c  E6 8C       INC $8C\n.C:116e  A0 00       LDY #$00\n.C:1170  F0 EA       BEQ .exit03\n.C:1172   .clit:\n.C:1172  18          CLC\n.C:1173  A9 00       LDA #$00\n.C:1175  F0 05       BEQ .lit01\n>C:0000  03 65 04 1b  e9 07 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  b4 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1a 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c bd  0c 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....l.....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 03 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 0d 53 03  00 00 00 00   .........nE........`.'....S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 0c   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  00 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 d7 18 23  19 3f 19 5f  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P..#.?._..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:1150  18          CLC            - A:02 X:2D Y:00 SP:e8 ..-B....  110404495\n(C:$1150) g\n#4 (Stop on  exec 008a)  127 044\n.C:008a  6C D9 18    JMP ($18D9)    - A:18 X:2D Y:D9 SP:ea ..-B....  110404524\n(C:$008a) z\n.C:096a  B4 50       LDY .stackh,X  - A:18 X:2D Y:D9 SP:ea ..-B....  110404529\n(C:$096a) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:096a   .over:\n.C:096a  B4 50       LDY .stackh,X\n.C:096c  B5 20       LDA .stackl,X\n.C:096e  4C 08 12    JMP .pushya\n.C:0971   .swap:\n.C:0971  A9 00       LDA #$00\n.C:0973  48          PHA\n.C:0974  A9 85       LDA #$85\n.C:0976  48          PHA\n.C:0977   .swaps:\n.C:0977  A4 03       LDY $03\n.C:0979  B5 50       LDA .stackh,X\n.C:097b  85 03       STA $03\n.C:097d  94 50       STY .stackh,X\n.C:097f  A4 02       LDY .tos\n.C:0981  B5 20       LDA .stackl,X\n.C:0983  85 02       STA .tos\n.C:0985  94 20       STY .stackl,X\n.C:0987  60          RTS\n.C:0988   .tuck:\n.C:0988  CA          DEX\n.C:0989  20 8F 09    JSR .tuckdashrot\n.C:098c  4C 86 00    JMP .next\n.C:098f   .tuckdashrot:\n.C:098f  B5 51       LDA $51,X\n.C:0991  95 50       STA .stackh,X\n>C:0000  03 65 04 1b  e9 07 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  b4 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1a 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c d9  18 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....l.....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 03 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 0d 53 03  00 00 00 00   .........nE........`.'....S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 0c   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  00 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 d7 18 23  19 3f 19 5f  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P..#.?._..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:096c  B5 20       LDA .stackl,X  - A:18 X:2D Y:1B SP:ea ..-B....  110404533\n(C:$096c) g\n#4 (Stop on  exec 008a)  128 041\n.C:008a  6C DB 18    JMP ($18DB)    - A:03 X:2C Y:1B SP:ea N.-B....  110404585\n(C:$008a) z\n.C:093a  20 58 09    JSR .donegate  - A:03 X:2C Y:1B SP:ea N.-B....  110404590\n(C:$093a) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:093a   .minus:\n.C:093a  20 58 09    JSR .donegate\n.C:093d   .plus:\n.C:093d  B5 20       LDA .stackl,X\n.C:093f   .plus01:\n.C:093f  18          CLC\n.C:0940  65 02       ADC .tos\n.C:0942  85 02       STA .tos\n.C:0944  B5 50       LDA .stackh,X\n.C:0946  65 03       ADC $03\n.C:0948  85 03       STA $03\n.C:094a  E8          INX\n.C:094b   .plus02:\n.C:094b  4C 86 00    JMP .next\n.C:094e   .abs:\n.C:094e  24 03       BIT $03\n.C:0950  10 F9       BPL .plus02\n.C:0952   .negate:\n.C:0952  A9 00       LDA #$00\n.C:0954  48          PHA\n.C:0955  A9 85       LDA #$85\n.C:0957  48          PHA\n.C:0958   .donegate:\n.C:0958  38          SEC\n.C:0959   .neg2:\n.C:0959  A5 02       LDA .tos\n.C:095b  49 FF       EOR #$FF\n.C:095d  69 00       ADC #$00\n.C:095f  85 02       STA .tos\n.C:0961  A5 03       LDA $03\n>C:0000  03 65 03 1b  e9 07 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c db  18 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....l.....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 03 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 0d 53 03  00 00 00 00   .........nE........`.'....S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 0c   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  00 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 d7 03 23  19 3f 19 5f  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P..#.?._..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:0958  38          SEC            - A:03 X:2C Y:1B SP:e8 N.-B....  110404596\n(C:$0958) g\n#4 (Stop on  exec 008a)  129 053\n.C:008a  6C DD 18    JMP ($18DD)    - A:00 X:2D Y:1B SP:ea N.-B...C  110404661\n(C:$008a) z\n.C:114e  A9 02       LDA #$02       - A:00 X:2D Y:1B SP:ea N.-B...C  110404666\n(C:$114e) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:114e   .exit:\n.C:114e  A9 02       LDA #$02\n.C:1150   .exit04:\n.C:1150  18          CLC\n.C:1151   .exit05:\n.C:1151  85 8B       STA .ip\n.C:1153  68          PLA\n.C:1154  65 8B       ADC .ip\n.C:1156  A8          TAY\n.C:1157  68          PLA\n.C:1158   .exit01:\n.C:1158  69 00       ADC #$00\n.C:115a   .jumpay:\n.C:115a  85 8C       STA $8C\n.C:115c   .exit03:\n.C:115c  84 8B       STY .ip\n.C:115e  4C 8A 00    JMP .nexto\n.C:1161   .toforth:\n.C:1161  68          PLA\n.C:1162  C9 FF       CMP #$FF\n.C:1164  A8          TAY\n.C:1165  68          PLA\n.C:1166  C8          INY\n.C:1167  69 00       ADC #$00\n.C:1169  4C 5A 11    JMP .jumpay\n.C:116c   .page:\n.C:116c  E6 8C       INC $8C\n.C:116e  A0 00       LDY #$00\n.C:1170  F0 EA       BEQ .exit03\n.C:1172   .clit:\n.C:1172  18          CLC\n.C:1173  A9 00       LDA #$00\n.C:1175  F0 05       BEQ .lit01\n>C:0000  03 65 01 00  e9 07 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c dd  18 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....l.....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 03 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 0d 53 03  00 00 00 00   .........nE........`.'....S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 0c   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  00 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 3c 09 23  19 3f 19 5f  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P<.#.?._..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:1150  18          CLC            - A:02 X:2D Y:1B SP:ea ..-B...C  110404668\n(C:$1150) g\n#4 (Stop on  exec 008a)  130 025\n.C:008a  6C 25 19    JMP ($1925)    - A:19 X:2D Y:25 SP:ec ..-B....  110404697\n(C:$008a) z\n.C:114e  A9 02       LDA #$02       - A:19 X:2D Y:25 SP:ec ..-B....  110404702\n(C:$114e) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:114e   .exit:\n.C:114e  A9 02       LDA #$02\n.C:1150   .exit04:\n.C:1150  18          CLC\n.C:1151   .exit05:\n.C:1151  85 8B       STA .ip\n.C:1153  68          PLA\n.C:1154  65 8B       ADC .ip\n.C:1156  A8          TAY\n.C:1157  68          PLA\n.C:1158   .exit01:\n.C:1158  69 00       ADC #$00\n.C:115a   .jumpay:\n.C:115a  85 8C       STA $8C\n.C:115c   .exit03:\n.C:115c  84 8B       STY .ip\n.C:115e  4C 8A 00    JMP .nexto\n.C:1161   .toforth:\n.C:1161  68          PLA\n.C:1162  C9 FF       CMP #$FF\n.C:1164  A8          TAY\n.C:1165  68          PLA\n.C:1166  C8          INY\n.C:1167  69 00       ADC #$00\n.C:1169  4C 5A 11    JMP .jumpay\n.C:116c   .page:\n.C:116c  E6 8C       INC $8C\n.C:116e  A0 00       LDY #$00\n.C:1170  F0 EA       BEQ .exit03\n.C:1172   .clit:\n.C:1172  18          CLC\n.C:1173  A9 00       LDA #$00\n.C:1175  F0 05       BEQ .lit01\n>C:0000  03 65 01 00  e9 07 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c 25  19 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....l%....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 03 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 0d 53 03  00 00 00 00   .........nE........`.'....S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 0c   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  00 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 3c 09 23  19 3f 19 5f  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P<.#.?._..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:1150  18          CLC            - A:02 X:2D Y:25 SP:ec ..-B....  110404704\n(C:$1150) g\n#4 (Stop on  exec 008a)  130 061\n.C:008a  6C 41 19    JMP ($1941)    - A:19 X:2D Y:41 SP:ee ..-B....  110404733\n(C:$008a) z\n.C:114e  A9 02       LDA #$02       - A:19 X:2D Y:41 SP:ee ..-B....  110404738\n(C:$114e) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:114e   .exit:\n.C:114e  A9 02       LDA #$02\n.C:1150   .exit04:\n.C:1150  18          CLC\n.C:1151   .exit05:\n.C:1151  85 8B       STA .ip\n.C:1153  68          PLA\n.C:1154  65 8B       ADC .ip\n.C:1156  A8          TAY\n.C:1157  68          PLA\n.C:1158   .exit01:\n.C:1158  69 00       ADC #$00\n.C:115a   .jumpay:\n.C:115a  85 8C       STA $8C\n.C:115c   .exit03:\n.C:115c  84 8B       STY .ip\n.C:115e  4C 8A 00    JMP .nexto\n.C:1161   .toforth:\n.C:1161  68          PLA\n.C:1162  C9 FF       CMP #$FF\n.C:1164  A8          TAY\n.C:1165  68          PLA\n.C:1166  C8          INY\n.C:1167  69 00       ADC #$00\n.C:1169  4C 5A 11    JMP .jumpay\n.C:116c   .page:\n.C:116c  E6 8C       INC $8C\n.C:116e  A0 00       LDY #$00\n.C:1170  F0 EA       BEQ .exit03\n.C:1172   .clit:\n.C:1172  18          CLC\n.C:1173  A9 00       LDA #$00\n.C:1175  F0 05       BEQ .lit01\n>C:0000  03 65 01 00  e9 07 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c 41  19 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....lA....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 03 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 0d 53 03  00 00 00 00   .........nE........`.'....S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 0c   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  00 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 3c 09 23  19 3f 19 5f  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P<.#.?._..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:1150  18          CLC            - A:02 X:2D Y:41 SP:ee ..-B....  110404740\n(C:$1150) g\n#4 (Stop on  exec 008a)  131 033\n.C:008a  6C 61 19    JMP ($1961)    - A:19 X:2D Y:61 SP:f0 ..-B....  110404769\n(C:$008a) z\n.C:119d  A0 02       LDY #$02       - A:19 X:2D Y:61 SP:f0 ..-B....  110404774\n(C:$119d) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:119d   .branch:\n.C:119d  A0 02       LDY #$02\n.C:119f  B1 8B       LDA (.ip),Y\n.C:11a1  10 02       BPL .pad\n.C:11a3  C6 8C       DEC $8C\n.C:11a5   .pad:\n.C:11a5  38          SEC\n.C:11a6   .branch02:\n.C:11a6  65 8B       ADC .ip\n.C:11a8  A8          TAY\n.C:11a9  C8          INY\n.C:11aa  D0 03       BNE .branch05\n.C:11ac  E6 8C       INC $8C\n.C:11ae  29 A8       AND #$A8\n.C:11b0  A9 00       LDA #$00\n.C:11b2  65 8C       ADC $8C\n.C:11b4  90 A4       BCC .jumpay\n.C:11b6   .pad3:\n.C:11b6  A9 02       LDA #$02\n.C:11b8  D0 EB       BNE .pad\n.C:11ba   .pqleave:\n.C:11ba  A5 02       LDA .tos\n.C:11bc  05 03       ORA $03\n.C:11be  08          PHP\n.C:11bf  20 D0 0F    JSR .slide\n.C:11c2  28          PLP\n.C:11c3  D0 80       BNE .unloop\n.C:11c5  4C 86 00    JMP .next\n>C:0000  03 65 01 00  e9 07 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c 61  19 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....la....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 03 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 0d 53 03  00 00 00 00   .........nE........`.'....S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 0c   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  00 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 3c 09 23  19 3f 19 5f  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P<.#.?._..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:119f  B1 8B       LDA (.ip),Y    - A:19 X:2D Y:02 SP:f0 ..-B....  110404776\n(C:$119f) g\n#4 (Stop on  exec 008a)  132 015\n.C:008a  6C 69 19    JMP (.tse)     - A:19 X:2D Y:69 SP:f0 ..-B....  110404815\n(C:$008a) z\n.C:1880  20 F1 06    JSR .harvests2 - A:19 X:2D Y:69 SP:f0 ..-B....  110404820\n(C:$1880) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:1880   .type:\n.C:1880  20 F1 06    JSR .harvests2\n.C:1883  18          CLC\n.C:1884  A5 02       LDA .tos\n.C:1886  6D A4 06    ADC .usernumout\n.C:1889  8D A4 06    STA .usernumout\n.C:188c  A5 03       LDA $03\n.C:188e  6D A5 06    ADC $06A5\n.C:1891  8D A5 06    STA $06A5\n.C:1894   .type01:\n.C:1894  C4 02       CPY .tos\n.C:1896  D0 07       BNE .type02\n.C:1898  C6 03       DEC $03\n.C:189a  10 03       BPL .type02\n.C:189c  4C C4 0F    JMP .drop\n.C:189f   .type02:\n.C:189f  B1 04       LDA (.n),Y\n.C:18a1  20 D2 FF    JSR $FFD2\n.C:18a4  C8          INY\n.C:18a5  D0 ED       BNE .type01\n.C:18a7  E6 05       INC $05\n>C:0000  03 65 01 00  e9 07 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c 69  19 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....li....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 03 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 0d 53 03  00 00 00 00   .........nE........`.'....S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 0c   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  00 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 3c 09 23  19 3f 19 5f  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P<.#.?._..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:06f1  A0 02       LDY #$02       - A:19 X:2D Y:69 SP:ee ..-B....  110404826\n(C:$06f1) g\n#4 (Stop on  exec 008a)  137 003\n.C:008a  6C 6B 19    JMP ($196B)    - A:01 X:2F Y:00 SP:f0 ..-B...C  110405123\n(C:$008a) z\n.C:1869  20 60 18    JSR .dodotc    - A:01 X:2F Y:00 SP:f0 ..-B...C  110405128\n(C:$1869) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:1869   .space:\n.C:1869  20 60 18    JSR .dodotc\n.C:186c  20 20 F4    JSR $F420\n.C:186f  10 70       BPL $18E1\n.C:1871  0A          ASL A\n.C:1872  5F 0D 70    SRE $700D,X\n.C:1875  0A          ASL A\n.C:1876  C8          INY\n.C:1877  11 07       ORA ($07),Y\n.C:1879   .spaces01:\n.C:1879  69 18       ADC #$18\n.C:187b  33 11       RLA ($11),Y\n.C:187d  FD 4E 11    SBC .exit,X\n.C:1880   .type:\n.C:1880  20 F1 06    JSR .harvests2\n.C:1883  18          CLC\n.C:1884  A5 02       LDA .tos\n.C:1886  6D A4 06    ADC .usernumout\n.C:1889  8D A4 06    STA .usernumout\n.C:188c  A5 03       LDA $03\n.C:188e  6D A5 06    ADC $06A5\n.C:1891  8D A5 06    STA $06A5\n>C:0000  03 65 01 00  03 1b 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c 6b  19 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....lk....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 04 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 31 53 03  00 00 00 00   .........nE........`.'...1S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 0c   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  01 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 3c 84 e1  00 2e 31 a3  18 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P<....1...t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:1860  20 DD 10    JSR .dodoes    - A:01 X:2F Y:00 SP:ee ..-B...C  110405134\n(C:$1860) g\n#4 (Stop on  exec 008a)  139 001\n.C:008a  6C 63 18    JMP ($1863)    - A:18 X:2E Y:63 SP:ee ..-B...C  110405249\n(C:$008a) z\n.C:0fde  18          CLC            - A:18 X:2E Y:63 SP:ee ..-B...C  110405254\n(C:$0fde) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:0fde   .cfetch:\n.C:0fde  18          CLC\n.C:0fdf  29 38       AND #$38\n.C:0fe1  A0 00       LDY #$00\n.C:0fe3  B1 02       LDA (.tos),Y\n.C:0fe5  90 E2       BCC .put\n.C:0fe7   .fetchyax:\n.C:0fe7  48          PHA\n.C:0fe8  C8          INY\n.C:0fe9  B1 02       LDA (.tos),Y\n.C:0feb  A8          TAY\n.C:0fec  68          PLA\n.C:0fed  B0 DA       BCS .put\n.C:0fef  60          RTS\n.C:0ff0   .dotwoconst:\n.C:0ff0  68          PLA\n.C:0ff1  85 04       STA .n\n.C:0ff3  68          PLA\n.C:0ff4  85 05       STA $05\n.C:0ff6  A0 04       LDY #$04\n.C:0ff8   .dotwoconst01:\n.C:0ff8  B1 04       LDA (.n),Y\n.C:0ffa  48          PHA\n.C:0ffb  88          DEY\n.C:0ffc  D0 FA       BNE .dotwoconst01\n.C:0ffe  4C C4 13    JMP .tworfrom\n.C:1001   .doconst:\n.C:1001  38          SEC\n.C:1002  29 18       AND #$18\n.C:1004  20 BC 09    JSR .slip\n>C:0000  03 65 6c 18  03 1b 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .el........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c 63  18 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....lc....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 04 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 31 53 03  00 00 00 00   .........nE........`.'...1S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 18   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  01 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 3c 84 e1  00 e5 10 6b  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P<.....k..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:0fdf  29 38       AND #$38       - A:18 X:2E Y:63 SP:ee ..-B....  110405256\n(C:$0fdf) g\n#4 (Stop on  exec 008a)  139 039\n.C:008a  6C 65 18    JMP ($1865)    - A:20 X:2E Y:00 SP:ee ..-B....  110405287\n(C:$008a) z\n.C:1816  EE A4 06    INC .usernumout - A:20 X:2E Y:00 SP:ee ..-B....  110405292\n(C:$1816) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:1816   .emit:\n.C:1816  EE A4 06    INC .usernumout\n.C:1819  D0 03       BNE .emit01\n.C:181b  EE A5 06    INC $06A5\n.C:181e   .emit01:\n.C:181e  A5 02       LDA .tos\n.C:1820  20 D2 FF    JSR $FFD2\n.C:1823  4C C4 0F    JMP .drop\n.C:1826   .qkey:\n.C:1826  86 FF       STX .z\n.C:1828  20 E4 FF    JSR $FFE4\n.C:182b  10 07       BPL .key02\n.C:182d   .key:\n.C:182d  86 FF       STX .z\n.C:182f   .key01:\n.C:182f  20 E4 FF    JSR $FFE4\n.C:1832  F0 FB       BEQ .key01\n.C:1834   .key02:\n.C:1834  A6 FF       LDX .z\n.C:1836  4C 17 12    JMP .push0a\n.C:1839   .cr:\n.C:1839  00          BRK\n.C:183a  0B 34       ANC #$34\n.C:183c  D5 12       CMP $12,X\n.C:183e  A4 06       LDY $06\n>C:0000  03 65 20 00  03 1b 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e ........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c 65  18 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....le....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 04 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 31 53 03  00 00 00 00   .........nE........`.'...1S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 18   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  01 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  50 3c 84 e1  00 e5 10 6b  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0....P<.....k..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:1819  D0 03       BNE .emit01    - A:20 X:2E Y:00 SP:ee ..-B....  110405298\n(C:$1819) g\n#4 (Stop on  exec 008a)  143 011\n.C:008a  6C 67 18    JMP ($1867)    - A:01 X:2F Y:00 SP:ee ..-B...C  110405515\n(C:$008a) z\n.C:114e  A9 02       LDA #$02       - A:01 X:2F Y:00 SP:ee ..-B...C  110405520\n(C:$114e) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:114e   .exit:\n.C:114e  A9 02       LDA #$02\n.C:1150   .exit04:\n.C:1150  18          CLC\n.C:1151   .exit05:\n.C:1151  85 8B       STA .ip\n.C:1153  68          PLA\n.C:1154  65 8B       ADC .ip\n.C:1156  A8          TAY\n.C:1157  68          PLA\n.C:1158   .exit01:\n.C:1158  69 00       ADC #$00\n.C:115a   .jumpay:\n.C:115a  85 8C       STA $8C\n.C:115c   .exit03:\n.C:115c  84 8B       STY .ip\n.C:115e  4C 8A 00    JMP .nexto\n.C:1161   .toforth:\n.C:1161  68          PLA\n.C:1162  C9 FF       CMP #$FF\n.C:1164  A8          TAY\n.C:1165  68          PLA\n.C:1166  C8          INY\n.C:1167  69 00       ADC #$00\n.C:1169  4C 5A 11    JMP .jumpay\n.C:116c   .page:\n.C:116c  E6 8C       INC $8C\n.C:116e  A0 00       LDY #$00\n.C:1170  F0 EA       BEQ .exit03\n.C:1172   .clit:\n.C:1172  18          CLC\n.C:1173  A9 00       LDA #$00\n.C:1175  F0 05       BEQ .lit01\n>C:0000  03 65 01 00  03 1b 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c 67  18 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....lg....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 05 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 20 53 03  00 00 00 00   .........nE........`.'... S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 18   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  02 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  84 e1 00 2e  20 22 18 6b  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0........ \".k..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:1150  18          CLC            - A:02 X:2F Y:00 SP:ee ..-B...C  110405522\n(C:$1150) g\n#4 (Stop on  exec 008a)  143 047\n.C:008a  6C 6D 19    JMP ($196D)    - A:19 X:2F Y:6D SP:f0 ..-B....  110405551\n(C:$008a) z\n.C:114e  A9 02       LDA #$02       - A:19 X:2F Y:6D SP:f0 ..-B....  110405556\n(C:$114e) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:114e   .exit:\n.C:114e  A9 02       LDA #$02\n.C:1150   .exit04:\n.C:1150  18          CLC\n.C:1151   .exit05:\n.C:1151  85 8B       STA .ip\n.C:1153  68          PLA\n.C:1154  65 8B       ADC .ip\n.C:1156  A8          TAY\n.C:1157  68          PLA\n.C:1158   .exit01:\n.C:1158  69 00       ADC #$00\n.C:115a   .jumpay:\n.C:115a  85 8C       STA $8C\n.C:115c   .exit03:\n.C:115c  84 8B       STY .ip\n.C:115e  4C 8A 00    JMP .nexto\n.C:1161   .toforth:\n.C:1161  68          PLA\n.C:1162  C9 FF       CMP #$FF\n.C:1164  A8          TAY\n.C:1165  68          PLA\n.C:1166  C8          INY\n.C:1167  69 00       ADC #$00\n.C:1169  4C 5A 11    JMP .jumpay\n.C:116c   .page:\n.C:116c  E6 8C       INC $8C\n.C:116e  A0 00       LDY #$00\n.C:1170  F0 EA       BEQ .exit03\n.C:1172   .clit:\n.C:1172  18          CLC\n.C:1173  A9 00       LDA #$00\n.C:1175  F0 05       BEQ .lit01\n>C:0000  03 65 01 00  03 1b 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c 6d  19 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....lm....U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 05 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 20 53 03  00 00 00 00   .........nE........`.'... S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 18   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  02 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  84 e1 00 2e  20 22 18 6b  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0........ \".k..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:1150  18          CLC            - A:02 X:2F Y:6D SP:f0 ..-B....  110405558\n(C:$1150) g\n#4 (Stop on  exec 008a)  144 019\n.C:008a  6C EF 74    JMP ($74EF)    - A:74 X:2F Y:EF SP:f2 ..-B....  110405587\n(C:$008a) z\n.C:1133  E6 80       INC .zi        - A:74 X:2F Y:EF SP:f2 ..-B....  110405592\n(C:$1133) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:1133   .ploop:\n.C:1133  E6 80       INC .zi\n.C:1135  D0 02       BNE .ploop01\n.C:1137  E6 81       INC $81\n.C:1139   .ploop01:\n.C:1139  A5 80       LDA .zi\n.C:113b  45 82       EOR .zlim\n.C:113d  D0 5E       BNE .branch\n.C:113f  A5 81       LDA $81\n.C:1141  45 83       EOR $83\n.C:1143  D0 58       BNE .branch\n.C:1145   .unloop:\n.C:1145  A0 FC       LDY #$FC\n.C:1147   .unloop01:\n.C:1147  68          PLA\n.C:1148  99 84 FF    STA $FF84,Y\n.C:114b  C8          INY\n.C:114c  D0 F9       BNE .unloop01\n.C:114e   .exit:\n.C:114e  A9 02       LDA #$02\n.C:1150   .exit04:\n.C:1150  18          CLC\n.C:1151   .exit05:\n.C:1151  85 8B       STA .ip\n.C:1153  68          PLA\n.C:1154  65 8B       ADC .ip\n.C:1156  A8          TAY\n.C:1157  68          PLA\n.C:1158   .exit01:\n.C:1158  69 00       ADC #$00\n.C:115a   .jumpay:\n.C:115a  85 8C       STA $8C\n>C:0000  03 65 01 00  03 1b 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 01 00  74 06 e6 8b  e6 8b 6c ef  74 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....l.t...U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 05 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 20 53 03  00 00 00 00   .........nE........`.'... S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 18   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  02 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  84 e1 00 2e  20 22 18 6b  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0........ \".k..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:1135  D0 02       BNE .ploop01   - A:74 X:2F Y:EF SP:f2 ..-B....  110405597\n(C:$1135) g\n#4 (Stop on  exec 008a)  146 008\n.C:008a  6C 01 76    JMP ($7601)    - A:76 X:2F Y:01 SP:f8 ..-B....  110405704\n(C:$008a) z\n.C:4e0f  EF DE AD    ISB $ADDE      - A:76 X:2F Y:01 SP:f8 ..-B....  110405709\n(C:$4e0f) d;m 0 ff;m 130 16f;m .usersanum .utend;m 1e0 21f;z\n.C:4e0f  EF DE AD    ISB $ADDE\n.C:4e12  BE EF DE    LDX $DEEF,Y\n.C:4e15  AD BE EF    LDA $EFBE\n.C:4e18  DE AD BE    DEC $BEAD,X\n.C:4e1b  EF DE AD    ISB $ADDE\n.C:4e1e  BE EF DE    LDX $DEEF,Y\n.C:4e21  AD BE EF    LDA $EFBE\n.C:4e24  DE AD BE    DEC $BEAD,X\n.C:4e27  EF DE AD    ISB $ADDE\n.C:4e2a  BE EF DE    LDX $DEEF,Y\n.C:4e2d  AD BE EF    LDA $EFBE\n.C:4e30  DE AD BE    DEC $BEAD,X\n.C:4e33  EF DE AD    ISB $ADDE\n.C:4e36  BE EF DE    LDX $DEEF,Y\n>C:0000  03 65 01 00  03 1b 00 00  01 00 85 65  02 00 00 00  00 02 ff 01  02 00 34 d5  00 01 0d d0  0a 3f 09 6c   .e.........e..........4......?.l\n>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................................\n>C:0040  aa aa aa aa  aa 07 55 80  92 2a 07 00  04 03 01 01  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ......U..*......................\n>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb 00 e4 06  6f 6e 00 00  1b 1b 00 10   ........................on......\n>C:0080  00 00 00 00  74 06 e6 8b  e6 8b 6c 01  76 00 19 a3  55 e4 55 06  ff b3 40 0d  00 57 01 ff  00 00 00 00   ....t.....l.v...U.U...@..W......\n>C:00a0  00 02 00 17  02 3f 0d 01  02 20 00 00  00 00 00 00  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   .....?... ......................\n>C:00c0  00 00 00 00  98 83 05 c3  e7 6e 45 00  00 00 00 00  00 0c 00 60  08 27 00 00  17 20 53 03  00 00 00 00   .........nE........`.'... S.....\n>C:00e0  80 80 80 80  80 80 80 81  01 81 81 81  81 82 82 82  82 82 82 82  83 83 83 83  83 00 00 6e  45 42 03 18   ...........................nEB..\n>C:0130  00 00 00 00  00 00 00 00  00 00 00 d0  00 3d 01 00  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   .............=..................\n>C:0150  ff ff ff ff  ff ff ff fe  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................................\n>C:0690  00 00 01 00  fe 54 00 00  00 00 ff ff  00 00 03 00  00 00 01 00  02 00 00 00  00 00 03 1b  00 00 00 00   .....T..........................\n>C:06b0  00 00 00 68  32 7f 02 00  09 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ...h2...........................\n>C:06d0  00 00 71 66  6f 66 ff 80  00 00 00 00  00 00 ff ff  00 00 cc                                             ..qfof.............\n>C:01e0  c1 e3 01 30  0d e9 03 0a  84 e1 00 2e  20 22 18 6b  19 ed 74 00  00 00 00 ff  75 c8 6f ea  6f 03 70 02   ...0........ \".k..t.....u.o.o.p.\n>C:0200  2e 53 4e 00  54 54 49 4c  2e 50 52 47  22 3a d6 22  2a 00 2a 00  00 00 00 00  00 00 00 00  00 00 00 00   .SN.TTIL.PRG\":.\"*.*.............\n.C:4e12  BE EF DE    LDX $DEEF,Y    - A:C7 X:2F Y:01 SP:f8 NV-B....  110405715\n(C:$4e12) \n",
 			"settings":
 			{
-				"buffer_size": 1016,
-				"line_ending": "Unix"
+				"buffer_size": 52789,
+				"line_ending": "Unix",
+				"name": "g"
 			}
 		}
 	],
@@ -123,42 +153,44 @@
 	],
 	"file_history":
 	[
+		"/home/chitselb/Documents/dev/commodore/pettil/tmp/pettil.mon",
+		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-utils.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-editor.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-io.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-name.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-interpreter.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/data/sdl2_vic20.vicerc",
+		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-vm.a65",
+		"/home/chitselb/Documents/dev/commodore/moshpit.txt",
+		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-extra.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/core/src/pettil-core.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-user.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-user.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/data/x11_4032.vicerc",
+		"/home/chitselb/Documents/dev/commodore/pettil/Makefile",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-studio.a65",
+		"/home/chitselb/Documents/dev/commodore/pettil/core/src/inc/cbm.def",
+		"/home/chitselb/Documents/dev/commodore/pettil/moshpit.txt",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-compiler.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-inner.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/pettil.dbg",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src/pettil-core.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-utils.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-user.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/data/chitselb.vpl",
-		"/home/chitselb/Documents/dev/commodore/pettil/tmp/pettil.mon",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src/inc/cbm.def",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-nucleus.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-double.a65",
-		"/home/chitselb/Documents/dev/commodore/moshpit.txt",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-number.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-name.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/docs/statictiddlers/FFCFCHRIN.tid",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-editor.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-assembler.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/data/VIC20/real-vic-ntsc.vpl",
 		"/home/chitselb/Downloads/$__palettes_Vorth.tid",
 		"/home/chitselb/Documents/dev/commodore/pettil/docs/statictiddlers/$palettesVorth.tid",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-vm.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/pettil-dictionary.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/moshpit.txt",
 		"/home/chitselb/Documents/dev/commodore/pettil/docs/statictiddlers/$palettesMMM.tid",
 		"/home/chitselb/Documents/dev/commodore/pettil/docs/statictiddlers/$palettesQueenBee.tid",
 		"/mnt/data/chitselb/Documents/dev/commodore/pettil/docs/statictiddlers/$palettesVorth.tid",
 		"/home/chitselb/Documents/dev/commodore/pettil/t.t",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-extra.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-locals.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/Makefile",
 		"/home/chitselb/Documents/dev/commodore/pettil/foo.bar",
 		"/home/chitselb/Documents/dev/commodore/pettil/pettil.mon",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src/core-user.a65",
 		"/home/chitselb/Documents/dev/commodore/pettil/core/src/test-general.a65",
 		"/home/chitselb/pettil/data/sdl2_chitselb.vicerc",
 		"/home/chitselb/Documents/dev/commodore/pettil/tools/xap.rb",
@@ -266,9 +298,79 @@
 	},
 	"find_state":
 	{
-		"case_sensitive": false,
+		"case_sensitive": true,
 		"find_history":
 		[
+			"expect",
+			"refill",
+			"_qrefill",
+			"_name",
+			"expect",
+			"_query",
+			"_interpret",
+			"linesize",
+			"n6",
+			"qloading",
+			"linesize",
+			"_query",
+			"expect",
+			"refill",
+			"refillq",
+			"_name",
+			"_dots",
+			"_refill",
+			"_name$",
+			"_nameparse",
+			"_refillq",
+			"_name",
+			"_interpret",
+			"_load",
+			"_plusedit",
+			"__editprevscr",
+			"STOP-UP",
+			" ",
+			"lin",
+			"name=EXPECT",
+			"dirtybuf",
+			"\\.word prev",
+			"name.parse",
+			"refill",
+			"setloading",
+			"_refillq",
+			"qrefill",
+			"usercursor",
+			"_qrefill",
+			".word dup",
+			"tuck",
+			"qrefill",
+			"^_name$",
+			"_qloading",
+			"height",
+			"\\.word height",
+			"height",
+			"LPERSCR",
+			"setloading",
+			"parsename",
+			"parse",
+			"parse.name",
+			"qloading",
+			"setloading",
+			"PNTR",
+			"_qrefill",
+			"c4",
+			"over",
+			"_qloading",
+			"^_linesize",
+			"expect",
+			"dirtybuf",
+			"\\.word prev",
+			"^userblk",
+			"lazy",
+			"setnfa",
+			"_name",
+			"_interpret",
+			"plugh",
+			"^plugh",
 			"exit03",
 			"nop",
 			"pagemargin",
@@ -326,77 +428,7 @@
 			"_ptickstream",
 			"doubleq",
 			"tya",
-			"push0a",
-			"push",
-			"sshipn4",
-			"n4",
-			"^name=",
-			"cstore",
-			"skipscan",
-			"_linesize",
-			"dashtrailing",
-			"toline",
-			"_name",
-			"redefin",
-			"red",
-			"uarea",
-			"uaea",
-			"threerfromstore",
-			"_qrefill",
-			"editfind",
-			"cursor",
-			"userspan",
-			"tblx",
-			"PNTR",
-			"linesize",
-			"refill",
-			"cs",
-			"b0",
-			"docconst",
-			"cconst",
-			"0=",
-			"asmn",
-			"asmc",
-			"interpretcfa",
-			"_quit",
-			"^_quit",
-			"blk@",
-			"dirtybuf",
-			"_dirtybuf",
-			"\\.word pre",
-			"interacti",
-			"userspan",
-			"_load",
-			"qrefill",
-			"_name",
-			"_ptickstream",
-			"pettil-name.a65",
-			"stream",
-			"_interpret",
-			"_nfastore",
-			"name=QUERY",
-			"_load",
-			"setstream",
-			"lin[^egdkl]",
-			"\\.word orx",
-			"orx",
-			"lin[^egdkl]",
-			"lin[^egdk]",
-			"lin[^egd]",
-			"lin[^eg]",
-			"lin[^e]",
-			"lin",
-			"_setstream",
-			"_name",
-			"n6",
-			"spstore",
-			"_quit",
-			"put0a",
-			"cswap",
-			"tickstream",
-			"_refill",
-			"_quit",
-			"_abort"
+			"push0a"
 		],
 		"highlight": true,
 		"in_selection": false,
@@ -446,19 +478,19 @@
 			[
 				{
 					"buffer": 0,
-					"file": "studio/src/pettil-name.a65",
+					"file": "studio/src/pettil-interpreter.a65",
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 10639,
+						"buffer_size": 13623,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								10623,
-								10623
+								4830,
+								4830
 							]
 						],
 						"settings":
@@ -468,7 +500,7 @@
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 754.0,
+						"translation.y": 4050.0,
 						"zoom_level": 1.0
 					},
 					"stack_index": 3,
@@ -476,19 +508,47 @@
 				},
 				{
 					"buffer": 1,
-					"file": "core/src/pettil-core.a65",
+					"file": "docs/figforth/forth32k.4.a65",
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 30126,
+						"buffer_size": 100895,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								29558,
-								29558
+								20748,
+								20748
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Text/Plain text.tmLanguage"
+						},
+						"translation.x": 0.0,
+						"translation.y": 33301.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 6,
+					"type": "text"
+				},
+				{
+					"buffer": 2,
+					"file": "studio/src/pettil-name.a65",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 10747,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								5122,
+								5122
 							]
 						],
 						"settings":
@@ -498,36 +558,7 @@
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 19384.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 2,
-					"type": "text"
-				},
-				{
-					"buffer": 2,
-					"file": "Makefile",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 4591,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								1396,
-								1396
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/Makefile/Makefile.sublime-syntax",
-							"translate_tabs_to_spaces": false
-						},
-						"translation.x": 0.0,
-						"translation.y": 648.0,
+						"translation.y": 3330.0,
 						"zoom_level": 1.0
 					},
 					"stack_index": 0,
@@ -535,30 +566,514 @@
 				},
 				{
 					"buffer": 3,
-					"file": "data/x11_4032.vicerc",
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 1016,
+						"buffer_size": 18348,
+						"regions":
+						{
+							"match":
+							{
+								"flags": 112,
+								"regions":
+								[
+									[
+										183,
+										191
+									],
+									[
+										317,
+										325
+									],
+									[
+										451,
+										459
+									],
+									[
+										560,
+										568
+									],
+									[
+										699,
+										707
+									],
+									[
+										964,
+										966
+									],
+									[
+										1183,
+										1185
+									],
+									[
+										1320,
+										1322
+									],
+									[
+										1516,
+										1518
+									],
+									[
+										1688,
+										1690
+									],
+									[
+										1845,
+										1847
+									],
+									[
+										1999,
+										2001
+									],
+									[
+										2117,
+										2119
+									],
+									[
+										2222,
+										2224
+									],
+									[
+										2392,
+										2394
+									],
+									[
+										2660,
+										2662
+									],
+									[
+										2836,
+										2838
+									],
+									[
+										3069,
+										3071
+									],
+									[
+										3331,
+										3333
+									],
+									[
+										3468,
+										3470
+									],
+									[
+										3712,
+										3714
+									],
+									[
+										3978,
+										3980
+									],
+									[
+										4227,
+										4237
+									],
+									[
+										4344,
+										4354
+									],
+									[
+										4482,
+										4492
+									],
+									[
+										4645,
+										4655
+									],
+									[
+										4873,
+										4883
+									],
+									[
+										5197,
+										5203
+									],
+									[
+										5523,
+										5529
+									],
+									[
+										5787,
+										5793
+									],
+									[
+										6025,
+										6031
+									],
+									[
+										6133,
+										6139
+									],
+									[
+										6270,
+										6276
+									],
+									[
+										6286,
+										6292
+									],
+									[
+										6582,
+										6588
+									],
+									[
+										6864,
+										6870
+									],
+									[
+										7141,
+										7147
+									],
+									[
+										7514,
+										7520
+									],
+									[
+										7871,
+										7877
+									],
+									[
+										8049,
+										8055
+									],
+									[
+										8134,
+										8140
+									],
+									[
+										8211,
+										8217
+									],
+									[
+										8371,
+										8377
+									],
+									[
+										8528,
+										8534
+									],
+									[
+										8647,
+										8653
+									],
+									[
+										8766,
+										8772
+									],
+									[
+										9054,
+										9059
+									],
+									[
+										9254,
+										9259
+									],
+									[
+										9492,
+										9497
+									],
+									[
+										9615,
+										9620
+									],
+									[
+										9769,
+										9774
+									],
+									[
+										9964,
+										9969
+									],
+									[
+										10078,
+										10083
+									],
+									[
+										10211,
+										10216
+									],
+									[
+										10411,
+										10416
+									],
+									[
+										10679,
+										10687
+									],
+									[
+										10843,
+										10851
+									],
+									[
+										11169,
+										11175
+									],
+									[
+										11433,
+										11439
+									],
+									[
+										11671,
+										11677
+									],
+									[
+										11779,
+										11785
+									],
+									[
+										11916,
+										11922
+									],
+									[
+										11932,
+										11938
+									],
+									[
+										12228,
+										12234
+									],
+									[
+										12510,
+										12516
+									],
+									[
+										12787,
+										12793
+									],
+									[
+										13160,
+										13166
+									],
+									[
+										13387,
+										13393
+									],
+									[
+										13495,
+										13501
+									],
+									[
+										13807,
+										13813
+									],
+									[
+										13985,
+										13991
+									],
+									[
+										14070,
+										14076
+									],
+									[
+										14147,
+										14153
+									],
+									[
+										14307,
+										14313
+									],
+									[
+										14464,
+										14470
+									],
+									[
+										14554,
+										14560
+									],
+									[
+										14685,
+										14691
+									],
+									[
+										14804,
+										14810
+									],
+									[
+										15139,
+										15145
+									],
+									[
+										15403,
+										15409
+									],
+									[
+										15641,
+										15647
+									],
+									[
+										15749,
+										15755
+									],
+									[
+										15886,
+										15892
+									],
+									[
+										15902,
+										15908
+									],
+									[
+										16198,
+										16204
+									],
+									[
+										16480,
+										16486
+									],
+									[
+										16757,
+										16763
+									],
+									[
+										17130,
+										17136
+									],
+									[
+										17357,
+										17363
+									],
+									[
+										17465,
+										17471
+									],
+									[
+										17777,
+										17783
+									],
+									[
+										17900,
+										17906
+									],
+									[
+										18018,
+										18024
+									],
+									[
+										18140,
+										18146
+									],
+									[
+										18270,
+										18276
+									]
+								],
+								"scope": ""
+							}
+						},
+						"selection":
+						[
+							[
+								15409,
+								15409
+							]
+						],
+						"settings":
+						{
+							"color_scheme": "Packages/BetterFindBuffer/FindResults.hidden-tmTheme",
+							"detect_indentation": false,
+							"line_numbers": false,
+							"output_tag": 9,
+							"result_base_dir": "",
+							"result_file_regex": "^([^ \t].*):$",
+							"result_line_regex": "^ +([0-9]+):",
+							"scroll_past_end": true,
+							"syntax": "Packages/Default/Find Results.hidden-tmLanguage"
+						},
+						"translation.x": 0.0,
+						"translation.y": 8928.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"type": "text"
+				},
+				{
+					"buffer": 4,
+					"file": "core/src/core-io.a65",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 15601,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								891,
-								891
+								3766,
+								3766
 							]
 						],
 						"settings":
 						{
-							"syntax": "Packages/Text/Plain text.tmLanguage"
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 232.0,
+						"translation.y": 2015.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 1,
+					"stack_index": 2,
+					"type": "text"
+				},
+				{
+					"buffer": 5,
+					"file": "studio/src/pettil-compiler.a65",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 42775,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								10379,
+								10379
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 8423.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 5,
+					"type": "text"
+				},
+				{
+					"buffer": 6,
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 52789,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								46688,
+								46688
+							]
+						],
+						"settings":
+						{
+							"auto_name": "g",
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"word_wrap": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 12761.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 4,
 					"type": "text"
 				}
 			]
@@ -649,10 +1164,10 @@
 	"settings":
 	{
 	},
-	"show_minimap": true,
+	"show_minimap": false,
 	"show_open_files": true,
 	"show_tabs": true,
-	"side_bar_visible": true,
+	"side_bar_visible": false,
 	"side_bar_width": 253.0,
 	"status_bar_visible": true,
 	"template_settings":

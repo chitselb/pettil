@@ -1,6 +1,6 @@
 ; pettil-name.a65
 #echo .       pettil-name.a65           Text parser
-;" cursor@ cursor! !loading skip scan ?loading 'stream? linesize ?refill name
+;" cursor@ cursor! !loading skip scan ?loading 'stream? linesize refill? name
 ;" nfa!
 
 ;--------------------------------------------------------------
@@ -92,8 +92,8 @@ or when loading, set hardware cursor to line# `lin` of `blk`
 advances `lin`
 
 ```
-: line.size   ( u -- size|0 )
-    <n6 swap block  lin 40* +   \ (C4)
+: line.size   ( sib blk -- sib size|0 )
+    block  lin 40* +            \ (C4)
     lin buf.wrap >bit cbit@
     in 1+ over  ?: 1+! 2+!
     ?: forty eighty  -trailing ; \ D5
@@ -102,11 +102,6 @@ advances `lin`
 #include "align.i65"
 _linesize
     jsr enter
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N6
-#include "page.i65"
-    .word swap
 #include "page.i65"
     .word _block
 #include "page.i65"
@@ -145,38 +140,29 @@ _linesize
 ;--------------------------------------------------------------
 #if 0
 name=REFILL?
-stack=( -- size|0 )
+stack=( -- span )
 tags=primitive,outer,extra,nosymbol
-Load either `sib` or `tib` with a logical line of input.  An interactive session always return the value 80.  Zero will only be returned when `loading?` from a screen.  Otherwise the return value  is the number of characters, after `-trailing` spaces are removed, on the current logical line of the `blk` that is loading.
+Load either `sib` or `tib` with a logical line of input.  An interactive session always return the value 80.  Return value is the width of the line.  Zero will only be returned when `loading?` at the end of a screen.
 
-|^`prev`|^reset by `#blk!`|^set and|^tested by `block`|
-|^`blk`|^set by `load`|^reset by `!loading`|^tested|
-|^`in`|^reset by `expect`|^set by `skip` `scan`,|^final value at eol = `??`|
-|^`lin`|^reset by `expect`|^set by `line.size` tested/cleared by `??`|
-|^`span`|^set by `expect`|^tested/cleared by `??`|
-
+* `refill?` will refill the proper line buffer, if needed
+** return 0 if no more input is available
+*** EOL in an interactive session
+*** EOS when loading
+** otherwise it leaves something useful and non-0, like span
 
 ```
 : refill?   ( -- size|0 )
-    span @ ?exit  <n6 blk@
-    ?dup ?: line.size eighty  tuck
-    ?loading !loading expect ?loading ;
-
-: refill?   ( -- size|0 )
     span @ ?dup ?exit
-
-      <n6
-    begin
-        blk@ ?dup
-    while
-        line.size
-        dup
-    until
-
-    ?dup ?: line.size eighty  tuck
-    ?loading !loading expect ?loading ;
-
-
+    blk@
+    if
+        begin
+            sib line.size
+            0 =cursor  !loading expect  0 =cursor
+            span @ blk@ 0= or
+        until
+    else
+        tib eighty expect
+    then  span @ ;
 ```
 #endif
 #include "align.i65"
@@ -187,29 +173,55 @@ _refillq
 #include "page.i65"
     .word fetch
 #include "page.i65"
+    .word qdup
+#include "page.i65"
     .word _qexit                ; exit if something is in this line buffer?
+#include "page.i65"
+    .word blkfetch
 #include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N6               ; line buffer address sib|tib
+    .word pquerycolon
+    .word sib
+    .word tib
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N6
 #include "page.i65"
     .word blkfetch
 #include "page.i65"
     .word qdup
 #include "pass.i65"
-    .word pquerycolon
+    .word qbranch
+    .byt <(refillq02-*+1)
+#include "page.i65"
+refillq01
     .word _linesize             ; ( sib blk -- sib size )
-    .word eighty                ; ( tib -- tib 80 )
 #include "page.i65"
-    .word tuck
+    .word zero
 #include "page.i65"
-    .word _qloading
+    .word exchgcursor
 #include "page.i65"
     .word setloading
 #include "page.i65"
     .word expect
 #include "page.i65"
-    .word _qloading
+    .word zero
+#include "page.i65"
+    .word exchgcursor
 #include "pass.i65"
+    .word qbranch
+    .byt <(refillq01-*+1)
+#include "pass.i65"
+    .word branch
+    .byt <(refillq03-*+1)
+#include "page.i65"
+refillq02
+    .word tib
+#include "pass.i65"
+    .word eighty
+#include "page.i65"
+    .word expect
+#include "pass.i65"
+refillq03
     .word exit
 
 ;--------------------------------------------------------------
@@ -316,55 +328,36 @@ This is one of PETTIL's slight departures from the Forth-83 standard.  In PETTIL
 
 Here we see that `word` means (at least) five things, and we are dispensing with one of those (meaning #4) by renaming `word` to `name` and altering the stack diagram slightly.
 
-* set `n6` line buffer addr
 * set `n7` delimiter char
-* refill the line buffer (if empty)
+* `refill?` will refill the proper line buffer, if needed
+
 * test if line buffer (and screen buffer, if loading) exhausted
 * set `n8` length
 * return `false` or `nfa`
 * Advance `in` past the parsed `word`.
 
-Three variables
-
-||0|non-0|reset|set|test|h
-|prev||||||
-|scr||||||
-|blk|`quit`|`load`||||
-
 
 ```
 : name   ( char -- nfa|0 )
-    blk@ ?: sib tib  n6 2!      \ set line buffer (`tib` or `sib`)
-                                \ and word delimiter (`bl`)
-    refill? dup
-    if
-        name.parse
-    then ;
+    n7 !                        \ set word delimiter (`bl`)
+    refill? ?: name.parse false ;
 ```
 #endif
 #include "align.i65"
 _name
     jsr enter
-#include "page.i65"
-    .word blkfetch
-#include "pass.i65"
-    .word pquerycolon
-    .word sib
-    .word tib
 #include "pass.i65"
     .word clit
-    .byt ACC+2*N6               ; `n6` line input buffer (`sib` or `tib`)
+    .byt ACC+2*N7
 #include "page.i65"
-    .word twostore              ; `n7` delim char
+    .word store                 ; `n7` delim char
 #include "page.i65"
-    .word _refillq              ; ( nfa|0 )
+    .word _refillq
 #include "pass.i65"
-    .word qbranch
-    .byt <(name02-*+1)
-#include "page.i65"
+    .word pquerycolon
     .word _nameparse
+    .word false
 #include "pass.i65"
-name02
     .word exit
 
 ;--------------------------------------------------------------
