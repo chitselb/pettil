@@ -53,37 +53,33 @@ skipscan04
 ;--------------------------------------------------------------
 #if 0
 name=!LOADING
-stack=( -- )
+stack=( addr size -- addr size )
 tags=primitive,outer,extra,nosymbol
-Return `size` of either a line input from the keyboard
-or when loading, set hardware cursor to line# `lin` of `blk`
-advances `lin`
 
 * test `blk` - do not reroute cursor unless `loading?`
 * reset `blk` when `lin` reaches 25
+
 #endif
 setloading
-    lda userblk
-    beq setloading02            ; exit unless `loading?`
     lda #3
-    sta DFLTN                   ; $AF Default Input Device
+    sta cursor+5                ; $AF Default Input Device
     lda userlin
+    sta cursor
     cmp #LPERSCR
     bcc setloading01
     lda #0
     sta userblk                 ; end of screen reached
 setloading01
-    sta TBLX                    ; $D8 cursor physical line number
+;    sta TBLX                    ; $D8 cursor physical line number
     lda tos
-    sta LNMX                    ; $D5 logical line length (39 or 79)
+;    sta LNMX                    ; $D5 logical line length (39 or 79)
     lda userin
-    sta PNTR                    ; $C6 cursor column on current line
+;    sta PNTR                    ; $C6 cursor column on current line
     lda stackl,x
-    sta PNT                     ; ($C4) pointer start of current screen line
+;    sta PNT                     ; ($C4) pointer start of current screen line
     lda stackh,x
-    sta PNT+1
-setloading02
-    jmp next
+;    sta PNT+1
+    jmp threedrop
 
 ;--------------------------------------------------------------
 #if 0
@@ -119,16 +115,18 @@ qloading01
 
 ;--------------------------------------------------------------
 #if 0
-name=LINESIZE
+name=LINE.SIZE
 stack=( -- size )
 tags=outer,extra,nosymbol
+* calculate line size  and apply `-trailing` to the current line `lin` when loading.
+
 Return `size` of either a line input from the keyboard
 or when loading, set hardware cursor to line# `lin` of `blk`
 advances `lin`
 
 ```
 : line.size   ( sib blk -- sib size|0 )
-    block  lin 40* +            \ (C4)
+    blkbuf lin dup cursor c! 40* +            \ (C4)
     lin buf.wrap >bit cbit@
     in 1+ over  ?: 1+! 2+!
     ?: forty eighty  -trailing ; \ D5
@@ -138,9 +136,15 @@ advances `lin`
 _linesize
     jsr enter
 #include "page.i65"
-    .word _block
+    .word blkbuf
 #include "page.i65"
     .word lin
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word cursor
+#include "page.i65"
+    .word cstore
 #include "page.i65"
     .word fortytimes
 #include "page.i65"
@@ -174,20 +178,63 @@ _linesize
 
 ;--------------------------------------------------------------
 #if 0
-name=LINE.MORE?
+name=SPAN@
 stack=( -- span )
 tags=primitive,outer,extra,nosymbol
 
+#endif
+spanfetch
+    lda userspan
+    jmp push0a
+
+;--------------------------------------------------------------
+#if 0
+name=REFILL.LOADING
+stack=( -- )
+tags=primitive,outer,extra,nosymbol
+Load either `sib` or `tib` with a logical line of input.  An interactive session always return the value 80.  Return value is the width of the line.  Zero will only be returned when `loading?` at the end of a screen.
+
 ```
-: line.more?   ( -- flag )
-    span @ blk@ or ;
+: refill.loading   ( -- )
+    begin
+        0 =cursor
+        sib line.size expect
+        0 =cursor
+        span@ blk@ 0= or
+    until ;
 ```
 #endif
 #include "align.i65"
-linemoreq
-    lda userspan
-    ora userblk
-    jmp push0a
+_refillloading
+    jsr enter
+#include "page.i65"
+refilll01
+    .word zero
+#include "page.i65"
+    .word exchgcursor
+#include "page.i65"
+    .word sib
+#include "page.i65"
+    .word _linesize             ; ( sib blk -- sib size )
+#include "page.i65"
+    .word expect
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word exchgcursor
+#include "page.i65"
+    .word spanfetch
+#include "page.i65"
+    .word blkfetch
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word orx
+#include "pass.i65"
+    .word qbranch
+    .byt <(refilll01-*+1)
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -197,21 +244,19 @@ tags=primitive,outer,extra,nosymbol
 Load either `sib` or `tib` with a logical line of input.  An interactive session always return the value 80.  Return value is the width of the line.  Zero will only be returned when `loading?` at the end of a screen.
 
 * `refill?` will refill the proper line buffer, if needed
+** set `n6` line buffer addr
 ** return 0 if no more input is available
 *** EOL in an interactive session
 *** EOS when loading
 ** otherwise it leaves something useful and non-0, like span
 
 ```
-: refill?   ( -- size|0 )
-    span @ ?dup ?exit
+: refill?   ( -- span )
+    blk@ ?: sib tib n6 !
+    span @ ?dup ?exit           \ early exit? (after setup `n6` line buffer!)
     blk@
     if
-        begin
-            sib line.size
-            0 =cursor  !loading expect  0 =cursor
-            line.more?
-        until
+        refill.loading
     else
         tib eighty expect
     then  span @ ;
@@ -221,9 +266,18 @@ Load either `sib` or `tib` with a logical line of input.  An interactive session
 _refillq
     jsr enter
 #include "page.i65"
-    .word span
+    .word blkfetch
+#include "pass.i65"
+    .word pquerycolon
+    .word sib
+    .word tib
+#include "pass.i65"
+    .word clit
+    .byt ACC+2*N6
 #include "page.i65"
-    .word fetch
+    .word store
+#include "page.i65"
+    .word spanfetch
 #include "page.i65"
     .word qdup
 #include "page.i65"
@@ -231,36 +285,19 @@ _refillq
 #include "page.i65"
     .word blkfetch
 #include "pass.i65"
-    .word pquerycolon
-    .word sib
-    .word tib
-#include "pass.i65"
-    .word tozp
-    .byt ACC+2*N6
-#include "page.i65"
-    .word blkfetch
-#include "page.i65"
-    .word qdup
-#include "pass.i65"
     .word qbranch
     .byt <(refillq02-*+1)
 #include "page.i65"
 refillq01
-    .word _linesize             ; ( sib blk -- sib size )
+    .word _refillloading
 #include "page.i65"
-    .word zero
+    .word spanfetch
 #include "page.i65"
-    .word exchgcursor
+    .word blkfetch
 #include "page.i65"
-    .word setloading
+    .word zeq
 #include "page.i65"
-    .word expect
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word exchgcursor
-#include "page.i65"
-    .word linemoreq
+    .word orx
 #include "pass.i65"
     .word qbranch
     .byt <(refillq01-*+1)
@@ -269,11 +306,7 @@ refillq01
     .byt <(refillq03-*+1)
 #include "page.i65"
 refillq02
-    .word tib
-#include "pass.i65"
-    .word eighty
-#include "page.i65"
-    .word expect
+    .word _query
 #include "pass.i65"
 refillq03
     .word exit
@@ -284,7 +317,6 @@ name=NAME.PARSE
 stack=( -- nfa|0 )
 tags=secondary,outer,extra,nosymbol
 
-* set n6 line buffer addr
 * set n7 delimiter char
 * refill the line buffer (if empty)
 * skip/scan move `in` past token
@@ -313,7 +345,7 @@ _nameparse
     .word oneminus
 #include "pass.i65"
     .word zpfrom
-    .byt ACC+2*N6               ; buf
+    .byt ACC+2*N6               ; line buffer
 #include "page.i65"
     .word plus
 #include "page.i65"

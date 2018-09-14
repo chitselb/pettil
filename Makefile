@@ -1,14 +1,59 @@
 
 SHELL = /bin/bash
 
-all:  clean pettil launch tiddlypettil
+#all:  launch tiddlypettil
+#all:  thread1 tiddlypettil
+#all:  thread1 thread2 tiddlypettil
+#all:  thread3 tiddlypettil
+#all:  xpeta tiddlypettil
+#all:  xpetb tiddlypettil
+#all:  xpetc tiddlypettil
+#all:  xpetd tiddlypettil
+#all:  xpete tiddlypettil
+all:  xpetf tiddlypettil
 
 compile: clean pettil tiddlypettil
 
 doc: tiddlypettil publish
 
+thread1: clean pettil
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
+	/usr/bin/xpet \
+		-directory data/PET/ \
+		-moncommand t.mon \
+		-warp \
+		-config data/x11_4032.vicerc &
+#		pettil.prg &
+
+thread2: clean pettil
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
+	/usr/bin/xpet \
+		-directory data/PET/ \
+		-moncommand t.mon \
+		-warp \
+		-config data/x11_4032.vicerc &
+#		pettil.prg &
+
+thread3: clean pettil
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
+	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
+		-directory ./data/PET/ \
+		-warp \
+		-moncommand thread3.mon \
+ 		-config data/sdl2_chitselb.vicerc &
+
+# native-gtk3
+xpetf: clean pettil
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
+	/home/chitselb/Documents/dev/commodore/3.2vice/f/vice-3.2/src/xpet \
+		-directory ./data/PET/ \
+		-warp \
+		-moncommand thread3.mon \
+ 		-config data/gtk3_chitselb.vicerc \
+ 		pettil.prg &
+
 mypet:
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x43+290+28 -x \
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
 	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
 		-directory ./data/PET/ \
  		-config data/sdl2_chitselb.vicerc &
