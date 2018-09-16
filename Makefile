@@ -43,12 +43,12 @@ thread3: clean pettil
  		-config data/sdl2_chitselb.vicerc &
 
 # native-gtk3
-xpetf: clean pettil
+xpetf: clean pettil pettild64
 	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
 	/home/chitselb/Documents/dev/commodore/3.2vice/f/vice-3.2/src/xpet \
 		-directory ./data/PET/ \
 		-warp \
-		-moncommand thread3.mon \
+		-moncommand pettil.mon \
  		-config data/gtk3_chitselb.vicerc \
  		pettil.prg &
 
@@ -96,46 +96,13 @@ launch: clean pettil
 		-moncommand pettil.mon \
 		-warp \
 		-config data/x11_4032.vicerc \
-		pettil.prg &
+		pettil.d64 &
 #		-keybuf "dL\x22pettil.prg\x22\x0drun\x0dinfo\x0dvmdump\x0d" &
 
-# sdl2 3.2
-#	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
-	/usr/local/bin/xpet \
-		-directory data/PET/ \
-		-moncommand pettil.mon \
-		-config data/sdl2_chitselb.vicerc &
 
-
-#		-CRTChwscale \
-#		-CRTCfilter 2 \
-#		-verbose \
-#		-1 ../tapes/j.tap \
-#		-moncommand pettil.mon \
-#		-warp \
-#		-monlog pettil-mon.log \
-#		-verbose \
-#	pettil.prg \
-#		-logfile pettil-xpet.log \
-
-#	/usr/local/bin/xpet \
-		-verbose \
-		-1 ../tapes/2017-02.tap \
-		-moncommand pettil.mon \
-		-warp \
-	pettil.prg &
-#	cd ./tmp  &&  /usr/local/bin/xpet \
-		-verbose \
-		-1 ../tapes/2017-02.tap \
-		-moncommand pettil.mon \
-		-warp \
-	pettil.prg &
-#	cd ./tmp  &&  /usr/bin/xpet       \
-		-verbose \
-		-1 ../tapes/2017-02.tap \
-		-moncommand pettil.mon \
-		-warp \
-	pettil.prg &
+pettild64:
+	c1541 -format pettil,09 d64 pettil.d64
+	c1541 -attach pettil.d64 -write pettil.prg
 
 pettil:
 #	echo . Phase I

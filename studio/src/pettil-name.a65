@@ -38,8 +38,8 @@ skipscan01
     bcc skipscan02
     lda #0                      ; oh, we done
     sta userspan                ; `span off`
-;    sta userin
-    beq skipscan04
+    inc userspan+1              ; set `EOL` semaphore
+    bne skipscan04              ; bra
 skipscan02
     lda (ACC+2*N6),y            ; get char from buffer
     eor ACC+2*N7                ; compare to character we seek
@@ -112,6 +112,18 @@ _qloading
 #include "pass.i65"
 qloading01
     .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=EOL?
+stack=( -- flag )
+tags=primitive,outer,extra,nosymbol
+Return `true` when `in` reaches `span` in `skip`/`scan` triggering `eol`
+
+#endif
+eolq
+    lsr userspan+1
+    jmp xpushc
 
 ;--------------------------------------------------------------
 #if 0
@@ -189,6 +201,89 @@ spanfetch
 
 ;--------------------------------------------------------------
 #if 0
+name=!NFA
+stack=( char -- nfa|0 )
+tags=secondary,outer,extra,nosymbol
+* set `n8` to len
+* set length in line buffer
+* increment `in` past space after token
+
+```
+: !nfa   ( nfa len -- nfa )
+    >n8 over c!  in 1+! ;
+```
+#endif
+#include "align.i65"
+_setnfa
+    jsr enter
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N8               ; name.len
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word oneplusstore
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NAME.PARSE
+stack=( -- nfa|0 )
+tags=secondary,outer,extra,nosymbol
+
+* set n7 delimiter char
+* refill the line buffer (if empty)
+* skip/scan move `in` past token
+* set n8 token length
+* put length before text in buffer
+* move `in` past trailing space
+
+```
+: name.parse   ( -- nfa|0 )
+    skip dup 1- <n6 +
+    scan rot -
+    dup ?: !nfa nip ;
+
+: !nfa
+    >n8 over c!  in 1+! ;
+```
+#endif
+#include "align.i65"
+_nameparse
+    jsr enter
+#include "page.i65"
+    .word skip                  ; start of name
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word oneminus
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N6               ; line buffer
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word scan                  ; end of name (and/or buffer)
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word minus                 ; length
+#include "page.i65"
+    .word dup
+#include "pass.i65"
+    .word pquerycolon
+    .word _setnfa
+    .word nip
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=REFILL.LOADING
 stack=( -- )
 tags=primitive,outer,extra,nosymbol
@@ -252,145 +347,30 @@ Load either `sib` or `tib` with a logical line of input.  An interactive session
 
 ```
 : refill?   ( -- span )
-    blk@ ?: sib tib n6 !
     span @ ?dup ?exit           \ early exit? (after setup `n6` line buffer!)
-    blk@
-    if
-        refill.loading
-    else
-        tib eighty expect
-    then  span @ ;
+    blk@ ?: refill.loading query
+    span@ ;
 ```
 #endif
 #include "align.i65"
 _refillq
     jsr enter
 #include "page.i65"
-    .word blkfetch
-#include "pass.i65"
-    .word pquerycolon
-    .word sib
-    .word tib
-#include "pass.i65"
-    .word clit
-    .byt ACC+2*N6
-#include "page.i65"
-    .word store
-#include "page.i65"
     .word spanfetch
 #include "page.i65"
-    .word qdup
+    .word dup
 #include "page.i65"
-    .word _qexit                ; exit if something is in this line buffer?
-#include "page.i65"
-    .word blkfetch
-#include "pass.i65"
-    .word qbranch
-    .byt <(refillq02-*+1)
-#include "page.i65"
-refillq01
-    .word _refillloading
-#include "page.i65"
-    .word spanfetch
-#include "page.i65"
-    .word blkfetch
-#include "page.i65"
-    .word zeq
+    .word eolq
 #include "page.i65"
     .word orx
-#include "pass.i65"
-    .word qbranch
-    .byt <(refillq01-*+1)
-#include "pass.i65"
-    .word branch
-    .byt <(refillq03-*+1)
 #include "page.i65"
-refillq02
-    .word _query
-#include "pass.i65"
-refillq03
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=NAME.PARSE
-stack=( -- nfa|0 )
-tags=secondary,outer,extra,nosymbol
-
-* set n7 delimiter char
-* refill the line buffer (if empty)
-* skip/scan move `in` past token
-* set n8 token length
-* put length before text in buffer
-* move `in` past trailing space
-
-```
-: name.parse   ( -- nfa|0 )
-    skip dup 1- <n6 +
-    scan rot -
-    dup ?: !nfa nip ;
-
-: !nfa
-    >n8 over c!  in 1+! ;
-```
-#endif
-#include "align.i65"
-_nameparse
-    jsr enter
+    .word _qexit
 #include "page.i65"
-    .word skip                  ; start of name
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word oneminus
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N6               ; line buffer
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word scan                  ; end of name (and/or buffer)
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word minus                 ; length
-#include "page.i65"
-    .word dup
+    .word blkfetch
 #include "pass.i65"
     .word pquerycolon
-    .word _setnfa
-    .word nip
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=!NFA
-stack=( char -- nfa|0 )
-tags=secondary,outer,extra,nosymbol
-* set `n8` to len
-* set length in line buffer
-* increment `in` past space after token
-
-```
-: !nfa   ( nfa len -- nfa )
-    >n8 over c!  in 1+! ;
-```
-#endif
-#include "align.i65"
-_setnfa
-    jsr enter
-#include "pass.i65"
-    .word tozp
-    .byt ACC+2*N8               ; name.len
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word in
-#include "page.i65"
-    .word oneplusstore
+    .word _refillloading
+    .word _query
 #include "pass.i65"
     .word exit
 
@@ -414,8 +394,9 @@ This is one of PETTIL's slight departures from the Forth-83 standard.  In PETTIL
 
 Here we see that `word` means (at least) five things, and we are dispensing with one of those (meaning #4) by renaming `word` to `name` and altering the stack diagram slightly.
 
-* set `n7` delimiter char
-* `refill?` will refill the proper line buffer, if needed
+* set `n6` to `tib`(interactive) or `sib`(loading)
+* set `n7` to delimiter char ' '
+* `refill?` will refill the line buffer, if needed
 
 * test if line buffer (and screen buffer, if loading) exhausted
 * set `n8` length
@@ -425,18 +406,24 @@ Here we see that `word` means (at least) five things, and we are dispensing with
 
 ```
 : name   ( char -- nfa|0 )
-    n7 !                        \ set word delimiter (`bl`)
+    blk@ ?: sib tib n6 2!
     refill? ?: name.parse false ;
 ```
 #endif
 #include "align.i65"
 _name
     jsr enter
+#include "page.i65"
+    .word blkfetch
+#include "pass.i65"
+    .word pquerycolon
+    .word sib
+    .word tib
 #include "pass.i65"
     .word clit
-    .byt ACC+2*N7
+    .byt ACC+2*N6
 #include "page.i65"
-    .word store                 ; `n7` delim char
+    .word twostore                 ; `n7` delim char
 #include "page.i65"
     .word _refillq
 #include "pass.i65"
