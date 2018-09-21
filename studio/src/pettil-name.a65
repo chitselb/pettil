@@ -6,10 +6,10 @@
 ;--------------------------------------------------------------
 #if 0
 name=SKIP
-stack=( delim -- offset )
+stack=( -- offset )
 tags=nosymbol
 `addr1` is the starting address in the input stream where up
-to `size1` bytes are skipped *WHILE* they match `delim`.  Returns
+to `size1` bytes are skipped *WHILE* they match `delim` in `n6`.  Returns
 `addr2` as the address of the first non-matching character and
 `count2` as the remaining number of bytes in the buffer.
 #endif
@@ -36,10 +36,13 @@ skipscan01
     iny
     cpy userspan                ; Carry true at end of line
     bcc skipscan02
-    lda #0                      ; oh, we done
-    sta userspan                ; `span off`
-    inc userspan+1              ; set `EOL` semaphore
-    bne skipscan04              ; bra
+;    jsr plugh
+    lda #0
+    sta userspan
+    lda userblk
+    bne skipscan04
+    inc userspan+1              ; set end of input semaphore
+    bcs skipscan04              ; bra
 skipscan02
     lda (ACC+2*N6),y            ; get char from buffer
     eor ACC+2*N7                ; compare to character we seek
@@ -83,38 +86,6 @@ setloading01
 
 ;--------------------------------------------------------------
 #if 0
-name=?LOADING
-stack=( -- )
-tags=outer,extra,nosymbol
-If loading, restore the cursor and increment `lin` etc.. This executes just after `sib` line input buffer was filled by `expect`
-
-
-```
-: ?loading   ( -- )
-    blk@
-    if
-        0 =cursor
-    then ;
-```
-#endif
-#include "align.i65"
-_qloading
-    jsr enter
-#include "page.i65"
-    .word blkfetch
-#include "pass.i65"
-    .word qbranch
-    .word <(qloading01-*+1)
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word exchgcursor
-#include "pass.i65"
-qloading01
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=EOL?
 stack=( -- flag )
 tags=primitive,outer,extra,nosymbol
@@ -142,25 +113,30 @@ advances `lin`
     lin buf.wrap >bit cbit@
     in 1+ over  ?: 1+! 2+!
     ?: forty eighty  -trailing ; \ D5
+: line.size   ( sib blkbuf -- sib size )
+    blk@ block                  \ lazy-load (if prev<>blk)
+    lin 40* +                   \ $C4
+
+    lin buf.wrap >bit cbit@
+    in 1+ over ?: 1+! 2+!
+    ?: forty eighty  -trailing ;
 ```
 #endif
 #include "align.i65"
 _linesize
     jsr enter
 #include "page.i65"
-    .word blkbuf
+    .word blkfetch
+#include "page.i65"
+    .word _block
 #include "page.i65"
     .word lin
 #include "page.i65"
     .word dup
 #include "page.i65"
-    .word cursor
-#include "page.i65"
-    .word cstore
-#include "page.i65"
     .word fortytimes
 #include "page.i65"
-    .word plus                  ;( addr )
+    .word plusunder             ;( addr line )
 #include "page.i65"
     .word lin
 #include "page.i65"
@@ -168,9 +144,13 @@ _linesize
 #include "page.i65"
     .word tobit
 #include "page.i65"
-    .word cbitfetch             ;( addr wrapbit )
+    .word cbitfetch             ;( 0 sib addr line wrapbit )
 #include "page.i65"
-    .word in
+    .word in                    ;( 0 sib addr line wrapbit in )
+#include "page.i65"
+    .word forty                 ;( 0 sib addr line wrapbit in 40 )
+#include "page.i65"
+    .word plinesize
 #include "page.i65"
     .word oneplus
 #include "page.i65"
@@ -188,6 +168,10 @@ _linesize
 #include "pass.i65"
     .word exit
 
+plinesize
+    jsr plugh
+    jmp next
+
 ;--------------------------------------------------------------
 #if 0
 name=SPAN@
@@ -202,7 +186,7 @@ spanfetch
 ;--------------------------------------------------------------
 #if 0
 name=!NFA
-stack=( char -- nfa|0 )
+stack=( nfa len -- nfa )
 tags=secondary,outer,extra,nosymbol
 * set `n8` to len
 * set length in line buffer
@@ -291,12 +275,25 @@ Load either `sib` or `tib` with a logical line of input.  An interactive session
 
 ```
 : refill.loading   ( -- )
-    begin
-        0 =cursor
+    begin 0 =cursor
         sib line.size expect
         0 =cursor
-        span@ blk@ 0= or
+        ; true when last line was reached  (span.h=1)
+        ; true when a line has text on it  (span.l>0)
+        ; false when this line was empty
+        span @
     until ;
+
+: line.size   ( -- size )
+    blk@ block lin dup 40* +under
+    lin buf.wrap >bit cbit@
+    in forty (line.size) 1+
+    over ?: 1+! 2+! ?: forty eighty -trailing ;
+
+plinesize
+    jsr plugh
+    jmp next
+
 ```
 #endif
 #include "align.i65"
@@ -318,13 +315,9 @@ refilll01
 #include "page.i65"
     .word exchgcursor
 #include "page.i65"
-    .word spanfetch
+    .word span
 #include "page.i65"
-    .word blkfetch
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word orx
+    .word fetch
 #include "pass.i65"
     .word qbranch
     .byt <(refilll01-*+1)

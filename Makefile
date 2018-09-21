@@ -1,7 +1,8 @@
 
 SHELL = /bin/bash
 
-#all:  launch tiddlypettil
+all:  launch tiddlypettil
+#all:  launchrecord
 #all:  thread1 tiddlypettil
 #all:  thread1 thread2 tiddlypettil
 #all:  thread3 tiddlypettil
@@ -10,13 +11,13 @@ SHELL = /bin/bash
 #all:  xpetc tiddlypettil
 #all:  xpetd tiddlypettil
 #all:  xpete tiddlypettil
-all:  xpetf tiddlypettil
+#all:  xpetf tiddlypettil
 
 compile: clean pettil tiddlypettil
 
 doc: tiddlypettil publish
 
-thread1: clean pettil
+thread1: clean pettil pettild64
 	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
 	/usr/bin/xpet \
 		-directory data/PET/ \
@@ -25,7 +26,7 @@ thread1: clean pettil
 		-config data/x11_4032.vicerc &
 #		pettil.prg &
 
-thread2: clean pettil
+thread2: clean pettil pettild64
 	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
 	/usr/bin/xpet \
 		-directory data/PET/ \
@@ -34,7 +35,7 @@ thread2: clean pettil
 		-config data/x11_4032.vicerc &
 #		pettil.prg &
 
-thread3: clean pettil
+thread3: clean pettil pettild64
 	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
 	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
 		-directory ./data/PET/ \
@@ -43,20 +44,72 @@ thread3: clean pettil
  		-config data/sdl2_chitselb.vicerc &
 
 # native-gtk3
-xpetf: clean pettil pettild64
+xpeta: clean pettil pettild64
 	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
-	/home/chitselb/Documents/dev/commodore/3.2vice/f/vice-3.2/src/xpet \
+	/home/chitselb/Documents/dev/commodore/3.2vice/g/vice-emu-code/vice/src/xpet \
+ 		-config /home/chitselb/.config/vice/vicerc \
 		-directory ./data/PET/ \
 		-warp \
 		-moncommand pettil.mon \
- 		-config data/gtk3_chitselb.vicerc \
  		pettil.prg &
 
-mypet:
+# native-gtk3
+xpetb: clean pettil pettild64
 	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
-	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
+	/home/chitselb/Documents/dev/commodore/3.2vice/g/vice-emu-code/vice/src/xpet \
+ 		-config /home/chitselb/.config/vice/vicerc \
 		-directory ./data/PET/ \
- 		-config data/sdl2_chitselb.vicerc &
+		-warp \
+		-moncommand pettil.mon \
+ 		pettil.prg &
+
+# native-gtk3
+xpetc: clean pettil pettild64
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
+	/home/chitselb/Documents/dev/commodore/3.2vice/c/vice-3.2/src/xpet \
+ 		-config /home/chitselb/.config/vice/vicerc \
+		-directory ./data/PET/ \
+		-warp \
+		-moncommand pettil.mon \
+ 		pettil.prg &
+
+# native-gtk3
+xpetd: clean pettil pettild64
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
+	/home/chitselb/Documents/dev/commodore/3.2vice/g/vice-emu-code/vice/src/xpet \
+ 		-config /home/chitselb/.config/vice/vicerc \
+		-directory ./data/PET/ \
+		-warp \
+		-moncommand pettil.mon \
+ 		pettil.prg &
+
+# native-gtk3
+xpete: clean pettil pettild64
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
+	/home/chitselb/Documents/dev/commodore/3.2vice/g/vice-emu-code/vice/src/xpet \
+ 		-config /home/chitselb/.config/vice/vicerc \
+		-directory ./data/PET/ \
+		-warp \
+		-moncommand pettil.mon \
+ 		pettil.prg &
+
+# native-gtk3
+xpetf: clean pettil pettild64
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
+	/home/chitselb/Documents/dev/commodore/3.2vice/g/vice-emu-code/vice/src/xpet \
+ 		-config /home/chitselb/.config/vice/vicerc \
+		-directory ./data/PET/ \
+		-warp \
+		-moncommand pettil.mon \
+ 		pettil.prg &
+
+mypet: clean pettil pettild64
+	/usr/bin/xpet \
+		-directory data/PET/ \
+		-moncommand pettil.mon \
+		-warp \
+		-config data/x11_chitselb.vicerc \
+		pettil.d64
 
 vic20:
 	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xvic \
@@ -74,7 +127,15 @@ clean:
 	rm -rf ./tmp/
 	mkdir ./tmp/
 
-launch: clean pettil
+launchrecord: clean pettil pettild64
+	/usr/bin/xpet \
+		-directory data/PET/ \
+		-moncommand pettil.mon \
+		-warp \
+		-config data/x11_mypet.vicerc \
+		pettil.d64
+
+launch: clean pettil pettild64
 # gtk3 3.2
 #	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
 	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \

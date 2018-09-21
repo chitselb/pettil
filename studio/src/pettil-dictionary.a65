@@ -1351,6 +1351,101 @@ symnext01
 
 ;--------------------------------------------------------------
 #if 0
+name=INIT.411
+stack=( value 'filter -- )
+tags=interpreter,nfa,nosymbol
+Sweet16 primitive, sets `n4` to `value` and `r11` to `'filter`
+
+```
+: init.411    ( flag(r4) `filter(r11) -- )
+    >r11 drop >n4 drop ;
+```
+#endif
+init411
+    brk
+    .byt ld | TOS
+    .byt st | R11
+    .byt pull
+    .byt st | N4
+    .byt pull
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=SYMTAIL!
+stack=( symx -- )
+tags=dictionary,nosymbol
+* Append a triple null end marker to symbol table
+* Set SYMTAIL/SYMNEW after (FORGET) and (CREATE)
+* Ordering of the input addresses is important.
+* 2nd value of `n7` stored is +2 more than 1st `n7` value
+
+`symnew` is where the indexed symbol table ends and the sequential list begins.
+`symnew` doesn't change until the next `rehash`.  This is the word that changes
+it.   It always points to the 3rd byte in the symbol, the `nfa`
+
+`symtail` is where new symbols are appended.  Like the 6502 stack pointer, it
+points to where the next byte (the `lsb` of a `cfa`) is to be written when the
+next symbol is created.
+
+
+```
+: (forget)    ...  symtail symnew symtail! ;     \ reset symnew & symtail
+: (create)    ... symtail symtail symtail! ;    \ only move symtail
+```
+(FORGET) sends `symnew` `symtail` to reset `symnew` & `symtail`
+(CREATE) sends `symtail` `symtail` to append a new symbol
+
+```
+: symtail!   (  symtail symnew -- )
+    <n7 dup dup 3off 2+ rot ! swap ! ;
+
+; same size, even runs faster
+[12]
+symtailstore
+    brk
+    .byt ld | N7
+    .byt std | TOS
+    .byt pull
+    .byt sub | ACC
+    .byt std | N7
+    .byt ld | N7
+    .byt std | TOS
+    .byt pull
+    .byt sub | ACC
+    .byt sti | N7
+    .byt nxt
+;
+; slightly slower, uses BS/RS opcodes
+[12]
+symtailstore
+    brk
+    .byt bs , <(symtailstores-*-2)
+    .byt nxt
+symtailstores
+    .byt bs , <(symtailstores1-*-2)
+    ;fall through
+symtailstores1
+    .byt ld | N7
+    .byt std | TOS
+    .byt pull
+    .byt sub | ACC
+    .byt std | N7
+    .byt rs
+```
+#endif
+#include "align.i65"
+symtailstore
+    brk                         ;[7+2] (+2 for extra call from `(forget)`
+    .byt ld | N7
+    .byt std | TOS
+    .byt pull
+    .byt sub | ACC
+    .byt std | N7
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
 name=(FORGET).PASS1
 stack=( -- )
 tags=interpreter,nfa,nosymbol
@@ -1518,27 +1613,6 @@ _pforgetpass2
 
 ;--------------------------------------------------------------
 #if 0
-name=INIT.411
-stack=( value 'filter -- )
-tags=interpreter,nfa,nosymbol
-Sweet16 primitive, sets `n4` to `value` and `r11` to `'filter`
-
-```
-: init.411    ( flag(r4) `filter(r11) -- )
-    >r11 drop >n4 drop ;
-```
-#endif
-init411
-    brk
-    .byt ld | TOS
-    .byt st | R11
-    .byt pull
-    .byt st | N4
-    .byt pull
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
 name=(FORGET)
 stack=( cfa -- )
 tags=nfa,ext,nosymbol
@@ -1675,81 +1749,6 @@ pfpatchb
     .word symtailstore
 #include "pass.i65"
     .word exit
-
-
-;--------------------------------------------------------------
-#if 0
-name=SYMTAIL!
-stack=( symx -- )
-tags=dictionary,nosymbol
-* Append a triple null end marker to symbol table
-* Set SYMTAIL/SYMNEW after (FORGET) and (CREATE)
-* Ordering of the input addresses is important.
-* 2nd value of `n7` stored is +2 more than 1st `n7` value
-
-`symnew` is where the indexed symbol table ends and the sequential list begins.
-`symnew` doesn't change until the next `rehash`.  This is the word that changes
-it.   It always points to the 3rd byte in the symbol, the `nfa`
-
-`symtail` is where new symbols are appended.  Like the 6502 stack pointer, it
-points to where the next byte (the `lsb` of a `cfa`) is to be written when the
-next symbol is created.
-
-
-```
-: (forget)    ...  symtail symnew symtail! ;     \ reset symnew & symtail
-: (create)    ... symtail symtail symtail! ;    \ only move symtail
-```
-(FORGET) sends `symnew` `symtail` to reset `symnew` & `symtail`
-(CREATE) sends `symtail` `symtail` to append a new symbol
-
-```
-: symtail!   (  symtail symnew -- )
-    <n7 dup dup 3off 2+ rot ! swap ! ;
-
-; same size, even runs faster
-[12]
-symtailstore
-    brk
-    .byt ld | N7
-    .byt std | TOS
-    .byt pull
-    .byt sub | ACC
-    .byt std | N7
-    .byt ld | N7
-    .byt std | TOS
-    .byt pull
-    .byt sub | ACC
-    .byt sti | N7
-    .byt nxt
-;
-; slightly slower, uses BS/RS opcodes
-[12]
-symtailstore
-    brk
-    .byt bs , <(symtailstores-*-2)
-    .byt nxt
-symtailstores
-    .byt bs , <(symtailstores1-*-2)
-    ;fall through
-symtailstores1
-    .byt ld | N7
-    .byt std | TOS
-    .byt pull
-    .byt sub | ACC
-    .byt std | N7
-    .byt rs
-```
-#endif
-#include "align.i65"
-symtailstore
-    brk                         ;[7+2] (+2 for extra call from `(forget)`
-    .byt ld | N7
-    .byt std | TOS
-    .byt pull
-    .byt sub | ACC
-    .byt std | N7
-    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
