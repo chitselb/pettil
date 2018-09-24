@@ -1,7 +1,5 @@
 ; pettil-name.a65
 #echo .       pettil-name.a65           Text parser
-;" cursor@ cursor! !loading skip scan ?loading 'stream? linesize refill? name
-;" nfa!
 
 ;--------------------------------------------------------------
 #if 0
@@ -36,7 +34,6 @@ skipscan01
     iny
     cpy userspan                ; Carry true at end of line
     bcc skipscan02
-;    jsr plugh
     lda #0
     sta userspan
     lda userblk
@@ -55,45 +52,18 @@ skipscan04
 
 ;--------------------------------------------------------------
 #if 0
-name=!LOADING
-stack=( addr size -- addr size )
-tags=primitive,outer,extra,nosymbol
-
-* test `blk` - do not reroute cursor unless `loading?`
-* reset `blk` when `lin` reaches 25
-
-#endif
-setloading
-    lda #3
-    sta cursor+5                ; $AF Default Input Device
-    lda userlin
-    sta cursor
-    cmp #LPERSCR
-    bcc setloading01
-    lda #0
-    sta userblk                 ; end of screen reached
-setloading01
-;    sta TBLX                    ; $D8 cursor physical line number
-    lda tos
-;    sta LNMX                    ; $D5 logical line length (39 or 79)
-    lda userin
-;    sta PNTR                    ; $C6 cursor column on current line
-    lda stackl,x
-;    sta PNT                     ; ($C4) pointer start of current screen line
-    lda stackh,x
-;    sta PNT+1
-    jmp threedrop
-
-;--------------------------------------------------------------
-#if 0
-name=EOL?
+name=EOI?
 stack=( -- flag )
 tags=primitive,outer,extra,nosymbol
 Return `true` when `in` reaches `span` in `skip`/`scan` triggering `eol`
 
 #endif
-eolq
+eoiq
+    lda userlin
+    cmp #LPERSCR
+    bcs eoiq01
     lsr userspan+1
+eoiq01
     jmp xpushc
 
 ;--------------------------------------------------------------
@@ -114,17 +84,73 @@ advances `lin`
     in 1+ over  ?: 1+! 2+!
     ?: forty eighty  -trailing ; \ D5
 : line.size   ( sib blkbuf -- sib size )
-    blk@ block                  \ lazy-load (if prev<>blk)
+    blk@ block                  \ non-traditional lazy-load
+                                \ all `load` source routes through here!
+                                \ todo: make entry to `block` a primitive
+                                \ that exits early with blkbuf|vidram when
+                                \ the block is already loaded (prev==blk)
     lin 40* +                   \ $C4
 
     lin buf.wrap >bit cbit@
     in 1+ over ?: 1+! 2+!
     ?: forty eighty  -trailing ;
+
+: line.size   ( -- size )
+    lin cursor 3 !+  lin c!+
+    blk@ block lin 40* +  !+
+    lin tuck buf.wrap >bit cbit@
+    3 cursor ! cursor
+
+firmwarecursor
+    ;    $AF   $D5  $C6  ($C4)     $D8
+    .byt DFLTN,TBLX,PNTR,PNT,PNT+1,LNMX
+    ;    3     0    lin  lin*40    span
+    ;                    +blkbuf
+
+
+: line.size   ( -- size )
+    cursor
+    3 !+                        \ AF=3 D5=0
+    lin c!+                     \ C6=lin
+    blk@ block
+    lin 40* + !+                \ (C4)
+    lin buf.wrap >bit cbit@
+    in 1+ over ?: 1+! 2+!
+    ?: forty eighty
+    tuck 1- c!+ drop            \ D8=39|79
+    -trailing ;
+
+
+: line.size   ( -- size )
+    cursor
+    3 !+                        \ AF=3 D5=0
+    lin c!+                     \ C6=lin
+    blk@ block
+    lin 40* +
+    !+
+    >r
+    lin buf.wrap >bit cbit@
+    in 1+ over ?: 1+! 2+!
+    ?: forty eighty
+    -trailing r>
+    under c! ;
 ```
 #endif
 #include "align.i65"
 _linesize
     jsr enter
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word cursor
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word _storeplus
+#include "page.i65"
+    .word lin
+#include "page.i65"
+    .word cstoreplus
 #include "page.i65"
     .word blkfetch
 #include "page.i65"
@@ -132,11 +158,13 @@ _linesize
 #include "page.i65"
     .word lin
 #include "page.i65"
-    .word dup
-#include "page.i65"
     .word fortytimes
 #include "page.i65"
-    .word plusunder             ;( addr line )
+    .word plus
+#include "page.i65"
+    .word _storeplus
+#include "page.i65"
+    .word tor
 #include "page.i65"
     .word lin
 #include "page.i65"
@@ -144,18 +172,14 @@ _linesize
 #include "page.i65"
     .word tobit
 #include "page.i65"
-    .word cbitfetch             ;( 0 sib addr line wrapbit )
+    .word cbitfetch
 #include "page.i65"
-    .word in                    ;( 0 sib addr line wrapbit in )
-#include "page.i65"
-    .word forty                 ;( 0 sib addr line wrapbit in 40 )
-#include "page.i65"
-    .word plinesize
+    .word in
 #include "page.i65"
     .word oneplus
 #include "page.i65"
     .word over
-#include "page.i65"
+#include "pass.i65"
     .word pquerycolon
     .word oneplusstore
     .word twoplusstore
@@ -165,12 +189,14 @@ _linesize
     .word eighty
 #include "page.i65"
     .word dashtrailing
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word under
+#include "page.i65"
+    .word cstore
 #include "pass.i65"
     .word exit
-
-plinesize
-    jsr plugh
-    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -301,13 +327,13 @@ _refillloading
     jsr enter
 #include "page.i65"
 refilll01
-    .word zero
-#include "page.i65"
-    .word exchgcursor
-#include "page.i65"
     .word sib
 #include "page.i65"
     .word _linesize             ; ( sib blk -- sib size )
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word exchgcursor
 #include "page.i65"
     .word expect
 #include "page.i65"
@@ -353,7 +379,7 @@ _refillq
 #include "page.i65"
     .word dup
 #include "page.i65"
-    .word eolq
+    .word eoiq
 #include "page.i65"
     .word orx
 #include "page.i65"
