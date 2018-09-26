@@ -141,7 +141,9 @@ _linesize
 #include "page.i65"
     .word in
 #include "page.i65"
-    .word oneplus
+    .word zero
+#include "page.i65"
+    .word cstoreplus
 #include "page.i65"
     .word over
 #include "pass.i65"
@@ -261,42 +263,24 @@ _nameparse
 
 ;--------------------------------------------------------------
 #if 0
-name=REFILL.LOADING
+name=REFILL
 stack=( -- )
 tags=primitive,outer,extra,nosymbol
-Load either `sib` or `tib` with a logical line of input.  An interactive session always return the value 80.  Return value is the width of the line.  Zero will only be returned when `loading?` at the end of a screen.
+Load `sib` with a logical line of input.  An interactive session always return the value 80.  Return value is the width of the line.  Zero will only be returned when `loading?` at the end of a screen.
 
 ```
-: refill.loading   ( -- )
-    begin 0 =cursor
-        sib line.size expect
-        0 =cursor
-        ; true when last line was reached  (span.h=1)
-        ; true when a line has text on it  (span.l>0)
-        ; false when this line was empty
-        span @
-    until ;
-
-: line.size   ( -- size )
-    blk@ block lin dup 40* +under
-    lin buf.wrap >bit cbit@
-    in forty (line.size) 1+
-    over ?: 1+! 2+! ?: forty eighty -trailing ;
-
-plinesize
-    jsr plugh
-    jmp next
-
+: refill   ( -- )
+    sib line.size
+    0 =cursor  expect  0 =cursor ;
 ```
 #endif
 #include "align.i65"
-_refillloading
+_refill
     jsr enter
 #include "page.i65"
-refilll01
     .word sib
 #include "page.i65"
-    .word _linesize             ; ( sib blk -- sib size )
+    .word _linesize
 #include "page.i65"
     .word zero
 #include "page.i65"
@@ -307,13 +291,6 @@ refilll01
     .word zero
 #include "page.i65"
     .word exchgcursor
-#include "page.i65"
-    .word span
-#include "page.i65"
-    .word fetch
-#include "pass.i65"
-    .word qbranch
-    .byt <(refilll01-*+1)
 #include "pass.i65"
     .word exit
 
@@ -332,48 +309,43 @@ Load either `sib` or `tib` with a logical line of input.  An interactive session
 ** otherwise it leaves something useful and non-0, like span
 
 ```
-: refill?   ( -- span )
-    span @ ?dup ?exit           \ early exit? (after setup `n6` line buffer!)
-    blk@ ?: refill.loading query
-    span@ ;
+: refill?   ( -- flag )
+    begin
+        span@ eoi? under or
+    ?exit
+        blk@ nip
+        ?: refill query
+    again ( ; )
 ```
 #endif
 #include "align.i65"
 _refillq
     jsr enter
 #include "page.i65"
-
-
-
-
-    .word next
-#include "page.i65"
+refillq01
     .word spanfetch
-#include "page.i65"
-    .word dup
 #include "page.i65"
     .word eoiq
 #include "page.i65"
+    .word under
+#include "page.i65"
     .word orx
-
-
-
-
-
-
-;    .word span
-;#include "page.i65"
-;    .word fetch                 ; get both bytes, unlike `span@` which just
-#include "page.i65"             ; returns `span.l`.  `span.h` is `eoi?` flag
+#include "page.i65"
     .word _qexit
 #include "page.i65"
     .word blkfetch
+#include "page.i65"
+    .word nip
 #include "pass.i65"
+gooob
     .word pquerycolon
-    .word _refillloading
+    .word _refill
     .word _query
 #include "pass.i65"
-    .word exit
+    .word branch
+    .byt <(refillq01-*+1)
+#include "pass.i65"
+;    .word exit
 
 ;--------------------------------------------------------------
 #if 0

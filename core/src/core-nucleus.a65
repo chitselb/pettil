@@ -1835,18 +1835,53 @@ name=>-BUF
 stack=( char == ; buff max -- buff actual )
 tags=nucleus,nosymbol
 
+[38] >-buf
+[4] -trailing
+[4] -nulls
+[46]
+
 ```
-: >-buf   ( char == ; buff max -- buff actual )
-\   <builds  c,
-    does>
-        c@ >r
-        over + 1-
-        begin
-            c@+ r@ =
-        while
-            2-
-        repeat
-        over - rdrop ;
+    ( buf size )
+    c@ >r
+    begin
+        ( buf size )
+        1- 2dup + c@ r@
+        ( buf size-1 c1 c2 )
+        <> over 1+ 0= or
+
+        ( buf size-1 flag )
+    until 1+ rdrop ;
+
+    c@ >r
+    1-
+    begin
+        2dup + c@ r@
+        <> over 0= or
+        1-under
+    until 1+ rdrop ;
+
+
+: >-buf   ( char == ; buf maxsize addr -- buf size )
+\   <builds  c,  does>
+    c@ >r under +
+    begin
+        1- dup
+        c@ r@ =
+    while
+        2dup <
+    until
+    rdrop 1+ under - ;          ( buf size )
+
+: >-buf   ( char == ; buf maxsize addr -- buf size )
+\   <builds  c,  does>
+    c@ >r
+    begin
+        1- 2dup +
+        c@ r@ =
+    while
+        dup 0<
+    until
+    rdrop 1+ ;                  ( buf size )
 ```
 #endif
 #include "align.i65"
@@ -1857,14 +1892,14 @@ dodashbuf
 #include "page.i65"
     .word tor
 #include "page.i65"
-    .word over
+dbuf01
+    .word oneminus
+#include "page.i65"
+    .word twodup
 #include "page.i65"
     .word plus
 #include "page.i65"
-    .word oneminus
-#include "page.i65"
-dbuf01
-    .word cfetchplus
+    .word cfetch
 #include "page.i65"
     .word rfetch
 #include "page.i65"
@@ -1872,18 +1907,18 @@ dbuf01
 #include "pass.i65"
     .word qbranch
     .byt <(dbuf02-*+1)
-#include "page.i65"
-    .word twominus
 #include "pass.i65"
-    .word branch
+    .word dup
+#include "page.i65"
+    .word zlt
+#include "pass.i65"
+    .word qbranch
     .byt <(dbuf01-*+1)
 #include "page.i65"
 dbuf02
-    .word over
-#include "page.i65"
-    .word minus
-#include "page.i65"
     .word rdrop
+#include "page.i65"
+    .word oneplus
 #include "pass.i65"
     .word exit
 

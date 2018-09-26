@@ -240,33 +240,6 @@ following this word depending on `flag`
 |addr+4|nope||||
 |addr+6|||||
 
-pquerycolon
-    ldy #3
-    lda tos
-    ora tos+1
-    bne pquerycolon01           ; true?
-    ldy #5                      ; false.
-pquerycolon01
-    jsr slide
-    lda (ip),y
-    sta pquerycolon02+1
-    dey
-    lda (ip),y
-    sta pquerycolon02
-    lda #3
-    jsr padjust
-    lda ip+1
-    pha
-    lda ip
-    pha
-#include "align.i65"
-    jsr toforth
-#include "page.i65"
-pquerycolon02
-    .word 0
-#include "page.i65"
-    .word exit
-
 
 #endif
 pquerycolon
@@ -282,7 +255,8 @@ pquerycolon01
     lda (ip),y
     pha
     lda #3
-    jsr padjust
+    clc                         ; sets the `padjust` to work with `exit`
+    jsr padjust00               ; uses alternate entry point
     bne exec01                  ; bra
 
 ;--------------------------------------------------------------
@@ -502,7 +476,7 @@ Displays an inline string
 
 ```
 : (.")
-    r> 2+ count 2dup type  >6502
+    r> 2+ count 2dup type  >6502  ( `;code` instead? )
     stackl ,x   lda,
     ip          sta,
     stackh ,x   lda,
@@ -510,7 +484,7 @@ Displays an inline string
                 inx,
     tos         ldy,
                 dey,
-    plits02     jmp,
+    setip       jmp,
 ```
 #endif
 #include "align.i65"
@@ -535,7 +509,7 @@ _pdq
     inx
     ldy tos
     dey
-    jmp plits02
+    jmp setip
 
 ;--------------------------------------------------------------
 #if 0
@@ -566,21 +540,57 @@ to properly cross a page boundary.
 | FE| FE| +1|
 | FF| FE| +1|
 
+                                ; fb -> fb
+                                ; fc -> fc
+                                ; ---
+lda #$fd
+cmp #$fe
+    c = c
+
+lda #$fe
+cmp #$fe
+    c = s
+
+lda #$fe
+cmp #$fd
+    c = s
+
+                                ; fd -> fe +page
+                                ; fe -> fe +page
+                                ; ---
+                                ; ff -> ff  +page
+                                ; 00 -> 00  +page
+* a
+*  IP+offset is on the same page
+**   do nothing with page
+
+*  IP+offset is on the next page
+**   page++
+*  IP+offset is > $FD
+**   page++
+*  IP+offset is $FD (bad)
+**   page++
+
 #endif
 padjust
-    sec                         ; A = offset to be added to IP
+    sec
+padjust00    ; or call here with carry clear for code that works with `exit`
+    rol z                       ; stash C flag for later
+    sec                         ; A+1 = offset to be added to IP
     adc ip
-    bcs padjust05               ; wrap the page?
-    cmp #$FD                    ; IP $xxFE $xxFF will not blend
-    bne padjust01
-    lda #$FE
-padjust01
-    bcc padjust06               ; same page?
-padjust05
-    inc ip+1
-padjust06
     sta ip
-padjust07
+    bcs padjust02               ; crossed a page boundary?
+    ;clc
+    adc #$03                    ; xxFD xxFE xxFF will set carry flag
+    bne padjust01               ; was it $FD?  avoid `jmp ($xxFF)`
+    inc ip                      ; bump `ip` to xxFE when it is xxFD
+padjust01
+    bcc padjust03               ; about to cross a page boundary?
+    lsr z                       ; about that flag from the caller...
+    bcc padjust03               ; `exit` will bump the page later
+padjust02
+    inc ip+1                    ; move `ip` to next page
+padjust03
     rts
 
 ;--------------------------------------------------------------
@@ -589,6 +599,25 @@ name=WYRDTHING
 tags=inner,nosymbol
 stack=( -- )
 A weird vectoring flow of control experimental thing:
+
+symbol table:
+[bird1] [length] ["bird1"]
+
+:movie bird
+5 frame" IWO"
+5 frame" @W@"
+5 frame" IWO"
+5 frame" @W@"
+0 frame"    "
+end-movie
+
+objects with multiple CFAs?
+bird1 [action.draw]
+      [action.erase]
+      [yetanotheraction]
+      []
+
+
 
 store exit address in YA
 get second return stack item
