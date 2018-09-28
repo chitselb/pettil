@@ -94,10 +94,11 @@ xpete: clean pettil pettild64
  		pettil.prg &
 
 # native-gtk3
+#	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
+#		-config data/x11_chitselb.vicerc \
+
 xpetf: clean pettil pettild64
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
-	/home/chitselb/Documents/dev/commodore/3.2vice/g/vice-emu-code/vice/src/xpet \
- 		-config /home/chitselb/.config/vice/vicerc \
+	/usr/local/bin/xpet \
 		-directory ./data/PET/ \
 		-warp \
 		-moncommand pettil.mon \

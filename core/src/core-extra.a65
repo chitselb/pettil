@@ -5,7 +5,7 @@
 #if 0
 name=VIDRAM
 stack=( -- $8000 )
-tags=i/o,const
+tags=primitive,i/o,const
 Constant, address of PET video memory $8000
 #endif
 vidram
@@ -16,7 +16,7 @@ vidram
 #if 0
 name=EOSCR
 stack=( -- $83E8 )
-tags=i/o,const
+tags=primitive,i/o,const
 Constant, address of PET `vidram b/scr +`
 #endif
 eoscr
@@ -27,7 +27,7 @@ eoscr
 #if 0
 name=BENJAMIN
 stack=( -- $100 )
-tags=i/o,const
+tags=primitive,i/o,const
 Constant, 256
 
 #endif
@@ -39,7 +39,7 @@ benjamin
 #if 0
 name=BYE
 stack=( -- )
-tags=system,ext
+tags=primitive,system,ext
 Restores BASIC zero page and exits to READY. prompt
 
 #endif
@@ -51,7 +51,7 @@ bye
 #if 0
 name=MON
 stack=( -- )
-tags=system,ext
+tags=primitive,system,ext
 Restores BASIC zero page and exits to the TIM monitor
 
 #endif
@@ -64,28 +64,13 @@ mon
 #if 0
 name=XYZZY
 stack=( -- )
-tags=extra
-This word doesn't do much (executes a `next`.  It is used as
-a VICE xpet debugger breakpoint.
+tags=primitive,extra
+This word doesn't do much (executes a `next`.  This magic word has no effect on a real hardware PET, but in my build setup it invokes the VICE debugger.
 
 See `plugh` for low-level variant of this.
 
-Forth breakpoint, used for debugging in VICE when `break .xyzzy`
-is enabled, as it is in the `pettil.dbg` configuration file
+see also:  `pettil.dbg` configuration file
 
-usage:
-
-```
-: someword
-   begin
-       dup .
-       1-
-       dup bar 0=
-
-       xyzzy    \ insert a breakpoint
-
-    until drop ;
-```
 #endif
 xyzzy
     jmp next                    ; used as a VICE monitor breakpoint
@@ -94,7 +79,7 @@ xyzzy
 #if 0
 name=@SWAP!
 stack=( addr1 addr2 -- )
-tags=extra
+tags=secondary,extra
 Exchanges the 16-bit values at `addr1` and `addr2`
 
 ```
@@ -130,7 +115,7 @@ _fetchswapstore
 #if 0
 name=PAUSE
 stack=( flag -- )
-tags=nucleus,ext
+tags=secondary,nucleus,ext
 Waits for a keypress from the user before exiting
 
 ```
@@ -164,7 +149,7 @@ pause02
 #if 0
 name=?PAUSE
 stack=( -- )
-tags=nucleus,ext
+tags=secondary,nucleus,ext
 Scans keyboard and if 'space' was pressed, pauses until any key
 is pressed.
 
@@ -198,7 +183,7 @@ qpause01
 #if 0
 name=JIFFY@
 stack=( -- d )
-tags=device,system,ext
+tags=primitive,device,system,ext
 The number of jiffies since powerup or midnight as a double
 
 ```
@@ -224,13 +209,21 @@ jiffyfetch
 #if 0
 name=JIFFIES
 stack=( u -- )
-tags=events
+tags=secondary,events
+
+```
+: jiffies   ( n -- )
+    s->d jiffy@ d+
+    begin
+        jiffy@ 2over d>
+    until 2drop ;
+```
 #endif
 #include "align.i65"
 _jiffies
     jsr enter
 #include "page.i65"
-    .word zero
+    .word stod
 #include "page.i65"
     .word jiffyfetch
 #include "page.i65"
@@ -254,7 +247,7 @@ jiffies01
 #if 0
 name=RANDMASK
 stack=( n -- mask )
-tags=events
+tags=secondary,events
 returns the next power of 2 mask >= n
 
 ```
@@ -291,7 +284,7 @@ randmask01
 #if 0
 name=RNDMAX
 stack=( max -- rnd )
-tags=events
+tags=secondary,events
 generate a random unsigned byte less than `max`
 
 ```
@@ -351,7 +344,7 @@ rndmax02
 #if 0
 name=40/MOD
 stack=( u -- u%40 u/40 )
-tags=math
+tags=primitive,math
 [[Routine courtesy of Mike B.|http://forum.6502.org/viewtopic.php?f=2&t=3051#p34802]]
 Thank you sir!
 
@@ -381,7 +374,7 @@ slmod40d                        ; also an exit for
 #if 0
 name=2NIP
 stack=( d2 d1 -- d1 )
-tags=forth-83,double,primitive
+tags=primitive,double,extra
 discards the 2nd double on the stack
 
 #endif
@@ -396,7 +389,8 @@ twonip
 #if 0
 name=40*
 stack=( u -- u*40 )
-tags=math
+tags=primitive,math
+
 Fast integer unsigned TOS multiply by 40, no overflow checking
 
 #endif
@@ -425,7 +419,7 @@ fortytimes
 #if 0
 name=(LITS)
 stack=( a b c d e f n == ; -- a b c d e f )
-tags=system,startup,nosymbol
+tags=primitive,system,startup,extra,nosymbol
 Works like `(LIT)` but for a group, will pile several inline literal
 constants onto the stack.  Think if `(lits)` as `list` (of literals),
 spelled sideways
@@ -464,7 +458,7 @@ setip                           ; useful entry point, pass in Y=offset
 #if 0
 name=CSPLIT
 stack=( ab -- b a )
-tags=extra
+tags=primitive,extra
 Split the word on `tos` into two bytes
 input: word `ab`
 output: tos = high byte `a`; 2os = low byte `b`
@@ -485,7 +479,7 @@ csplit
 #if 0
 name=CJOIN
 stack=( ab cd -- db )
-tags=extra
+tags=primitive,extra
 Join low byte of `2os` with high byte of `tos`
 Combines tos.low/2os.low bytes into a word
 
@@ -502,7 +496,7 @@ cjoin
 #if 0
 name=CSWAP
 stack=( ab -- ba )
-tags=extra
+tags=primitive,extra
 Swaps high and low byte of TOS
 
 cswap
@@ -526,7 +520,7 @@ cswap
 #if 0
 name=LSB
 stack=( u -- c )
-tags=extra
+tags=primitive,extra
 Returns the low byte of a cell
 #endif
 lsb
@@ -537,7 +531,7 @@ lsb
 #if 0
 name=MSB
 stack=( u -- c )
-tags=extra
+tags=primitive,extra
 Returns the most significant byte of a cell
 #endif
 msb
@@ -550,7 +544,7 @@ put0a
 #if 0
 name=(CASE#)
 stack=( addr idx -- )
-tags=extra
+tags=secondary,extra
 `execute` the cfa at the `idx`-th word above `addr`, an ON-GOSUB-like capability
 
 ```
@@ -644,13 +638,13 @@ Switch to uppercase/graphics alphabet
 upper
     lda #$0C
     ;
-    sta $E84C
+    sta VIAPCR                  ; $E84C
     bne cmdoff02
 
 ;--------------------------------------------------------------
 #if 0
 name=CMDOFF
-tags=i/o,kernel
+tags=primitive,i/o,kernel
 stack=( -- )
 Restore default I/O channels
 #endif
