@@ -57,7 +57,7 @@ msg08
     .asc "BLOCK OUT OF RANGE"
 msg09
     .byt msg10-*-1
-    .asc "UNCLOSED QUOTES"
+    .asc "MISSING DELIM"
 msg10
     .byt msg11-*-1
     .byt "CORRUPT VIRTUAL MEMORY"
@@ -198,7 +198,7 @@ After `\`,  `interpret` will ignore all text to the end of the current line, use
 
 ```
 : \   ( -- )
-   span off ; immediate
+   span coff ; immediate
 ```
 #endif
 backslash
@@ -277,6 +277,18 @@ sib line.size  expect
         dup found?
         ?dup ?: interpret.cfa number
     repeat ;
+
+: interpret   ( -- )
+    begin
+        ?stack
+        bl name  ( nfa|0 )
+        ?dup
+        if
+            dup found?
+            ?dup ?: interpret.cfa number
+        then
+        eoi?
+    until ;
 ```
 #endif
 #include "align.i65"
@@ -293,20 +305,49 @@ interpret01
     .word qdup
 #include "pass.i65"
     .word qbranch
-    .byt <(interpret04-*+1)
-#include "page.i65"             ;( nfa 0 ; not found )
-    .word _foundq               ;( cfa -1 ; found, normal )
-#include "page.i65"             ;( cfa 1 ; found, immediate )
+    .byt <(interpret02-*+1)
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word _foundq
+#include "page.i65"
     .word qdup
 #include "pass.i65"
     .word pquerycolon
     .word _interpretcfa
     .word _number
+#include "page.i65"
+interpret02
+    .word eoiq
 #include "pass.i65"
-    .word branch
+    .word qbranch
     .byt <(interpret01-*+1)
 #include "pass.i65"
-interpret04
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=.OK
+stack=( -- )
+tags=secondary,interpreter,nosymbol
+Print the OK message at the end of each line in an interactive session
+
+```
+: .ok
+    ." ok" cr ;
+```
+#endif
+#include "align.i65"
+_dotok
+    jsr enter
+#include "pass.i65"
+    .word _pdq
+    .byt (dotok01-*-1)
+    .asc    " OK"
+dotok01
+#include "page.i65"
+    .word cr
+#include "pass.i65"
     .word exit
 
 ;--------------------------------------------------------------
@@ -323,8 +364,7 @@ This is the infinite outer interpreter loop.  PETTIL uses a lazy loading scheme 
     rp! blk 12 erase            \ erases line editing uservars
     begin                       \ `interpret` will get new line from keyboard
         interpret
-        compiling? blk@ or 0=
-         if  ." OK" then
+        compiling? ?: cr .ok
     again ;
 ```
 #endif
@@ -345,26 +385,10 @@ quit01                          ; BEGIN
     .word _interpret            ; outer interpreter main loop
 #include "page.i65"
     .word compilingq
-#include "page.i65"
-    .word blkfetch
-#include "page.i65"
-    .word spanfetch
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word qbranch               ; WHILE  (optimized out double-branch to REPEAT)
-    .byt <(quit01-*+1)
 #include "pass.i65"
-    .word _pdq                  ; both blk and state must be 0 to see this
-    .byt (quit02-*-1)
-    .asc    " OK"
-quit02
-#include "page.i65"
-    .word cr                    ; use `cr` to update `#line` and `#out`
+    .word pquerycolon
+    .word cr
+    .word _dotok
 #include "pass.i65"             ; REPEAT
     .word branch
     .byt <(quit01-*+1)

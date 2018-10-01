@@ -34,13 +34,8 @@ skipscan01
     iny
     cpy userspan                ; Carry true at end of line
     bcc skipscan02
-plover
-    lda #0
-    sta userspan
-    lda userblk
-    bne skipscan04
-    inc userspan+1              ; set end of input semaphore
-    bcs skipscan04              ; bra
+    inc usereoi                 ; flag end of line
+    bne skipscan04              ; bra
 skipscan02
     lda (ACC+2*N6),y            ; get char from buffer
     eor ACC+2*N7                ; compare to character we seek
@@ -63,7 +58,21 @@ eoiq
     lda userlin
     cmp #LPERSCR
     bcs eoiq01
-    lsr userspan+1
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=EOL?
+stack=( -- flag )
+tags=primitive,outer,extra,nosymbol
+Return `true` when `in` has reached `span`
+
+#endif
+eolq
+;    lsr usereoi                 ; did skip/scan detect eol?
+;    bcs eoiq01
+;eol2q
+    lda userin                  ; well what about first time in, empty?
+    cmp userspan                ; are we at eol?
 eoiq01
     jmp xpushc
 
@@ -222,7 +231,7 @@ tags=secondary,outer,extra,nosymbol
 * move `in` past trailing space
 
 ```
-: name.parse   ( -- nfa|0 )
+: name.parse   ( -- length )
     skip dup 1- <n6 +
     scan rot -
     dup ?: !nfa nip ;
@@ -256,7 +265,7 @@ _nameparse
 #include "pass.i65"
     .word pquerycolon
     .word _setnfa
-    .word nip
+    .word xyzzy
 #include "pass.i65"
     .word exit
 
@@ -296,55 +305,59 @@ _refill
 ;--------------------------------------------------------------
 #if 0
 name=REFILL?
-stack=( -- span )
+stack=( -- false false | true )
 tags=primitive,outer,extra,nosymbol
 Load either `sib` or `tib` with a logical line of input.  An interactive session always return the value 80.  Return value is the width of the line.  Zero will only be returned when `loading?` at the end of a screen.
 
-* `refill?` will refill the proper line buffer, if needed
-** set `n6` line buffer addr
-** return 0 if no more input is available
-*** EOL in an interactive session
-*** EOS when loading
-** otherwise it leaves something useful and non-0, like span
-
 ```
-: refill?   ( -- flag )
-    begin
-        span@ eoi? under or
-    ?exit
-        blk@ nip
-        ?: refill query
-    again ( ; )
+: refill?   ( -- 0 0 | true )
+    eol? 0= ?dup ?exit
+    blk@ ?: refill query
+    false eoi? ?: dup 1- ;
+
+
+    eol?
+    if
+        blk@ ?: refill query
+        false eoi? ?: false 1-
+    else
+        true
+    then ;
+
 ```
 #endif
 #include "align.i65"
 _refillq
     jsr enter
 #include "page.i65"
-refillq01
-    .word spanfetch
-#include "page.i65"
-    .word eoiq
-#include "page.i65"
-    .word under
-#include "page.i65"
-    .word orx
-#include "page.i65"
-    .word _qexit
+    .word eolq                  ; true IFF lin >= 25
+#include "pass.i65"
+    .word qbranch
+    .byt <(refillq01-*+1)
 #include "page.i65"
     .word blkfetch
-#include "page.i65"
-    .word nip
 #include "pass.i65"
-gooob
     .word pquerycolon
     .word _refill
     .word _query
+#include "page.i65"
+    .word false
+#include "page.i65"
+    .word eoiq                  ; true IFF lin >= 25
+#include "pass.i65"
+    .word pquerycolon
+    .word false                 ; another one!
+    .word oneminus
 #include "pass.i65"
     .word branch
-    .byt <(refillq01-*+1)
+    .byt <(refillq02-*+1)
+#include "page.i65"
+refillq01
+    .word true
+#include "page.i65"
+refillq02
 #include "pass.i65"
-;    .word exit
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -379,7 +392,19 @@ Here we see that `word` means (at least) five things, and we are dispensing with
 ```
 : name   ( char -- nfa|0 )
     blk@ ?: sib tib n6 2!
-    refill? ?: name.parse false ;
+
+`eoi` true when skip/scan reached end of line last time through
+eoi? ?: refill?
+
+
+
+    eol? ?: refill? name.parse ;
+\    refill? ?: name.parse false ;
+
+: name   ( char -- nfa|0 )
+    blk@ ?: sib tib n6 2!
+    refill?  ( -- 0 0 | true )
+    if name.parse then  ( flag ) ;
 ```
 #endif
 #include "align.i65"
@@ -395,14 +420,16 @@ _name
     .word clit
     .byt ACC+2*N6
 #include "page.i65"
-    .word twostore                 ; `n7` delim char
+    .word twostore              ; set n6=lib; n7=char
 #include "page.i65"
-    .word _refillq
+    .word _refillq              ; ( 0 0 | flag )
 #include "pass.i65"
-    .word pquerycolon
-    .word _nameparse
-    .word false
+    .word qbranch
+    .byt <(name01-*+1)
+#include "page.i65"
+    .word _nameparse            ; ( nfa|0 )
 #include "pass.i65"
+name01
     .word exit
 
 #print (*-skip)
