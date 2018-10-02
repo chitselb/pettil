@@ -179,89 +179,6 @@ _linesize
 
 ;--------------------------------------------------------------
 #if 0
-name=!NFA
-stack=( nfa len -- nfa )
-tags=secondary,outer,extra,nosymbol
-* set `n8` to len
-* set length in line buffer
-* increment `in` past space after token
-
-```
-: !nfa   ( nfa len -- nfa )
-    >n8 over c!  in 1+! ;
-```
-#endif
-#include "align.i65"
-_setnfa
-    jsr enter
-#include "pass.i65"
-    .word tozp
-    .byt ACC+2*N8               ; name.len
-#include "page.i65"
-    .word over
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word in
-#include "page.i65"
-    .word oneplusstore
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=NAME.PARSE
-stack=( -- nfa|0 )
-tags=secondary,outer,extra,nosymbol
-
-* set n7 delimiter char
-* refill the line buffer (if empty)
-* skip/scan move `in` past token
-* set n8 token length
-* put length before text in buffer
-* move `in` past trailing space
-
-```
-: name.parse   ( -- length )
-    skip dup 1- <n6 +
-    scan rot -
-    dup ?: !nfa nip ;
-
-: !nfa
-    >n8 over c!  in 1+! ;
-```
-#endif
-#include "align.i65"
-_nameparse
-    jsr enter
-#include "page.i65"
-    .word skip                  ; start of name
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word oneminus
-#include "pass.i65"
-    .word zpfrom
-    .byt ACC+2*N6               ; line buffer
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word scan                  ; end of name (and/or buffer)
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word minus                 ; length
-#include "page.i65"
-    .word dup
-#include "pass.i65"
-    .word pquerycolon
-    .word _setnfa
-    .word xyzzy
-#include "pass.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=REFILL
 stack=( -- )
 tags=primitive,outer,extra,nosymbol
@@ -310,7 +227,7 @@ Load either `sib` or `tib` with a logical line of input.  An interactive session
     eol?
     if
         blk@ ?: refill query
-        false eoi? ?: false 1-
+        false false
     else
         true
     then ;
@@ -321,7 +238,7 @@ Load either `sib` or `tib` with a logical line of input.  An interactive session
 _refillq
     jsr enter
 #include "page.i65"
-    .word eolq                  ; true IFF lin >= 25
+    .word eolq
 #include "pass.i65"
     .word qbranch
     .byt <(refillq01-*+1)
@@ -333,20 +250,70 @@ _refillq
     .word _query
 #include "page.i65"
     .word false
-#include "page.i65"
-    .word eoiq                  ; true IFF lin >= 25
-#include "pass.i65"
-    .word pquerycolon
-    .word false                 ; another one!
-    .word oneminus
 #include "pass.i65"
     .word branch
     .byt <(refillq02-*+1)
 #include "page.i65"
 refillq01
     .word true
-#include "page.i65"
+#include "pass.i65"
 refillq02
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NAME.PARSE
+stack=( -- nfa|0 )
+tags=secondary,outer,extra,nosymbol
+
+* set n7 delimiter char
+* refill the line buffer (if empty)
+* skip/scan move `in` past token
+* set n8 token length
+* put length before text in buffer
+* move `in` past trailing space
+
+```
+: name.parse   ( -- length )
+    skip dup 1- <n6 +
+    scan rot -
+    dup !nfa ;
+
+: !nfa
+    >n8 over c!  in 1+! ;
+```
+#endif
+#include "align.i65"
+_nameparse
+    jsr enter
+#include "page.i65"
+    .word skip                  ; start of name
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word oneminus
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N6               ; line buffer
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word scan                  ; end of name (and/or buffer)
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word minus                 ; length
+#include "pass.i65"
+    .word tozp
+    .byt ACC+2*N8               ; name.len
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word oneplusstore
 #include "pass.i65"
     .word exit
 
@@ -394,8 +361,7 @@ eoi? ?: refill?
 
 : name   ( char -- nfa|0 )
     blk@ ?: sib tib n6 2!
-    refill?  ( -- 0 0 | true )
-    if name.parse then  ( flag ) ;
+    refill?  ?: name.parse false ;
 ```
 #endif
 #include "align.i65"
@@ -415,12 +381,10 @@ _name
 #include "page.i65"
     .word _refillq              ; ( 0 0 | flag )
 #include "pass.i65"
-    .word qbranch
-    .byt <(name01-*+1)
-#include "page.i65"
+    .word pquerycolon
     .word _nameparse            ; ( nfa|0 )
+    .word false
 #include "pass.i65"
-name01
     .word exit
 
 #print (*-skip)
