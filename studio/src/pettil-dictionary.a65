@@ -91,6 +91,8 @@ symlen
 name=SYMLENS
 effects=A:len;Y:0;C:vocab?;Z:len
 tags=nfa,nosymbol
+6502registers=A:symlen Y:0 C:vocab
+Sweet16registers=N3:nfa N8:length
 return the length of the current `nfa` stored in `n3`
 
 #endif
@@ -505,7 +507,8 @@ not found
 `n7` seeking name
 `n8l` current length
 `n8h`
-#endif
+
+```
 pseek
     brk
     .byt ldd | TOS
@@ -545,6 +548,59 @@ pseek04
     bne pseek01
     dey
     bne pseek03
+pseek07
+    clc                         ; found, false (inverted flag)
+    .byt $29                    ; AND imm opcode
+pseek08
+    sec                         ; not found, true
+pseek09
+    ;
+    jmp putc
+```
+#endif
+pseek
+    brk
+    .byt ldd | TOS
+    .byt st | N3                ; `n3` is start of thread
+    .byt rtn
+pseekb
+    lda ACC+2*N4+1              ; toggle sorted/unsorted flag in `n4h`
+    eor #$FF
+    sta ACC+2*N4+1              ; sorted = 0; unsorted = $FF
+pseek00
+    jsr symlens
+    beq pseek08                 ; reached `symtail`? not found!
+    eor ACC+2*N4
+    beq pseekok1                ; same length? consider further...
+    bit ACC+2*N4+1
+    bmi pseek01                 ; unsorted list? next!
+    lda ACC+2*N8
+    cmp ACC+2*N4                ; length.current > length.seeking?
+    bcs pseek08                 ; not found on sorted list!
+pseek01
+    lda #3
+    jsr sympluss                ; next!
+    bne pseek00                 ; bra
+pseekok1
+    ;ldy #0                     ; thanks, symlens
+    lda (ACC+2*N3),y
+    bmi pseek01                 ; smudged? next!
+    tya
+    adc ACC+2*N4
+    tay                         ; Y = length + vocab bit
+    eor ACC+2*N4                ; =0 if core, <>0 if vocab
+    beq pseekok2                ; core? compare symbols
+    lda (ACC+2*N3),y
+    eor ACC+2*N5                ; compare vocabularies
+    bne pseek01                 ; different vocabularies? next!
+    dey
+pseekok2
+    lda (ACC+2*N7),y            ; `n7` name we are looking for
+pseek04
+    eor (ACC+2*N3),y            ; `n3` current name under consideration
+    bne pseek01                 ; different symbol? next!
+    dey
+    bne pseekok2
 pseek07
     clc                         ; found, false (inverted flag)
     .byt $29                    ; AND imm opcode
