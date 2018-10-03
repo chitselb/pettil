@@ -498,65 +498,14 @@ found
 not found
     vocabs+ false
 
-`n4l` seeking length
-`n4h` flag: dictionary segment is sorted by size (0) or unsorted ($FF)
+`n4l` seek length
+`n4h` sorted thread flag:  sorted by size (0) or unsorted ($FF)
 `n3` current nfa
-`n5l` seeking vocab
-`n5h` vocabs index
-`n6` buf
-`n7` seeking name
+`n5` seek vocab
+`n6` next vocab address
+`n7` seek nfa
 `n8l` current length
-`n8h`
 
-```
-pseek
-    brk
-    .byt ldd | TOS
-    .byt st | N3                ; `n3` is start of thread
-    .byt rtn
-pseekb
-    lda ACC+2*N4+1              ; toggle sorted/unsorted flag in `n4h`
-    eor #$FF
-    sta ACC+2*N4+1              ; sorted = 0; unsorted = $FF
-pseek00
-    jsr symlens
-    beq pseek08                 ; not found!
-    cmp ACC+2*N4
-    beq pseek02                 ; same length? check it
-    bcc pseek01                 ; curr length is shorter, try another
-    bit ACC+2*N4+1              ; is this list sorted?
-    bpl pseek08
-pseek01
-    lda #3
-    jsr sympluss                ; next!
-    bne pseek00                 ; bra
-pseek02
-    ;ldy #0                     ; thanks, `symlens`
-    lda (ACC+2*N3),y
-    bmi pseek01                 ; ignore smudged
-    ldy ACC+2*N8                ; seek length
-    asl                         ; to check `vocab` flag
-    bpl pseek03                 ; branch when `n3` nfa is in `core`
-    iny
-    lda ACC+2*N5                ; seek vocab 42 30 3c 01
-    bne pseek04
-    dey
-pseek03
-    lda (ACC+2*N7),y            ; `n7` name we are looking for
-pseek04
-    eor (ACC+2*N3),y            ; `n3` current name under consideration
-    bne pseek01
-    dey
-    bne pseek03
-pseek07
-    clc                         ; found, false (inverted flag)
-    .byt $29                    ; AND imm opcode
-pseek08
-    sec                         ; not found, true
-pseek09
-    ;
-    jmp putc
-```
 #endif
 pseek
     brk
@@ -585,20 +534,18 @@ pseekok1
     ;ldy #0                     ; thanks, symlens
     lda (ACC+2*N3),y
     bmi pseek01                 ; smudged? next!
-    tya
-    adc ACC+2*N4
-    tay                         ; Y = length + vocab bit
-    eor ACC+2*N4                ; =0 if core, <>0 if vocab
-    beq pseekok2                ; core? compare symbols
-    lda (ACC+2*N3),y
-    eor ACC+2*N5                ; compare vocabularies
-    bne pseek01                 ; different vocabularies? next!
-    dey
+    ldy ACC+2*N4
+    iny
+    lda ACC+2*N5                ; compare vocabularies
+    bcc pseek04b
+    .byt $2C
 pseekok2
     lda (ACC+2*N7),y            ; `n7` name we are looking for
 pseek04
     eor (ACC+2*N3),y            ; `n3` current name under consideration
+pseek04b
     bne pseek01                 ; different symbol? next!
+pseek05
     dey
     bne pseekok2
 pseek07
@@ -648,22 +595,16 @@ immedornot
 name=NEXTVOCAB?
 stack=( -- flag )
 tags=interpreter,forth-83,conspiracy,nosymbol
-Returns `true` if there is a next vocabulary
-increment the vocabulary pointer `n5+1`
+Return `true` if there is a next vocabulary
 
 #endif
 nextvocabq
-    jsr slip                    ; leave room for the flag
-    ldy ACC+2*N5                ; `n5` is current vocabulary
-    beq nextvocab01             ; true -- last vocab
-    ldy ACC+2*N5+1              ; `n5h` is the index
-    iny
-    lda uservocabs+1,y
-    sta ACC+2*N5                ; new current vocabulary
-nextvocab01
-    sty ACC+2*N5+1              ; bump vocabs index, or reset it
-    bne pseek07                 ; we got another vocab here!           false
-    beq pseek08                 ; bra                                  true
+    brk
+    .byt ld | N5
+    .byt push
+    .byt ldi | N6
+    .byt st | N5
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -674,11 +615,13 @@ tags=interpreter,forth-83,conspiracy,nosymbol
 #endif
 pfoundq
     brk
-    .byt inr | TOS
-    .byt ldi | TOS
-    .byt st | N5                ; `n5l` is first vocab; `n5h` is 0po
     .byt ld | N8                ; `n4` `n8` len
     .byt st | N4
+    .byt ld | TOS
+    .byt st | N6
+    .byt inr | N6
+    .byt ldi | N6
+    .byt st | N5                ; first vocab
     .byt pull
     .byt st | N7                ; `n3` `n7` name
     .byt st | N3
@@ -792,6 +735,8 @@ foundq01                        ;     begin (loop through vocabs)
     .byt <(foundq03-*+1)
 #include "page.i65"
     .word nextvocabq
+#include "page.i65"
+    .word zeq
 #include "pass.i65"
     .word qbranch               ; loop if more vocabs
     .byt <(foundq01-*+1)
