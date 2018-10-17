@@ -1,7 +1,8 @@
 
 SHELL = /bin/bash
 
-all:  launch tiddlypettil
+#all:  launch tiddlypettil
+all:  mypet tiddlypettil
 #all:  launchrecord
 #all:  thread1 tiddlypettil
 #all:  thread1 thread2 tiddlypettil
@@ -105,12 +106,13 @@ xpetf: clean pettil pettild64
  		pettil.prg &
 
 mypet: clean pettil pettild64
+	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
 	/usr/bin/xpet \
 		-directory data/PET/ \
 		-moncommand pettil.mon \
 		-warp \
 		-config data/x11_chitselb.vicerc \
-		pettil.d64
+		pettil.d64 &
 
 vic20:
 	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xvic \

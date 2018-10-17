@@ -379,7 +379,7 @@ puts @label   if @label == "STUDIO"
     end
 
     # outputs a csv file for performance tuning
-
+=begin
     def write_symtab_file(outputfile,forthwordhash)
         sortedbylen = forthwordhash.sort_by {|wordname, stuff| stuff.symbol.length.chr+stuff.symbol}
         symfile = File.open("./tmp/"+outputfile,'wb')
@@ -396,6 +396,8 @@ puts @label   if @label == "STUDIO"
         end
         symfile.write [0,0,0].pack("C*")        # null length ends pettil.sym
     end
+=end
+
     def write_size_file(outputfile,forthwordhash)
         sizefile = File.open("./tmp/"+outputfile,'w')
         forthwordhash.each do |wordname,stuff|
@@ -446,7 +448,7 @@ puts @label   if @label == "STUDIO"
                 # use decimal if the hex address is known to conflict
                 addr_out = addr.to_s   if bogus.include?(' '+label+' ')\
                                              || always_use_decimal
-                file.write("#{label} = #{addr_out}\n")
+                file.write("#{label} = #{addr_out}\n")   unless label == "romoptions"
             end
         end
     end
@@ -476,7 +478,6 @@ puts @label   if @label == "STUDIO"
 # forthwordhash.sort_by { | wordname, size| size }.each do |wordname, stuff|
 #    puts wordname, stuff
 # end
-#    def write_symtab_file(outputfile,forthwordhash)
     def write_symtab_file(outputfile,forthwordhash)
         sortedbylen = forthwordhash.sort_by {|wordname, stuff| stuff.symbol.length.chr+stuff.symbol}
         symfile = File.open("./tmp/"+outputfile,'wb')
