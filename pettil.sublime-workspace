@@ -11,7 +11,7 @@
 			"file": "studio/src/pettil-interpreter.a65",
 			"settings":
 			{
-				"buffer_size": 13623,
+				"buffer_size": 13832,
 				"encoding": "UTF-8",
 				"line_ending": "Unix"
 			}
@@ -26,13 +26,10 @@
 			}
 		},
 		{
-			"contents": "; pettil-name.a65\n#echo .       pettil-name.a65           Text parser\n;\" cursor@ cursor! !loading skip scan ?loading 'stream? linesize refill? name\n;\" nfa!\n\n;--------------------------------------------------------------\n#if 0\nname=SKIP\nstack=( delim -- offset )\ntags=nosymbol\n`addr1` is the starting address in the input stream where up\nto `size1` bytes are skipped *WHILE* they match `delim`.  Returns\n`addr2` as the address of the first non-matching character and\n`count2` as the remaining number of bytes in the buffer.\n#endif\nskip\n    lda #$F0                    ; BEQ opcode\n    .byt $2C                    ; BIT abs\n    ;fall through\n;--------------------------------------------------------------\n#if 0\nname=SCAN\nstack=( -- offset )\ntags=self-modifying,nosymbol\nPass through the input stream until `delim` either matches (or for `skip`, does not match).  Leave the `offset` into the line buffer on the stack.\n\nN6 line buffer\nN7 char delimiter\n#endif\nscan\n    lda #$D0                    ; BNE opcode\n    sta skipscan03              ; #selfmodifying\n    ldy userin                  ; `in`\n    dey\nskipscan01\n    iny\n    cpy userspan                ; Carry true at end of line\n    bcc skipscan02\n    lda #0                      ; oh, we done\n    sta userspan                ; `span off`\n;    sta userin\n    beq skipscan04\nskipscan02\n    lda (ACC+2*N6),y            ; get char from buffer\n    eor ACC+2*N7                ; compare to character we seek\nskipscan03\n    bvc skipscan01              ; dummy opcode, BEQ(skip) BNE(scan)\nskipscan04\n    sty userin                  ; found char !, move `in`\n    tya\n    jmp push0a                  ;( offset )\n\n;--------------------------------------------------------------\n#if 0\nname=?LOADING\nstack=( -- )\ntags=outer,extra,nosymbol\nIf loading, restore the cursor and increment `lin` etc.. This executes just after `sib` line input buffer was filled by `expect`\n\n\n```\n: ?loading   ( -- )\n    blk@\n    if\n        0 =cursor\n    then ;\n```\n#endif\n#include \"align.i65\"\n_qloading\n    jsr enter\n#include \"page.i65\"\n    .word blkfetch\n#include \"pass.i65\"\n    .word qbranch\n    .word <(qloading01-*+1)\n#include \"page.i65\"\n    .word zero\n#include \"page.i65\"\n    .word exchgcursor\n#include \"pass.i65\"\nqloading01\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=LINESIZE\nstack=( -- size )\ntags=outer,extra,nosymbol\nReturn `size` of either a line input from the keyboard\nor when loading, set hardware cursor to line# `lin` of `blk`\nadvances `lin`\n\n```\n: line.size   ( sib blk -- sib size|0 )\n    block  lin 40* +            \\ (C4)\n    lin buf.wrap >bit cbit@\n    in 1+ over  ?: 1+! 2+!\n    ?: forty eighty  -trailing ; \\ D5\n```\n#endif\n#include \"align.i65\"\n_linesize\n    jsr enter\n#include \"page.i65\"\n    .word _block\n#include \"page.i65\"\n    .word lin\n#include \"page.i65\"\n    .word fortytimes\n#include \"page.i65\"\n    .word plus                  ;( addr )\n#include \"page.i65\"\n    .word lin\n#include \"page.i65\"\n    .word _bufwrap\n#include \"page.i65\"\n    .word tobit\n#include \"page.i65\"\n    .word cbitfetch             ;( addr wrapbit )\n#include \"page.i65\"\n    .word in\n#include \"page.i65\"\n    .word oneplus\n#include \"page.i65\"\n    .word over\n#include \"page.i65\"\n    .word pquerycolon\n    .word oneplusstore\n    .word twoplusstore\n#include \"pass.i65\"\n    .word pquerycolon\n    .word forty\n    .word eighty\n#include \"page.i65\"\n    .word dashtrailing\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=REFILL?\nstack=( -- span )\ntags=primitive,outer,extra,nosymbol\nLoad either `sib` or `tib` with a logical line of input.  An interactive session always return the value 80.  Return value is the width of the line.  Zero will only be returned when `loading?` at the end of a screen.\n\n* `refill?` will refill the proper line buffer, if needed\n** return 0 if no more input is available\n*** EOL in an interactive session\n*** EOS when loading\n** otherwise it leaves something useful and non-0, like span\n\n```\n: refill?   ( -- size|0 )\n    span @ ?dup ?exit\n    blk@\n    if\n        begin\n            sib line.size\n            0 =cursor  !loading expect  0 =cursor\n            span @ blk@ 0= or\n        until\n    else\n        tib eighty expect\n    then  span @ ;\n\n\n: refill?   ( -- size|0 )\n    span @ ?dup ?exit\n    blk@ ?: sib tib >n6  \n    blk@ ?dup\n    if \n        begin\n            line.size\n            0 =cursor  !loading expect  0 =cursor\n            span @ blk@ 0= or\n        until\n    else\n        tib eighty expect\n    then  span @ ;\n\n```\n#endif\n#include \"align.i65\"\n_refillq\n    jsr enter\n#include \"page.i65\"\n    .word span\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word qdup\n#include \"page.i65\"\n    .word _qexit                ; exit if something is in this line buffer?\n#include \"page.i65\"\n    .word blkfetch\n#include \"pass.i65\"\n    .word pquerycolon\n    .word sib\n    .word tib\n#include \"pass.i65\"\n    .word tozp\n    .byt ACC+2*N6\n#include \"page.i65\"\n    .word blkfetch\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(refillq02-*+1)\n#include \"page.i65\"\nrefillq01\n    .word blkfetch\n#include \"page.i65\"\n    .word _linesize             ; ( sib blk -- sib size )\n#include \"page.i65\"\n    .word zero\n#include \"page.i65\"\n    .word exchgcursor\n#include \"page.i65\"\n    .word setloading\n#include \"page.i65\"\n    .word expect\n#include \"page.i65\"\n    .word zero\n#include \"page.i65\"\n    .word exchgcursor\n#include \"page.i65\"\n    .word span\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word blkfetch\n#include \"page.i65\"\n    .word zeq\n#include \"page.i65\"\n    .word orx\n#include \"pass.i65\"\n    .word qbranch\n    .byt <(refillq01-*+1)\n#include \"pass.i65\"\n    .word branch\n    .byt <(refillq03-*+1)\n#include \"page.i65\"\nrefillq02\n    .word tib\n#include \"pass.i65\"\n    .word eighty\n#include \"page.i65\"\n    .word expect\n#include \"pass.i65\"\nrefillq03\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=NAME.PARSE\nstack=( -- nfa|0 )\ntags=secondary,outer,extra,nosymbol\n\n* set n6 line buffer addr\n* set n7 delimiter char\n* refill the line buffer (if empty)\n* skip/scan move `in` past token\n* set n8 token length\n* put length before text in buffer\n* move `in` past trailing space\n\n```\n: name.parse   ( -- nfa|0 )\n    skip dup 1- <n6 +\n    scan rot -\n    dup ?: !nfa nip ;\n\n: !nfa\n    >n8 over c!  in 1+! ;\n```\n#endif\n#include \"align.i65\"\n_nameparse\n    jsr enter\n#include \"page.i65\"\n    .word skip                  ; start of name\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n    .word oneminus\n#include \"pass.i65\"\n    .word zpfrom\n    .byt ACC+2*N6               ; buf\n#include \"page.i65\"\n    .word plus\n#include \"page.i65\"\n    .word scan                  ; end of name (and/or buffer)\n#include \"page.i65\"\n    .word rot\n#include \"page.i65\"\n    .word minus                 ; length\n#include \"page.i65\"\n    .word dup\n#include \"pass.i65\"\n    .word pquerycolon\n    .word _setnfa\n    .word nip\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=!NFA\nstack=( char -- nfa|0 )\ntags=secondary,outer,extra,nosymbol\n* set `n8` to len\n* set length in line buffer\n* increment `in` past space after token\n\n```\n: !nfa   ( nfa len -- nfa )\n    >n8 over c!  in 1+! ;\n```\n#endif\n#include \"align.i65\"\n_setnfa\n    jsr enter\n#include \"pass.i65\"\n    .word tozp\n    .byt ACC+2*N8               ; name.len\n#include \"page.i65\"\n    .word over\n#include \"page.i65\"\n    .word cstore\n#include \"page.i65\"\n    .word in\n#include \"page.i65\"\n    .word oneplusstore\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=NAME\nstack=( char -- nfa|0 )\ntags=outer,extra\nParse the next `word` from the `input stream`.  Return `false` if the input stream is exhausted, or returns the `nfa` of the found word, which will be a counted string somewhere in `tib` or `sib`.\n\nLeading delimiters are ignored.   If the delimiter `char` is not found the value of `in` will be the size of the input stream.  If `char` is found, `in` will point to the character following the delimiter. When the end of the input line is reached, `name.parse` clears `span` to let us exit.  Similarly, `line.size` will clear `blk` when `lin` reaches the `height` physical line of `blkbuf` to exit after loading a screen.\n\nThis is one of PETTIL's slight departures from the Forth-83 standard.  In PETTIL `name` replaces the //required// reserved word `word`. The reason is that PETTIL uses a lazy loading design while the standard uses active loading.\n\n|What is a WORD?|<|<|h\n|1|word|entry in the Forth dictionary|\n|2|word|16 bits of memory|\n|3|word|an English word|\n|4|word|//required// reserved Forth-83 standard word to parse the input stream|\n|5|word|things Cameo say before `up`|\n\nHere we see that `word` means (at least) five things, and we are dispensing with one of those (meaning #4) by renaming `word` to `name` and altering the stack diagram slightly.\n\n* set `n7` delimiter char\n* `refill?` will refill the proper line buffer, if needed\n\n* test if line buffer (and screen buffer, if loading) exhausted\n* set `n8` length\n* return `false` or `nfa`\n* Advance `in` past the parsed `word`.\n\n\n```\n: name   ( char -- nfa|0 )\n    n7 !                        \\ set word delimiter (`bl`)\n    refill? ?: name.parse false ;\n```\n#endif\n#include \"align.i65\"\n_name\n    jsr enter\n#include \"pass.i65\"\n    .word clit\n    .byt ACC+2*N7\n#include \"page.i65\"\n    .word store                 ; `n7` delim char\n#include \"page.i65\"\n    .word _refillq\n#include \"pass.i65\"\n    .word pquerycolon\n    .word _nameparse\n    .word false\n#include \"pass.i65\"\n    .word exit\n\n;--------------------------------------------------------------\n#if 0\nname=!LOADING\nstack=( -- )\ntags=primitive,outer,extra,nosymbol\nReturn `size` of either a line input from the keyboard\nor when loading, set hardware cursor to line# `lin` of `blk`\nadvances `lin`\n\n* test `blk` - do not reroute cursor unless `loading?`\n* reset `blk` when `lin` reaches 25\n#endif\nsetloading\n    lda userblk\n    beq setloading02            ; exit unless `loading?`\n    lda #3\n    sta DFLTN                   ; $AF Default Input Device\n    lda userlin\n    cmp #LPERSCR\n    bcc setloading01\n    lda #0\n    sta userblk                 ; end of screen reached\nsetloading01\n    sta TBLX                    ; $D8 cursor physical line number\n    lda tos\n    sta LNMX                    ; $D5 logical line length (39 or 79)\n    lda userin\n    sta PNTR                    ; $C6 cursor column on current line\n    lda stackl,x\n    sta PNT                     ; ($C4) pointer start of current screen line\n    lda stackh,x\n    sta PNT+1\nsetloading02\n    jmp next\n\n#print (*-skip)\n",
 			"file": "studio/src/pettil-name.a65",
-			"file_size": 10282,
-			"file_write_time": 131812354886573053,
 			"settings":
 			{
-				"buffer_size": 10747,
+				"buffer_size": 9886,
 				"encoding": "UTF-8",
 				"line_ending": "Unix"
 			}
@@ -51,7 +48,7 @@
 			"file": "core/src/core-io.a65",
 			"settings":
 			{
-				"buffer_size": 15601,
+				"buffer_size": 15544,
 				"line_ending": "Unix"
 			}
 		},
@@ -59,7 +56,7 @@
 			"file": "studio/src/pettil-compiler.a65",
 			"settings":
 			{
-				"buffer_size": 42775,
+				"buffer_size": 43096,
 				"line_ending": "Unix"
 			}
 		},
@@ -145,11 +142,7 @@
 	},
 	"expanded_folders":
 	[
-		"/home/chitselb/Documents/dev/commodore/pettil",
-		"/home/chitselb/Documents/dev/commodore/pettil/core",
-		"/home/chitselb/Documents/dev/commodore/pettil/core/src",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio/src"
+		"/home/chitselb/dev2/commodore/pettil"
 	],
 	"file_history":
 	[
@@ -482,19 +475,24 @@
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 13623,
+						"buffer_size": 13832,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								4830,
-								4830
+								0,
+								0
 							]
 						],
 						"settings":
 						{
+							"rulers":
+							[
+								32,
+								80
+							],
 							"syntax": "Packages/Text/Plain text.tmLanguage",
 							"tab_size": 4,
 							"translate_tabs_to_spaces": true
@@ -525,6 +523,11 @@
 						],
 						"settings":
 						{
+							"rulers":
+							[
+								32,
+								80
+							],
 							"syntax": "Packages/Text/Plain text.tmLanguage"
 						},
 						"translation.x": 0.0,
@@ -540,7 +543,7 @@
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 10747,
+						"buffer_size": 9886,
 						"regions":
 						{
 						},
@@ -553,12 +556,17 @@
 						],
 						"settings":
 						{
+							"rulers":
+							[
+								32,
+								80
+							],
 							"syntax": "Packages/Text/Plain text.tmLanguage",
 							"tab_size": 4,
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 3330.0,
+						"translation.y": 2755.0,
 						"zoom_level": 1.0
 					},
 					"stack_index": 0,
@@ -977,6 +985,11 @@
 							"result_base_dir": "",
 							"result_file_regex": "^([^ \t].*):$",
 							"result_line_regex": "^ +([0-9]+):",
+							"rulers":
+							[
+								32,
+								80
+							],
 							"scroll_past_end": true,
 							"syntax": "Packages/Default/Find Results.hidden-tmLanguage"
 						},
@@ -993,19 +1006,24 @@
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 15601,
+						"buffer_size": 15544,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								3766,
-								3766
+								0,
+								0
 							]
 						],
 						"settings":
 						{
+							"rulers":
+							[
+								32,
+								80
+							],
 							"syntax": "Packages/Text/Plain text.tmLanguage",
 							"tab_size": 4,
 							"translate_tabs_to_spaces": true
@@ -1023,19 +1041,24 @@
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 42775,
+						"buffer_size": 43096,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								10379,
-								10379
+								0,
+								0
 							]
 						],
 						"settings":
 						{
+							"rulers":
+							[
+								32,
+								80
+							],
 							"syntax": "Packages/Text/Plain text.tmLanguage",
 							"tab_size": 4,
 							"translate_tabs_to_spaces": true
@@ -1066,6 +1089,11 @@
 						"settings":
 						{
 							"auto_name": "g",
+							"rulers":
+							[
+								32,
+								80
+							],
 							"syntax": "Packages/Text/Plain text.tmLanguage",
 							"word_wrap": false
 						},
@@ -1167,7 +1195,7 @@
 	"show_minimap": false,
 	"show_open_files": true,
 	"show_tabs": true,
-	"side_bar_visible": false,
+	"side_bar_visible": true,
 	"side_bar_width": 253.0,
 	"status_bar_visible": true,
 	"template_settings":
