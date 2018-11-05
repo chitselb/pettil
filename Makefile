@@ -114,6 +114,12 @@ mypet: clean pettil pettild64
 		-config data/x11_chitselb.vicerc \
 		pettil.d64 &
 
+pet:
+	/usr/bin/xpet \
+		-directory data/PET/ \
+		-config data/x11_chitselb.vicerc \
+		pettil.d64
+
 vic20:
 	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xvic \
 		-directory ./data/VIC20/ \
