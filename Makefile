@@ -2,7 +2,8 @@
 SHELL = /bin/bash
 
 #all:  launch tiddlypettil
-all:  mypet tiddlypettil
+all:  mypet
+#all:  mypet tiddlypettil
 #all:  launchrecord
 #all:  thread1 tiddlypettil
 #all:  thread1 thread2 tiddlypettil
@@ -105,6 +106,7 @@ xpetf: clean pettil pettild64
 		-moncommand pettil.mon \
  		pettil.prg &
 
+
 mypet: clean pettil pettild64
 	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
 	/usr/bin/xpet \
@@ -112,7 +114,8 @@ mypet: clean pettil pettild64
 		-moncommand pettil.mon \
 		-warp \
 		-config data/x11_chitselb.vicerc \
-		pettil.d64 &
+		-8 chitselb.d64 \
+		-9 pettil.d64  &
 
 pet:
 	/usr/bin/xpet \
@@ -172,7 +175,8 @@ launch: clean pettil pettild64
 
 pettild64:
 	c1541 -format pettil,09 d64 pettil.d64
-	c1541 -attach pettil.d64 -write pettil.prg
+	c1541 -attach pettil.d64 -write pettil.prg -write tapes/pettilpackets -write s1e2scroll2
+	c1541 -attach chitselb.d64
 
 pettil:
 #	echo . Phase I
