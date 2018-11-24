@@ -106,16 +106,16 @@ xpetf: clean pettil pettild64
 		-moncommand pettil.mon \
  		pettil.prg &
 
+#	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
 
 mypet: clean pettil pettild64
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
 	/usr/bin/xpet \
 		-directory data/PET/ \
 		-moncommand pettil.mon \
 		-warp \
 		-config data/x11_chitselb.vicerc \
 		-8 chitselb.d64 \
-		-9 pettil.d64  &
+		-9 pettil.d64
 
 pet:
 	/usr/bin/xpet \
