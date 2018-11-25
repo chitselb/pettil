@@ -18,7 +18,7 @@ editor
 name=.CL
 stack=( -- )
 tags=editor
-Clear the screen
+Emit CLRSCR character (clear screen)
 
 #endif
 #include "align.i65"
@@ -31,7 +31,7 @@ clrscr
 name=.HM
 stack=( -- )
 tags=editor
-Home the cursor
+Emit HOME character (home cursor)
 
 #endif
 #include "align.i65"
@@ -44,7 +44,7 @@ homescr
 name=.DN
 stack=( -- )
 tags=editor
-Home the cursor
+Emit CRSRDOWN character (cursor down)
 
 #endif
 #include "align.i65"
@@ -57,7 +57,7 @@ dotdn
 name=.UP
 stack=( -- )
 tags=editor
-Home the cursor
+Emit CRSRUP character (cursor up)
 
 #endif
 #include "align.i65"
@@ -70,7 +70,7 @@ dotup
 name=.RT
 stack=( -- )
 tags=editor
-Home the cursor
+Emit CRSRRIGHT character (cursor right)
 
 #endif
 #include "align.i65"
@@ -83,7 +83,7 @@ dotrt
 name=.LF
 stack=( -- )
 tags=editor
-Home the cursor
+Emit CRSRLEFT character (cursor left)
 
 #endif
 #include "align.i65"
@@ -96,7 +96,7 @@ dotlf
 name=.RVS
 stack=( -- )
 tags=editor
-Home the cursor
+Emit RVSON character (reverse on)
 
 #endif
 #include "align.i65"
@@ -109,7 +109,7 @@ dotrvs
 name=.OFF
 stack=( -- )
 tags=editor
-Home the cursor
+Emit RVSOFF character (reverse off)
 
 #endif
 #include "align.i65"
@@ -122,7 +122,7 @@ dotoff
 name=.QT
 stack=( -- )
 tags=editor
-Emit a quote (")
+Emit quote (") character
 
 #endif
 #include "align.i65"
@@ -1041,6 +1041,22 @@ tags=editor,nosymbol
 `STOP-DEL` cuts  the current screen.  After updating the current packet to the screen buffer, the screen immediately after this (or a new, blank screen) will be presented to the user.
 
 ```
+:editdelscr
+    begin
+        blkbuf 2-
+        begin
+            pkt.next
+            begin
+                dup @ $8005 =
+                dup if vmbuf @ over - 5 - 5 cmove then
+            not until
+            dup @ 0=
+        until drop #blk! ;
+
+        #blk @ 0 do
+            i >pkt  <n8 @ $8005 =
+            if vmbuf @ <n8 over - 5 - 5 cmove not then
+
 :editdelscr   ( scr -- packet )
     >pkt
     vmbuf floor size +move
@@ -1053,62 +1069,84 @@ tags=editor,nosymbol
     (edit.delscr)
     cmove cmove vmbuf +! ;
 ```
+:editdelscr
+        blkbuf 2-
+        begin
+            pkt.next
+            begin
+                dup @ $8005 =
+            while
+                vmbuf @ over 3- 5 +move
+            repeat
+            dup @ 0=
+        until drop #blk! ;
+
 #endif
 #include "page.i65"
 __editdelscr
-    .word scr
+    .word _update
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word blkbuf
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+editdelscr01
+    .word _pktnxt
+#include "page.i65"
+editdelscr02
+    .word dup
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word oneplus
+    .word plit
+    .word $8005
 #include "page.i65"
-    .word _qmkpkts
-#include "page.i65"
-    .word drop
-#include "page.i65"
-    .word _update
+    .word eq
+#include "pass.i65"
+    .word qbranch
+    .byt <(editdelscr03-*+1)
 #include "page.i65"
     .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word five
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word cmovegt
+#include "pass.i65"
+    .word branch
+    .byt <(editdelscr02-*+1)
+#include "page.i65"
+editdelscr03
 #include "page.i65"
     .word dup
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word _pktthis
+    .word zeq
 #include "pass.i65"
-    .word peditdelscr
+    .word qbranch
+    .byt <(editdelscr01-*+1)
 #include "page.i65"
-    .word xyzzy
+    .word drop
 #include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word plusstore
+    .word _numblkstore
 #include "pass.i65"
     .word exit
-
-peditdelscr
-    jsr harvests6
-    brk
-    .byt ld | TOS               ; A size
-    .byt st | N5
-    .byt st | N2
-    .byt ld | N1
-    .byt sub | TOS              ; B vmbuf-size
-    .byt st | N0
-    .byt st | N4
-    .byt ld | N3
-    .byt sub | TOS
-    .byt inr | ACC
-    .byt inr | ACC              ; C pkt-size+2
-    .byt st | N1
-    .byt st | N3
-    .byt rtn
-    jsr plants12                ;( A B C A C B A )
-    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -1116,11 +1154,18 @@ name=:EDITINSSCR
 stack=( -- )
 tags=editor,nosymbol
 
- insert a new, blank screen
+clone the current screen to the end
 
 ```
 :editinsscr   ( -- )
-    update vmbuf @ scr @ >pkt
+    update scr @ >pkt
+    vmbuf @
+    pkt.size - 2-  0 !+
+    dup vmbuf !
+    pkt.size cmove ;
+
+:editinsscr   ( -- )
+    update #blk @ blk ! update ;
 
 ```
 #endif
@@ -1128,65 +1173,27 @@ tags=editor,nosymbol
 __editinsscr
     .word _update
 #include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word next
-#include "page.i65"
-    .word next
-#include "page.i65"
-    .word next
-#include "page.i65"
-    .word next
-#include "pass.i65"
-    .word exit
-
-    .word _update
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
     .word scr
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word _topkt
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word oneplus
-#include "pass.i65"
-    .word plit
-    .word -5
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word plusstore
-#include "page.i65"
-    .word _plusmove
-#include "pass.i65"
-    .word plit
-    .word editinsscr01
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word threeminus
-#include "page.i65"
-    .word five
-#include "page.i65"
-    .word cmove
-#include "page.i65"
     .word numblk
 #include "page.i65"
-    .word oneplusstore
+    .word fetch
+#include "page.i65"
+    .word tuck
+#include "page.i65"
+    .word _editchongo
+#include "page.i65"
+    .word _editchongo
+#include "page.i65"
+    .word scr
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word _update
 #include "pass.i65"
-    .word branch
-    .byt <(__editrestore-*+1)
-
-editinsscr01
-    .byt $ff, $ff, $ff, $05, $80
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
