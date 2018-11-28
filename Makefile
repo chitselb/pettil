@@ -2,13 +2,61 @@
 SHELL = /bin/bash
 
 #all:  launch tiddlypettil
-all:  micromon
+all:  supermon micromon fast mypet
 #all:	mypet
 
 FORCE:
 
+mypet: FORCE clean
+	#                   target# romoptions tdict
+	sh ./tools/buildpettil.sh 0 3 6400
+	c1541 -format pettil,09 d64 pettil.d64
+	c1541 -attach pettil.d64				\
+		-write tmp/pettil.prg0 pettil.prg 	\
+		-write tmp/pettil.prg1			 	\
+		-write tmp/pettil.prg2			 	\
+		-write tmp/pettil.prg3				\
+		-write tapes/pettilpackets
+	/usr/bin/xpet \
+		-directory data/PET/ \
+		-moncommand pettil.mon \
+		-warp \
+		-config data/x11_chitselb.vicerc \
+		-8 chitselb.d64 \
+		-9 pettil.d64
+
+supermon: FORCE clean
+	sh ./tools/buildpettil.sh 1 3 5E00
+
 micromon: FORCE clean
-	sh ./tools/buildpettil.sh 3 5B00
+	sh ./tools/buildpettil.sh 2 3 6400
+
+fast: FORCE clean
+	sh ./tools/buildpettil.sh 3 3 6400
+
+cheap: FORCE clean
+	sh ./tools/buildpettil.sh 4 3 5E00
+
+pet:
+	sh ./tools/buildpettil.sh 5 3 4000
+
+petupgrade: FORCE clean
+	sh ./tools/buildpettil.sh 6 3 5E00
+
+pet4: FORCE clean
+	sh ./tools/buildpettil.sh 7 3 5E00
+
+pet80: FORCE clean
+	sh ./tools/buildpettil.sh 8 3 5E00
+
+vic20: FORCE clean
+	sh ./tools/buildpettil.sh 9 3 5E00
+	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xvic \
+		-directory ./data/VIC20/ \
+		-config ./data/sdl2_vic20.vicerc &
+
+c64: FORCE clean
+	sh ./tools/buildpettil.sh A 3 5E00
 
 #all:  mypet tiddlypettil
 #all:  launchrecord
@@ -63,77 +111,7 @@ xpeta: clean pettil pettild64
  		pettil.prg &
 
 # native-gtk3
-xpetb: clean pettil pettild64
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
-	/home/chitselb/Documents/dev/commodore/3.2vice/g/vice-emu-code/vice/src/xpet \
- 		-config /home/chitselb/.config/vice/vicerc \
-		-directory ./data/PET/ \
-		-warp \
-		-moncommand pettil.mon \
- 		pettil.prg &
 
-# native-gtk3
-xpetc: clean pettil pettild64
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
-	/home/chitselb/Documents/dev/commodore/3.2vice/c/vice-3.2/src/xpet \
- 		-config /home/chitselb/.config/vice/vicerc \
-		-directory ./data/PET/ \
-		-warp \
-		-moncommand pettil.mon \
- 		pettil.prg &
-
-# native-gtk3
-xpetd: clean pettil pettild64
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
-	/home/chitselb/Documents/dev/commodore/3.2vice/g/vice-emu-code/vice/src/xpet \
- 		-config /home/chitselb/.config/vice/vicerc \
-		-directory ./data/PET/ \
-		-warp \
-		-moncommand pettil.mon \
- 		pettil.prg &
-
-# native-gtk3
-xpete: clean pettil pettild64
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
-	/home/chitselb/Documents/dev/commodore/3.2vice/g/vice-emu-code/vice/src/xpet \
- 		-config /home/chitselb/.config/vice/vicerc \
-		-directory ./data/PET/ \
-		-warp \
-		-moncommand pettil.mon \
- 		pettil.prg &
-
-# native-gtk3
-#	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
-#		-config data/x11_chitselb.vicerc \
-
-xpetf: clean pettil pettild64
-	/usr/local/bin/xpet \
-		-directory ./data/PET/ \
-		-warp \
-		-moncommand pettil.mon \
- 		pettil.prg &
-
-#	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
-
-mypet: clean pettil pettild64
-	/usr/bin/xpet \
-		-directory data/PET/ \
-		-moncommand pettil.mon \
-		-warp \
-		-config data/x11_chitselb.vicerc \
-		-8 chitselb.d64 \
-		-9 pettil.d64
-
-pet:
-	/usr/bin/xpet \
-		-directory data/PET/ \
-		-config data/x11_chitselb.vicerc \
-		pettil.d64
-
-vic20:
-	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xvic \
-		-directory ./data/VIC20/ \
-		-config ./data/sdl2_vic20.vicerc &
 
 xpet8032:
 	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
@@ -178,12 +156,6 @@ launch: clean pettil pettild64
 		-config data/x11_4032.vicerc \
 		pettil.d64 &
 #		-keybuf "dL\x22pettil.prg\x22\x0drun\x0dinfo\x0dvmdump\x0d" &
-
-
-pettild64:
-	c1541 -format pettil,09 d64 pettil.d64
-	c1541 -attach pettil.d64 -write pettil.prg -write tapes/pettilpackets -write s1e2scroll2
-	c1541 -attach chitselb.d64
 
 pettil:
 #	echo . Phase I
