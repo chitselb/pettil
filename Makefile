@@ -1,8 +1,11 @@
+# PETTIL Makefile
+#
+#
 
 SHELL = /bin/bash
 
 #all:  launch tiddlypettil
-all:  supermon micromon fast mypet
+all:  mypet
 #all:	mypet
 
 FORCE:
@@ -10,53 +13,55 @@ FORCE:
 mypet: FORCE clean
 	#                   target# romoptions tdict
 	sh ./tools/buildpettil.sh 0 3 6400
-	c1541 -format pettil,09 d64 pettil.d64
+	# make a disk, build target# 0 is the default image 'pettil.prg'
 	c1541 -attach pettil.d64				\
-		-write tmp/pettil.prg0 pettil.prg 	\
-		-write tmp/pettil.prg1			 	\
-		-write tmp/pettil.prg2			 	\
-		-write tmp/pettil.prg3				\
+		-write obj/pettil.prg0 pettil.prg 	\
+		-write obj/pettil.prg1			 	\
+		-write obj/pettil.prg2			 	\
+		-write obj/pettil.prg3				\
 		-write tapes/pettilpackets
 	/usr/bin/xpet \
 		-directory data/PET/ \
-		-moncommand pettil.mon \
+		-moncommand obj/pettil.mon0			\
 		-warp \
 		-config data/x11_chitselb.vicerc \
 		-8 chitselb.d64 \
 		-9 pettil.d64
 
 supermon: FORCE clean
-	sh ./tools/buildpettil.sh 1 3 5E00
+	sh ./tools/buildpettil.sh 1 3 5E00 0401
 
 micromon: FORCE clean
-	sh ./tools/buildpettil.sh 2 3 6400
+	sh ./tools/buildpettil.sh 2 3 6400 0401
 
 fast: FORCE clean
-	sh ./tools/buildpettil.sh 3 3 6400
+	sh ./tools/buildpettil.sh 3 3 6400 0401
 
 cheap: FORCE clean
-	sh ./tools/buildpettil.sh 4 3 5E00
+	sh ./tools/buildpettil.sh 4 3 5E00 0401
 
 pet:
-	sh ./tools/buildpettil.sh 5 3 4000
+	sh ./tools/buildpettil.sh 5 3 4000 0401
 
 petupgrade: FORCE clean
-	sh ./tools/buildpettil.sh 6 3 5E00
+	sh ./tools/buildpettil.sh 6 3 5E00 0401
 
 pet4: FORCE clean
-	sh ./tools/buildpettil.sh 7 3 5E00
+	sh ./tools/buildpettil.sh 7 3 5E00 0401
 
 pet80: FORCE clean
-	sh ./tools/buildpettil.sh 8 3 5E00
+	sh ./tools/buildpettil.sh 8 3 5E00 0401
 
 vic20: FORCE clean
-	sh ./tools/buildpettil.sh 9 3 5E00
+#	sh ./tools/buildpettil.sh 9 3 5E00 0401   #    +3K only
+#	sh ./tools/buildpettil.sh 9 3 5E00 1201   #    +8K|16K|24K|32K
+	sh ./tools/buildpettil.sh 9 3 5E00 1001   # 5K unexpanded
 	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xvic \
 		-directory ./data/VIC20/ \
 		-config ./data/sdl2_vic20.vicerc &
 
 c64: FORCE clean
-	sh ./tools/buildpettil.sh A 3 5E00
+	sh ./tools/buildpettil.sh A 3 5E00 0801
 
 #all:  mypet tiddlypettil
 #all:  launchrecord
@@ -74,125 +79,10 @@ compile: clean pettil tiddlypettil
 
 doc: tiddlypettil publish
 
-thread1: clean pettil pettild64
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
-	/usr/bin/xpet \
-		-directory data/PET/ \
-		-moncommand t.mon \
-		-warp \
-		-config data/x11_4032.vicerc &
-#		pettil.prg &
-
-thread2: clean pettil pettild64
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
-	/usr/bin/xpet \
-		-directory data/PET/ \
-		-moncommand t.mon \
-		-warp \
-		-config data/x11_4032.vicerc &
-#		pettil.prg &
-
-thread3: clean pettil pettild64
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
-	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
-		-directory ./data/PET/ \
-		-warp \
-		-moncommand thread3.mon \
- 		-config data/sdl2_chitselb.vicerc &
-
-# native-gtk3
-xpeta: clean pettil pettild64
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x53+290+28 -x \
-	/home/chitselb/Documents/dev/commodore/3.2vice/g/vice-emu-code/vice/src/xpet \
- 		-config /home/chitselb/.config/vice/vicerc \
-		-directory ./data/PET/ \
-		-warp \
-		-moncommand pettil.mon \
- 		pettil.prg &
-
-# native-gtk3
-
-
-xpet8032:
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
-	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
-		-verbose \
-		-directory ./data/PET/ \
-		-config ./data/sdl2_8032.vicerc &
-
 clean:
 	rm -rf ./tmp/
 	mkdir ./tmp/
-
-launchrecord: clean pettil pettild64
-	/usr/bin/xpet \
-		-directory data/PET/ \
-		-moncommand pettil.mon \
-		-warp \
-		-config data/x11_mypet.vicerc \
-		pettil.d64
-
-launch: clean pettil pettild64
-# gtk3 3.2
-#	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
-	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xpet \
-		-directory data/PET/ \
-		-moncommand pettil.mon \
-		-config data/x11_chitselb.vicerc &
-
-# gnome-ui 3.1
-#	xfce4-terminal --hide-menubar --hide-borders --geometry=152x49+290+28 -x \
-	/usr/bin/xpet \
-		-directory data/PET/ \
-		-moncommand pettil.mon \
-		-config data/x11_chitselb.vicerc &
-
-# gnome-ui 3.1
-	xfce4-terminal --hide-menubar --hide-borders --geometry=152x52+288+28 -x \
-	/usr/bin/xpet \
-		-directory data/PET/ \
-		-moncommand pettil.mon \
-		-warp \
-		-config data/x11_4032.vicerc \
-		pettil.d64 &
-#		-keybuf "dL\x22pettil.prg\x22\x0drun\x0dinfo\x0dvmdump\x0d" &
-
-pettil:
-#	echo . Phase I
-#	echo . . . . Building PETTIL core = PETTIL-CORE.OBJ
-	cd ./core/src/ && xa ./pettil-core.a65 \
-		-o ../../tmp/pettil-core.obj \
-		-e ../../tmp/pettil-core.err \
-		-l ../../tmp/pettil-core.lab
-#	echo . . . . Generating core labels = PETTIL-CORE.DEF
-	ruby ./tools/xap.rb
-	ls -la ./tmp/
-#	echo . Phase II
-#	echo . . . . Building PETTIL temporary dictionary = PETTIL-TDICT.OBJ
-	pwd && \
-	cd ./studio/src/ && \
-	xa ./pettil-studio.a65 \
-	  -o ../../tmp/pettil-studio.obj \
-	  -e ../../tmp/pettil-studio.err \
-	  -l ../../tmp/pettil-studio.lab
-#	echo . Phase III
-#	echo . . . . Generating combined symbol table = PETTIL.SYM
-	ruby ./tools/xap.rb
-#	echo . . . . Packing PETTIL.PRG binary = PETTIL-CORE.OBJ + PETTIL-TDICT.OBJ + PETTIL.SYM
-	ls -la ./tmp/pettil-core.obj ./tmp/pettil-studio.obj ./tmp/pettil.sym
-	cat \
-		./tmp/pettil-core.obj \
-		./tmp/pettil-studio.obj \
-		./tmp/pettil.sym \
-		> ./tmp/pettil.prg
-	ls -la ./tmp/pettil.prg
-	sort ./tmp/pettil.mon > ./tmp/t.t
-	if [ -e ./pettil.dbg ]; then cat ./pettil.dbg >> ./tmp/t.t; fi
-	mv ./tmp/t.t ./tmp/pettil.mon
-	cp -v tmp/pettil.mon tmp/pettil.prg .
-#	ls -l ./tmp/*.obj ./tmp/*.sym > ./docs/sizes.txt
-	stat -c '%8s %n' tmp/*.obj tmp/*.sym | sed -e 's/tmp\///' > docs/sizes.txt
-	cp -v ./tmp/sizes.csv docs/
+	c1541 -format pettil,09 d64 pettil.d64
 
 tiddlypettil:
 	echo . Phase IV
