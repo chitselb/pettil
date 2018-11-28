@@ -2,7 +2,14 @@
 SHELL = /bin/bash
 
 #all:  launch tiddlypettil
-all:  mypet
+all:  micromon
+#all:	mypet
+
+FORCE:
+
+micromon: FORCE clean
+	sh ./tools/buildpettil.sh 3800
+
 #all:  mypet tiddlypettil
 #all:  launchrecord
 #all:  thread1 tiddlypettil
