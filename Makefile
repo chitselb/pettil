@@ -8,7 +8,7 @@ all:  micromon
 FORCE:
 
 micromon: FORCE clean
-	sh ./tools/buildpettil.sh 3800
+	sh ./tools/buildpettil.sh 3 5B00
 
 #all:  mypet tiddlypettil
 #all:  launchrecord
