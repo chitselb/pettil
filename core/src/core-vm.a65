@@ -657,9 +657,12 @@ wrapzap01
 ;--------------------------------------------------------------
 #if 0
 name=WRAPROLLS
-stack=( x -- 0 )
-tags=editor,subroutine,nosymbol
-pass in `c` flag and `x` as starting address,
+stack=( -- )
+tags=vm,subroutine,nosymbol
+
+
+pass `c` bit to append
+    `x` lsb address of 32-bit wrapd
 
 appends linewrap bit to a zeropage double beginning at `x`
 
@@ -702,7 +705,7 @@ Retrieve the 25-bit linewrap table at `$E0..F8` as a double
 
 #endif
 wrapfetch
-    jsr wrapzap12               ; ~wut? possible C=64 porting issue?
+    jsr wrapzap12               ; ~wut? ~C=64 issue?
     ;stx z
     ldy #$FF
     ldx #tos                    ; put it in `tos(hi) n0(lo)`
@@ -724,11 +727,10 @@ stack=( wrapd -- )
 tags=primitive
 
 Updates the linewrap table at $E1-F8 to reflect the low 24 bits
-in double `wrapd`.  Since line 0 ($E0) is never a continuation
-line, (always $80) it is not written to.  Only 24 bits are
-written to $E1-$F8, not 25.  Although unused, the most
-significant (2^24) bit may be set, as a framing bit, used
-to detect when the wrap double is full.
+in double `wrapd`.  Since line 0 ($E0) is always $80 (never a
+continuation line, it is not updated.  Only 24 bits need to be
+written ($E1-$F8), not 25.  The  msb of `wrapd` is typically $01,
+a framing bit used when loading the wrap double (see `wrap@`).
 
 #endif
 wrapstore
@@ -1443,7 +1445,63 @@ tests:
 
 
 ```
-: twonky   ( -- )
+: update   ( -- )
+    pkt.cur editing? isscr? 0= and ?exit
+    vmbottom b/buf - buf? tuck isscr?
+    ?: b/scr b/buf isscr? ?: -trailing -nulls
+    nip rlencode isscr?
+    if
+        vidram +under <n2 editing? ?: wrap@ buf.wrap@
+
+#include "pass.i65"
+    .word qbranch
+    .byt <(update02-*+1)
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word plusunder             ; set `isscr?` bit in new header
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N2               ; before `wrap@` erases it!
+#include "page.i65"
+    .word editingq
+#include "pass.i65"
+    .word pquerycolon
+    .word wrapfetch
+    .word _bufwrapfetch
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word _threecstore
+#include "page.i65"
+    .word threeplus             ; add 3 to `size`
+#include "page.i65"
+update02
+    .word twoplus               ; ( flags size.new )
+#include "page.i65"
+    .word _pktthis              ;( flags size.new pkt size )
+#include "page.i65"
+    .word twoover               ;( flags size.new pkt size.old flags size.new )
+#include "page.i65"
+    .word orx                   ;( flags size.new pkt size.old hdr.new )
+#include "page.i65"
+    .word updomojodojo
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word plusstore
+#include "page.i65"
+    .word _plusmove
+#include "page.i65"
+    .word cmove                 ;( flags size.new )
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N8
+#include "page.i65"
+    .word store
+#include "pass.i65"
+    .word exit
+
 0 editing data (do nothing)
 1 blkbuf scr
     blkbuf b/scr + 3c@  updwrap+

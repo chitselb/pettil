@@ -604,7 +604,6 @@ puts @label   if @label == "STUDIO"
                 forthword = nil
             end
         end
-        # scan for '#ifdef 0'
         if line =~ /^\#if 0$/
             forthword = ForthWord.new
         end
