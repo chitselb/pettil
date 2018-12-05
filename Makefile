@@ -5,63 +5,38 @@
 SHELL = /bin/bash
 
 #all:  launch tiddlypettil
-all:  mypet
-#all:	mypet
+all:
+	./tools/mkpet
 
-FORCE:
-
-mypet: FORCE clean
-	#                   target# romoptions tdict
-	sh ./tools/buildpettil.sh 0 3 6400
-	# make a disk, build target# 0 is the default image 'pettil.prg'
-	c1541 -attach pettil.d64				\
-		-write obj/pettil.prg0 pettil.prg 	\
-		-write obj/pettil.prg1			 	\
-		-write obj/pettil.prg2			 	\
-		-write obj/pettil.prg3				\
+	c1541 -attach pettil.d64								\
+		-write obj/pettil.prg0 pettil.prg 					\
 		-write tapes/pettilpackets
-	/usr/bin/xpet \
-		-directory data/PET/ \
-		-moncommand obj/pettil.mon0			\
-		-warp \
-		-config data/x11_chitselb.vicerc \
-		-8 chitselb.d64 \
-		-9 pettil.d64
-
-supermon: FORCE clean
-	sh ./tools/buildpettil.sh 1 3 5E00 0401
-
-micromon: FORCE clean
-	sh ./tools/buildpettil.sh 2 3 6400 0401
-
-fast: FORCE clean
-	sh ./tools/buildpettil.sh 3 3 6400 0401
-
-cheap: FORCE clean
-	sh ./tools/buildpettil.sh 4 3 5E00 0401
-
-pet:
-	sh ./tools/buildpettil.sh 5 3 4000 0401
-
-petupgrade: FORCE clean
-	sh ./tools/buildpettil.sh 6 3 5E00 0401
-
-pet4: FORCE clean
-	sh ./tools/buildpettil.sh 7 3 5E00 0401
-
-pet80: FORCE clean
-	sh ./tools/buildpettil.sh 8 3 5E00 0401
+	# add other targets
+	for object in obj/pettil.prg* ; do 						\
+        echo $$object ;										\
+		c1541 -attach pettil.d64 -write $$object ;			\
+        ls -la $$object ; 									\
+    done
+	# launch a PET!
+	/usr/bin/xpet 											\
+		-directory data/PET/ -moncommand obj/pettil.mon0	\
+		-config data/x11_chitselb.vicerc 					\
+		-warp -8 chitselb.d64 -9 pettil.d64 &
+	/usr/bin/xpet 											\
+		-directory data/PET/ -moncommand obj/pettil.mon3	\
+		-config data/x11_chitselb.vicerc 					\
+		-warp -8 chitselb.d64 -9 pettil.d64 &
 
 vic20: FORCE clean
-#	sh ./tools/buildpettil.sh 9 3 5E00 0401   #    +3K only
-#	sh ./tools/buildpettil.sh 9 3 5E00 1201   #    +8K|16K|24K|32K
-	sh ./tools/buildpettil.sh 9 3 5E00 1001   # 5K unexpanded
+#	sh ./tools/buildpettil.sh 9 32 5E00 0401   #    +3K only
+	sh ./tools/buildpettil.sh 9 32 5E00 1201   #    +8K|16K|24K|32K
+#	sh ./tools/buildpettil.sh 9 32 5E00 1001   # 5K unexpanded
 	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xvic \
 		-directory ./data/VIC20/ \
 		-config ./data/sdl2_vic20.vicerc &
 
 c64: FORCE clean
-	sh ./tools/buildpettil.sh A 3 5E00 0801
+	sh ./tools/buildpettil.sh A 5 5E00 0801
 
 #all:  mypet tiddlypettil
 #all:  launchrecord

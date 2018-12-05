@@ -4,7 +4,6 @@
 	echo studio  $3
 
 	make clean
-	cp -v ./common/src/options$1.def ./common/src/options.def
 #	echo . Phase I
 #	echo . . . . Building PETTIL core = PETTIL-CORE.OBJ
 	cd ./core/src/ && 					\
