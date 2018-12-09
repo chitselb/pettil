@@ -1,65 +1,65 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
-;;	KosMon - A Machine Language Monitor for C64 and PET
+;;	KosMon - A Machine Language Monitor for C64 and PET.
 ;;
-;;	(C) 1986-1996 by Olaf Seibert All Rights Reserved
-;;	May be distributed under the GNU General Public License
+;;	(C) 1986-1996 by Olaf Seibert. All Rights Reserved.
+;;	May be distributed under the GNU General Public License.
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-; Hints for the C64 $C000 version
+; Hints for the C64 $C000 version:
 ; Move the entry point, marked with ///, to the indicated place,
-; and change the base and BRK entry point accordingly
-; For a <4K version, set the symbol haveecmd to 0
+; and change the base and BRK entry point accordingly.
+; For a <4K version, set the symbol haveecmd to 0.
 
--base =  $5000	; /// -$cc
+	processor 6502
 
-petb2 = 0
-petb4 = 0
-pet80 = 0
-c64 = 0
+	mac cset		; conditional set
+	ifnconst {1}
+{1}	= {2}
+	endif
+	endm
 
-#ifdef PETB2
--petb2 = 1
-#endif
+	cset base, $9000	; /// -$cc
 
-#ifdef PETB4
--petb4 = 1
-#endif
+c64	= 1
+pet	= 2
 
-#ifdef PET80
--pet80 = 1
-#endif
+	cset target, pet
 
-#ifdef C64
--c64 = 1
-#endif
+; the settings below are for pets only.
+; Note there is only allowance for Basic 2.0 (new roms) and 4.0.
 
-pet = petb2 | petb4 | pet80
-mindiskdev = 8
-diskdev = 8	; my taste
-printdev = 4	; my taste
-printsa = 7	; my taste
-havedashes = 1
-
-
-target = pet
-
-; the settings below are for pets only
-; Note there is only allowance for Basic 2 (new roms) and 4
+	cset petb2,	0	; flag
+	cset petb4,	1	; flag
+	cset petb440,	0	; flag for petb4 only
+	cset petb480,	1	; flag for petb4 only
 
 lines	= 25
-#if pet80
+#if petb4 && petb480
 columns = 80
 #else
 columns = 40
 #endif
+mindiskdev = 8
+diskdev = 8	; my taste
+printdev = 4	; my taste
+printsa = 7	; my taste
 
-#if petb2
-	autorepeat = 1
+	cset havedashes, 1
+#if target == c64
+	cset	haveecmd, 1
+havepfkeys = 1
 #else
-	autorepeat = 0
-#endif	; (target = pet) & petb2
+haveecmd = 0
+havepfkeys = 0
+#endif
+
+#if [target == pet] && petb2
+	cset autorepeat, 1
+#else
+	cset autorepeat, 0
+#endif	; (target == pet) && petb2
 
 #if autorepeat
 slowrep = 23	; time before first repeat (in jiffies)
@@ -69,6 +69,70 @@ fastrep	= 4	; time between repeats (in jiffies)
 
        ;+++ absolute adresses
 
+#if target == c64
+
+pport	= $01
+status	= $90
+verck	= 0	; not needed
+msgflg	= $9d
+fnlen	= $b7
+sa	= $b9
+fa	= $ba
+stal	= $c1
+memuss	= stal+2
+ndx	= $c6
+indx	= $c8
+lxsp	= $c9
+blnsw	= $cc
+gdbln	= $ce
+blnon	= $cf
+eal	= $ae
+crsw	= $d0
+pnt	= $d1
+pntr	= $d3
+qtsw	= $d4
+tblx	= $d6
+datax	= $d7
+ldtbl	= $d9
+rtsp	= $0200
+rtstack = $0201
+keyd	= $0277
+gdcol	= $0287
+hibase	= $0288
+autodn	= $0292
+tmplin	= $02a5
+cirqv	= $0314
+cbrkv	= $0316
+
+       ;+++ external jumps
+
+basnmi	= $a002
+vicreset = $e5a8
+kbdget	= $e5b4
+scrcont = $e602
+scrget	= $e63a
+scrprint = $e716
+instlin = $e981
+pokchr	= $ea13
+kbdinput = $f15b
+busclse = $f651
+ioinit	= $fda3
+second	= $ff93
+tksa	= $ff96
+iecin	= $ffa5
+iecout	= $ffa8
+untlk	= $ffab
+unlsn	= $ffae
+listen	= $ffb1
+talk	= $ffb4
+setlfs	= $ffba
+setnam	= $ffbd
+load	= $ffd5
+save	= $ffd8
+stop	= $ffe1
+
+#endif
+#if target == pet
 
 time	= $8d
 cirqv	= $90
@@ -96,11 +160,11 @@ qtsw	= $cd
 tblx	= $d8
 datax	= $d7
 fnadr	= $da
-#if pet80
+#if petb4 && petb480
 ldtbl	= 0		; not implemented
 #else
 ldtbl	= $e0
-#endif			; pet80
+#endif			; petb4 && petb480
 stal	= $fb
 memuss	= stal+2
 rtsp	= $0200
@@ -119,13 +183,13 @@ setnam	= 0		; not implemented
 setlfs	= 0		; not implemented
 
 #if petb2
-basready = $c389	; basic READY
+basready = $c389	; basic READY.
 
 ioinit	= 0
 kbdget	= $e285
-scrprint = $e3d8	; print A to screen (could use FFD2)
+scrprint = $e3d8	; print .A to screen (could use FFD2)
 vicreset = 0
-instlin = $e5ba		; really* open line on screen
+instlin = $e5ba		; really: open line on screen
 
 talk	= $f0b6 	; send TALK
 listen	= $f0ba 	; send LISTEN
@@ -150,18 +214,18 @@ scrcont = $e2cc 	; continue INPUT loop
 scrget	= $e2fc 	; INPUT (get) byte from screen
 pokchr	= $e6ea 	; put char (and colour) in screen memory
 			; the N-keybd version has an extra delay loop
-			; here but we can't avoid that- would not work
-			; with the B version
+			; here but we can't avoid that: would not work
+			; with the B version.
 #endif			; petb2
 #if petb4
-			; Sigh the E000 jumptable entries are not
-			; in the "upgrade" 4 version for PETs without
-			; CRT controller sigh
+			; Sigh... the E000 jumptable entries are not
+			; in the "upgrade" 4.0 version for PETs without
+			; CRT controller... sigh...
 basready = $b3ff
 
 ioinit	= $e000
 kbdget	= $e0a7 	; $e003 would be better but less compatible
-scrprint = $e202	; $e009 print A to screen
+scrprint = $e202	; $e009 print .A to screen
 vicreset = $e018	; lower case settings
 instlin = $e021
 
@@ -184,26 +248,28 @@ stop	= $f335
 
 kbdinput = $f219
 
-#if petb4
+#if petb440
 scrcont = $e0ee ; accidentally the same in 40 and 80 colums
 scrget	= $e11e
 pokchr	= $e606 ; accidentally the same in 40 and 80 colums
-#endif	; petb4
-#if pet80
+#endif	; petb440
+#if petb480
 scrcont = $e0ee ; accidentally the same in 40 and 80 colums
 scrget	= $e121
 pokchr	= $e606 ; accidentally the same in 40 and 80 colums
-#endif	; pet80
+#endif	; petb480
 #endif	; petb4
 
        ;+++ tables and hardware addresses
 
 screen	= $8000
-#if pet80
-ram96latch = $fff0	; set to 0 to not support it
+#if petb4 && petb480
+ram96latch = $fff0	; set to 0 to not support it.
 #else
-ram96latch = 0		; set to 0 to not support it
+ram96latch = 0		; set to 0 to not support it.
 #endif
+
+#endif	; target == pet
 
        ;+++ constants
 
@@ -220,8 +286,7 @@ quote	= 34
 hexwidth = columns / 5		; 8 or 16
 ascwidth = 4 * columns / 5	; 32 or 64
 
-	* = base-2
-	.word base
+	org base
 
        ; +++ program
 
@@ -239,7 +304,17 @@ entry	php
 	brk
 
 romin
+#if target == c64
+	lda #$36
+	sta pport
+#if .romin_end != ramin
+	jmp ramin
+#endif
+.romin_end
+#endif
+	    ;///mark with end
 
+	subroutine
 
 ramin	cld
 	ldx #5
@@ -300,8 +375,8 @@ cmdnxt	dex
 	bpl cmdloop
 	bmi error
 
-; the p command is a prefix for the others
-; when used it prints on both the screen and printer #printdev
+; the p command is a prefix for the others.
+; when used it prints on both the screen and printer #printdev.
 
 pcmd	sec
 	ror pflag	; set high bit
@@ -320,7 +395,7 @@ incstal inc stal
 ic6a0	rts
 
 decmuss ldx #2
-	.byt $2c
+	dc.b $2c
 decstal ldx #0
 	ldy stal,x
 	bne ic09b
@@ -437,10 +512,10 @@ ica66	pla
 	bpl ica4e
 	rts
 
-			; print SR
+			; print .SR
 printps jsr dospc
 	lda pssave
-bin8	ldx #8		; print A binary
+bin8	ldx #8		; print .A binary
 ic704	rol ;a
 	pha
 	lda #"*"
@@ -461,7 +536,7 @@ getstend
 	jsr hex2muss
 ic3ab	jmp docr
 
-get3adrs		; get addresses to memuss, stalsav, stal
+get3adrs		; get addresses to memuss, stalsav, stal.
 	jsr hex2muss
 	;sta memuss
 	;stx memuss+1
@@ -487,10 +562,10 @@ hex2ax	jsr hex2a	; get hex address to a,x
 	;bcc errc6
 	;rts
 
-hex2a	;lda #0 	; get hex byte to A
+hex2a	;lda #0 	; get hex byte to .A
 	;sta nybble
 	jsr nextchr
-hexa2a	jsr hex2nybb	; get hex byte in A decoded to A
+hexa2a	jsr hex2nybb	; get hex byte in .A decoded to .A
 	asl ;a
 	asl ;a
 	asl ;a
@@ -514,7 +589,7 @@ ic651	and #$0f
 tst0f	cmp #"0"        ; test for 0-F
 	bcc ic50e
 	cmp #"G"
-	rts ;c=0-mogelijk cijfer
+	rts ;c=0:mogelijk cijfer
 ic50e	sec ;geen cijfer
 	rts
 
@@ -583,7 +658,7 @@ icd70	sbc #$37
 icd74	sec
 	rts
 
-bin2a	ldx #8		; binary to A
+bin2a	ldx #8		; binary to .A
 ic752	pha
 	jsr nextchr
 	cmp #"*"
@@ -615,7 +690,7 @@ nocr	cmp #cr 	; error if cr
 	;+++ command routines
 
 ccmd	lda #0		; Compare command
-	.byt $2c
+	dc.b $2c
 tcmd	lda #1		; Transfer command
 	sta ctflag	; remember C or T
 	jsr get3adrs	; get Start, End, Dest
@@ -816,7 +891,7 @@ ddashes = dlinecm
 dlinecm ldy #","
 dline	jsr dinstr
 	ldx #9
-doxsp	jsr dospc	; print X spaces
+doxsp	jsr dospc	; print .X spaces
 	dex
 	bne doxsp
 	rts
@@ -862,7 +937,7 @@ prtrelad
 ic258	tya
 	jsr hex2savx
 	txa
-hex2savx stx *+7
+hex2savx stx .+7
 	jsr hex2
 	ldx #0		; operand modified
 	rts
@@ -909,7 +984,7 @@ ic29d	lsr ;a
 	bcc ic2a5
 	and #1
 	adc #1	;c=1
-	.byt $2c
+	dc.b $2c
 ic2a5	lda #0
 	ldy #$80
 
@@ -973,9 +1048,10 @@ cmcmd	jsr hex2stal
 	ldy #","
 	jmp fillkeyd
 
+	subroutine
 
 ltcmd	clc		; < command
-	.byt $24
+	dc.b $24
 htcmd	sec		; > command
 	php
 	jsr hex2stal
@@ -1009,19 +1085,19 @@ icaa4	sta keyd
 
 errc2	jmp error
 
-
+	subroutine
 
 kcmd	jsr getstend	; k command
-top001	ldx ovflow
-	bne end001
+.top	ldx ovflow
+	bne .end
 	jsr steqend
-	bcc end001
+	bcc .end
 	jsr crascdmp
 	jsr stop
-	bne top001
-end001	jmp cuprpt
+	bne .top
+.end	jmp cuprpt
 
-
+	subroutine
 
 crascdmp
 	jsr docr
@@ -1081,7 +1157,7 @@ dohexdmp		; do hex dump
 	jsr dospc
 	jsr hex4
 	lda #hexwidth
-	;jsr ahex2 was
+	;jsr ahex2 was subroutine
 
 ahex2	sta apos
 	ldy #0
@@ -1119,7 +1195,7 @@ i300	jsr incstal
 	bne ascdmp
 	rts
 
-cocmd	jsr hex2stal	; - colon command
+cocmd	jsr hex2stal	; : colon command
 	lda #hexwidth
 	jsr docolon
 	jsr printcu
@@ -1289,7 +1365,7 @@ ic4ff	inx
 	rts
 
 jcmd	lda #$20;jsr
-	.byt $2c
+	dc.b $2c
 gcmd	lda #$4c ;jmp
 	sta ac56b
 	jsr kbdinput
@@ -1327,8 +1403,8 @@ ic56f	cmp #"F"
 	cmp #" "
 	bne errc4
 	jsr hex2ax
-	sta memopc+1
-	stx memopc+2
+	sta memlo
+	stx memhi
 	lda #"E"
 	jsr diskmrw
 	jsr unlsn
@@ -1349,7 +1425,10 @@ ic6b6	lda rtxt,x
 	jsr hex2
 	lda cirqv
 	jsr hex2
-#if target = pet
+#if target == c64
+	lda pport
+#endif
+#if target == pet
 	lda bankpp
 #endif
 	jsr sphex2
@@ -1373,7 +1452,10 @@ sccmd	jsr hex2ax	; pc
 	stx cirqv+1
 	cli
 	jsr hex2a	; processor port
-#if target = pet
+#if target == c64
+	sta pport
+#endif
+#if target == pet
 	sta bankpp
 #endif
 	jsr hex2a	; drive
@@ -1402,7 +1484,12 @@ icmd
 	jmp prompt
 
 xcmd			; eXit cmd
-#if target = pet
+#if target == c64
+	lda #$37
+	sta pport
+	jmp (basnmi)
+#endif
+#if target == pet
 #if ram96latch
 	lda bankpp
 	sta ram96latch
@@ -1430,7 +1517,7 @@ lsvcmd	;lda #0 	; Load, Save, or Verify command
 	sty fnadr+1
 #endif
 ll00	jsr inpsksp	; get filename
-	cmp #cr 	; L "filename   only?
+	cmp #cr 	; .L "filename   only?
 	beq do_load
 	cmp #quote
 	bne ll00
@@ -1453,32 +1540,27 @@ do_load lda cmdchr
 	cmp #"S"
 	beq errc7
 	sec
-	sbc #"L"        ; set A <> 0 for Verify
-	; needed by the normal PET rom routine
-
-
-
-
-
+	sbc #"L"        ; set .A <> 0 for Verify
+#if 0 && verck	; needed by the normal PET rom routine
+	sta verck	; 1 is verify
+#endif
+#if 1 || target != pet	; ignored by the normal PET rom routine
 	ldx stal
 	ldy stal+1
-
-
-
-
-
+#endif
 	jsr load
 	bcs errc7
 	lda status
 	and #$10	; verify error
 	bne errc7
 	jmp prompt
+
 errc7	jmp error
 
 ic7c6	dec sa		; make sa 0, for relocating load
 	jsr hex2stal	; get start address to save
 	jsr eol
- beq do_load	; if load address given, attempt to load there
+#beq do_load	; if load address given, attempt to load there
 	jsr hex2ax	; get end address
 	sta eal 	; start in stal, end in eal, as for PET
 	stx eal+1
@@ -1487,30 +1569,121 @@ ic7c6	dec sa		; make sa 0, for relocating load
 	lda cmdchr
 	cmp #"S"        ; save
 	bne errc7
+#if target != pet
+	lda #stal	; address for save start address
+	ldx eal 	; save end address
+	ldy eal+1
+#endif
 	jsr save
 	jmp prompt
 
+#if haveecmd
+ecmd	jsr kbdinput
+	ldx #$7f
+	cmp #"C"
+	beq ic9d9
+	inx
+	cmp #"S"
+	bne errc7
+ic9d9	stx lrbflag
+	jsr getstend
+ic9df	ldx ovflow
+	bne ic9f1
+	jsr steqend
+	bcc ic9f1
+	jsr docrlrb
+	jsr stop
+	bne ic9df
+ic9f1	jmp cuprpt
+
+docrlrb jsr docr
+dolrb	ldx #"."
+	lda #"]"
+	bit lrbflag
+	bmi ica02
+	lda #"["
+ica02	jsr printxa
+	jsr dospc
+	jsr lrbadr
+	jsr dospc
+	ldy #0
+ica10	jsr ldastaly
+	jsr bin8
+	bit lrbflag
+	bpl ica21
+	iny
+	cpy #3
+	bcc ica10
+	dey
+ica21	tya
+	jsr addstaa
+	rts
+
+lrbadr	bit lrbflag
+	bpl ica38
+	lda stal	; for sprite add 1
+	and #$3f
+	cmp #$3f
+	bne ica38
+	jsr incstal
+ica38	jmp hex4
+
+lbcmd	ldx #$7f	; left bracket cmd [
+	dc.b $2c
+rbcmd	ldx #$80	; right bracket cmd ]
+	stx lrbflag
+	jsr hex2stal
+	ldy #0
+icace	jsr bin2a
+	jsr stastaly
+	bit lrbflag
+	bpl icade
+	iny
+	cpy #3
+	bcc icace
+icade	jsr printcu
+	jsr docrlrb
+	lda cmdchr
+	jmp filkeyd0
+#endif	; haveecmd
 errca	jmp error
 
-; Bank cmd
+; Bank cmd.
 ; Has a nybble as argument on the 64, and
-; a byte on the PET
+; a byte on the PET.
 bcmd	jsr inpsksp
 	cmp #cr
 	beq icb07
-#if target = pet
+#if target == c64
+	jsr hex2nybb
+	cmp #8		; only allow banks 0-7 and f
+	bcc icb02
+	cmp #$0f
+	bne errca
+	lda #$86	; $80 to flag drive, bank 6 in the 64
+icb02	sta bank
+	bne prptcb
+#endif
+#if target == pet
 	sta bank0f	; attempt to clear bit 7
 	jsr hexa2a
 	sta bank
 	cmp #$0f
 	bne prptcb
-	ror bank0f	; c=1- bit 7 -= 1 iff bank = 0f
+	ror bank0f	; c=1: bit 7 := 1 iff bank == 0f
 	lda #$00	; set bank for not-in-drive memory
 	sta bank
 	beq prptcb
 #endif
 icb07	lda bank
-#if target = pet
+#if target == c64
+	bpl icb0e
+	lda #"F"-"0"	; $16
+icb0e	clc
+	adc #"0"
+	jsr print
+#endif
+#if target == pet
 	jsr hex2
 #endif
 prptcb	jmp prompt
@@ -1550,7 +1723,7 @@ icdb5	cmp optab,x
 icdbf	lda opctab,x
 	sta acdcb
 	sta acdd1
-	asl ;a		; c-=1 for sbc *dirty*
+	asl ;a		; c:=1 for sbc... *dirty*
 	lda stal
 acdcb	and memuss	; opcode modified
 	sta stal
@@ -1560,8 +1733,6 @@ acdd1	and memuss+1	; opcode modified
 	rts
 
 icdd6	jsr docr
-
-
 	jsr hex4
 	jsr dospc
 	jsr deci
@@ -1642,9 +1813,24 @@ iw041	stx stal
 
 iw05	jmp scrd
 
+#if havepfkeys
+dofkeys tax
+	ldy pflen-pf1,x
+	sty ndx
+	lda pfends-pf1,x
+	tax
+ic801	lda pf1txt,x
+	sta keyd-1,y
+	dex
+	dey
+	bne ic801
+	beq wait
+#endif	; havepfkeys
+
+	subroutine
 
 ; this duplicates the rom input routine, inserting
-; code for our special keys (cu, cd, stop)
+; code for our special keys (cu, cd, stop).
 ; Also does autorepeat on models that don't have it themselves (3032)
 
 input	tya
@@ -1653,6 +1839,12 @@ input	tya
 	pha
 	lda #0
 	sta lxsp+1
+#if autorepeat && 0	; this part serves to get the initial timing
+	lda #slowrep	; right. it may be removed in case of
+	clc		; memory shortage since it is almost never
+	adc time+2	; *really* needed, because usually this function
+	sta reptime	; is called with no key pressed.
+#endif
 	lda crsw	; input from screen or keyboard (cr switch)
 	beq wait
 	jmp scrget	; get from the screen in rom
@@ -1661,52 +1853,52 @@ waitprtc
 	lda datax	; key that has been hit
 waitprt jsr scrprint	; print it
 
-wait
-#if autorepeat
-; Use jiffy timer to check when to make a key repeat
-; When no key was pressed, set to slow value
-; When action is taken, set to fast value
+wait:
+#if 1 && autorepeat
+; Use jiffy timer to check when to make a key repeat.
+; When no key was pressed, set to slow value.
+; When action is taken, set to fast value.
 ; A key is made to repeat by making the keyboard scanner think
-; the previous key was different, which is done by changing lstx
+; the previous key was different, which is done by changing lstx.
 
 	lda #slowrep
 	ldx #nokey
 	cpx lstx
-	beq notpressed001
+	beq notpressed$
 
 	lda time+2
 	cmp reptime
-	bmi endrepeat001
-#if target = pet
+	bmi endrepeat$
+#if target == pet
 	inc lstx	; not "stx lstx" because that would fool us
-			; next time around
+			; next time around...
 #else
-	dec lstx	; for 64 use dec because nokey=64 and this
-			; would be bad for scancode 63, as above
+	dec lstx	; for 64 use dec because nokey==64 and this
+			; would be bad for scancode 63, as above...
 #endif
 	lda #fastrep
-notpressed001
+notpressed$
 	clc
 	adc time+2
 	sta reptime
-endrepeat001
+endrepeat$
 #endif
-#if autorepeat & 0
+#if 0 && autorepeat
 	lda blnct	; abuse cursor blink countdown to check when
-	cmp reptime	; to make a key repeat
-	bne endrepeat002	; when no key was pressed, set to slow value
-	ldx #nokey	; when action is taken, set to fast value
+	cmp reptime	; to make a key repeat.
+	bne endrepeat$	; when no key was pressed, set to slow value.
+	ldx #nokey	; when action is taken, set to fast value.
 	cpx lstx	; a key is made to repeat by faking the release
-	beq notpressed002	; of the key, by setting lstx to #nokey
+	beq notpressed$	; of the key, by setting lstx to #nokey.
 	stx lstx
 	dec blnct
 	lda #20-3	; fastrep
 	sta reptime
-	bne endrepeat002
-notpressed002
+	bne endrepeat$
+notpressed$
 	lda #20-17	; slowrep
 	sta reptime
-endrepeat002
+endrepeat$
 #endif
 	lda ndx 	; anything in the keyboard buffer?
 	sta blnsw	; if <>0, turn off cursor
@@ -1722,20 +1914,18 @@ endrepeat002
 #endif
 	lsr blnon
 	jsr pokchr
-
-
-
-;  jsr fmlfml
-
-
-
 ico00	jsr kbdget	; get char from keyboard buffer
 
 	ldx qtsw	; quote mode switch
 	bne ic058	; if in quote mode, don't be fancy
 	ldx tblx	; screen line of cursor
 	sta datax	; key that has been hit
-
+#if havepfkeys
+	cmp #pf1	; check for pf keys
+	bcc ic847
+	cmp #pf1+8
+	bcc dofkeys
+#endif
 ic847	cmp #$03	; "^c"
 	beq dojump
 	cmp #$83	; "^C"
@@ -1755,7 +1945,7 @@ doreturn
 
 docd	cpx #lines-1	; bottom line
 	bcc waitprt
-	jsr getcmd	; c = 1- go up
+	jsr getcmd	; c = 1: go up
 	bcs waitprtc
 	lda cmdchr
 	cmp #":"
@@ -1794,6 +1984,25 @@ scrolld ;ldy #","
 	jmp tab1
 
 ic892
+#if haveecmd
+			; scroll up [ or ]
+	ldx #$7f
+	cmp #"["-$40
+	beq ic899
+	inx
+ic899	stx lrbflag
+	clc
+	lda #1
+	bit lrbflag
+	bpl ic8a6
+	lda #3
+ic8a6	adc stal
+	sta stal
+	bcc ic8ae
+	inc stal+1
+ic8ae	jsr docrlrb
+	jmp tab1
+#endif	; haveecmd
 
 docu	txa
 	bne ic8bd
@@ -1806,8 +2015,8 @@ ic8c0
 	lda #0
 	sta tmplin
 #endif
-#if (target = pet) & petb2
-	dec tblx	; on basic 2, this function is meant for
+#if [target == pet] && petb2
+	dec tblx	; on basic 2.0, this function is meant for
 	jsr instlin	; inserting chars onto the next line, opening
 	inc tblx	; up the *next* screen line
 #else
@@ -1883,65 +2092,87 @@ ic91e	inc oplen
 	jmp hmtab1
 
 ic93a
+#if haveecmd
+	; scroll down [ or ]
+ic93a	jsr decstal
+	cmp #"["-$40
+	beq ic953
+	jsr decstal
+	jsr decstal
+	lda stal
+	and #$3f
+	cmp #$3d
+	bne ic951
+	dec stal	; for sprite, decrement 1 extra
+ic951	ldx #$80
+ic953	stx lrbflag
+	jsr dolrb
+	jmp hmtab1
+#endif	; haveecmd
 
 ;;;;
 ;
-;   getcmd is called with the number of the current line in X
-;   with automatically (pnt) pointing to the same line
+;   getcmd is called with the number of the current line in .X
+;   with automatically (pnt) pointing to the same line.
 
+	subroutine
 
-
-getcmd	ror stal	; remember down (C=0) or up (C=1)
+getcmd	ror stal	; remember down (.C=0) or up (.C=1)
 	lda pnt
 	sta memuss
 	lda pnt+1
 	sta memuss+1
-top002	ldy #0
+.top	ldy #0
 	lda (memuss),y
 	cmp #"."        ; screen code
 	beq ic98d
-nextline
+.nextline
 	bit stal	; pl=go down
-	bpl down001
+	bpl .down
 	sec
 	lda memuss
 	sbc #columns
 	sta memuss
-	bcs getcmd002
+	bcs .2
 	dec memuss+1
-getcmd002	dex
-	bpl top002
-	sec		; .c=1- not found
+.2	dex
+	bpl .top
+	sec		; .c=1: not found
 	rts
 
-down001	clc
+.down	clc
 	lda memuss
 	adc #columns
 	sta memuss
-	bcc getcmd003
+	bcc .1
 	inc memuss+1
-getcmd003	inx
+.1	inx
 	cpx #lines
-	bcc top002
+	bcc .top
 	rts
 
 ic98d	iny
 	lda (memuss),y
-
+#if haveecmd
+	cmp #"["-$40    ; screen-[
+	beq .gotcmd
+	cmp #"]"-$40    ; ]
+	beq .gotcmd
+#endif
 	cmp #","        ; screen code
-	beq gotcmd003
+	beq .gotcmd
 	cmp #">"        ; screen code
-	beq gotcmd003
+	beq .gotcmd
 	cmp #":"        ; screen code
-	bne nextline
-gotcmd003 sta cmdchr
+	bne .nextline
+.gotcmd sta cmdchr
 	iny
 	jsr scr2stal
 	sta stal+1
 
 	; fall through to scr2stal
 
-
+	subroutine
 
 scr2stal		; convert number in screen code
 	jsr scr2nybb
@@ -1956,7 +2187,7 @@ scr2stal		; convert number in screen code
 	clc
 	rts
 
-
+	subroutine
 
 scr2nybb
 	lda (memuss),y
@@ -1964,28 +2195,28 @@ scr2nybb
 	cmp #" "
 	beq scr2nybb
 	cmp #7	; screen code for "f"
-	bcs scr2nybb001
+	bcs .1
 	adc #9
-scr2nybb001	and #$0f
+.1	and #$0f
 	rts
 
-
+	subroutine
 
 usestal sta membyt
 	lda stal
-	sta memopc+1
+	sta memlo
 	lda stal+1
-	sta memopc+2
+	sta memhi
 	rts
 
 usemuss sta membyt
 	lda memuss
-	sta memopc+1
+	sta memlo
 	lda memuss+1
-	sta memopc+2
+	sta memhi
 	rts
 
-ldastal jsr usestal	; *** note- these funcs must preserve the Carry!
+ldastal jsr usestal	; *** note: these funcs must preserve the Carry!
 	lda #$ad	; lda abs
 	bne setopc
 
@@ -2019,9 +2250,12 @@ stastaly
 ;	jsr usestal
 ;	lda #$d9	; cmp a,y
 
-setopc	sta memopc	; must preserve A and carry (for opredu)
+setopc	sta memopc	; must preserve .A and carry (for opredu)
 	stx mem_savx
-#if target = pet
+#if target == c64
+	bit bank
+#endif
+#if target == pet
 	bit bank0f
 #endif
 	bmi diskmem
@@ -2032,23 +2266,38 @@ icb79	pla
 	plp
 	ldy mem_savy
 icb7f
-#if ram96latch
+#if target == c64
+	ldx pport
+	txa
+	and #$38
+bank	 = .+1
+	ora #7
+	sei
+	sta pport
+#endif	; target == c64
+#if [target == pet] && ram96latch
 	sei
 	ldx bank
 	stx ram96latch
 	ldx bankpp
-#endif	; target = pet
-membyt	 = *+1
+#endif	; target == pet
+membyt	 = .+1
 	lda #8		; constant will be modified
 
+memhi	= memopc+2
+memlo	= memopc+1
 
 memopc	lda $ffff,y	; opcode and address will be modified
-#if (target = pet) & ram96latch
+#if target == c64
+	stx pport
+	cli
+#endif
+#if [target == pet] && ram96latch
 	stx ram96latch
 	cli
-#endif	; target = pet
+#endif	; target == pet
 	php
-mem_savx = *+1
+mem_savx = .+1
 	ldx #3		; constant will be modified
 	plp
 	rts
@@ -2062,19 +2311,19 @@ diskmem
 	ldy #0
 icba1	clc
 	tya
-	adc memopc+1	; add Y
+	adc memlo	; add .Y
 	pha
 	lda #0
-	adc memopc+2
-#if 1		; we don't want this
+	adc memhi
+#if 1		; we don't want this...
 	cmp #$48	; $4800-$c000
 	bcc icbb4	; fetch from computer's memory anyway
 	cmp #$c0
 	bcc icb79
 #endif
-icbb4	sta memopc+2
+icbb4	sta memhi
 	pla
-	sta memopc+1
+	sta memlo
 	pla		; opcode, test r/w
 	and #$60
 	cmp #1
@@ -2082,13 +2331,13 @@ icbb4	sta memopc+2
 	ora #$89	; make it an immediate opcode
 	sta acc07
 	lda #"R"
-	bit rwflag ;<0-r
+	bit rwflag ;<0:r
 	bmi icbd1
 	lda #"W"
 icbd1	jsr diskmrw ;m-rw
 	lda #1	;1 byte
 	jsr iecout
-	bit rwflag ;>0-w
+	bit rwflag ;>0:w
 	bpl diskw
 	jsr unlsn
 	lda fa
@@ -2105,13 +2354,13 @@ icbeb	lda #0
 	jsr iecin
 	jsr untlk
 	plp
-mem_savy    = *+1
+mem_savy    = .+1
 	ldy #1		; this constant will be modified
 	lda membyt
-diskbytin = *+1
+diskbytin = .+1
 
 acc07	lda #$14	; this opcode and constant will be modified
-	rts		; sbc/cmp
+	rts		; sbc/cmp...
 
 diskw	lda membyt
 	jsr iecout
@@ -2136,9 +2385,9 @@ diskmrw pha
 	jsr iecout
 	pla		;r/w/e
 	jsr iecout
-	lda memopc+1
+	lda memlo
 	jsr iecout
-	lda memopc+2
+	lda memhi
 	jmp iecout
 
 errcc	jmp error
@@ -2215,7 +2464,7 @@ icce1	lda fa		; close the file
 	jsr busclse
 	jmp prompt	; done
 
-bus2a	jsr iecin	; bus to A
+bus2a	jsr iecin	; bus to .A
 	ldx status	; when EOI set, we're done
 	bne icce1
 	tax		; set Z flag appropriately
@@ -2226,19 +2475,19 @@ prtnosup
 	bne print
 	rts
 
-crdotysp		; print cr, dot, Y, space
+crdotysp		; print cr, dot, .Y, space
 	tya
 	pha
 	jsr docr
 	pla
-dodota	ldx #"."        ; print dot, A
+dodota	ldx #"."        ; print dot, .A
 	jsr printxa
 dospc	lda #" "        ; print space
-	.byt $2c
+	dc.b $2c
 printcu lda #cu 	; print cursor up
-	.byt $2c
+	dc.b $2c
 gohome	lda #home	; print home
-	.byt $2c
+	dc.b $2c
 docr	lda #cr 	; print cr
 
 print	bit pflag	; print to printer?
@@ -2260,24 +2509,24 @@ ice0a	jmp scrprint
 
 ;;;;
 ;
-; This is code duplicating C-64 functionality on the PET
+; This is code duplicating C-64 functionality on the PET.
 ; In particular it is the relocating loader we're concerned about,
 ; but we extend it by printing the original load address and
-; the actual end address
+; the actual end address.
 ;
 
-#if target = pet
-
+#if target == pet
+	subroutine
 load
 	stx memuss	    ; desired load start addr
 	sty memuss+1
-	sta verck	    ; A- verify flag
+	sta verck	    ; A: verify flag
 	lda fa
 	cmp #4
-	bcs ieeeload001
+	bcs .ieeeload
 	jmp romload
 
-ieeeload001
+.ieeeload
 	lda sa
 	pha
 	lda #$60
@@ -2293,50 +2542,49 @@ ieeeload001
 	sta eal+1
 
 	jsr loading
-	jsr preal001	; print start address
+	jsr .preal	; print start address
 
 	pla		; get sa back
-	bne absload
+	bne .absload
 	lda memuss
 	sta eal
 	lda memuss+1
 	sta eal+1
-absload
-notimeout
+.absload
+.notimeout
 	lda status
 	and #$fd	; mask timeout
 	sta status
 
 	jsr stop
-	beq endload
+	beq .endload
 	jsr iecin
 	tax
 	lda status
 	lsr
 	lsr
-	bcs notimeout
+	bcs .notimeout
 	txa
 	ldy verck
+	beq .loadbyt
 
-
-	beq loadbyt
 	ldy #0
 	cmp (eal),y
-	beq nextbyt
+	beq .nextbyt
 	ldx #$10
 	stx status
-	bne nextbyt
-loadbyt
+	bne .nextbyt
+.loadbyt
 	sta (eal),y
-nextbyt
+.nextbyt
 	inc eal
-	bne nextbyt001
+	bne .1
 	inc eal+1
-nextbyt001	bit status
-	bvc notimeout
+.1	bit status
+	bvc .notimeout
 
-endload
-	jsr preal001	; print end address
+.endload
+	jsr .preal	; print end address
 
 	jsr untlk
 	jsr buslsnclse
@@ -2344,7 +2592,7 @@ endload
 	clc
 	rts
 
-preal001
+.preal
 	lda eal+1	; print end address
 	jsr sphex2
 	lda eal
@@ -2352,129 +2600,169 @@ preal001
 
 #endif
 
-optab	.byt "+-&!%"
-opctab	.byt $65; adc zpg
-	.byt $e5; sbc  "
-	.byt $25; and  "
-	.byt $05; ora  "
-	.byt $45; eor  "
+optab	dc.b "+-&!%"
+opctab	dc.b $65; adc zpg
+	dc.b $e5; sbc  "
+	dc.b $25; and  "
+	dc.b $05; ora  "
+	dc.b $45; eor  "
 
-tenpow	.word 1,10,100,1000,10000
+tenpow	dc.w 1,10,100,1000,10000
 
+#if havepfkeys
+pflen	dc.b pf3txt - pf1txt
+	dc.b pf5txt - pf3txt
+	dc.b pf7txt - pf5txt
+	dc.b pf2txt - pf7txt
+	dc.b pf4txt - pf2txt
+	dc.b pf6txt - pf4txt
+	dc.b pf8txt - pf6txt
+	dc.b pf8end - pf8txt
+pfends	dc.b pf3txt-pf1txt-1
+	dc.b pf5txt-pf1txt-1
+	dc.b pf7txt-pf1txt-1
+	dc.b pf2txt-pf1txt-1
+	dc.b pf4txt-pf1txt-1
+	dc.b pf6txt-pf1txt-1
+	dc.b pf8txt-pf1txt-1
+	dc.b pf8end-pf1txt-1
+pf1txt	dc.b "        :",cr
+pf3txt	dc.b "M0000",cl,cl,cl,cl
+pf5txt	dc.b "B0",cr
+pf7txt	dc.b "@$0",cr
+pf2txt	dc.b cu,cr+128,".A ",cri,cri,cri,cri," "
+pf4txt	dc.b "B7",cr
+pf6txt	dc.b "BF",cr
+pf8txt	dc.b "@$1",cr
+pf8end
+#endif	; havepfkeys
 
 ;used to test for illegal opcodes
-illtab	.byt $40,$02,$45,$03;".^be^c
-	.byt $d0,$08,$40,$09;"p^h.^i
-	.byt $30,$22,$45,$33;"0.e3
-	.byt $d0,$08,$40,$09;"p^h.^i
-	.byt $40,$02,$45,$33;".^be3
-	.byt $d0,$08,$40,$09;"p^h.^i
-	.byt $40,$02,$45,$b3;".^be_
-	.byt $d0,$08,$40,$09;"p^h.^i
-	.byt $00,$22,$44,$33;"..d3
-	.byt $d0,$8c,$44,$00;"p^Ld
-	.byt $11,$22,$44,$33;"^q.d3
-	.byt $d0,$8c,$44,$9a;"p^Ld^Z
-	.byt $10,$22,$44,$33;"^p.d3
-	.byt $d0,$08,$40,$09;"p^h.^i
-	.byt $10,$22,$44,$33;"^p.d3
-	.byt $d0,$08,$40,$09;"p^h.^i
-	.byt $62,$13,$78,$a9;"B^sX_
+illtab	dc.b $40,$02,$45,$03;".^be^c
+	dc.b $d0,$08,$40,$09;"p^h.^i
+	dc.b $30,$22,$45,$33;"0.e3
+	dc.b $d0,$08,$40,$09;"p^h.^i
+	dc.b $40,$02,$45,$33;".^be3
+	dc.b $d0,$08,$40,$09;"p^h.^i
+	dc.b $40,$02,$45,$b3;".^be_
+	dc.b $d0,$08,$40,$09;"p^h.^i
+	dc.b $00,$22,$44,$33;"..d3
+	dc.b $d0,$8c,$44,$00;"p^Ld.
+	dc.b $11,$22,$44,$33;"^q.d3
+	dc.b $d0,$8c,$44,$9a;"p^Ld^Z
+	dc.b $10,$22,$44,$33;"^p.d3
+	dc.b $d0,$08,$40,$09;"p^h.^i
+	dc.b $10,$22,$44,$33;"^p.d3
+	dc.b $d0,$08,$40,$09;"p^h.^i
+	dc.b $62,$13,$78,$a9;"B^sX_
 
-modes	.byt $00,$21,$81,$82
-	.byt $00,$00,$59,$4d
-	.byt $91,$92,$86,$4a
-	.byt $85,$9d
+modes	dc.b $00,$21,$81,$82
+	dc.b $00,$00,$59,$4d
+	dc.b $91,$92,$86,$4a
+	dc.b $85,$9d
 	;      4   8   1 v 2   4   8
-modes1	 .byt ",",")",",","#","(","$"
-modes2	 .byt "Y",$00,"X","$","$",0
+modes1	 dc.b ",",")",",","#","(","$"
+modes2	 dc.b "Y",$00,"X","$","$",0
 
-rd2pklo  .byt $1c,$8a,$1c,$23;"^\^J^\#
-	.byt $5d,$8b,$1b,$a1;"]^K^[_
-	.byt $9d,$8a,$1d,$23;"^}^J^]#
-	.byt $9d,$8b,$1d,$a1;"^}^K^]_
-	.byt $00,$29,$19,$ae;".)^y_
-	.byt $69,$a8,$19,$23;"I_^y#
-	.byt $24,$53,$1b,$23;"$s^[#
-	.byt $24,$53,$19,$a1;"$s^y_
-	.byt $00,$1a,$5b,$5b;".^z[[
-	.byt $a5,$69,$24,$24;"_I$$
-	.byt $ae,$ae,$a8,$ad;"____
-	.byt $29,$00,$7c,$00;").\.
-	.byt $15,$9c,$6d,$9c;"^u^|M^|
-	.byt $a5,$69,$29,$53;"_I)s
-	.byt $84,$13,$34,$11;"^D^s4^q
-	.byt $a5,$69,$23,$a0;"_I#_
-rd2pkhi .byt $d8,$62,$5a,$48;"xBzh
-	.byt $26,$62,$94,$88;"&B^T^H
-	.byt $54,$44,$c8,$54;"tdht
-	.byt $68,$44,$e8,$94;"Hd_^T
-	.byt $00,$b4,$08,$84;"._^h^D
-	.byt $74,$b4,$28,$6e;"T_(N
-	.byt $74,$f4,$cc,$4a;"T_lj
-	.byt $72,$f2,$a4,$8a;"R__^J
-	.byt $00,$aa,$a2,$a2;".___
-	.byt $74,$74,$74,$72;"TTTR
-	.byt $44,$68,$b2,$32;"dH_2
-	.byt $b2,$00,$22,$00;"_...
-	.byt $1a,$1a,$26,$26;"^z^z&&
-	.byt $72,$72,$88,$c8;"RR^Hh
-	.byt $c4,$ca,$26,$48;"dj&h
-	.byt $44,$44,$a2,$c8;"dd_h
+;index:reduced opcode
+;result:lo byte of packed ascii opcode
+rd2pklo  dc.b $1c,$8a,$1c,$23;"^\^J^\#
+	dc.b $5d,$8b,$1b,$a1;"]^K^[_
+	dc.b $9d,$8a,$1d,$23;"^}^J^]#
+	dc.b $9d,$8b,$1d,$a1;"^}^K^]_
+	dc.b $00,$29,$19,$ae;".)^y_
+	dc.b $69,$a8,$19,$23;"I_^y#
+	dc.b $24,$53,$1b,$23;"$s^[#
+	dc.b $24,$53,$19,$a1;"$s^y_
+	dc.b $00,$1a,$5b,$5b;".^z[[
+	dc.b $a5,$69,$24,$24;"_I$$
+	dc.b $ae,$ae,$a8,$ad;"____
+	dc.b $29,$00,$7c,$00;").\.
+	dc.b $15,$9c,$6d,$9c;"^u^|M^|
+	dc.b $a5,$69,$29,$53;"_I)s
+	dc.b $84,$13,$34,$11;"^D^s4^q
+	dc.b $a5,$69,$23,$a0;"_I#_
+rd2pkhi dc.b $d8,$62,$5a,$48;"xBzh
+	dc.b $26,$62,$94,$88;"&B^T^H
+	dc.b $54,$44,$c8,$54;"tdht
+	dc.b $68,$44,$e8,$94;"Hd_^T
+	dc.b $00,$b4,$08,$84;"._^h^D
+	dc.b $74,$b4,$28,$6e;"T_(N
+	dc.b $74,$f4,$cc,$4a;"T_lj
+	dc.b $72,$f2,$a4,$8a;"R__^J
+	dc.b $00,$aa,$a2,$a2;".___
+	dc.b $74,$74,$74,$72;"TTTR
+	dc.b $44,$68,$b2,$32;"dH_2
+	dc.b $b2,$00,$22,$00;"_...
+	dc.b $1a,$1a,$26,$26;"^z^z&&
+	dc.b $72,$72,$88,$c8;"RR^Hh
+	dc.b $c4,$ca,$26,$48;"dj&h
+	dc.b $44,$44,$a2,$c8;"dd_h
 
+rtxt	dc.b cr
+	dc.b "    PC  IRQ  PP DR AC XR YR SP NV#BDIZC", cr
+	dc.b ".; "
 
-rtxt	.byt cr
-	.byt "    PC  IRQ  PP DR AC XR YR SP NV#BDIZC", cr
-	.byt ".; "
-
-cmdtab	.byt "ABCD"
-	.byt "FGHIJKLMPRSTVXY@,:;"
-	.byt "<>?"
-
-adrtab	.word acmd,bcmd,ccmd,dcmd
-	.word fcmd, gcmd, hcmd
-	.word icmd, jcmd, kcmd
-	.word lsvcmd, mcmd
-	.word pcmd, rcmd, lsvcmd, tcmd
-	.word lsvcmd, xcmd, ycmd
-	.word atcmd, cmcmd
-	.word cocmd, sccmd
-	.word ltcmd, htcmd, qmcmd
-
-; local storage from here on-
-#if target = pet
-bank	.byt 0
-bankpp	.byt 0
-bank0f	.byt 0	; bit 7 is a flag
+cmdtab	dc.b "ABCD"
+#if haveecmd
+	dc.b "E"
 #endif
-rwflag	.byt 0
-pflag	.byt 0
-rspace	= *
-pchi	.byt 0
-pclo	.byt 0
-pssave	.byt 0
-acsave	.byt 0
-xrsave	.byt 0
-yrsave	.byt 0
-spsave	.byt 0
-stackmk .byt 0
-cmdchr	.byt 0
-huntlen .byt 0
-lrbflag .byt 0
-apos	.byt 0
-oplen	.byt 0	 ;operand length
-abuf	.byt 0,0 ;3 bytes
-loleft	.byt 0
-stalsav .word 0
-ovflow	.byt 0
-ctflag	.byt 0
-mode	.byt 0
-nybble	.byt 0
-dbackup .byt 0
+	dc.b "FGHIJKLMPRSTVXY@,:;"
+#if haveecmd
+	dc.b "[]"
+#endif
+	dc.b "<>?"
+
+adrtab	dc.w acmd,bcmd,ccmd,dcmd
+#if haveecmd
+	dc.w ecmd
+#endif
+	dc.w fcmd, gcmd, hcmd
+	dc.w icmd, jcmd, kcmd
+	dc.w lsvcmd, mcmd
+	dc.w pcmd, rcmd, lsvcmd, tcmd
+	dc.w lsvcmd, xcmd, ycmd
+	dc.w atcmd, cmcmd
+	dc.w cocmd, sccmd
+#if haveecmd
+	dc.w lbcmd, rbcmd
+#endif
+	dc.w ltcmd, htcmd, qmcmd
+
+; local storage from here on:
+#if target == pet
+bank	dc.b 0
+bankpp	dc.b 0
+bank0f	dc.b 0	; bit 7 is a flag
+#endif
+rwflag	dc.b 0
+pflag	dc.b 0
+rspace	= .
+pchi	dc.b 0
+pclo	dc.b 0
+pssave	dc.b 0
+acsave	dc.b 0
+xrsave	dc.b 0
+yrsave	dc.b 0
+spsave	dc.b 0
+stackmk dc.b 0
+cmdchr	dc.b 0
+huntlen dc.b 0
+lrbflag dc.b 0
+apos	dc.b 0
+oplen	dc.b 0	 ;operand length
+abuf	dc.b 0,0 ;3 bytes
+loleft	dc.b 0
+stalsav dc.w 0
+ovflow	dc.b 0
+ctflag	dc.b 0
+mode	dc.b 0
+nybble	dc.b 0
+dbackup dc.b 0
 #if autorepeat
-reptime	.byt slowrep
+reptime	dc.b slowrep
 #endif
 
-huntbuf .byt "KOSMON  BY KOSMO"
-	.byt "SOFT   V11.10.86"
-end	 = *
+huntbuf dc.b "KOSMON  BY KOSMO"
+	dc.b "SOFT   V11.10.86"
+end	 = .
