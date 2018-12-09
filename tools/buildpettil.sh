@@ -2,18 +2,20 @@
 	echo target# $1
 	echo romopts $2
 	echo studio  $3
+	echo specialopts  $4
 
 	make clean
 #	echo . Phase I
 #	echo . . . . Building PETTIL core = PETTIL-CORE.OBJ
-	cd ./core/src/ && 					\
-	xa ./pettil-core.a65 				\
-		-DROM_OPTIONS=$2				\
-		-DHITOP=$3 						\
-		-I ../../common/src/ 			\
-		-o ../../tmp/pettil-core.obj 	\
-		-e ../../tmp/pettil-core.err 	\
-		-l ../../tmp/pettil-core.lab 	\
+	cd ./core/src/ &&                                                           \
+	xa ./pettil-core.a65                                                        \
+		-DROM_OPTIONS=$2                                                        \
+		-DHITOP=$3                                                              \
+		-DSPECIALOPTS=$4                                                        \
+		-I ../../common/src/ 			                                        \
+		-o ../../tmp/pettil-core.obj 	                                        \
+		-e ../../tmp/pettil-core.err 	                                        \
+		-l ../../tmp/pettil-core.lab 	                                        \
 		-v
 	cd -
 #	echo . . . . Generating core labels = PETTIL-CORE.DEF
@@ -21,14 +23,15 @@
 	ls -la ./tmp/
 #	echo . Phase II
 #	echo . . . . Building PETTIL temporary dictionary = PETTIL-TDICT.OBJ
-	cd ./studio/src/ && 				\
-	xa ./pettil-studio.a65 				\
-		-DROM_OPTIONS=$2				\
-		-DHITOP=$3 						\
-	  -I ../../common/src/ 				\
-	  -o ../../tmp/pettil-studio.obj 	\
-	  -e ../../tmp/pettil-studio.err 	\
-	  -l ../../tmp/pettil-studio.lab 	\
+	cd ./studio/src/ &&                                                         \
+	xa ./pettil-studio.a65                                                      \
+		-DROM_OPTIONS=$2                                                        \
+		-DHITOP=$3                                                              \
+		-DSPECIALOPTS=$4                                                        \
+	  -I ../../common/src/                                                      \
+	  -o ../../tmp/pettil-studio.obj                                            \
+	  -e ../../tmp/pettil-studio.err                                            \
+	  -l ../../tmp/pettil-studio.lab                                            \
 	  -v
 	cd -
 #	echo . Phase III

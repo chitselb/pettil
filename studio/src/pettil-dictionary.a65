@@ -763,6 +763,68 @@ foundq03                        ; found it
 
 ;--------------------------------------------------------------
 #if 0
+name=EXISTS?
+stack=( -- addr flag )
+tags=interpreter,ext
+parses the next token in the input stream.  Returns either the
+address of the (unfound) token at HERE and a 0, or the code
+field address of the word and -1 for normal, +1 for immediate
+words
+
+```
+: exists?
+   bl word ?dup ?: found? 0 and ;
+```
+#endif
+#include "align.i65"
+_existsq
+    jsr enter
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word _name            ; ~~2
+#include "page.i65"
+    .word qdup
+#include "pass.i65"
+    .word pquerycolon
+    .word _foundq
+    .word zero
+#include "page.i65"
+    .word andx
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name='
+stack=( -- cfa )
+tags=forth-83
+Parse the next token in the input stream and search for it,
+returning the CFA if successful.  Otherwise aborts with the
+message "NOT FOUND"
+
+```
+: '   ( "name" -- cfa )
+    exists? 0=  3 ?error ;
+```
+#endif
+#include "align.i65"
+_tick
+    jsr enter
+#include "page.i65"
+    .word _existsq
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word zeq
+#include "pass.i65"
+    .word qerror
+    .byt 3                      ; NOT FOUND
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=((CREATE))
 stack=( symtail cfa' -- newest )
 tags=compiler,nosymbol
@@ -813,8 +875,20 @@ ppcreate01
 name=(CREATE)
 stack=( cfa -- )
 tags=compiler,nosymbol
-Create a new symbol in the symbol table, emit a warning if it exists,
-and manage `redefined`.
+Create a new symbol in the symbol table
+
+* if eol?
+** 4 ?error "MISSING NAME"
+* if it exists
+** emit a warning
+** [rvs]`name` exists[off]
+** smudge the original
+** set `redefined`
+* create the symbol
+** set bloom filter bit from nfa
+** tack on a new copy at symtail
+** cfa, len/flag, "symbol", vocab
+** set `newest` = nfa
 
 ||found|not found|h
 |`redefined`|prior|0|
@@ -824,6 +898,27 @@ and manage `redefined`.
     span @ 0= 4 ?error          \ "MISSING NAME"
     bl name
     bloom ( symtail 2+ )
+    current 2swap over cfa,
+    >syms here 3- ((create))
+    3coff dup smudge newest !
+    false (seekb)
+    if
+        unsmudge
+    else
+        <n3 dup redefined !
+        RVSON emit
+        id. ." exists{OFF}"
+    then ;
+
+: (create)   ( cfa -- )
+    eol? 4 ?error               \ "MISSING NAME"
+    redefined off
+    exists? ?dup
+    if
+        <n3 dup redefined ! smudge
+        .rvs <n7 $. ."  [OFF]exists "
+    then                        ( cfa )
+    bloom                       ( symtail 2+ )
     current 2swap over cfa,
     >syms here 3- ((create))
     3coff dup smudge newest !
@@ -846,10 +941,41 @@ _pcreate
     .word qerror
     .byt 4                      ; MISSING NAME
 #include "page.i65"
-    .word bl
+    .word redefined
 #include "page.i65"
-    .word _name
+    .word off
 #include "page.i65"
+    .word _existsq
+#include "pass.i65"
+    .word qbranch
+    .byt <(pcreate01-*+1)
+#include "page.i65"
+    .word xyzzy
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N3
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word redefined
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word smudge
+#include "page.i65"
+    .word dotrvs
+#include "pass.i65"
+    .word zpfrom
+    .byt ACC+2*N7
+#include "page.i65"
+    .word _stringdot
+#include "pass.i65"
+    .word _pdq
+    .byt <(pcreate02-*-1)
+    .asc RVSOFF," EXISTS "
+pcreate02
+#include "page.i65"
+pcreate01
     .word bloom                 ; aka `symtail` +2
 #include "page.i65"
     .word current
@@ -892,7 +1018,6 @@ _pcreate
     .word branch
     .byt <(pcreate03-*+1)
 #include "page.i65"
-pcreate01
     .word zpfrom
     .byt ACC+2*N3
 #include "page.i65"
@@ -908,11 +1033,6 @@ pcreate01
     .word emit
 #include "page.i65"
     .word _iddot
-#include "pass.i65"
-    .word _pdq
-    .byt <(pcreate02-*-1)
-    .asc RVSOFF," EXISTS "
-pcreate02
 #include "pass.i65"
 pcreate03
     .word exit
@@ -1795,13 +1915,6 @@ tags=forth-83
 Sets the compilation vocabulary by copying the first vocabulary in
 the [[VOCABS]] search order to [[CURRENT]].
 
-```
-: definitions   ( -- )
-    vocabs c@  current c! ;     \ [13]
-```
-
-This is the most bare-metal approach, fastest, [9] bytes. Also here is some
-code golf notation.
 #endif
 #include "align.i65"
 definitions

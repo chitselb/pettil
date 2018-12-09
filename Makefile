@@ -8,47 +8,66 @@ SHELL = /bin/bash
 all:
 	./tools/mkpet
 
-	c1541 -attach pettil.d64								\
-		-write obj/pettil.prg0 pettil.prg 					\
+	c1541 -attach pettil.d64													\
+		-write obj/pettil.prg0 pettil.prg 										\
 		-write tapes/pettilpackets
+
 	# add other targets
-	for object in obj/pettil.prg* ; do 						\
-        echo $$object ;										\
-		c1541 -attach pettil.d64 -write $$object ;			\
-        ls -la $$object ; 									\
+	for object in obj/pettil.prg* ; do 											\
+        echo $$object ;															\
+		c1541 -attach pettil.d64 -write $$object ;								\
+        ls -la $$object ; 														\
     done
-	# launch a PET!
-	/usr/bin/xpet 											\
-		-directory data/PET/ -moncommand obj/pettil.mon0	\
-		-config data/x11_chitselb.vicerc 					\
-		-warp -8 chitselb.d64 -9 pettil.d64 &
-	/usr/bin/xpet 											\
-		-directory data/PET/ -moncommand obj/pettil.mon3	\
-		-config data/x11_chitselb.vicerc 					\
+
+	# launch a few PETs!
+	/usr/local/bin/xpet 														\
+		-directory data/PET/ -moncommand obj/pettil.mon2						\
+		-config data/sdl2_chitselb.vicerc 										\
 		-warp -8 chitselb.d64 -9 pettil.d64 &
 
-vic20: FORCE clean
-#	sh ./tools/buildpettil.sh 9 32 5E00 0401   #    +3K only
-	sh ./tools/buildpettil.sh 9 32 5E00 1201   #    +8K|16K|24K|32K
-#	sh ./tools/buildpettil.sh 9 32 5E00 1001   # 5K unexpanded
-	/home/chitselb/Documents/dev/commodore/vice-3.2/src/xvic \
-		-directory ./data/VIC20/ \
-		-config ./data/sdl2_vic20.vicerc &
+#	/usr/local/bin/xpet 														\
+		-directory data/PET/ -moncommand obj/pettil.mon1						\
+		-config data/sdl2_chitselb.vicerc 										\
+		-warp -8 chitselb.d64 -9 pettil.d64 &
 
-c64: FORCE clean
-	sh ./tools/buildpettil.sh A 5 5E00 0801
+#	/usr/local/bin/xpet 														\
+		-directory data/PET/ -moncommand obj/pettil.mon2						\
+		-config data/sdl2_chitselb.vicerc 										\
+		-warp -8 chitselb.d64 -9 pettil.d64 &
 
-#all:  mypet tiddlypettil
-#all:  launchrecord
-#all:  thread1 tiddlypettil
-#all:  thread1 thread2 tiddlypettil
-#all:  thread3 tiddlypettil
-#all:  xpeta tiddlypettil
-#all:  xpetb tiddlypettil
-#all:  xpetc tiddlypettil
-#all:  xpetd tiddlypettil
-#all:  xpete tiddlypettil
-#all:  xpetf tiddlypettil
+testpet:
+	~/bin/xpet                                                                  \
+		-directory data/PET/ -moncommand obj/pettil.mon2						\
+		-config data/gtk3_chitselb.vicerc 										\
+		-warp -8 chitselb.d64 -9 pettil.d64
+
+test4pet:
+	~/bin/xpet                                                                  \
+		-directory data/PET/ -moncommand obj/pettil.mon2						\
+		-config data/gtk3_chitselb.vicerc 										\
+		-warp -8 chitselb.d64 -9 pettil.d64
+
+testupgradepet:
+	~/bin/xpet                                                                  \
+		-directory data/PET/ -moncommand obj/pettil.mon2						\
+		-config data/gtk3_upgrade.vicerc 										\
+		-rom9 data/MYNR90_MicroMon.bin                                          \
+		-romA data/MYNRa0_picchip_MMpl_DOS.bin                                  \
+		-warp -8 chitselb.d64 -9 pettil.d64
+
+mypet:
+	/usr/bin/xpet                                                               \
+		-directory data/PET/ -moncommand obj/pettil.mon2						\
+		-config data/x11_chitselb.vicerc 										\
+		-warp -8 chitselb.d64 -9 pettil.d64
+
+upgrade:
+	/usr/local/bin/xpet                                                         \
+		-directory data/PET/ -moncommand obj/pettil.mon2						\
+		-config data/sdl2_upgrade.vicerc 										\
+		-rom9 data/MYNR90_MicroMon.bin                                          \
+		-romA data/MYNRa0_picchip_MMpl_DOS.bin                                  \
+		-warp -8 chitselb.d64 -9 pettil.d64
 
 compile: clean pettil tiddlypettil
 
