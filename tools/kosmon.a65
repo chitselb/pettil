@@ -12,7 +12,11 @@
 ; and change the base and BRK entry point accordingly
 ; For a <4K version, set the symbol haveecmd to 0
 
--base =  $5000	; /// -$cc
+#ifdef BASE
+base =  $BASE
+#else
+base = $5000
+#endif
 
 petb2 = 0
 petb4 = 0
@@ -28,6 +32,7 @@ c64 = 0
 #endif
 
 #ifdef PET80
+-petb4 = 1
 -pet80 = 1
 #endif
 
@@ -42,8 +47,6 @@ printdev = 4	; my taste
 printsa = 7	; my taste
 havedashes = 1
 
-
-target = pet
 
 ; the settings below are for pets only
 ; Note there is only allowance for Basic 2 (new roms) and 4
@@ -190,9 +193,9 @@ scrget	= $e11e
 pokchr	= $e606 ; accidentally the same in 40 and 80 colums
 #endif	; petb4
 #if pet80
-scrcont = $e0ee ; accidentally the same in 40 and 80 colums
-scrget	= $e121
-pokchr	= $e606 ; accidentally the same in 40 and 80 colums
+-scrcont = $e0ee ; accidentally the same in 40 and 80 colums
+-scrget	= $e121
+-pokchr	= $e606 ; accidentally the same in 40 and 80 colums
 #endif	; pet80
 #endif	; petb4
 
@@ -1349,7 +1352,7 @@ ic6b6	lda rtxt,x
 	jsr hex2
 	lda cirqv
 	jsr hex2
-#if target = pet
+#if pet
 	lda bankpp
 #endif
 	jsr sphex2
@@ -1373,7 +1376,7 @@ sccmd	jsr hex2ax	; pc
 	stx cirqv+1
 	cli
 	jsr hex2a	; processor port
-#if target = pet
+#if pet
 	sta bankpp
 #endif
 	jsr hex2a	; drive
@@ -1402,7 +1405,7 @@ icmd
 	jmp prompt
 
 xcmd			; eXit cmd
-#if target = pet
+#if pet
 #if ram96latch
 	lda bankpp
 	sta ram96latch
@@ -1456,16 +1459,8 @@ do_load lda cmdchr
 	sbc #"L"        ; set A <> 0 for Verify
 	; needed by the normal PET rom routine
 
-
-
-
-
 	ldx stal
 	ldy stal+1
-
-
-
-
 
 	jsr load
 	bcs errc7
@@ -1492,25 +1487,42 @@ ic7c6	dec sa		; make sa 0, for relocating load
 
 errca	jmp error
 
-; Bank cmd
+; Bank cmd.
 ; Has a nybble as argument on the 64, and
-; a byte on the PET
+; a byte on the PET.
 bcmd	jsr inpsksp
 	cmp #cr
 	beq icb07
-#if target = pet
+#if c64
+	jsr hex2nybb
+	cmp #8		; only allow banks 0-7 and f
+	bcc icb02
+	cmp #$0f
+	bne errca
+	lda #$86	; $80 to flag drive, bank 6 in the 64
+icb02	sta bank
+	bne prptcb
+#endif
+#if pet
 	sta bank0f	; attempt to clear bit 7
 	jsr hexa2a
 	sta bank
 	cmp #$0f
 	bne prptcb
-	ror bank0f	; c=1- bit 7 -= 1 iff bank = 0f
+	ror bank0f	; c=1- bit 7 -= 1 iff bank == 0f
 	lda #$00	; set bank for not-in-drive memory
 	sta bank
 	beq prptcb
 #endif
 icb07	lda bank
-#if target = pet
+#if c64
+	bpl icb0e
+	lda #"F"-"0"	; $16
+icb0e	clc
+	adc #"0"
+	jsr print
+#endif
+#if pet
 	jsr hex2
 #endif
 prptcb	jmp prompt
@@ -1550,7 +1562,7 @@ icdb5	cmp optab,x
 icdbf	lda opctab,x
 	sta acdcb
 	sta acdd1
-	asl ;a		; c-=1 for sbc *dirty*
+	asl ;a		; c-=1 for sbc... *dirty*
 	lda stal
 acdcb	and memuss	; opcode modified
 	sta stal
@@ -1560,14 +1572,16 @@ acdd1	and memuss+1	; opcode modified
 	rts
 
 icdd6	jsr docr
-
-
 	jsr hex4
 	jsr dospc
 	jsr deci
 	jmp prompt
 
 	;+++ begin of i/o routines
+
+
+
+
 
 adr2stal
 	iny
@@ -1677,7 +1691,7 @@ wait
 	lda time+2
 	cmp reptime
 	bmi endrepeat001
-#if target = pet
+#if pet
 	inc lstx	; not "stx lstx" because that would fool us
 			; next time around
 #else
@@ -1806,7 +1820,7 @@ ic8c0
 	lda #0
 	sta tmplin
 #endif
-#if (target = pet) & petb2
+#if petb2
 	dec tblx	; on basic 2, this function is meant for
 	jsr instlin	; inserting chars onto the next line, opening
 	inc tblx	; up the *next* screen line
@@ -2021,7 +2035,7 @@ stastaly
 
 setopc	sta memopc	; must preserve A and carry (for opredu)
 	stx mem_savx
-#if target = pet
+#if pet
 	bit bank0f
 #endif
 	bmi diskmem
@@ -2043,7 +2057,7 @@ membyt	 = *+1
 
 
 memopc	lda $ffff,y	; opcode and address will be modified
-#if (target = pet) & ram96latch
+#if ram96latch
 	stx ram96latch
 	cli
 #endif	; target = pet
@@ -2266,7 +2280,7 @@ ice0a	jmp scrprint
 ; the actual end address
 ;
 
-#if target = pet
+#if pet
 
 load
 	stx memuss	    ; desired load start addr
@@ -2442,7 +2456,7 @@ adrtab	.word acmd,bcmd,ccmd,dcmd
 	.word ltcmd, htcmd, qmcmd
 
 ; local storage from here on-
-#if target = pet
+#if pet
 bank	.byt 0
 bankpp	.byt 0
 bank0f	.byt 0	; bit 7 is a flag
