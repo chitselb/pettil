@@ -1,0 +1,177 @@
+#if 0
+(C:$1090) p 1000
+    4096
+(C:$1090) p 100d
+    4109
+
+VIC20:
+6560sys4109
+
+PET:
+6502sys1037
+
+(C:$e5e8) m 1000
+>C:1000  00 0b 10 a0  19 9e 34 31  30 39 00 00  00 a9 ff 8d   ......4109......
+>C:1010  0f 90 a9 30  8d 16 03 a9  11 8d 17 03  ad 30 10 ac   ...0.........0..
+>C:1020  31 10 4c 40  10 00 00 00  00 00 00 00  00 00 00 00   1.L@............
+>C:1030  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ................
+>C:1040  85 80 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ................
+2018-12-23T22:16:21-05:00
+
+#endif
+
+;default to PET
+#ifndef VIC20
+#define PET
+#endif
+
+#ifdef PET
+    BRKVEC      = $0092
+    VIDRAM      = $8000
+    BASIC       = $0401
+#endif
+#ifdef VIC20
+    BRKVEC      = $0316
+    BASIC       = $1001
+    VIC         = $9000
+    VIDRAM      = $1E00
+    COLORAM     = $9600
+#endif
+
+    *           = BASIC-2
+    .word       BASIC
+basic
+    .word basend
+    .word 6502
+    .byt $9E    ; SYS
+#ifdef PET
+    .byt '1037'
+#endif
+#ifdef VIC20
+    .byt '4109'
+#endif
+    .byt 0
+    .word 0
+basend
+#ifdef VIC20
+    lda #$FF
+    sta VIC+15
+#endif ; VIC20
+    lda #<(enter)
+    sta BRKVEC
+    lda #>(enter)
+    sta BRKVEC+1
+restart
+    lda userstartup+1
+    ldy userstartup
+gotoay
+    sta iphi
+next
+    iny
+iphi = *+2                      ; low byte of `ip` expected to stay '00'
+    lda $BB00,y
+    tax
+    lda cfahi,x
+    pha
+    lda cfalo,x
+    pha
+    rts
+
+
+enter
+    lda $0105,x
+
+                                ; 00
+exit
+    pla
+    tay
+    pla
+    tax
+    pla
+
+pdq
+
+_fly
+    brk
+    .byt tkpdq-cfalo
+    .byt fly01-*+1              ; len
+    .byt 'abcdef'
+fly01
+    .byt tkexit-cfalo
+
+#if 0
+
+Vorth
+* interpret
+** never executes code, only generates compiled output
+** iterative searches through, stacks, and resolves names to source blocks.
+** related words may be combined on a source block
+** `-->` word to create multiblock source
+** parse off a word
+** is it in the symbol table already?
+** Vorth symbol table structure (same as PETTIL)
+*** cfa
+*** len/flags 8-bit
+*** name 8-bit string
+
+* interpret
+
+compilation statuses
+* pending compilation
+** has negative token id
+** lowest number is compiled next
+* compiling
+
+
+
+CFA table, first low bytes then high bytes
+~ use a skip list to calculate token -> high byte, #words on each page
+token ids increment as each new entry is added to the dictionary
+words are assigned a token id when they reach compile status
+words are assigned a negative token id when they are in pending status
+primitives created by `code` are compiled when encountered
+
+
+#endif
+userstartup
+    .word _fly
+cfalo
+tkexit
+    .byt <(exit-1)
+tkpdq
+    .byt <(pdq-1)
+
+cfahi
+    .byt >(exit-1)
+    .byt >(pdq-1)
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    sty $84
+    lda iphi
+    sta $85
+    ldy #0
+    lda ($84),y
+    pha
+    tax
+pdq01
+    iny
+    lda ($84),y
+    jsr $ffd2
+    dex
+    bne pdq01
+    pla
+    clc
+    adc $84
+    tay
+    lda iphi
+    adc #0
+    sta iphi
+    jmp next
