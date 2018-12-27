@@ -113,12 +113,41 @@ basend
     sta BRKVEC
     lda #>(enter)
     sta BRKVEC+1
-repeater
-    jsr restart
-    jmp repeater
+
+;-------------------------------
+#if 0
+
+RESTART
+
+#endif
 restart
     jmp (userstartup)
 
+;-------------------------------
+#if 0
+
+EXIT
+
+              ;0107,x
+              ;0106,x RTI hi    iphi ; <-- set IPHI to this page
+              ;0105,x RTI lo    ; <-- points to where BRK instruction is +2
+              ;0104,x P
+              ;0103,x A
+              ;0102,x X         ; data stack pointer
+              ;0101,x Y         ; IPLO
+              ;0100,x           ; <-- next stack entry goes here
+                                ; X = stack pointer
+                                ; A = #$10
+                                ; Y = IPLO
+#endif
+exit
+    pla
+    tay ;iplo
+    pla
+    pla
+    pla
+    pla
+    pla ;iphi
 gotoay
     sta iphi
     bne nextx                   ; bra
@@ -199,34 +228,6 @@ enter
     dey
     jmp nexto
                                 ; 00
-;-------------------------------
-#if 0
-
-EXIT
-
-              ;0107,x
-              ;0106,x RTI hi    iphi ; <-- set IPHI to this page
-              ;0105,x RTI lo    ; <-- points to where BRK instruction is +2
-              ;0104,x P
-              ;0103,x A
-              ;0102,x X         ; data stack pointer
-              ;0101,x Y         ; IPLO
-              ;0100,x           ; <-- next stack entry goes here
-                                ; X = stack pointer
-                                ; A = #$10
-                                ; Y = IPLO
-#endif
-exit
-    pla
-    pla
-    tax
-    pla
-    plp
-    pla
-    tay
-    pla
-    sta iphi
-    jmp next
 
 ;-------------------------------
 #if 0
@@ -235,6 +236,15 @@ BRANCH
 
 #endif
 branch
+    lda iphi
+    sta 5
+    clc
+    tya
+    adc (4),y
+    tay
+    bcc branch01
+    dec iphi
+branch01
     jmp next
 
 ;-------------------------------
@@ -320,17 +330,22 @@ _simply
     .byt <(tksimplest-cfalo)
 ;   .byt <(tkexit-cfalo)
 
-.dsb 300,0
-
 _sample
     brk
     .byt <(tksimplest-cfalo)
     .byt <(tksimplest-cfalo)
     .byt <(tksimply-cfalo)
     .byt <(tksimply-cfalo)
-;   .byt <(tkexit-cfalo)
+    ; branching, works like 6502 branching
+    .byt <(tkbranch-cfalo)
+    .byt $FE ; should be an infinite loop
+    ; b8 50 fe
+    ;   clv
+    ;chill
+    ;   bvc chill
+    ;unless the S.O. pin wakes us from slumber
 
-.dsb 300,0
+;   .byt <(tkexit-cfalo)
 
 _fly
     brk
