@@ -1,4 +1,50 @@
 #if 0
+
+What is Vorth?
+
+Vorth is a minimalist Forth for VIC-20.  By minimalist, I mean it doesn't even have an interpreter or compiler aboard, but such things can be built if needed.  Instead, the Vorth source code is hosted in a PETTIL system and metacompiled to object code that will run in its entirety on an unexpanded VIC-20.  Such things as virtual memory on cassette tape can even be included in Vorth programs.
+
+The top line of Vorth source is a backslash (\) followed by blank-delimited names corresponding with
+Vorth words.  Code is metacompiled recursively from a single outermost definition, which is hooked in `startup`  An example might be easier:
+
+\ fly
+: fly   ( -- )
+    begin
+        flap flap flit
+        ?terminal
+    until ;
+
+: flap   ( -- )
+    4 1 do
+        i frame zz
+    loop 0 frame ;
+
+: flit   ( -- )
+    " udlr" randu 3 and + c@ emit ;
+
+variable delay        delay off
+create animation      10 allot
+variable frames       frames off
+
+: zz   ( -- )
+    delay @ jiffies ;
+
+: frame   ( index -- )
+    2* animation + @ goto ;
+
+: +frame   ( addr -- )
+    <builds ,
+        frames 1+!
+    does>
+        @ $. ;
+
+"    lll" +frame
+" UWIlll" +frame
+" @W@lll" +frame
+" JWKlll" +frame
+" @W@lll" +frame
+
+
 (C:$1090) p 1000
     4096
 (C:$1090) p 100d
@@ -17,6 +63,10 @@ PET:
 >C:1030  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ................
 >C:1040  85 80 00 00  00 00 00 00  00 00 00 00  00 00 00 00   ................
 2018-12-23T22:16:21-05:00
+
+2018-12-24T01:14:13-05:00
+next moves --
+sys $xx0D
 
 #endif
 
@@ -37,6 +87,8 @@ PET:
     VIDRAM      = $1E00
     COLORAM     = $9600
 #endif
+
+    STACK       = $60
 
     *           = BASIC-2
     .word       BASIC
@@ -61,15 +113,21 @@ basend
     sta BRKVEC
     lda #>(enter)
     sta BRKVEC+1
+repeater
+    jsr restart
+    jmp repeater
 restart
-    lda userstartup+1
-    ldy userstartup
+    jmp (userstartup)
+
 gotoay
     sta iphi
+nextx
+    stx STACK
 next
     iny
 iphi = *+2                      ; low byte of `ip` expected to stay '00'
-    lda $BB00,y
+nexto
+    lda $1700,y                 ; outermost word should *never* execute sham token
     tax
     lda cfahi,x
     pha
@@ -77,27 +135,108 @@ iphi = *+2                      ; low byte of `ip` expected to stay '00'
     pha
     rts
 
+simplest
+    lda #$2E
+    jsr $FFD2
+    jmp next
 
+
+;-------------------------------
+#if 0
+
+ENTER
+
+              ;    brk
+              ;($FFFE) ; --> $E61B
+              ;    pha
+              ;    txa
+              ;    pha
+              ;    tya
+              ;    pha
+              ;    tsx
+              ;    lda $0104,x
+              ;    and #$10
+              ;    beq +
+              ;    jmp ($0092)  ; --> enter
+              ;+
+              ;    jmp ($0090)
+
+              ;0107,x
+              ;0106,x RTI hi    iphi ; <-- set IPHI to this page
+              ;0105,x RTI lo    ; <-- points to where BRK instruction is +2
+              ;0104,x P
+              ;0103,x A
+              ;0102,x X         ; data stack pointer
+              ;0101,x Y         ; IPLO
+              ;0100,x           ; <-- next stack entry goes here
+                                ; X = stack pointer
+                                ; A = #$10
+                                ; Y = IPLO
+#endif
 enter
-    lda $0105,x
-
+    ldy $0106,x
+    lda iphi
+    sta $0106,x
+    sty iphi
+    ldy $0105,x
+    dey
+    jmp nexto
                                 ; 00
+;-------------------------------
+#if 0
+
+EXIT
+
+              ;0107,x
+              ;0106,x RTI hi    iphi ; <-- set IPHI to this page
+              ;0105,x RTI lo    ; <-- points to where BRK instruction is +2
+              ;0104,x P
+              ;0103,x A
+              ;0102,x X         ; data stack pointer
+              ;0101,x Y         ; IPLO
+              ;0100,x           ; <-- next stack entry goes here
+                                ; X = stack pointer
+                                ; A = #$10
+                                ; Y = IPLO
+#endif
 exit
     pla
-    tay
     pla
     tax
     pla
+    plp
+    pla
+    tay
+    pla
+    sta iphi
+    jmp next
 
+;-------------------------------
+#if 0
+
+BRANCH
+
+#endif
+branch
+    jmp next
+
+;-------------------------------
+#if 0
+
+?BRANCH
+
+#endif
+qbranch
+    jmp next
+
+;-------------------------------
+#if 0
+
+(.")
+
+#endif
 pdq
-
-_fly
-    brk
-    .byt tkpdq-cfalo
-    .byt fly01-*+1              ; len
-    .byt 'abcdef'
-fly01
-    .byt tkexit-cfalo
+    jmp next
 
 #if 0
 
@@ -134,26 +273,33 @@ primitives created by `code` are compiled when encountered
 
 #endif
 userstartup
-    .word _fly
+    .word _sample
+
 cfalo
 tkexit
     .byt <(exit-1)
+tkbranch
+    .byt <(branch-1)
+tkqbranch
+    .byt <(qbranch-1)
 tkpdq
     .byt <(pdq-1)
+tksimplest
+    .byt <(simplest-1)
+tksimply
+    .byt <(_simply-1)
+tksample
+    .byt <(_sample-1)
 
 cfahi
     .byt >(exit-1)
+    .byt >(branch-1)
+    .byt >(qbranch-1)
     .byt >(pdq-1)
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
+    .byt >(simplest-1)
+    .byt >(_simply-1)
+    .byt >(_sample-1)
+
     sty $84
     lda iphi
     sta $85
@@ -175,3 +321,30 @@ pdq01
     adc #0
     sta iphi
     jmp next
+
+.dsb 300,0
+
+_simply
+    brk
+    .byt <(tksimplest-cfalo)
+    .byt <(tksimplest-cfalo)
+;   .byt <(tkexit-cfalo)
+
+.dsb 300,0
+
+_sample
+    brk
+    .byt <(tksimplest-cfalo)
+    .byt <(tksimplest-cfalo)
+    .byt <(tksimply-cfalo)
+    .byt <(tksimply-cfalo)
+;   .byt <(tkexit-cfalo)
+
+_fly
+    brk
+    .byt tkpdq-cfalo
+    .byt fly01-*+1              ; len
+    .byt 'abcdef'
+fly01
+    .byt tkexit-cfalo
+
