@@ -36,7 +36,8 @@ chitselb@gmail.com
     STACK       = $60
 
     *           = BASIC-2
-    .word       BASIC
+    .word       *+2             ; load address
+
 ;-------------------------------
 #if 0
 
@@ -94,12 +95,12 @@ EXIT
 #endif
 exit
     pla
-    tay ;iplo
+    tay                         ;iplo
     pla
     pla
     pla
     pla
-    pla ;iphi
+    pla                         ;iphi
 gotoay
     sta iphi
     bne nextx                   ; bra
@@ -123,7 +124,7 @@ nextx
     stx STACK
 next
     iny
-iphi = *+2                      ; low byte of `ip` expected to stay '00'
+iphi = *+2                      ; `iplo` is expected to stay '00'
 nexto
     ldx $1700,y                 ; outermost word should *never* execute sham token
     lda cfahi,x
@@ -142,7 +143,6 @@ also sets a zero page copy of IP
 
 #endif
 bumpip
-    clc
     iny
     bne bumpip01
     inc iphi
@@ -195,6 +195,19 @@ enter
 ;-------------------------------
 #if 0
 
+?BRANCH
+
+#endif
+qbranch
+    jsr bumpip
+    inc STACK
+    lda STACK,x
+    bne branch01
+    jmp next
+
+;-------------------------------
+#if 0
+
 BRANCH
 
 $04-05 is used as temporary IP storage because $04 is initialized to 00 by ROM
@@ -202,63 +215,16 @@ $04-05 is used as temporary IP storage because $04 is initialized to 00 by ROM
 #endif
 branch
     jsr bumpip
+branch01
     tya
+    clc
     adc ($04),y
                                 ; what does V flag tell us?
                                 ; what do other flags indicate?
                                 ; page boundary crossings?
     tay
- branch01
     jmp next
 
-;-------------------------------
-#if 0
-
-?BRANCH
-
-#endif
-qbranch
-    jmp next
-
-;-------------------------------
-#if 0
-
-(.")
-
-#endif
-pdq
-    sty $84
-    lda iphi
-    sta $85
-    ldy #0
-    lda ($84),y
-    pha
-    tax
-pdq01
-    iny
-    lda ($84),y
-    jsr $ffd2
-    dex
-    bne pdq01
-    pla
-    clc
-    adc $84
-    tay
-    lda iphi
-    adc #0
-    sta iphi
-    jmp next
-
-;-------------------------------
-#if 0
-
-.CR
-
-#endif
-dotcr
-    lda #$0D
-    .byt $2C
-    ;fall through
 ;-------------------------------
 #if 0
 
@@ -277,6 +243,7 @@ EMIT
 #endif
 emit
     lda STACK,x
+    ;
     jsr $FFD2
     jmp next
 
@@ -338,6 +305,7 @@ over
 #if 0
 
 DUP
+    ( n -- n n )
 
 #endif
 dup
@@ -347,40 +315,6 @@ dup
     sta STACK-1,x
     dec STACK
     jmp next
-
-;-------------------------------
-#if 0
-
-SIMPLY
-
-#endif
-_simply
-    brk
-    .byt <(tksimplest-cfalo)
-    .byt <(tksimplest-cfalo)
-;   .byt <(tkexit-cfalo)
-
-;-------------------------------
-#if 0
-
-SAMPLE
-
-#endif
-_sample
-    brk
-sample01
-    .byt <(tksimply-cfalo)
-    .byt <(tksimplest-cfalo)
-    .byt <(tkrandu-cfalo)
-    .byt <(tkbl-cfalo)
-    .byt <(tkor-cfalo)
-    .byt <(tkemit-cfalo)
-    .byt <(tkdrop-cfalo)
-    ; branching, works like 6502 branching
-    .byt <(tkbranch-cfalo)
-    .byt <(sample01-*-1)        ; infinite loop
-    ; B8 50 FE, unless the S.O. pin wakes us from slumber
-;   .byt <(tkexit-cfalo)
 
 ;-------------------------------
 #if 0
@@ -479,16 +413,54 @@ random
 ;-------------------------------
 #if 0
 
-FLY
+SIMPLY
+    ( -- )
+
+simplest
+    lda #$2A
+    .byt $2C ;fall through to `emit`
+    ;..
+    ;jsr $FFD2
+    ;jmp next
+
+: simply
+    simplest simplest ;
 
 #endif
-_fly
+_simply
     brk
-    .byt tkpdq-cfalo
-    .byt fly01-*-1              ; len
-    .byt 'abcdef'
-fly01
-    .byt tkexit-cfalo
+    .byt <(tksimplest-cfalo)
+    .byt <(tksimplest-cfalo)
+;   .byt <(tkexit-cfalo)
+
+;-------------------------------
+#if 0
+
+SAMPLE
+
+: sample
+    begin
+        simply simplest
+        randu bl or emit
+        drop
+    again ;
+
+#endif
+_sample
+    brk
+sample01
+    .byt <(tksimply-cfalo)
+    .byt <(tksimplest-cfalo)
+    .byt <(tkrandu-cfalo)
+    .byt <(tkbl-cfalo)
+    .byt <(tkor-cfalo)
+    .byt <(tkemit-cfalo)
+    .byt <(tkdrop-cfalo)
+    ; branching, works like 6502 branching
+    .byt <(tkbranch-cfalo)
+    .byt <(sample01-*-1)        ; infinite loop
+    ; B8 50 FE, unless the S.O. pin wakes us from slumber
+;   .byt <(tkexit-cfalo)
 
 ;-------------------------------
 #if 0
@@ -512,14 +484,10 @@ tkspstore
     .byt <(spstore-1)
 tknext
     .byt <(next-1)
-tkbranch
-    .byt <(branch-1)
 tkqbranch
     .byt <(qbranch-1)
-tkpdq
-    .byt <(pdq-1)
-tkdotcr
-    .byt <(dotcr-1)
+tkbranch
+    .byt <(branch-1)
 tksimplest
     .byt <(simplest-1)
 tkemit
@@ -536,10 +504,6 @@ tkover
     .byt <(over-1)
 tkdup
     .byt <(dup-1)
-tksimply
-    .byt <(_simply-1)
-tksample
-    .byt <(_sample-1)
 tkminus
     .byt <(minus-1)
 tkplus
@@ -552,8 +516,10 @@ tkxor
     .byt <(xor-1)
 tkrandu
     .byt <(randu-1)
-tkfly
-    .byt <(_fly-1)
+tksimply
+    .byt <(_simply-1)
+tksample
+    .byt <(_sample-1)
 
 ;-------------------------------
 #if 0
@@ -565,10 +531,8 @@ cfahi
     .byt >(exit-1)              ; 00
     .byt >(spstore-1)
     .byt >(next-1)
-    .byt >(branch-1)
     .byt >(qbranch-1)
-    .byt >(pdq-1)
-    .byt >(dotcr-1)
+    .byt >(branch-1)
     .byt >(simplest-1)
     .byt >(emit-1)
     .byt >(drop-1)
@@ -577,13 +541,12 @@ cfahi
     .byt >(third-1)
     .byt >(over-1)
     .byt >(dup-1)
-    .byt >(_simply-1)
-    .byt >(_sample-1)
     .byt >(minus-1)
     .byt >(plus-1)
     .byt >(or-1)
     .byt >(andx-1)
     .byt >(xor-1)
     .byt >(randu-1)
-    .byt >(_fly-1)
+    .byt >(_simply-1)
+    .byt >(_sample-1)
 
