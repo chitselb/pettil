@@ -11,9 +11,9 @@ code 3.
 create delay 5 c,
 code jiffies
     STACK ,x lda,
-    CLOCK    adc,
+    TIME 2+  adc,
          begin,
-    CLOCK    cmp,
+    TIME 2+  cmp,
          0=
          until,
     drop     jmp,
@@ -49,16 +49,17 @@ chitselb@gmail.com
 ;===============================
 
 #ifdef PET
+    TIME        = $008D
     BRKVEC      = $0092
-    VIDRAM      = $8000
     BASIC       = $0401
+    VIDRAM      = $8000
 #endif
 #ifdef VIC20
-    CLOCK       = $008D
+    TIME        = $00A0
     BRKVEC      = $0316
     BASIC       = $1001
-    VIC         = $9000
     VIDRAM      = $1E00
+    VIC         = $9000
     COLORAM     = $9600
 #endif
 
@@ -88,6 +89,8 @@ basic
 ;===============================
 basend
 #ifdef VIC20
+    lda #0
+    sta $04
     lda #$FF
     sta VIC+15
 #endif ; VIC20
@@ -104,6 +107,19 @@ RESTART
 #endif
 restart
     jmp (userstartup)
+
+;-------------------------------
+#if 0
+
+DELAY
+    ( -- addr )
+
+    pause for `delay` jiffies
+
+#endif
+delay
+    jsr docreate
+    .byt 5
 
 ;-------------------------------
 #if 0
@@ -213,6 +229,7 @@ ENTER
                                 ; Y = IPLO
 #endif
 enter
+    cli                         ; re-enable interrupts
     ldy $0106,x
     lda iphi
     sta $0106,x
@@ -230,10 +247,10 @@ enter
 #endif
 qbranch
     jsr bumpip
-    inc STACK
+    inx
     lda STACK,x
     bne branch01
-    jmp next
+    jmp nextx
 
 ;-------------------------------
 #if 0
@@ -257,7 +274,7 @@ branch01
                                 ; what do other flags indicate?
                                 ; page boundary crossings?
     tay
-    jmp next
+    jmp nextx
 
 ;-------------------------------
 #if 0
@@ -290,8 +307,8 @@ DROP
 
 #endif
 drop
-    inc STACK
-    jmp next
+    inx
+    jmp nextx
 
 ;-------------------------------
 #if 0
@@ -348,9 +365,9 @@ dup
     ;ldx STACK
     lda STACK,x
     ;
-    sta STACK-1,x
-    dec STACK
-    jmp next
+    dex
+    sta STACK,x
+    jmp nextx
 
 ;-------------------------------
 #if 0
@@ -416,8 +433,8 @@ plus
     adc STACK+1,x
 plus01
     sta STACK+1,x
-    inc STACK
-    jmp next
+    inx
+    jmp nextx
 
 ;-------------------------------
 #if 0
@@ -458,6 +475,39 @@ xor
 ;-------------------------------
 #if 0
 
+1+
+    ( n1 -- n1+1 )
+
+#endif
+oneplus
+    inc STACK,x
+    bne oneplus01
+    inc STACK+1,x
+oneplus01
+    jmp next
+
+;-------------------------------
+#if 0
+
+(CREATE)
+    ( -- addr )
+
+    unload return stack
+    push address following this token to stack
+#endif
+docreate
+    dex
+    dex
+    pla
+    sta STACK,x
+    pla
+    sta STACK+1,x
+    stx STACK
+    jmp oneplus
+
+;-------------------------------
+#if 0
+
 RANDU
     ( -- rnd )
 
@@ -474,31 +524,13 @@ ripl
     sta random+1,x
     dex
     bpl ripl
-    dec STACK
     ldx STACK
+    dex
     sta STACK,x
-    jmp next
+    jmp nextx
 
 random
     .dsb 6,$AB
-
-;-------------------------------
-#if 0
-
-(CREATE)
-    ( -- addr )
-
-    unload return stack
-    push address following this token to stack
-#endif
-docreate
-    pla
-    pla
-    pla
-    pla
-    pla
-    pla
-    jmp gotoay
 
 ;-------------------------------
 #if 0
@@ -539,8 +571,34 @@ threedot01
     jsr $FFD2
     dex
     bne threedot01
-    ldx STACK
-    jmp gotoay
+    jmp next
+
+;-------------------------------
+#if 0
+
+JIFFIES
+    ( n -- )
+
+    pause for `n` jiffies
+code jiffies
+    STACK ,x lda,
+    TIME  2+ adc,
+         begin,
+    TIME  2+ cmp,
+         0=
+         until,
+    drop     jmp,
+end-code
+
+#endif
+jiffies
+    lda STACK,x
+    clc
+    adc TIME+2
+jiffies01
+    cmp TIME+2
+    bne jiffies01
+    jmp drop
 
 ;-------------------------------
 #if 0
@@ -553,48 +611,9 @@ threedot01
 #endif
 _threelf
     brk
-    .byt <(threedot-cfalo)
+    .byt <(tkthreedot-cfalo)
     .byt $9D,$9D,$9D            ; [lf][lf][lf]
-
-;-------------------------------
-#if 0
-
-JIFFIES
-    ( n -- )
-
-    pause for `n` jiffies
-code jiffies
-    STACK ,x lda,
-    CLOCK 2+ adc,
-         begin,
-    CLOCK 2+ cmp,
-         0=
-         until,
-    drop     jmp,
-end-code
-
-#endif
-jiffies
-    lda STACK,x
-    adc CLOCK+2
-jiffies01
-    cmp CLOCK+2
-    bne jiffies01
-    jmp drop
-
-;-------------------------------
-#if 0
-
-DELAY
-    ( -- addr )
-
-    pause for `delay` jiffies
-
-#endif
-delay
-    brk
-    .byt <(tkdocreate-cfalo)
-    .byt 5
+;    .byt 0
 
 ;-------------------------------
 #if 0
@@ -626,19 +645,19 @@ FLAP
 _flap
     brk
     .byt <(tkthreedot-cfalo)
-    .byt "JWK"
+    .byt $D5,$D7,$C9
     .byt <(tkthreelf-cfalo)
     .byt <(tkzz-cfalo)
     .byt <(tkthreedot-cfalo)
-    .byt "@W@"
+    .byt $C0,$D7,$C0
     .byt <(tkthreelf-cfalo)
     .byt <(tkzz-cfalo)
     .byt <(tkthreedot-cfalo)
-    .byt "UWI"
+    .byt $CA,$D7,$CB
     .byt <(tkthreelf-cfalo)
     .byt <(tkzz-cfalo)
     .byt <(tkthreedot-cfalo)
-    .byt "@W@"
+    .byt $C0,$D7,$C0
     .byt <(tkthreelf-cfalo)
     .byt <(tkzz-cfalo)
     .byt <(tkthreedot-cfalo)
@@ -656,8 +675,7 @@ COMPASS
 
 #endif
 compass
-    brk
-    .byt <(tkdocreate-cfalo)
+    jsr docreate
     .byt $1D,$9D,$11,$91
 
 ;-------------------------------
@@ -704,7 +722,7 @@ fly01
     .byt <(tkqterminal-cfalo)
     .byt <(tkqbranch-cfalo)
     .byt <(fly01-*-1)
-    .byt 0
+;    .byt 0                     ; exit unnecessary, infinite loop
 
 ;-------------------------------
 #if 0
@@ -724,6 +742,8 @@ CFA table
 cfalo
 tkexit
     .byt <(exit-1)
+tkdelay
+    .byt <(delay-1)
 tkspstore
     .byt <(spstore-1)
 tknext
@@ -766,8 +786,6 @@ tkxor
     .byt <(xor-1)
 tkrandu
     .byt <(randu-1)
-tkdocreate
-    .byt <(docreate-1)
 tkqterminal
     .byt <(qterminal-1)
 tknotz
@@ -776,12 +794,10 @@ tkpushz
     .byt <(pushz-1)
 tkthreedot
     .byt <(threedot-1)
-tkthreelf
-    .byt <(_threelf-1)
 tkjiffies
     .byt <(jiffies-1)
-tkdelay
-    .byt <(delay-1)
+tkthreelf
+    .byt <(_threelf-1)
 tkzz
     .byt <(_zz-1)
 tkflap
@@ -805,6 +821,7 @@ CFA table
 #endif
 cfahi
     .byt >(exit-1)
+    .byt >(delay-1)
     .byt >(spstore-1)
     .byt >(next-1)
     .byt >(enter-1)
@@ -826,14 +843,12 @@ cfahi
     .byt >(andx-1)
     .byt >(xor-1)
     .byt >(randu-1)
-    .byt >(docreate-1)
     .byt >(qterminal-1)
     .byt >(notz-1)
     .byt >(pushz-1)
     .byt >(threedot-1)
-    .byt >(_threelf-1)
     .byt >(jiffies-1)
-    .byt >(delay-1)
+    .byt >(_threelf-1)
     .byt >(_zz-1)
     .byt >(_flap-1)
     .byt >(compass-1)
