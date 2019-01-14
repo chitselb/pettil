@@ -3,6 +3,17 @@
 
 ;--------------------------------------------------------------
 #if 0
+name=DICTIONARY
+stack=( -- nfa )
+tags=nosymbol
+
+#endif
+dictionary
+    jsr enter
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=>SYMS
 stack=( -- nfa )
 tags=interpreter,ext,nosymbol
@@ -611,7 +622,15 @@ nextvocabq
 name=(FOUND?)
 stack=( name vocabs -- )
 tags=interpreter,forth-83,conspiracy,nosymbol
+set up Sweet16 registers for `found?`
 
+|register|contents|h
+|n3|name|
+|n4|len|
+|n5|vocabid|
+|n6|vocabs|
+|n7|name|
+|n8|len|
 #endif
 pfoundq
     brk
@@ -635,6 +654,24 @@ stack=( nfa -- xfa flag )
 tags=interpreter,forth-83,conspiracy
 This replaces the Forth-83 standard word `find`, idea from Albert van der Horst
 in comp.lang.forth
+
+starting with the most recently added to `vocabs`
+for each vocabulary
+    try searches in this order
+        word+trialvocabid `symnew`
+        word+trialvocabid `symtab`
+until vocabulary was (0)forth
+if still not found, 0
+
+* search order
+** begin
+** each vocab
+** symnew .. symtail, unsized
+** while not found
+** symtab thread, sized
+** while not found
+** until vocab was 0
+** exit
 
 |^`nfa`|^the `name` we are looking for<br/>(e.g. counted string in `tib` buffer)|<|
 |^`xfa`|^`flag`|<|
@@ -662,13 +699,6 @@ ignored (not a match) by `found?`
 ```
 : found?   ( name -- xfa flag )
 
-starting with the most recently added to `vocabs`
-for each vocabulary
-    try searches in this order
-        word+trialvocabid `symnew`
-        word+trialvocabid `symtab`
-until vocabulary was (0)forth
-if still not found, 0
 
         for the nfa(n7) in `symnew` list (ordered by age)
     calculate pearson hash for word if it were in this vocabulary
@@ -805,7 +835,7 @@ message "NOT FOUND"
 
 ```
 : '   ( "name" -- cfa )
-    exists? 0=  3 ?error ;
+    exists? dup 0=  3 ?error ;
 ```
 #endif
 #include "align.i65"
@@ -885,10 +915,11 @@ Create a new symbol in the symbol table
 ** smudge the original
 ** set `redefined`
 * create the symbol
-** set bloom filter bit from nfa
+** set bloom filter bit from nfa !bloom
 ** tack on a new copy at symtail
 ** cfa, len/flag, "symbol", vocab
 ** set `newest` = nfa
+** if `current` nonzero, append `current` and set vocab bit
 
 ||found|not found|h
 |`redefined`|prior|0|
@@ -914,7 +945,7 @@ Create a new symbol in the symbol table
     eol? 4 ?error               \ "MISSING NAME"
     redefined off
     exists? ?dup
-    if
+    if                          ( cfa )
         <n3 dup redefined ! smudge
         .rvs <n7 $. ."  [OFF]exists "
     then                        ( cfa )
