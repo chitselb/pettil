@@ -35,18 +35,6 @@ all:
 		-config data/sdl2_chitselb.vicerc 										\
 		-warp -8 chitselb.d64 -9 pettil.d64 &
 
-testpet:
-	~/bin/xpet                                                                  \
-		-directory data/PET/ -moncommand obj/pettil.mon2						\
-		-config data/gtk3_chitselb.vicerc 										\
-		-warp -8 chitselb.d64 -9 pettil.d64
-
-test4pet:
-	~/bin/xpet                                                                  \
-		-directory data/PET/ -moncommand obj/pettil.mon2						\
-		-config data/gtk3_chitselb.vicerc 										\
-		-warp -8 chitselb.d64 -9 pettil.d64
-
 testupgradepet:
 	~/bin/xpet                                                                  \
 		-directory data/PET/ -moncommand obj/pettil.mon2						\
@@ -56,9 +44,51 @@ testupgradepet:
 		-warp -8 chitselb.d64 -9 pettil.d64
 
 mypet:
+	cp data/my.dww data/dwwimage.dww
 	/usr/bin/xpet                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon2						\
+		-directory data/PET/ -moncommand obj/pettil.mon0						\
 		-config data/x11_chitselb.vicerc 										\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
+		-warp -8 chitselb.d64 -9 pettil.d64
+
+pet3:
+	cp data/my.dww data/dwwimage.dww
+	/usr/bin/xpet                                                               \
+		-directory data/PET/ -moncommand obj/pettil.mon0						\
+		-config data/x11_chitselb.vicerc 										\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
+		-warp -8 chitselb.d64 -9 pettil.d64
+
+pet4:
+	cp data/my.dww data/dwwimage.dww
+	/usr/bin/xpet                                                               \
+		-directory data/PET/ -moncommand obj/pettil.mon0						\
+		-config data/x11_chitselb.vicerc 										\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
+		-warp -8 chitselb.d64 -9 pettil.d64
+
+pet80:
+	cp data/my.dww data/dwwimage.dww
+	/usr/bin/xpet                                                               \
+		-directory data/PET/ -moncommand obj/pettil.mon0						\
+		-config data/x11_chitselb.vicerc 										\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
+		-warp -8 chitselb.d64 -9 pettil.d64
+
+vic20:
+	cp data/my.dww data/dwwimage.dww
+	/usr/bin/xpet                                                               \
+		-directory data/PET/ -moncommand obj/pettil.mon0						\
+		-config data/x11_chitselb.vicerc 										\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
+		-warp -8 chitselb.d64 -9 pettil.d64
+
+c64:
+	cp data/my.dww data/dwwimage.dww
+	/usr/bin/xpet                                                               \
+		-directory data/PET/ -moncommand obj/pettil.mon0						\
+		-config data/x11_chitselb.vicerc 										\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
 		-warp -8 chitselb.d64 -9 pettil.d64
 
 upgrade:
@@ -75,8 +105,12 @@ doc: tiddlypettil publish
 
 clean:
 	rm -rf ./tmp/
-	mkdir ./tmp/
+	mkdir -v ./tmp/
 	c1541 -format pettil,09 d64 pettil.d64
+
+pristine: clean
+	rm -rf ./obj/
+	mkdir -v ./obj/
 
 tiddlypettil:
 	echo . Phase IV
