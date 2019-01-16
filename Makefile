@@ -5,7 +5,9 @@
 SHELL = /bin/bash
 
 #all:  launch tiddlypettil
-all:
+all: clean mkpet pet3
+
+mkpet:
 	./tools/mkpet
 
 	c1541 -attach pettil.d64													\
@@ -18,22 +20,6 @@ all:
 		c1541 -attach pettil.d64 -write $$object ;								\
         ls -la $$object ; 														\
     done
-
-	# launch a few PETs!
-	/usr/local/bin/xpet 														\
-		-directory data/PET/ -moncommand obj/pettil.mon2						\
-		-config data/sdl2_chitselb.vicerc 										\
-		-warp -8 chitselb.d64 -9 pettil.d64 &
-
-#	/usr/local/bin/xpet 														\
-		-directory data/PET/ -moncommand obj/pettil.mon1						\
-		-config data/sdl2_chitselb.vicerc 										\
-		-warp -8 chitselb.d64 -9 pettil.d64 &
-
-#	/usr/local/bin/xpet 														\
-		-directory data/PET/ -moncommand obj/pettil.mon2						\
-		-config data/sdl2_chitselb.vicerc 										\
-		-warp -8 chitselb.d64 -9 pettil.d64 &
 
 testupgradepet:
 	~/bin/xpet                                                                  \
@@ -48,23 +34,23 @@ mypet:
 	/usr/bin/xpet                                                               \
 		-directory data/PET/ -moncommand obj/pettil.mon0						\
 		-config data/x11_chitselb.vicerc 										\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64
 
 pet3:
 	cp data/my.dww data/dwwimage.dww
 	/usr/bin/xpet                                                               \
 		-directory data/PET/ -moncommand obj/pettil.mon0						\
-		-config data/x11_chitselb.vicerc 										\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
+		-config data/x11_pet3.vicerc 											\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64
 
 pet4:
 	cp data/my.dww data/dwwimage.dww
 	/usr/bin/xpet                                                               \
 		-directory data/PET/ -moncommand obj/pettil.mon0						\
-		-config data/x11_chitselb.vicerc 										\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
+		-config data/x11_pet4.vicerc 											\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64
 
 pet80:
