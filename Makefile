@@ -5,7 +5,7 @@
 SHELL = /bin/bash
 
 #all:  launch tiddlypettil
-all: clean mkpet pet3
+all: clean mkpet pet3 pet4 mypet pet80
 
 mkpet:
 	./tools/mkpet
@@ -29,61 +29,74 @@ testupgradepet:
 		-romA data/MYNRa0_picchip_MMpl_DOS.bin                                  \
 		-warp -8 chitselb.d64 -9 pettil.d64
 
-mypet:
-	cp data/my.dww data/dwwimage.dww
-	/usr/bin/xpet                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon0						\
-		-config data/x11_chitselb.vicerc 										\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
-		-warp -8 chitselb.d64 -9 pettil.d64
-
 pet3:
 	cp data/my.dww data/dwwimage.dww
+	xfce4-terminal --command=" 													\
 	/usr/bin/xpet                                                               \
 		-directory data/PET/ -moncommand obj/pettil.mon0						\
 		-config data/x11_pet3.vicerc 											\
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
-		-warp -8 chitselb.d64 -9 pettil.d64
+		-warp -8 chitselb.d64 -9 pettil.d64" &
+
+mypet:
+	cp data/my.dww data/dwwimage.dww
+	xfce4-terminal --command=" 													\
+	/usr/bin/xpet                                                               \
+		-directory data/PET/ -moncommand obj/pettil.mon1						\
+		-config data/gtk3_chitselb.vicerc 										\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
+		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 pet4:
 	cp data/my.dww data/dwwimage.dww
+	xfce4-terminal --command=" 													\
 	/usr/bin/xpet                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon0						\
-		-config data/x11_pet4.vicerc 											\
+		-directory data/PET/ -moncommand obj/pettil.mon2						\
+		-model 4032																\
+			+confirmexit														\
+			-CRTChwscale 														\
+			-CRTCfilter 0 														\
+			-virtualdev 														\
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
-		-warp -8 chitselb.d64 -9 pettil.d64
+		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 pet80:
 	cp data/my.dww data/dwwimage.dww
+	xfce4-terminal --command=" 													\
 	/usr/bin/xpet                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon0						\
-		-config data/x11_chitselb.vicerc 										\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
-		-warp -8 chitselb.d64 -9 pettil.d64
+		-directory data/PET/ -moncommand obj/pettil.mon2						\
+		-model 8032																\
+			+confirmexit														\
+			-CRTChwscale 														\
+			-CRTCfilter 0 														\
+			-virtualdev 														\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
+		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 vic20:
 	cp data/my.dww data/dwwimage.dww
-	/usr/bin/xpet                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon0						\
-		-config data/x11_chitselb.vicerc 										\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
-		-warp -8 chitselb.d64 -9 pettil.d64
+	xfce4-terminal --command=" 													\
+	/usr/bin/xvic                                                               \
+		-directory data/PET/ -moncommand obj/pettil.mon4						\
+		-config data/gtk3_vic.vicerc 											\
+		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 c64:
 	cp data/my.dww data/dwwimage.dww
-	/usr/bin/xpet                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon0						\
-		-config data/x11_chitselb.vicerc 										\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 									\
-		-warp -8 chitselb.d64 -9 pettil.d64
+	xfce4-terminal --command=" 													\
+	/usr/bin/x64                                                                \
+		-directory data/PET/ -moncommand obj/pettil.mon5						\
+		-config data/gtk3_c64.vicerc 	 										\
+		-warp -8 chitselb.d64 -9 pettil.d64" &
 
-upgrade:
+petpic:
+	xfce4-terminal --command=" 													\
 	/usr/local/bin/xpet                                                         \
-		-directory data/PET/ -moncommand obj/pettil.mon2						\
+		-directory data/PET/ -moncommand obj/pettil.mon0						\
 		-config data/sdl2_upgrade.vicerc 										\
 		-rom9 data/MYNR90_MicroMon.bin                                          \
 		-romA data/MYNRa0_picchip_MMpl_DOS.bin                                  \
-		-warp -8 chitselb.d64 -9 pettil.d64
+		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 compile: clean pettil tiddlypettil
 
