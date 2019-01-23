@@ -5,7 +5,7 @@
 SHELL = /bin/bash
 
 #all:  launch tiddlypettil
-all: clean mkpet pet3 pet4 mypet pet80
+all: clean mkpet mypet vic20
 
 mkpet:
 	./tools/mkpet
@@ -76,10 +76,10 @@ pet80:
 vic20:
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command=" 													\
-	/usr/bin/xvic                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon4						\
-		-config data/gtk3_vic.vicerc 											\
-		-warp -8 chitselb.d64 -9 pettil.d64" &
+	/usr/bin/xvic                                                               	\
+    -directory data/VIC20/ -moncommand obj/pettil.mon4            				\
+    -config data/gtk3_vic.vicerc         						                \
+    -warp -8 chitselb.d64 -9 pettil.d64" &
 
 c64:
 	cp data/my.dww data/dwwimage.dww

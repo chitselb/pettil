@@ -46,7 +46,7 @@
 		> ./obj/pettil.prg$1
 	ls -la ./obj/pettil.prg$1
 	sort ./tmp/pettil.mon > ./tmp/t.t
-	if [ -e ./pettil.dbg ]; then cat ./pettil.dbg >> ./tmp/t.t; fi
+	if [ -e ./tools/pettil$1.dbg ]; then cat ./tools/pettil$1.dbg >> ./tmp/t.t; fi
 	mv ./tmp/t.t ./tmp/pettil.mon
 	cp -v tmp/pettil.mon ./obj/pettil.mon$1
 #	ls -l ./tmp/*.obj ./tmp/*.sym > ./docs/sizes.txt
