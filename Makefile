@@ -85,7 +85,7 @@ c64:
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command=" 													\
 	/usr/bin/x64                                                                \
-		-directory data/PET/ -moncommand obj/pettil.mon5						\
+		-directory data/C64/ -moncommand obj/pettil.mon5						\
 		-config data/gtk3_c64.vicerc 	 										\
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
