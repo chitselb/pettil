@@ -92,8 +92,8 @@ c64:
 petpic:
 	xfce4-terminal --command=" 													\
 	/usr/local/bin/xpet                                                         \
-		-directory data/PET/ -moncommand obj/pettil.mon0						\
-		-config data/sdl2_upgrade.vicerc 										\
+		-directory data/PET/ -moncommand obj/pettil.mon1						\
+		-config data/gtk3_upgrade.vicerc 										\
 		-rom9 data/MYNR90_MicroMon.bin                                          \
 		-romA data/MYNRa0_picchip_MMpl_DOS.bin                                  \
 		-warp -8 chitselb.d64 -9 pettil.d64" &

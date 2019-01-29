@@ -751,39 +751,60 @@ _question
 
 ;--------------------------------------------------------------
 #if 0
-name=IRQ!
-stack=( irqhandler -- )
+name=!IRQ
+stack=( -- )
 tags=device
+swap IRQ at $0090 with USERIRQ
+
 Called by the editor (and anything else) to flip the IRQ vector
 on and off between two different values
 #endif
-irqstore
-    lda tos
-    ldy tos+1
+swapirq
+    ldy #0
+    .byt $2C                    ; BIT abs
+;--------------------------------------------------------------
+#if 0
+name=!BRK
+stack=( -- )
+tags=device
+swap BRK at $0092 with USERBRK
+
+Called by the editor (and anything else) to flip the IRQ vector
+on and off between two different values
+#endif
+swapbrk
+    ldy #2
+    ;
+    lda userirq+1,y
+    pha
+    lda userirq,y
+    pha
+    lda CINV+1,y
+    sta userirq+1,y
+    lda CINV,y
+    sta userirq,y
     sei
-    sta CINV
-    sty CINV+1
+    pla
+    sta CINV,y
+    pla
+    sta CINV+1,y
     cli
-    jmp drop
+    rts
 
 ;--------------------------------------------------------------
 #if 0
-name=^IRQS
-tags=nosymbol,subroutine
-Toggle the BRK vector between Sweet16 <--> TIM
-
-Y=2; replace just IRQ
-Y=4; replace BRK and IRQ
-
-setbrk
-
-setirq
-
+name=CALLME
+stack=( -- r; 'next )
+tags=nosymbol
 
 #endif
-setirq
+callme
+    lda #>(next-1)
+    pha
+    lda #<(next-1)
+    pha
+    jmp next
 
-    ;fall through
 ;--------------------------------------------------------------
 #if 0
 name=^IRQBRK
@@ -791,12 +812,12 @@ tags=startup,nosymbol
 * toggle Sweet16 BRK vector at ($0090)
 
 #endif
-toggleirqbrk
+toggleirqbrkx
     ldy #4                      ; set both IRQ and BRK vectors
     ;
     sei
 toggleib01
-    lda userirqtoggle-1,y
+;    lda userirqtoggle-1,y
     eor CINV-1,y
     sta CINV-1,y
     dey

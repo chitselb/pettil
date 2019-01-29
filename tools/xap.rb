@@ -570,7 +570,6 @@ puts @label   if @label == "STUDIO"
         "core-double.a65 "\
         "core-vm.a65 "\
         "core-io.a65 "\
-        "test-general.a65 "\
         "pettil-core.a65 "\
 
     core_files = files.split(" ").collect { |filename| "./core/src/"+filename }
