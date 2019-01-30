@@ -42,7 +42,7 @@ mypet:
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command=" 													\
 	/usr/bin/xpet                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon1						\
+		-directory data/PET/ -moncommand obj/pettil.mon0						\
 		-config data/gtk3_chitselb.vicerc 										\
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64" &

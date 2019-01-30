@@ -247,8 +247,8 @@ uarea
 userlimit       .word 0         ; 0 here means use BASIC MEMTOP($34)
 usersp0         .word bos+1     ; `abort` does `sp!`
 userrp0         .word $01FE     ; `quit` does `rp!`
-userirq         .word 0
-userbrk         .word SW16
+userirq         .word 0         ; see `!irq`
+userbrk         .word SW16      ; see `!brk`
 userstartup     .word liftoff       ;`studio` needs these two in ~#userorder
 userwarning     .word _doterr       ;1/ `studio` replaces this with `error.msg`
 userdp          .word there
@@ -302,14 +302,14 @@ stack=( -- )
 tags=system,uservar,nosymbol,data
 !User Area
 
-This one's like a meta-User variable, in that it has to function properly
-even when PETTIL is switched out (reasons: BASIC; TIM monitor; cassette I/O)
+00 = BASIC
+01 = PETTIL
 
-It's only one byte, which makes it a convenient thing to move around to
-word-align something like `userarea`
+This one's like a meta-User variable, in that it has to function properly even when PETTIL is switched out (reasons: BASIC; TIM monitor; cassette I/O)
 
-A byte used as a semaphore by `aloha` to test/indicate whether BASIC (0)
-or PETTIL (1) occupies (a bit more than half of) zero page
+It's only one bit of one byte, which makes it a convenient thing to move around to word-align something like `userarea`
+
+A byte used as a semaphore by `aloha` to test/indicate whether BASIC (0) or PETTIL (1) occupies (a bit more than half of) zero page
 
 #endif
 zpmode
@@ -369,7 +369,7 @@ to restore the system to as pristine a condition as possible.
 #endif
 #include "align.i65"
 _cold
-    jsr alohard
+    jsr aloha
     ldx usersp0
     dex
 #include "align.i65"
@@ -403,17 +403,6 @@ Exit Forth, restoring BASIC z.p.
 aufwiedersehen
     lsr zpmode                  ; lights off!
     beq aloha2                  ; bra
-
-;--------------------------------------------------------------
-#if 0
-name=ALOHARD
-tags=startup,nosymbol
-`aloha` invoked by `cold` and `liftoff` also closes files
-#endif
-alohard
-    cld                         ; clear decimal mode
-    jsr CLRCHN                  ; restore default I/O channels
-    jsr CLALL                   ; close all open files
 
 ;--------------------------------------------------------------
 #if 0
@@ -522,7 +511,9 @@ liftoff
 fs01
     sta userlimit
     sty userlimit+1
-    jsr alohard
+    cld                         ; clear decimal mode
+    jsr CLRCHN                  ; restore default I/O channels
+    jsr CLALL                   ; close all open files
     ldx usersp0
     dex
 #include "align.i65"
