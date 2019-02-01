@@ -247,8 +247,9 @@ uarea
 userlimit       .word 0         ; 0 here means use BASIC MEMTOP($34)
 usersp0         .word bos+1     ; `abort` does `sp!`
 userrp0         .word $01FE     ; `quit` does `rp!`
-userirq         .word 0         ; see `!irq`
-userbrk         .word SW16      ; see `!brk`
+userirq         .word 0         ; see `=irq`
+userbrk         .word SW16      ; see `=brk`
+usernmi         .word 0         ; see `=nmi`
 userstartup     .word liftoff       ;`studio` needs these two in ~#userorder
 userwarning     .word _doterr       ;1/ `studio` replaces this with `error.msg`
 userdp          .word there
@@ -366,6 +367,13 @@ stack=( -- )
 tags=system,startup
 COLD starts up the system and when invoked as a command will attempt
 to restore the system to as pristine a condition as possible.
+
+10 sys1037
+
+1st `restart` --> `liftoff` --> copy `tdict`
+2nd `restart` --> `cold` --> start `studio`
+3nd `restart` --> `warm` --> reentry "WELCOME TO PETTIL (version)"
+
 #endif
 #include "align.i65"
 _cold
@@ -392,17 +400,7 @@ coldpatch
 ; ~ '#include page' can't be used here, but this may not break page alignment
     .word next                  ; later transformed into `emptybuffers`
 #include "pass.i65"
-    .word restart               ; restart #2 (of 3) `studio`
-
-;--------------------------------------------------------------
-#if 0
-name=AUFWIEDERSEHEN
-tags=startup,nosymbol
-Exit Forth, restoring BASIC z.p.
-#endif
-aufwiedersehen
-    lsr zpmode                  ; lights off!
-    beq aloha2                  ; bra
+    .word restart               ; restart #2 (of 3) --> `studio`
 
 ;--------------------------------------------------------------
 #if 0
@@ -417,23 +415,21 @@ Flips back and forth between BASIC and PETTIL modes.
 * toggle Sweet16 BRK vector at ($0090)
 * `pettil-studio` does not use the IRQ vector except in the Editor
 * performs swapzp, toggleirq and togglesw16
+
 #endif
 aloha
-    lsr zpmode                  ; check lights
-    inc zpmode                  ; lights on!
-    bcs aloha4                  ; were the lights already on?
-aloha2                          ; entry point for tape I/O
-;~~~    jsr toggleirqbrk
-    stx z                       ; preserve Forth data stack pointer
-    ldx #TIME                   ; loop from ACC $00 up to the jiffy clock $8D
+    stx z
+    ldx #TIME                   ; swap zero page with `zpbuf`
 aloha3
     lda <(ACC-1),x
-    ldy zpbuf-1,x
-    sty <(ACC-1),x
+    pha
+    lda zpbuf-1,x
+    sta <(ACC-1),x
+    pla
     sta zpbuf-1,x
     dex
     bne aloha3
-    ldx z                       ; restore Forth data stack pointer
+    ldx z
 aloha4
     rts
 
@@ -514,6 +510,7 @@ fs01
     cld                         ; clear decimal mode
     jsr CLRCHN                  ; restore default I/O channels
     jsr CLALL                   ; close all open files
+    jsr aloha
     ldx usersp0
     dex
 #include "align.i65"
