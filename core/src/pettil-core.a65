@@ -73,7 +73,7 @@ restart
     jmp (userstartup)
 
 ; check for build at proper point in memory
-#if (* <> $0410)
+#if ((* & $00FF) <> $10)
 #echo PETTIL Build Error - Program counter is not at $0410!
 #echo You moved something, didn't you?  PETTIL expected BASIC
 #echo to transfer control here to kick things off.  This is a problem.
@@ -362,48 +362,6 @@ corebase
 
 ;--------------------------------------------------------------
 #if 0
-name=COLD
-stack=( -- )
-tags=system,startup
-COLD starts up the system and when invoked as a command will attempt
-to restore the system to as pristine a condition as possible.
-
-10 sys1037
-
-1st `restart` --> `liftoff` --> copy `tdict`
-2nd `restart` --> `cold` --> start `studio`
-3nd `restart` --> `warm` --> reentry "WELCOME TO PETTIL (version)"
-
-#endif
-#include "align.i65"
-_cold
-    jsr aloha
-    ldx usersp0
-    dex
-#include "align.i65"
-    jsr toforth                 ; transition from 6502 Assembly to Forth
-#include "pass.i65"
-    .word plits
-    .byt 5
-    .word ustart                ; erase
-    .word uendcore-ustart
-    .word userarea              ; cmove
-    .word ucore
-    .word uarea-userarea
-#include "page.i65"
-    .word cmove
-#include "page.i65"
-    .word erase
-#include "page.i65"
-coldpatch
-    .word next                  ; later transformed into `rehash`
-; ~ '#include page' can't be used here, but this may not break page alignment
-    .word next                  ; later transformed into `emptybuffers`
-#include "pass.i65"
-    .word restart               ; restart #2 (of 3) --> `studio`
-
-;--------------------------------------------------------------
-#if 0
 name=ALOHA
 tags=startup,nosymbol
 Flips back and forth between BASIC and PETTIL modes.
@@ -422,10 +380,8 @@ aloha
     ldx #TIME                   ; swap zero page with `zpbuf`
 aloha3
     lda <(ACC-1),x
-    pha
-    lda zpbuf-1,x
-    sta <(ACC-1),x
-    pla
+    ldy zpbuf-1,x
+    sty <(ACC-1),x
     sta zpbuf-1,x
     dex
     bne aloha3
@@ -538,6 +494,48 @@ fs01
     .word store                 ; `studio` -> `startup` for 2nd `restart`
 #include "page.i65"
     .word _cold
+
+;--------------------------------------------------------------
+#if 0
+name=COLD
+stack=( -- )
+tags=system,startup
+COLD starts up the system and when invoked as a command will attempt
+to restore the system to as pristine a condition as possible.
+
+10 sys1037
+
+1st `restart` --> `liftoff` --> copy `tdict`
+2nd `restart` --> `cold` --> start `studio`
+3nd `restart` --> `warm` --> reentry "WELCOME TO PETTIL (version)"
+
+#endif
+#include "align.i65"
+_cold
+    jsr aloha
+    ldx usersp0
+    dex
+#include "align.i65"
+    jsr toforth                 ; transition from 6502 Assembly to Forth
+#include "pass.i65"
+    .word plits
+    .byt 5
+    .word ustart                ; erase
+    .word uendcore-ustart
+    .word userarea              ; cmove
+    .word ucore
+    .word uarea-userarea
+#include "page.i65"
+    .word cmove
+#include "page.i65"
+    .word erase
+#include "page.i65"
+coldpatch
+    .word next                  ; later transformed into `rehash`
+; ~ '#include page' can't be used here, but this may not break page alignment
+    .word next                  ; later transformed into `emptybuffers`
+#include "pass.i65"
+    .word restart               ; restart #2 (of 3) --> `studio`
 
 ;--------------------------------------------------------------
 #if 0
