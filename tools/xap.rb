@@ -479,9 +479,11 @@ puts @label   if @label == "STUDIO"
 #    puts wordname, stuff
 # end
     def write_symtab_file(outputfile,forthwordhash)
-        sortedbylen = forthwordhash.sort_by {|wordname, stuff| stuff.symbol.length.chr+stuff.symbol}
+        sortedbylen = forthwordhash.sort_by {|wordname, stuff| ((stuff.symbol.bytes[0])&15).chr+(stuff.symbol.length.chr)}
         symfile = File.open("./tmp/"+outputfile,'wb')
         sortedbylen.each do |wordname, stuff|
+puts (((stuff.symbol[0].to_i) &15)+64).chr+(stuff.symbol.length.chr),stuff.symbol
+puts stuff.symbol.bytes,stuff.symbol
             if !(stuff.symbol_table_entry.nil?) && !(stuff.tags.index "nosymbol")
                # puts hex4out(stuff.symbol.length)+\
                # ' '+hex4out(stuff.name.length)+' '+stuff.name+'   '+stuff.symbol

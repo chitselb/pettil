@@ -310,7 +310,7 @@ This one's like a meta-User variable, in that it has to function properly even w
 
 It's only one bit of one byte, which makes it a convenient thing to move around to word-align something like `userarea`
 
-A byte used as a semaphore by `aloha` to test/indicate whether BASIC (0) or PETTIL (1) occupies (a bit more than half of) zero page
+A byte used as a semaphore by `?aloha` to test/indicate whether BASIC (0) or PETTIL (1) occupies (a bit more than half of) zero page
 
 #endif
 zpmode
@@ -362,8 +362,20 @@ corebase
 
 ;--------------------------------------------------------------
 #if 0
+name=?ALOHA
+tags=subroutine,startup,nosymbol
+Performs `aloha` only when zpmode is off
+
+#endif
+qaloha
+    lsr zpmode
+    inc zpmode
+    bcs aloha4
+    ;fall through
+;--------------------------------------------------------------
+#if 0
 name=ALOHA
-tags=startup,nosymbol
+tags=subroutine,startup,nosymbol
 Flips back and forth between BASIC and PETTIL modes.
 
 * Swap part of zero page with zpbuf
@@ -453,24 +465,20 @@ moving anything; control still transfers to `loadaddr+2`.
     ['] there @+ tuck over @ 2+ cmove 2+ execute
 ```
 #endif
-#include "align.i65"
 liftoff
-    lda userlimit
-    ldy userlimit+1
+    lda userlimit+1
     bne fs01                    ; something there already? leave it alone
-    lda MEMSIZ                  ; nothing there?  get it from BASIC MEMSIZ($34)
-    ldy MEMSIZ+1
+    lda MEMSIZ+1                ; nothing there?  get it from BASIC MEMSIZ($34)
 fs01
-    sta userlimit
-    sty userlimit+1
+    sta userlimit+1
     cld                         ; clear decimal mode
     jsr CLRCHN                  ; restore default I/O channels
     jsr CLALL                   ; close all open files
-    jsr aloha
-    ldx usersp0
-    dex
+    jsr qaloha
 #include "align.i65"
     jsr toforth                 ; transition from 6502 Assembly to Forth
+#include "page.i65"
+    .word spstore
 #include "pass.i65"
     .word plit
     .word there
@@ -492,31 +500,6 @@ fs01
     .word startup
 #include "page.i65"
     .word store                 ; `studio` -> `startup` for 2nd `restart`
-#include "page.i65"
-    .word _cold
-
-;--------------------------------------------------------------
-#if 0
-name=COLD
-stack=( -- )
-tags=system,startup
-COLD starts up the system and when invoked as a command will attempt
-to restore the system to as pristine a condition as possible.
-
-10 sys1037
-
-1st `restart` --> `liftoff` --> copy `tdict`
-2nd `restart` --> `cold` --> start `studio`
-3nd `restart` --> `warm` --> reentry "WELCOME TO PETTIL (version)"
-
-#endif
-#include "align.i65"
-_cold
-    jsr aloha
-    ldx usersp0
-    dex
-#include "align.i65"
-    jsr toforth                 ; transition from 6502 Assembly to Forth
 #include "pass.i65"
     .word plits
     .byt 5
@@ -529,11 +512,6 @@ _cold
     .word cmove
 #include "page.i65"
     .word erase
-#include "page.i65"
-coldpatch
-    .word next                  ; later transformed into `rehash`
-; ~ '#include page' can't be used here, but this may not break page alignment
-    .word next                  ; later transformed into `emptybuffers`
 #include "pass.i65"
     .word restart               ; restart #2 (of 3) --> `studio`
 
@@ -655,10 +633,10 @@ barf
     ldx #0
     lda #$4d
 barf01
-    sta $8000,x
-    sta $8100,x
-    sta $8200,x
-    sta $8300,x
+    sta VIDRAM,x
+    sta VIDRAM+$100,x
+    sta VIDRAM+$200,x
+    sta VIDRAM+$300,x
     dex
     bne barf01
 barf02
