@@ -386,7 +386,7 @@ Flip back and forth between BASIC and PETTIL modes.
 #endif
 aloha
     stx z
-    ldx #TIME                   ; swap zero page with `zpbuf`
+    ldx #32+96+6+7              ; swap 141 bytes of z.p. with `zpbuf`
 aloha3
     lda <(ACC-1),x
     ldy zpbuf-1,x
@@ -492,6 +492,8 @@ liftoff
 #include "page.i65"
     .word twoplus
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
     .word cmove                 ; but first, make an upper dictionary
 #include "page.i65"
     .word twoplus
@@ -529,25 +531,46 @@ check character on either page
 #endif
 #include "align.i65"
 splashirq
-    jsr plugh
+    jsr splash
+    ldx numacts
+splashirq01
+    dex
+    bmi splashirq02
+    dec actions,x
+    bne splashirq01
+    ldy actionidx,x
+    ldx actioncfal,y
+    stx restart+1
+    ldx actioncfah,y
+    stx restart+2
+    dec numacts
+    ldx numacts
+    lda actions,x
+    sta actions,y
+    lda actionidx,x
+    sta actionidx,y
+splashirq02
+    jmp MAINIRQ
+
+splash
     jsr randu
     tax
-#print ((VIDRAM + BPERSCR) & $0F00)
-    ldy #>((VIDRAM + BPERSCR) & $0F00)
-splashirq01
+    lda #>((VIDRAM + BPERSCR + $0100) & $0F00)  ; VIC-20 = 2; PET,C=64,Plus/4 = 4; PET80 = 8; how many pages/screen?
+    sta splashpage
+splash01
     lda #>VIDRAM
-    sta splashirq02+2
-    sta splashirq03+2
-splashirq02
+    sta splash02+2
+    sta splash03+2
+splash02
     lda VIDRAM,x
     jsr splish
-splashirq03
+splash03
     sta VIDRAM,x
-    inc splashirq02+1
-    inc splashirq03+1
-    dey
-    bpl splashirq01
-    jmp MAINIRQ
+    inc splash02+1
+    inc splash03+1
+    dec splashpage
+    bne splash01
+    rts
 
 splish
     tay
@@ -561,57 +584,21 @@ splish
 splish01
     rts
 
-
-splush
-    .byt 1
-splushh
-    jsr docreate
-    .byt 15
-sploosh
-    .byt 120
-splotch                         ; flag for mainline routine
-    jsr docreate
+splashpage
     .byt 0
-splash
+numacts
     .byt 0
+actionidx
+    .dsb 16,0
+actions
+    .dsb 16,0
+actioncfal
+    .dsb 16,0
+actioncfah
+    .dsb 16,0
 currletter
     jsr docreate
     .word pettillogo
-
-;--------------------------------------------------------------
-#if 0
-name=?TRIGGER
-stack=( -- )
-tags=system,startup,nosymbol
-
-```
-: qtrigger   ( -- )
-    splotch c@
-    if
-        splotch coff
-    then
-;
-```
-#endif
-#include "align.i65"
-_qtrigger
-    jsr enter
-#include "page.i65"
-    .word splotch
-#include "page.i65"
-    .word cfetch
-#include "pass.i65"
-    .word qbranch
-    .byt <(qtrigger01-*+1)
-#include "page.i65"
-    .word splotch
-#include "page.i65"
-    .word coff
-#include "page.i65"
-    .word _doletter
-#include "pass.i65"
-qtrigger01
-    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -800,12 +787,6 @@ pl1
     .asc    CRSRDOWN,CRSRLEFT,CRSRLEFT,$EB,$CE
     .asc    CRSRDOWN,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,$CE,$CE,$CE,RVSOFF,$E9
 pl1x
-#include "page.i65"
-    .word one
-#include "page.i65"
-    .word splushh
-#include "page.i65"
-    .word store
 #include "pass.i65"
     .word exit
 
@@ -862,12 +843,6 @@ pl4
     .asc CRSRRIGHT,CRSRRIGHT,RVSOFF,$D6,RVSON,CR,CR,CR,CR,CR,CR,CR
     .asc "     PERSONAL ELECTRONIC TRANSACTOR",CR
 pl4x
-#include "page.i65"
-    .word nine
-#include "page.i65"
-    .word splushh
-#include "page.i65"
-    .word store
 #include "pass.i65"
     .word exit
 
@@ -902,12 +877,6 @@ pl6
     .asc $CE,$CE,CRSRLEFT,CRSRLEFT,CRSRDOWN
     .asc $CE,RVSOFF,$E9,RVSON
 pl6x
-#include "page.i65"
-    .word one
-#include "page.i65"
-    .word splushh
-#include "page.i65"
-    .word store
 #include "pass.i65"
     .word exit
 
