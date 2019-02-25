@@ -246,7 +246,7 @@ uarea
 ; ---- not re-initialized or initialized another way
 usersp0         .word bos+1     ; `abort` does `sp!`
 userrp0         .word $01FE     ; `quit` does `rp!`
-userirq         .word 0         ; see `=irq`
+userirq         .word splashirq ; see `=irq`
 userbrk         .word SW16      ; see `=brk` `!sw16`
 usernmi         .word 0         ; see `=nmi`
 userstartup     .word liftoff       ;`studio` needs these two in ~#userorder
@@ -459,7 +459,8 @@ moving anything; control still transfers to `loadaddr+2`.
 
 ```
 code liftoff   ( -- )
-    jsr ?aloha >forth
+    ' ?aloha jsr,
+    >forth,
     sp! 'there @+ tuck over @ 2+ cmove 2+ startup !
     (lits) 5 'ustart 'uendcore 'ustart - 'userarea 'ucore 'uarea 'userarea -
     cmove erase restart \ ;
@@ -472,7 +473,11 @@ liftoff
 #include "page.i65"
     .word spstore
 #include "page.i65"
-    .word barf
+    .word _barf                 ; entertainment
+#include "page.i65"
+    .word callme
+#include "page.i65"
+    .word swapirq               ; use `splashirq`
 #include "pass.i65"
     .word plit
     .word there
@@ -524,41 +529,38 @@ check character on either page
 #endif
 #include "align.i65"
 splashirq
-    dec sploosh
-    bne splashirq03
-    lda #60
-    sta sploosh                 ; jiffies between letters
-    lda #1
-    sta splotch+3               ; set the mainline `doletter` flag
-
-splashirq03
-    lda splushh+3
-    sta splush
-splashirq01
+    jsr plugh
     jsr randu
     tax
+#print ((VIDRAM + BPERSCR) & $0F00)
+    ldy #>((VIDRAM + BPERSCR) & $0F00)
+splashirq01
+    lda #>VIDRAM
+    sta splashirq02+2
+    sta splashirq03+2
+splashirq02
     lda VIDRAM,x
     jsr splish
+splashirq03
     sta VIDRAM,x
-    lda VIDRAM+$100,x
-    jsr splish
-    sta VIDRAM+$100,x
-    dec splush
-    bne splashirq01
-;    inc $83E7
+    inc splashirq02+1
+    inc splashirq03+1
+    dey
+    bpl splashirq01
     jmp MAINIRQ
 
 splish
     tay
     eor #$4C                    ; swap \ <--> / else leave it alone
     and #$7C
+    php
+    tya
+    plp
     bne splish01
-    tya
     eor #3
-    tay
 splish01
-    tya
     rts
+
 
 splush
     .byt 1
@@ -614,80 +616,29 @@ qtrigger01
 ;--------------------------------------------------------------
 #if 0
 name=BARF
-stack=( -- false )
+stack=( -- )
 tags=system,startup,nosymbol
-primitive to fill the screen with a rapidly changing diagonal
-maze effect
-
-_barf
-    jsr enter
-    .word clit
-    .byt CLR
-    .word emit
-    .word vidram
-    .word bperscr
-    .word clit
-    .byt $4D
-    .word emit
-    .word exit
+fill the screen with a rapidly changing diagonal maze effect
 
 #endif
-barf
-    stx z
-    lda #CLR
-    jsr CHROUT
-    ldx #0
-    lda #$4d
-barf01
-    sta VIDRAM,x
-    sta VIDRAM+$100,x
-    sta VIDRAM+$200,x
-    sta VIDRAM+$300,x
-    dex
-    bne barf01
-barf02
-    jsr randu
-    tax
-    lda VIDRAM,x
-    jsr splish
-    sta VIDRAM,x
-    lda VIDRAM+$100,x
-    jsr splish
-    sta VIDRAM+$100,x
-    lda VIDRAM+$200,x
-    jsr splish
-    sta VIDRAM+$200,x
-    lda VIDRAM+$300,x
-    jsr splish
-    sta VIDRAM+$300,x
-    dec barfctr
-    bne barf02
-    dec barfctr+1
-    bne barf02
-    ldx z
-    jmp next
-
 _barf
     jsr enter
+#include "pass.i65"
     .word clit
     .byt CLR
+#include "page.i65"
     .word emit
+#include "page.i65"
     .word vidram
+#include "page.i65"
     .word bperscr
+#include "pass.i65"
     .word clit
-    .byt $4D
-    .word emit
+    .byt (BACKDIAG & $7F)
+#include "page.i65"
+    .word fill
+#include "pass.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=BARF.CTR
-stack=( -- false )
-tags=system,startup,nosymbol
-counter used by `barf`, number of times to twiddle the maze
-#endif
-barfctr
-    .word 5000
 
 ;--------------------------------------------------------------
 #if 0
