@@ -370,6 +370,7 @@ qaloha
     lsr zpmode
     inc zpmode
     bcs aloha4
+    jsr setsw16
     ;fall through
 ;--------------------------------------------------------------
 #if 0
@@ -474,10 +475,6 @@ liftoff
     .word spstore
 #include "page.i65"
     .word _barf                 ; entertainment
-#include "page.i65"
-    .word callme
-#include "page.i65"
-    .word swapirq               ; use `splashirq`
 #include "pass.i65"
     .word plit
     .word there
@@ -491,8 +488,6 @@ liftoff
     .word fetch
 #include "page.i65"
     .word twoplus
-#include "page.i65"
-    .word xyzzy
 #include "page.i65"
     .word cmove                 ; but first, make an upper dictionary
 #include "page.i65"
@@ -528,8 +523,6 @@ check character on either page
     4E?  replace it with 4D
     else? leave it alone
 
-#endif
-#include "align.i65"
 splashirq
     jsr splash
     ldx numacts
@@ -552,12 +545,55 @@ splashirq01
 splashirq02
     jmp MAINIRQ
 
+#endif
+splashirq
+    jsr splash
+    jsr countactions
+    jmp MAINIRQ
+
+;--------------------------------------------------------------
+#if 0
+name=COUNTACTIONS
+stack=( -- )
+tags=system,subroutine,startup,nosymbol
+Subroutine, bump the action number during startup
+
+0 nothing happened yet
+1 "P"
+2 "E"
+3 "T"
+4 "*"
+5 "T"
+6 "I"
+7 "L"
+etc...
+
+#endif
+countactions
+    dec actiondelay
+    bne countactions09
+    inc actionidx
+    lda #3
+    sta actiondelay
+countactions09
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=SPLASH
+stack=( -- )
+tags=system,subroutine,startup,nosymbol
+Subroutine, randomly dither diagonal lines on the screen
+
+#endif
 splash
+    lda #8
+    sta splashes
+splash01
     jsr randu
     tax
     lda #>((VIDRAM + BPERSCR + $0100) & $0F00)  ; VIC-20 = 2; PET,C=64,Plus/4 = 4; PET80 = 8; how many pages/screen?
     sta splashpage
-splash01
     lda #>VIDRAM
     sta splash02+2
     sta splash03+2
@@ -566,9 +602,11 @@ splash02
     jsr splish
 splash03
     sta VIDRAM,x
-    inc splash02+1
-    inc splash03+1
+    inc splash02+2
+    inc splash03+2
     dec splashpage
+    bne splash02
+    dec splashes
     bne splash01
     rts
 
@@ -584,21 +622,17 @@ splish
 splish01
     rts
 
+actiondelay
+    .byt 10
+
+actionidx
+    .byt 0
+
 splashpage
     .byt 0
-numacts
+
+splashes
     .byt 0
-actionidx
-    .dsb 16,0
-actions
-    .dsb 16,0
-actioncfal
-    .dsb 16,0
-actioncfah
-    .dsb 16,0
-currletter
-    jsr docreate
-    .word pettillogo
 
 ;--------------------------------------------------------------
 #if 0
@@ -615,6 +649,23 @@ _barf
     .byt CLR
 #include "page.i65"
     .word emit
+#ifdef IS_VIC20
+#include "pass.i65"
+    .word plits
+    .byt 6
+    .word $9400
+    .word BPERSCR
+    .word 5
+    .word 255
+    .word 36879
+    .word 156                   ;purple
+#include "page.i65"
+    .word emit
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word fill
+#endif
 #include "page.i65"
     .word vidram
 #include "page.i65"
@@ -624,6 +675,10 @@ _barf
     .byt (BACKDIAG & $7F)
 #include "page.i65"
     .word fill
+#include "page.i65"
+    .word callme
+#include "page.i65"
+    .word swapirq               ; use `splashirq`
 #include "pass.i65"
     .word exit
 
@@ -698,60 +753,6 @@ flipper02
 flipper03
     .word exit
 
-;--------------------------------------------------------------
-#if 0
-name=DOLETTER
-stack=( -- false )
-tags=system,startup,nosymbol
-installed by `splashirq` to get in there and display something during FORGET
-
-Replaces either (forget).pass1 or (forget).pass2 for one call
-returns "false" to iterate t
-splash screen irq handler
-choose a random location
-check character on either page
-    4D?  replace it with 4E
-    4E?  replace it with 4D
-    else? leave it alone
-
-```
-: doletter
-    'origr11 @ >r11 drop
-    'currletter dup @ @+ dup
-    ?: $. drop
-    swap ! ;
-
-: doletter
-    'currletter dup @ @+ ?dup
-    if
-        $. over !
-    then  drop ;
-```
-#endif
-#include "align.i65"
-_doletter
-    jsr enter
-;#include "pass.i65"
-;    .word plit
-;    .word $83E7
-;#include "page.i65"
-;    .word oneplusstore
-#include "page.i65"
-    .word currletter
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word fetchplus
-#include "page.i65"
-    .word swap
-#include "page.i65"
-    .word currletter
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word execute
-#include "pass.i65"
-    .word exit
 
 pettillogo
     .word pl0,pl1,pl2,pl3,pl4,pl5,pl6,pl7,pl8,pl9,pl10
@@ -775,6 +776,11 @@ pl1
 #include "pass.i65"
     .word _pdq
     .byt (pl1x-*-1)
+#ifdef IS_VIC20
+    .asc    HOME,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN
+    .asc    RVSON,$CE,RVSOFF,$E9,RVSON
+    .asc    CRSRUP,CRSRLEFT,CRSRLEFT,$CE,$CE
+#else
     .asc    HOME,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN,CRSRDOWN
     .asc    CRSRDOWN,CRSRDOWN,RVSON,$CE,RVSOFF,$E9,RVSON
     .asc    CRSRUP,CRSRLEFT,CRSRLEFT,$CE,$CE
@@ -786,6 +792,7 @@ pl1
     .asc    CRSRDOWN,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,$CE,$CE,$CE,$CE
     .asc    CRSRDOWN,CRSRLEFT,CRSRLEFT,$EB,$CE
     .asc    CRSRDOWN,CRSRLEFT,CRSRLEFT,CRSRLEFT,CRSRLEFT,$CE,$CE,$CE,RVSOFF,$E9
+#endif
 pl1x
 #include "pass.i65"
     .word exit
@@ -938,10 +945,9 @@ pl9
 pl10
     jsr enter
 #include "pass.i65"
-    .word plit
-    .word pettillogo+2*10
-#include "page.i65"
-    .word currletter
+    .word dlit
+    .word xyzzy
+    .word restart+1
 #include "page.i65"
     .word store
 #include "pass.i65"
@@ -1001,6 +1007,8 @@ Set up the loader splash screen entertainment
 _splash
     jsr enter
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
     .word _barf
 #include "pass.i65"
     .word plits
@@ -1011,9 +1019,9 @@ _splash
 #include "page.i65"
     .word blank
 #include "page.i65"
-    .word _banner
-#include "page.i65"
     .word xyzzy
+#include "page.i65"
+    .word _banner
 #include "page.i65"
     .word callme
 #include "page.i65"
