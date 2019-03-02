@@ -5,7 +5,8 @@
 SHELL = /bin/bash
 
 #all:  launch tiddlypettil
-all: clean mkpet mypet vic20
+#all: clean mkpet mypet vic20
+all: clean mkpet vic20
 
 mkpet:
 	./tools/mkpet
