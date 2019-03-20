@@ -37,13 +37,13 @@ basic2pettil
     .word 10
     .byt $9E                    ; SYS token
 #ifdef IS_PET
-    .asc "1037",0               ; `liftoff` $040D
+    .asc "1037",0               ; `cold` $040D
 #endif
 #ifdef IS_VIC20
-    .asc "4621",0               ; restart #1 (of 3) `liftoff` at $120D
+    .asc "4621",0               ; restart #1 (of 3) `cold` at $120D
 #endif
 #ifdef IS_C64
-    .asc "2061",0               ; restart #1 (of 3) `liftoff` at $080D
+    .asc "2061",0               ; restart #1 (of 3) `cold` at $080D
 #endif
 basend
     .word 0
@@ -57,7 +57,7 @@ Performs the `startup` action.  Usually results in a `warm` boot,
 when reentering PETTIL from BASIC.
 
 During startup, `restart` executes four times
-1. when called from BASIC to `liftoff`
+1. when called from BASIC to `cold`
 2. to start the upper dictionary
 3. at the end of `cold`
 4. finally, at the end of `mackinac` to get to the first `warm` boot
@@ -249,7 +249,7 @@ userrp0         .word $01FE     ; `quit` does `rp!`
 userirq         .word splashirq ; see `=irq`
 userbrk         .word SW16      ; see `=brk` `!sw16`
 usernmi         .word 0         ; see `=nmi`
-userstartup     .word liftoff       ;`studio` needs these two in ~#userorder
+userstartup     .word _cold         ;`studio` needs these two in ~#userorder
 userwarning     .word _doterr       ;1/ `studio` replaces this with `error.msg`
 userdp          .word fencepost
 userfence       .word fencepost
@@ -377,7 +377,7 @@ qaloha
 name=ALOHA
 stack=
 tags=subroutine,startup,nosymbol
-Flip back and forth between BASIC and PETTIL modes.
+Flip back and forth between BASIC and PETTIL.
 
 * Swap bottom half of zero page with zpbuf
 ** tape I/O
@@ -404,6 +404,38 @@ aloha4
 ;==============================================================
 ; move the `fencepost` label to either lower or upper location
 ;==============================================================
+#if 0
+name=COLD
+tags=system,startup,throwaway,nosymbol
+A primitive relocator to move already-linked code to upper memory
+Gets us from `pettil-core` to module LAUNCH
+
+* CMOVE transient dictionary to upper memory
+* EXECUTE first word in transient dictionary
+
+Setting the `size` of the transient dictionary to 0 will prevent
+moving anything; control still transfers to `loadaddr+2`.
+
+*    ?aloha
+*    sp!
+*    =irq
+*    !sw16
+*    barf
+*    there @+ tuck over @ 2+ cmove 2+ startup !
+*    cold variables, cmove erase
+*    restart
+
+```
+code cold   ( -- )
+    ' ?aloha jsr,
+    >forth,
+    sp! 'there @+ tuck over @ 2+ cmove 2+ startup !
+    (lits) 5 'ustart 'uendcore 'ustart - 'userarea 'ucore 'uarea 'userarea -
+    cmove erase restart \ ;
+```
+#endif
+_cold
+
 ;--------------------------------------------------------------
 #if 0
 name=FENCEPOST
@@ -412,8 +444,7 @@ This is where [[FENCE]] points, and also [[DP]] after initial
 build of the symbol table.  First-run startup code beyond
 this point (`fencepost` to `there`) may not have symbol table
 entries pointing to it.
-#endif
-fencepost
+
 ; beyond lies the Abyss...
 ;XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ;==============================================================
@@ -445,38 +476,8 @@ fencepost
 ;
 ;
 
-;--------------------------------------------------------------
-#if 0
-name=LIFTOFF
-tags=system,startup,throwaway,nosymbol
-A primitive relocator to move already-linked code to upper memory
-Gets us from `pettil-core` to module LAUNCH
-
-* CMOVE transient dictionary to upper memory
-* EXECUTE first word in transient dictionary
-
-Setting the `size` of the transient dictionary to 0 will prevent
-moving anything; control still transfers to `loadaddr+2`.
-
-*    ?aloha
-*    sp!
-*    =irq
-*    !sw16
-*    barf
-*    there @+ tuck over @ 2+ cmove 2+ startup !
-*    cold variables, cmove erase
-*    restart
-
-```
-code liftoff   ( -- )
-    ' ?aloha jsr,
-    >forth,
-    sp! 'there @+ tuck over @ 2+ cmove 2+ startup !
-    (lits) 5 'ustart 'uendcore 'ustart - 'userarea 'ucore 'uarea 'userarea -
-    cmove erase restart \ ;
-```
 #endif
-liftoff
+fencepost
     jsr qaloha
 #include "align.i65"
     jsr toforth                 ; transition from 6502 Assembly to Forth
@@ -568,7 +569,7 @@ countactions
     dec actiondelay
     bne countactions09
     inc actionidx
-    lda #33
+    lda #33                             ; delay between frames, in jiffies
     sta actiondelay
 countactions09
     rts
