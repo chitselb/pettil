@@ -576,6 +576,7 @@ puts @label   if @label == "STUDIO"
 
     # Adding new files here?  Also add them to src/pettil-tdict.a65
     files = \
+        "pettil-cold.a65 "\
         "pettil-studio.a65 "\
         "pettil-name.a65 "\
         "pettil-number.a65 "\
@@ -611,6 +612,7 @@ puts "finis"
 
 
     #calculate the @size field of each forthword
+    puts all_words
     puts all_words["STUDIO"].addr
 #    puts all_words.each { | word| word }
     set_sizes all_words   unless all_words["STUDIO"].addr.nil?
