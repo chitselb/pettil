@@ -612,7 +612,7 @@ puts "finis"
 
 
     #calculate the @size field of each forthword
-    puts all_words
+#puts all_words
     puts all_words["STUDIO"].addr
 #    puts all_words.each { | word| word }
     set_sizes all_words   unless all_words["STUDIO"].addr.nil?
