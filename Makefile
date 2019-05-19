@@ -6,9 +6,11 @@ SHELL = /bin/bash
 
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
+#all: clean mkpet vic20 perturb
 all: clean mkpet perturb vic20
 
 mkpet:
+	echo +++ MKPET
 	./tools/mkpet
 
 	c1541 -attach pettil.d64													\
@@ -16,13 +18,10 @@ mkpet:
 		-write tapes/pettilpackets
 
 	# add other targets
-	for object in obj/pettil.prg* ; do 											\
+	for object in obj/p*.prg* ; do 											\
         ls -la $$object ; 														\
 		c1541 -attach pettil.d64 -write $$object ;								\
     done
-
-perturb:
-	./tools/perturb.sh
 
 testupgradepet:
 	~/bin/xpet                                                                  \
@@ -76,7 +75,22 @@ pet80:
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
+perturb:
+	echo +++ PERTURB
+	c1541 -attach pettil.d64 -dir
+	xfce4-terminal 																\
+				--hide-menubar 													\
+				--hide-borders 													\
+				--geometry=80x40+630+28	 										\
+				--command="/usr/bin/xvic                                        \
+	-directory data/VIC20/ -moncommand obj/perturb.mon4            				\
+	-config data/gtk3_vic.vicerc         						                \
+	-warp -8 chitselb.d64 -9 pettil.d64" &
+
+
 vic20:
+	echo +++ VIC20
+	c1541 -attach pettil.d64 -dir
 	xfce4-terminal 																\
                 --hide-menubar 													\
                 --hide-borders 													\
@@ -111,15 +125,18 @@ compile: clean pettil tiddlypettil
 doc: tiddlypettil publish
 
 clean:
+	echo +++ CLEAN
 	rm -rf ./tmp/
 	mkdir -v ./tmp/
 	c1541 -format pettil,09 d64 pettil.d64
 
 pristine: clean
+	echo +++ PRISTINE
 	rm -rf ./obj/
 	mkdir -v ./obj/
 
 tiddlypettil:
+	echo +++ TIDDLYPETTIL
 	echo . Phase IV
 	echo . . . . Building docs/tiddlypettil.html
 	mkdir -p ./tmp/tiddlypettil/tiddlers
