@@ -73,6 +73,7 @@
 	if [ -e ./tools/perturb$1.dbg ]; then cat ./tools/perturb$1.dbg >> ./tmp/t.t; fi
 	mv -v ./tmp/t.t ./obj/perturb.mon$1
 #	ls -l ./tmp/*.obj ./tmp/*.sym > ./docs/sizes.txt
+	rm -v ./docs/sizes.txt
 	stat -c '%8s %n' obj/* | sed -e 's/obj\///' >> ./docs/sizes.txt
 	cp -v ./tmp/sizes.csv docs/sizes.csv$1
 

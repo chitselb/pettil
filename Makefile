@@ -6,7 +6,7 @@ SHELL = /bin/bash
 
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
-all: clean mkpet vic20
+all: clean mkpet perturb vic20
 
 mkpet:
 	./tools/mkpet
@@ -20,6 +20,9 @@ mkpet:
         ls -la $$object ; 														\
 		c1541 -attach pettil.d64 -write $$object ;								\
     done
+
+perturb:
+	./tools/perturb.sh
 
 testupgradepet:
 	~/bin/xpet                                                                  \
