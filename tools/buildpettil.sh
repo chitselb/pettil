@@ -70,8 +70,8 @@
 		> ./obj/perturb.prg$1
 	ls -la ./obj/pettil.prg$1
 	sort ./tmp/pettil.mon > ./tmp/t.t
-	if [ -e ./tools/perturb$1.dbg ]; then cat ./tools/perturb$1.dbg >> ./tmp/t.t; fi
-	mv -v ./tmp/t.t ./obj/perturb.mon$1
+	if [ -e ./tools/perturb$1.dbg ]; then cat ./tmp/t.t ./tools/perturb$1.dbg > ./obj/perturb.mon$1; fi
+	if [ -e ./tools/pettil$1.dbg ]; then cat ./tmp/t.t ./tools/pettil$1.dbg > ./obj/pettil.mon$1; fi
 #	ls -l ./tmp/*.obj ./tmp/*.sym > ./docs/sizes.txt
 	rm -v ./docs/sizes.txt
 	stat -c '%8s %n' obj/* | sed -e 's/obj\///' >> ./docs/sizes.txt

@@ -7,7 +7,7 @@ SHELL = /bin/bash
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
-all: clean mkpet perturb vic20
+all: perturb
 
 mkpet:
 	echo +++ MKPET
@@ -75,7 +75,7 @@ pet80:
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
-perturb:
+perturb: clean mkpet
 	echo +++ PERTURB
 	c1541 -attach pettil.d64 -dir
 	xfce4-terminal 																\
@@ -96,7 +96,7 @@ vic20:
                 --hide-borders 													\
                 --geometry=80x40+630+28	 										\
 	--command="/usr/bin/xvic                                                    \
-    -directory data/VIC20/ -moncommand obj/perturb.mon4            				\
+    -directory data/VIC20/ -moncommand obj/pettil.mon4            				\
     -config data/gtk3_vic.vicerc         						                \
     -warp -8 chitselb.d64 -9 pettil.d64" &
 
