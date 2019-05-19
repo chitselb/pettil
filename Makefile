@@ -7,7 +7,7 @@ SHELL = /bin/bash
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
-all: perturb
+all: perturb vic20
 
 mkpet:
 	echo +++ MKPET
@@ -88,7 +88,7 @@ perturb: clean mkpet
 	-warp -8 chitselb.d64 -9 pettil.d64" &
 
 
-vic20:
+vic20: clean mkpet
 	echo +++ VIC20
 	c1541 -attach pettil.d64 -dir
 	xfce4-terminal 																\
