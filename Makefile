@@ -17,9 +17,8 @@ mkpet:
 
 	# add other targets
 	for object in obj/pettil.prg* ; do 											\
-        echo $$object ;															\
-		c1541 -attach pettil.d64 -write $$object ;								\
         ls -la $$object ; 														\
+		c1541 -attach pettil.d64 -write $$object ;								\
     done
 
 testupgradepet:
@@ -75,10 +74,12 @@ pet80:
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 vic20:
-	cp data/my.dww data/dwwimage.dww
-	xfce4-terminal --command=" 													\
-	/usr/bin/xvic                                                               	\
-    -directory data/VIC20/ -moncommand obj/pettil.mon4            				\
+	xfce4-terminal 																\
+                --hide-menubar 													\
+                --hide-borders 													\
+                --geometry=80x40+630+28	 										\
+	--command="/usr/bin/xvic                                                    \
+    -directory data/VIC20/ -moncommand obj/perturb.mon4            				\
     -config data/gtk3_vic.vicerc         						                \
     -warp -8 chitselb.d64 -9 pettil.d64" &
 
@@ -91,8 +92,11 @@ c64:
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 petpic:
-	xfce4-terminal --command=" 													\
-	/usr/local/bin/xpet                                                         \
+	xfce4-terminal 																\
+                --hide-menubar 													\
+                --hide-borders 													\
+                --geometry=152x53+290+28	 									\
+	-x "/usr/local/bin/xpet                                                     \
 		-directory data/PET/ -moncommand obj/pettil.mon1						\
 		-config data/gtk3_upgrade.vicerc 										\
 		-rom9 data/MYNR90_MicroMon.bin                                          \
