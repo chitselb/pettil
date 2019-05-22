@@ -39,18 +39,6 @@
 	  -l ../../tmp/pettil-studio.lab                                            \
 	  -v
 	cd -
-#	echo . Phase III
-#	echo . . . . Building PERTURB temporary dictionary = PERTURB.OBJ
-	cd ./perturb/src/ &&                                                        \
-	xa ./perturb.a65                                             		        \
-		-DROM_OPTIONS=$2                                                        \
-		-DHITOP=$3                                                              \
-		-DSPECIALOPTS=$4                                                        \
-	  -I ../../common/src/                                                      \
-	  -o ../../tmp/perturb.obj                                          		\
-	  -e ../../tmp/perturb.err                                            		\
-	  -l ../../tmp/perturb.lab
-	cd -
 #	echo . Phase IV
 #	echo . . . . Generating combined symbol table = PETTIL.SYM
 	ruby ./tools/xap.rb
@@ -62,13 +50,9 @@
 		./tmp/pettil-studio.obj \
 		./tmp/pettil.sym \
 		> ./obj/pettil.prg$1
-# PERTURB binary
-	cat \
-		./tmp/pettil-core.obj \
-		./tmp/perturb.obj \
-		./tmp/pettil.sym \
-		> ./obj/perturb.prg$1
+	cp ./tmp/pettil-core.obj ./obj/pettil-core.obj$1
 	ls -la ./obj/pettil.prg$1
+
 	sort ./tmp/pettil.mon > ./tmp/t.t
 	if [ -e ./tools/perturb$1.dbg ]; then cat ./tmp/t.t ./tools/perturb$1.dbg > ./obj/perturb.mon$1; fi
 	if [ -e ./tools/pettil$1.dbg ]; then cat ./tmp/t.t ./tools/pettil$1.dbg > ./obj/pettil.mon$1; fi
