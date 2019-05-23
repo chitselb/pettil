@@ -6,9 +6,11 @@ SHELL = /bin/bash
 
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
-all: clean mkpet vic20
+#all: clean mkpet vic20 perturb
+all: perturb
 
 mkpet:
+	echo +++ MKPET
 	./tools/mkpet
 
 	c1541 -attach pettil.d64													\
@@ -16,10 +18,9 @@ mkpet:
 		-write tapes/pettilpackets
 
 	# add other targets
-	for object in obj/pettil.prg* ; do 											\
-        echo $$object ;															\
-		c1541 -attach pettil.d64 -write $$object ;								\
+	for object in obj/p*.prg* ; do 											\
         ls -la $$object ; 														\
+		c1541 -attach pettil.d64 -write $$object ;								\
     done
 
 testupgradepet:
@@ -82,10 +83,27 @@ pet80:
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
-vic20:
-	cp data/my.dww data/dwwimage.dww
-	xfce4-terminal --command=" 													\
-	/usr/bin/xvic                                                               	\
+perturb: clean mkpet
+	echo +++ PERTURB
+	at now -f tools/mkperturb.sh
+#	xfce4-terminal 																\
+#				--hide-menubar 													\
+#				--hide-borders 													\
+#				--geometry=80x40+630+28	 										\
+#				--command="/usr/bin/xvic                                        \
+#	-directory data/VIC20/ -moncommand obj/perturb.mon4            				\
+#	-config data/gtk3_vic.vicerc         						                \
+#	-warp -8 chitselb.d64 -9 pettil.d64" &
+
+
+vic20: clean mkpet
+	echo +++ VIC20
+	c1541 -attach pettil.d64 -dir
+	xfce4-terminal 																\
+                --hide-menubar 													\
+                --hide-borders 													\
+                --geometry=80x40+630+28	 										\
+	--command="/usr/bin/xvic                                                    \
     -directory data/VIC20/ -moncommand obj/pettil.mon4            				\
     -config data/gtk3_vic.vicerc         						                \
     -warp -8 chitselb.d64 -9 pettil.d64" &
@@ -99,8 +117,11 @@ c64:
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 petpic:
-	xfce4-terminal --command=" 													\
-	/usr/local/bin/xpet                                                         \
+	xfce4-terminal 																\
+                --hide-menubar 													\
+                --hide-borders 													\
+                --geometry=152x53+290+28	 									\
+	-x "/usr/local/bin/xpet                                                     \
 		-directory data/PET/ -moncommand obj/pettil.mon1						\
 		-config data/gtk3_upgrade.vicerc 										\
 		-rom9 data/MYNR90_MicroMon.bin                                          \
@@ -112,15 +133,18 @@ compile: clean pettil tiddlypettil
 doc: tiddlypettil publish
 
 clean:
+	echo +++ CLEAN
 	rm -rf ./tmp/
 	mkdir -v ./tmp/
 	c1541 -format pettil,09 d64 pettil.d64
 
 pristine: clean
+	echo +++ PRISTINE
 	rm -rf ./obj/
 	mkdir -v ./obj/
 
 tiddlypettil:
+	echo +++ TIDDLYPETTIL
 	echo . Phase IV
 	echo . . . . Building docs/tiddlypettil.html
 	mkdir -p ./tmp/tiddlypettil/tiddlers

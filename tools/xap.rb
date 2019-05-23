@@ -559,7 +559,7 @@ puts @label   if @label == "STUDIO"
     # build an xpet monitor file with both core and transient labels
     write_xpet_monfile "pettil.mon",all_labels
 
-    # Changing any files here?  Also modify src/pettil-core.a65
+    # Changing any files here?  Also modify core/src/pettil-core.a65
     files = \
         "sweet16.a65 "\
         "core-locals.a65 "\
@@ -574,7 +574,7 @@ puts @label   if @label == "STUDIO"
 
     core_files = files.split(" ").collect { |filename| "./core/src/"+filename }
 
-    # Adding new files here?  Also add them to src/pettil-tdict.a65
+    # Changing any files here?  Also modify studio/src/pettil-studio.a65
     files = \
         "pettil-cold.a65 "\
         "pettil-studio.a65 "\
