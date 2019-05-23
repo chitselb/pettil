@@ -30,6 +30,14 @@ testupgradepet:
 		-romA data/MYNRa0_picchip_MMpl_DOS.bin                                  \
 		-warp -8 chitselb.d64 -9 pettil.d64
 
+# SDL2 VIC-20 +35K(banks 01235)
+testvic:
+	xfce4-terminal --command=" 													\
+	/home/chitselb/Documents/dev/commodore/vice-emu-code/vice/src/xvic \
+		-directory data/VIC20/ -moncommand obj/pettil.mon4 \
+		-config data/sdl2-perturb-vicerc \
+		-warp -8 chitselb.d64 -9 pettil.d64" &
+
 pet3:
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command=" 													\
@@ -44,7 +52,7 @@ mypet:
 	xfce4-terminal --command=" 													\
 	/usr/bin/xpet                                                               \
 		-directory data/PET/ -moncommand obj/pettil.mon0						\
-		-config data/gtk3_chitselb.vicerc 										\
+		-config data/sdl-700251-vicerc	 										\
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
