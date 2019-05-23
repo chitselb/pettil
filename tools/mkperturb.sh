@@ -44,10 +44,12 @@
                 -l ../tmp/${replicant}.lab${target}                                  \
                 -v
             cd ..
-            echo wut?
-            cat -v                                                                  \
+            echo wax?
+            hd -v ./obj/pettil-core.obj${target} | head -10
+            cat                                                                     \
                 ./obj/pettil-core.obj${target}                                      \
                 ./tmp/${replicant}.obj${target}>./obj/${replicant}.prg${target}
+            hd -v ./obj/${replicant}.prg${target} | head -10
             ls -la ./obj/perturb-${cheese}.prg${target}
         done
     done
