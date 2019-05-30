@@ -7,7 +7,20 @@ SHELL = /bin/bash
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
-all: perturb
+all: clean mkpet perturb mypet
+
+# build and perform all feats of testing
+perturb: mypet
+	echo +++ PERTURB
+	at now -f tools/mkperturb.sh
+#	xfce4-terminal 																\
+#				--hide-menubar 													\
+#				--hide-borders 													\
+#				--geometry=80x40+630+28	 										\
+#				--command="/usr/bin/xvic                                        \
+#	-directory data/VIC20/ -moncommand obj/perturb.mon4            				\
+#	-config data/gtk3_vic.vicerc         						                \
+#	-warp -8 chitselb.d64 -9 pettil.d64" &
 
 mkpet:
 	echo +++ MKPET
@@ -82,19 +95,6 @@ pet80:
 			-virtualdev 														\
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64" &
-
-perturb: clean mkpet
-	echo +++ PERTURB
-	at now -f tools/mkperturb.sh
-#	xfce4-terminal 																\
-#				--hide-menubar 													\
-#				--hide-borders 													\
-#				--geometry=80x40+630+28	 										\
-#				--command="/usr/bin/xvic                                        \
-#	-directory data/VIC20/ -moncommand obj/perturb.mon4            				\
-#	-config data/gtk3_vic.vicerc         						                \
-#	-warp -8 chitselb.d64 -9 pettil.d64" &
-
 
 vic20: clean mkpet
 	echo +++ VIC20

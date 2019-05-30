@@ -45,11 +45,11 @@
                 -v
             cd ..
             echo wax?
-            hd -v ./obj/pettil-core.obj${target} | head -10
+            hd -v ./obj/pettil-core.obj${target} | head -2
             cat                                                                     \
                 ./obj/pettil-core.obj${target}                                      \
                 ./tmp/${replicant}.obj${target}>./obj/${replicant}.prg${target}
-            hd -v ./obj/${replicant}.prg${target} | head -10
+            hd -v ./obj/${replicant}.prg${target} | head -2
             ls -la ./obj/perturb-${cheese}.prg${target}
         done
     done
