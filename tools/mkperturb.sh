@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 # ~/pettil/tools/mkperturb.sh
 #
 # This script runs the test automation in the `at` queue.
@@ -7,6 +7,7 @@
     c1541 -attach pettil.d64 -dir
     export DISPLAY=:0
     echo -----------------
+    c1541 -attach pettil.d64 -del "perturb*" -dir
     for target in 0 4
     do
         echo "target $target"
@@ -31,10 +32,12 @@
         do
             cheese=$(basename ${suite#*/})
             replicant="perturb-${cheese}"
+            echo replicant cheese
             echo $replicant $cheese
-            cat perturb/perturb-base.a65 perturb/${cheese}/*.i65 > tmp/perturb-${cheese}.a65
+            cat perturb/${cheese}/*.i65> tmp/${replicant}.a65
             cd tmp
-            xa ./perturb-${cheese}.a65                                              \
+#            cat ${replicant}.a65
+            xa ${replicant}.a65                                              \
                 -DROM_OPTIONS=${romopts}                                            \
                 -DHITOP=${studio}                                                   \
                 -DSPECIALOPTS=${load}                                               \
@@ -44,42 +47,41 @@
                 -l ../tmp/${replicant}.lab${target}                                  \
                 -v
             cd ..
-            echo wax?
-            hd -v ./obj/pettil-core.obj${target} | head -2
             cat                                                                     \
-                ./obj/pettil-core.obj${target}                                      \
-                ./tmp/${replicant}.obj${target}>./obj/${replicant}.prg${target}
-            hd -v ./obj/${replicant}.prg${target} | head -2
-            ls -la ./obj/perturb-${cheese}.prg${target}
+                obj/pettil-core.obj${target}                                      \
+                tmp/${replicant}.obj${target} > obj/${replicant}.prg${target}
+            ls -la ./obj/${replicant}.prg${target}
+            cd obj
+                c1541 -attach ../pettil.d64 -del ${replicant}.prg${target}
+                c1541 -attach ../pettil.d64 -write ${replicant}.prg${target}
+            cd ..
+            c1541 -attach pettil.d64 -dir
         done
     done
 
-    for object in obj/p*.prg* ; do                                          \
-        ls -la $$object ;                                                       \
-        c1541 -attach pettil.d64 -write $$object ;                              \
+    for object in obj/perturb-*.prg4
+    do
+        cheese=$(basename ${object#*/})
+        extension="${cheese##*.}"
+        namer="${cheese%.*}"
+        echo "chintz ${object}\n${cheese}\n${namer}"
+        cp -v obj/perturb.mon4 tmp/
+        echo "bk E089\ncommand 9 \"scrsh \\\"${namer}.scrsh\\\" 2;quit\"\nkeybuf load\"${cheese}\",9\x0drun\x0d" >> tmp/perturb.mon4
+        tail -9 tmp/perturb.mon4
+        pwd
+        ls
+
+        /home/chitselb/bin/xvic \
+         -directory data/VIC20/ \
+         -moncommand tmp/perturb.mon4 \
+         -config data/sdl2-perturb-vicerc \
+         -warp \
+         -8 chitselb.d64 \
+         -9 pettil.d64
+
     done
 
+    echo fritos
+    pwd
 
-exit
-
-echo -----------------
-for perturbshow in obj/perturb*.prg4
-do
-    echo "$perturbshow"
-    basename $perturbshow
-    ls -la $perturbshow
-    echo "$perturbshow"
-    echo "$(basename $perturbshow)"
-#    f = "$(basename -- $$perturbshow)"
-#    echo $f
-#    echo $f.mon4
-
-#    xfce4-terminal                                                              \
-#                --hide-menubar                                                  \
-#                --hide-borders                                                  \
-#                --geometry=40x25+0+28                                         \
-#    --command="/usr/bin/xvic                                                    \
-#    -directory data/VIC20/ -moncommand obj/perturb.mon4                         \
-#    -config data/gtk3_vic.vicerc                                                \
-#    -warp -8 chitselb.d64 -9 pettil.d64" &
- done
+    exit

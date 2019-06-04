@@ -7,10 +7,10 @@ SHELL = /bin/bash
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
-all: clean mkpet perturb mypet
+all: clean mkpet perturb
 
 # build and perform all feats of testing
-perturb: mypet
+perturb: mkpet
 	echo +++ PERTURB
 	at now -f tools/mkperturb.sh
 #	xfce4-terminal 																\
@@ -31,7 +31,7 @@ mkpet:
 		-write tapes/pettilpackets
 
 	# add other targets
-	for object in obj/p*.prg* ; do 											\
+	for object in obj/pettil*.prg* ; do 											\
         ls -la $$object ; 														\
 		c1541 -attach pettil.d64 -write $$object ;								\
     done
@@ -96,7 +96,7 @@ pet80:
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
-vic20: clean mkpet
+vic20: clean perturb
 	echo +++ VIC20
 	c1541 -attach pettil.d64 -dir
 	xfce4-terminal 																\
