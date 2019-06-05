@@ -72,9 +72,10 @@
         ls
 
         /home/chitselb/bin/xvic \
+         -verbose \
          -directory data/VIC20/ \
          -moncommand tmp/perturb.mon4 \
-         -config data/sdl2-perturb-vicerc \
+         -config data/sdl2_chitselb.vicerc \
          -warp \
          -8 chitselb.d64 \
          -9 pettil.d64

@@ -46,11 +46,13 @@ testupgradepet:
 
 # SDL2 VIC-20 +35K(banks 01235)
 testvic:
-	xfce4-terminal --command=" 													\
-	/home/chitselb/Documents/dev/commodore/vice-emu-code/vice/src/xvic \
-		-directory data/VIC20/ -moncommand obj/pettil.mon4 \
-		-config data/sdl2-perturb-vicerc \
-		-warp -8 chitselb.d64 -9 pettil.d64" &
+	xfce4-terminal --command="xvic		\
+		-directory data/VIC20/ 			\
+		-moncommand obj/pettil.mon4		\
+		-config data/sdl2_chitselb.vicerc \
+		-warp							\
+		-8 chitselb.d64		 			\
+		-9 pettil.d64" &
 
 pet3:
 	cp data/my.dww data/dwwimage.dww
