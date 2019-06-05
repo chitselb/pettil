@@ -59,6 +59,7 @@
         done
     done
 
+    date -Iseconds >> perturb/perturb.log
     for object in obj/perturb-*.prg4
     do
         cheese=$(basename ${object#*/})
@@ -66,11 +67,9 @@
         namer="${cheese%.*}"
         echo "chintz ${object}\n${cheese}\n${namer}"
         cp -v obj/perturb.mon4 tmp/
-        echo "bk E089\ncommand 9 \"scrsh \\\"${namer}.scrsh\\\" 2;quit\"\nkeybuf load\"${cheese}\",9\x0drun\x0d" >> tmp/perturb.mon4
+        echo "bk E089\ncommand 9 \"scrsh \\\"perturb/${namer}.scrsh\\\" 2;quit\"\nkeybuf load\"${cheese}\",9\x0drun\x0d" >> tmp/perturb.mon4
         tail -9 tmp/perturb.mon4
         pwd
-        ls
-
         /home/chitselb/bin/xvic \
          -verbose \
          -directory data/VIC20/ \
@@ -79,7 +78,10 @@
          -warp \
          -8 chitselb.d64 \
          -9 pettil.d64
-
+        if [ ! -f perturb/${namer}.match.png ]; then
+            echo "${namer}.scrsh.png has no match!" >> perturb/perturb.log
+        fi
+        diff -s -b perturb/${namer}.scrsh.png perturb/${namer}.match.png >> perturb/perturb.log
     done
 
     echo fritos
