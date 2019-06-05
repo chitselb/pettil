@@ -79,7 +79,7 @@
          -8 chitselb.d64 \
          -9 pettil.d64
         if [ ! -f perturb/${namer}.match.png ]; then
-            echo "${namer}.scrsh.png has no match!" >> perturb/perturb.log
+            echo "🍅 ${namer}.scrsh.png has no match!" >> perturb/perturb.log
         fi
         diff -s -b perturb/${namer}.scrsh.png perturb/${namer}.match.png >> perturb/perturb.log
     done
