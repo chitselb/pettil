@@ -1,7 +1,7 @@
 #!/bin/bash
 # ~/pettil/tools/mkperturb.sh
 #
-# This script runs the test automation in the `at` queue.
+# This script usually runs the test automation in the `at` queue.
 
     pwd
     c1541 -attach pettil.d64 -dir
@@ -37,18 +37,17 @@
             cat perturb/${cheese}/*.i65> tmp/${replicant}.a65
             cd tmp
 #            cat ${replicant}.a65
-            xa ${replicant}.a65                                              \
-                -DROM_OPTIONS=${romopts}                                            \
-                -DHITOP=${studio}                                                   \
-                -DSPECIALOPTS=${load}                                               \
-                -I ../common/src/                                                   \
-                -o ../tmp/${replicant}.obj${target}                            \
-                -e ../tmp/${replicant}.err${target}                                  \
-                -l ../tmp/${replicant}.lab${target}                                  \
+            xa ${replicant}.a65                     \
+                -DROM_OPTIONS=${romopts}            \
+                -DHITOP=${studio}                   \
+                -DSPECIALOPTS=${load}               \
+                -I ../common/src/                   \
+                -o ../tmp/${replicant}.obj${target} \
+                -e ../tmp/${replicant}.err${target} \
+                -l ../tmp/${replicant}.lab${target} \
                 -v
             cd ..
-            cat                                                                     \
-                obj/pettil-core.obj${target}                                      \
+            cat obj/pettil-core.obj${target}                                    \
                 tmp/${replicant}.obj${target} > obj/${replicant}.prg${target}
             ls -la ./obj/${replicant}.prg${target}
             cd obj
@@ -79,12 +78,11 @@
          -8 chitselb.d64 \
          -9 pettil.d64
         if [ ! -f perturb/${namer}.match.png ]; then
-            echo "🍅 ${namer}.scrsh.png has no match!" >> perturb/perturb.log
+            echo "🍅 ${namer}\t-- no match!" >> perturb/perturb.log
         fi
-        diff -s -b perturb/${namer}.scrsh.png perturb/${namer}.match.png >> perturb/perturb.log
+        diff -s -b perturb/${namer}.scrsh.png perturb/${namer}.match.png        \
+        |sed 's/^.*-\([ivxlcdm]*\).*differ$/🍅 \1 \t\t-- different\!/'           \
+        |sed 's/^.*-\([ivxlcdm]*\).*identical$/🥑 \1 \t\t...pass/'                                       \
+        >> perturb/perturb.log
     done
-
-    echo fritos
-    pwd
-
     exit

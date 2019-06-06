@@ -48,7 +48,7 @@ testupgradepet:
 testvic:
 	xfce4-terminal --command="xvic		\
 		-directory data/VIC20/ 			\
-		-moncommand obj/pettil.mon4		\
+		-moncommand perturb/perturb.mon4		\
 		-config data/sdl2_chitselb.vicerc \
 		-warp							\
 		-8 chitselb.d64		 			\
@@ -98,17 +98,15 @@ pet80:
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
-vic20: clean perturb
+vic20:
 	echo +++ VIC20
-	c1541 -attach pettil.d64 -dir
-	xfce4-terminal 																\
-                --hide-menubar 													\
-                --hide-borders 													\
-                --geometry=80x40+630+28	 										\
-	--command="/usr/bin/xvic                                                    \
-    -directory data/VIC20/ -moncommand obj/pettil.mon4            				\
-    -config data/gtk3_vic.vicerc         						                \
-    -warp -8 chitselb.d64 -9 pettil.d64" &
+	pwd
+	xfce4-terminal --command="xvic		\
+		-moncommand obj/pettil.mon4		\
+		-config data/sdl2_chitselb.vicerc \
+		-8 chitselb.d64		 			\
+		-9 pettil.d64					\
+		-warp"
 
 c64:
 	cp data/my.dww data/dwwimage.dww
@@ -148,15 +146,15 @@ pristine: clean
 tiddlypettil:
 	echo +++ TIDDLYPETTIL
 	echo . Phase IV
-	echo . . . . Building docs/tiddlypettil.html
+	echo . . . . Building doc/tiddlypettil.html
 	mkdir -p ./tmp/tiddlypettil/tiddlers
-	cd ./docs/images/ && for a in *.png;do echo $${a};echo title: $${a} > ../statictiddlers/$${a}.tid && echo type: image/png >> ../statictiddlers/$${a}.tid&& echo  >> ../statictiddlers/$${a}.tid && base64 -w0 $$a >> ../statictiddlers/$${a}.tid;done && cd ../../
-	cp ./docs/statictiddlers/tiddlywiki.info ./tmp/tiddlypettil/
-	cp ./docs/statictiddlers/*.tid ./tmp/tiddlypettil/tiddlers/
-	export MMDDYY=`date +"documentation generated %Y-%m-%d"`;sed "s/datetimestamp/$${MMDDYY}/" <./docs/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
+	cd ./doc/images/ && for a in *.png;do echo $${a};echo title: $${a} > ../statictiddlers/$${a}.tid && echo type: image/png >> ../statictiddlers/$${a}.tid&& echo  >> ../statictiddlers/$${a}.tid && base64 -w0 $$a >> ../statictiddlers/$${a}.tid;done && cd ../../
+	cp ./doc/statictiddlers/tiddlywiki.info ./tmp/tiddlypettil/
+	cp ./doc/statictiddlers/*.tid ./tmp/tiddlypettil/tiddlers/
+	export MMDDYY=`date +"documentation generated %Y-%m-%d"`;sed "s/datetimestamp/$${MMDDYY}/" <./doc/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
 	cd ./tmp/tiddlypettil/ && ~/.npm-packages/bin/tiddlywiki --load ../pettil.json --rendertiddler $$:/core/save/all tiddlypettil.html text/plain >/dev/null
-	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./docs/tiddlypettil.html
+	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./doc/tiddlypettil.html
 
 publish:
-	scp ./docs/tiddlypettil.html www-data@puri.chitselb.com:chitselb.com/current/public/files/
-#	scp ./docs/tiddlypettil.html www-puri:chitselb.com/current/public/files/
+	scp ./doc/tiddlypettil.html www-data@puri.chitselb.com:chitselb.com/current/public/files/
+#	scp ./doc/tiddlypettil.html www-puri:chitselb.com/current/public/files/
