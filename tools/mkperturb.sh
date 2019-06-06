@@ -38,6 +38,7 @@
             cd tmp
 #            cat ${replicant}.a65
             xa ${replicant}.a65                     \
+                -DPERTURB                           \
                 -DROM_OPTIONS=${romopts}            \
                 -DHITOP=${studio}                   \
                 -DSPECIALOPTS=${load}               \
@@ -47,6 +48,8 @@
                 -l ../tmp/${replicant}.lab${target} \
                 -v
             cd ..
+            ls -la ./tmp/
+
             cat obj/pettil-core.obj${target}                                    \
                 tmp/${replicant}.obj${target} > obj/${replicant}.prg${target}
             ls -la ./obj/${replicant}.prg${target}
@@ -59,6 +62,7 @@
     done
 
     date -Iseconds >> perturb/perturb.log
+    rm -v perturb/*.scrsh.png
     for object in obj/perturb-*.prg4
     do
         cheese=$(basename ${object#*/})
@@ -84,5 +88,15 @@
         |sed 's/^.*-\([ivxlcdm]*\).*differ$/🍅 \1 \t\t-- different\!/'           \
         |sed 's/^.*-\([ivxlcdm]*\).*identical$/🥑 \1 \t\t...pass/'                                       \
         >> perturb/perturb.log
+    done
+
+    for object in perturb/perturb-*.match.png
+    do
+        cheese=$(basename ${object#*/})
+        extension="${cheese#*.}"
+        namer="${cheese%%.*}"
+        if [ ! -f perturb/${namer}.scrsh.png ]; then
+            echo "🍅 ${namer}\t-- no scrsh!" >> perturb/perturb.log
+        fi
     done
     exit
