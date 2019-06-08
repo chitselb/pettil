@@ -7,10 +7,24 @@ SHELL = /bin/bash
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
-all: perturb
+all: clean mkpet perturb testpet
+
+# build and perform all feats of testing
+perturb: mkpet
+	echo +++ PERTURB
+	at now -f tools/mkperturb
+#	xfce4-terminal 																\
+#				--hide-menubar 													\
+#				--hide-borders 													\
+#				--geometry=80x40+630+28	 										\
+#				--command="/usr/bin/xvic                                        \
+#	-directory data/VIC20/ -moncommand obj/perturb.mon4            				\
+#	-config data/gtk3_vic.vicerc         						                \
+#	-warp -8 chitselb.d64 -9 pettil.d64" &
 
 mkpet:
 	echo +++ MKPET
+	pwd
 	./tools/mkpet
 
 	c1541 -attach pettil.d64													\
@@ -18,7 +32,7 @@ mkpet:
 		-write tapes/pettilpackets
 
 	# add other targets
-	for object in obj/p*.prg* ; do 											\
+	for object in obj/pettil*.prg* ; do 											\
         ls -la $$object ; 														\
 		c1541 -attach pettil.d64 -write $$object ;								\
     done
@@ -33,11 +47,22 @@ testupgradepet:
 
 # SDL2 VIC-20 +35K(banks 01235)
 testvic:
-	xfce4-terminal --command=" 													\
-	/home/chitselb/Documents/dev/commodore/vice-emu-code/vice/src/xvic \
-		-directory data/VIC20/ -moncommand obj/pettil.mon4 \
-		-config data/sdl2-perturb-vicerc \
-		-warp -8 chitselb.d64 -9 pettil.d64" &
+	xfce4-terminal --command="xvic		\
+		-directory data/VIC20/ 			\
+		-moncommand perturb/perturb.mon4		\
+		-config data/sdl2_chitselb.vicerc \
+		-warp							\
+		-8 chitselb.d64		 			\
+		-9 pettil.d64" &
+
+testpet:
+	xfce4-terminal --command="xpet		\
+		-directory data/PET/ 			\
+		-moncommand perturb/pettil.mon0		\
+		-config data/sdl2_chitselb.vicerc \
+		-warp							\
+		-8 chitselb.d64		 			\
+		-9 pettil.d64" &
 
 pet3:
 	cp data/my.dww data/dwwimage.dww
@@ -83,30 +108,15 @@ pet80:
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
-perturb: clean mkpet
-	echo +++ PERTURB
-	at now -f tools/mkperturb.sh
-#	xfce4-terminal 																\
-#				--hide-menubar 													\
-#				--hide-borders 													\
-#				--geometry=80x40+630+28	 										\
-#				--command="/usr/bin/xvic                                        \
-#	-directory data/VIC20/ -moncommand obj/perturb.mon4            				\
-#	-config data/gtk3_vic.vicerc         						                \
-#	-warp -8 chitselb.d64 -9 pettil.d64" &
-
-
-vic20: clean mkpet
+vic20:
 	echo +++ VIC20
-	c1541 -attach pettil.d64 -dir
-	xfce4-terminal 																\
-                --hide-menubar 													\
-                --hide-borders 													\
-                --geometry=80x40+630+28	 										\
-	--command="/usr/bin/xvic                                                    \
-    -directory data/VIC20/ -moncommand obj/pettil.mon4            				\
-    -config data/gtk3_vic.vicerc         						                \
-    -warp -8 chitselb.d64 -9 pettil.d64" &
+	pwd
+	xfce4-terminal --command="xvic		\
+		-moncommand obj/pettil.mon4		\
+		-config data/sdl2_chitselb.vicerc \
+		-8 chitselb.d64		 			\
+		-9 pettil.d64					\
+		-warp"
 
 c64:
 	cp data/my.dww data/dwwimage.dww
@@ -146,15 +156,15 @@ pristine: clean
 tiddlypettil:
 	echo +++ TIDDLYPETTIL
 	echo . Phase IV
-	echo . . . . Building docs/tiddlypettil.html
+	echo . . . . Building doc/tiddlypettil.html
 	mkdir -p ./tmp/tiddlypettil/tiddlers
-	cd ./docs/images/ && for a in *.png;do echo $${a};echo title: $${a} > ../statictiddlers/$${a}.tid && echo type: image/png >> ../statictiddlers/$${a}.tid&& echo  >> ../statictiddlers/$${a}.tid && base64 -w0 $$a >> ../statictiddlers/$${a}.tid;done && cd ../../
-	cp ./docs/statictiddlers/tiddlywiki.info ./tmp/tiddlypettil/
-	cp ./docs/statictiddlers/*.tid ./tmp/tiddlypettil/tiddlers/
-	export MMDDYY=`date +"documentation generated %Y-%m-%d"`;sed "s/datetimestamp/$${MMDDYY}/" <./docs/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
+	cd ./doc/images/ && for a in *.png;do echo $${a};echo title: $${a} > ../statictiddlers/$${a}.tid && echo type: image/png >> ../statictiddlers/$${a}.tid&& echo  >> ../statictiddlers/$${a}.tid && base64 -w0 $$a >> ../statictiddlers/$${a}.tid;done && cd ../../
+	cp ./doc/statictiddlers/tiddlywiki.info ./tmp/tiddlypettil/
+	cp ./doc/statictiddlers/*.tid ./tmp/tiddlypettil/tiddlers/
+	export MMDDYY=`date +"documentation generated %Y-%m-%d"`;sed "s/datetimestamp/$${MMDDYY}/" <./doc/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
 	cd ./tmp/tiddlypettil/ && ~/.npm-packages/bin/tiddlywiki --load ../pettil.json --rendertiddler $$:/core/save/all tiddlypettil.html text/plain >/dev/null
-	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./docs/tiddlypettil.html
+	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./doc/tiddlypettil.html
 
 publish:
-	scp ./docs/tiddlypettil.html www-data@puri.chitselb.com:chitselb.com/current/public/files/
-#	scp ./docs/tiddlypettil.html www-puri:chitselb.com/current/public/files/
+	scp ./doc/tiddlypettil.html www-data@puri.chitselb.com:chitselb.com/current/public/files/
+#	scp ./doc/tiddlypettil.html www-puri:chitselb.com/current/public/files/

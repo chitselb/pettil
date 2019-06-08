@@ -18,8 +18,8 @@ do
                 --hide-menubar                                                  \
                 --hide-borders                                                  \
                 --geometry=80x40+630+28                                         \
-    --command="/usr/bin/xvic                                                    \
+    --command="cd /home/chitselb/pettil && /home/chitselb/bin/xvic              \
     -directory data/VIC20/ -moncommand obj/perturb.mon4                         \
-    -config data/gtk3_vic.vicerc                                                \
+    -config data/sdl2-chitselb.vicerc                                                \
     -warp -8 chitselb.d64 -9 pettil.d64" &
  done
