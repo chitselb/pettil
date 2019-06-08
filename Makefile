@@ -7,12 +7,12 @@ SHELL = /bin/bash
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
-all: clean mkpet perturb
+all: clean mkpet perturb testpet
 
 # build and perform all feats of testing
 perturb: mkpet
 	echo +++ PERTURB
-	at now -f tools/mkperturb.sh
+	at now -f tools/mkperturb
 #	xfce4-terminal 																\
 #				--hide-menubar 													\
 #				--hide-borders 													\
@@ -24,6 +24,7 @@ perturb: mkpet
 
 mkpet:
 	echo +++ MKPET
+	pwd
 	./tools/mkpet
 
 	c1541 -attach pettil.d64													\
@@ -49,6 +50,15 @@ testvic:
 	xfce4-terminal --command="xvic		\
 		-directory data/VIC20/ 			\
 		-moncommand perturb/perturb.mon4		\
+		-config data/sdl2_chitselb.vicerc \
+		-warp							\
+		-8 chitselb.d64		 			\
+		-9 pettil.d64" &
+
+testpet:
+	xfce4-terminal --command="xpet		\
+		-directory data/PET/ 			\
+		-moncommand perturb/pettil.mon0		\
 		-config data/sdl2_chitselb.vicerc \
 		-warp							\
 		-8 chitselb.d64		 			\

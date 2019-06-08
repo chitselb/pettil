@@ -559,7 +559,7 @@ puts @label   if @label == "STUDIO"
     # build an xpet monitor file with both core and transient labels
     write_xpet_monfile "pettil.mon",all_labels
 
-    # Changing any files here?  Also modify core/src/pettil-core.a65
+    # Changing any files here?  Also modify src/core/pettil-core.a65
     files = \
         "sweet16.a65 "\
         "core-locals.a65 "\
@@ -572,7 +572,7 @@ puts @label   if @label == "STUDIO"
         "core-io.a65 "\
         "pettil-core.a65 "\
 
-    core_files = files.split(" ").collect { |filename| "./core/src/"+filename }
+    core_files = files.split(" ").collect { |filename| "./src/core/"+filename }
 
     # Changing any files here?  Also modify studio/src/pettil-studio.a65
     files = \
@@ -588,7 +588,7 @@ puts @label   if @label == "STUDIO"
         "pettil-editor.a65 "\
         "pettil-assembler.a65 "
 
-    studio_files = files.split(" ").collect { |filename| "./studio/src/"+filename }
+    studio_files = files.split(" ").collect { |filename| "./src/studio/"+filename }
 
     all_words = Hash.new
     pettil = PettilSource.new core_files+studio_files
