@@ -75,12 +75,21 @@ pet3:
 
 mypet:
 	cp data/my.dww data/dwwimage.dww
-	xfce4-terminal --command=" 													\
-	/usr/bin/xpet                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon0						\
-		-config data/sdl-700251-vicerc	 										\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
-		-warp -8 chitselb.d64 -9 pettil.d64" &
+	xfce4-terminal --command="xpet		\
+		-moncommand obj/pettil.mon0		\
+		-config data/sdl2_chitselb.vicerc \
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww \
+		-8 chitselb.d64		 			\
+		-9 pettil.d64					\
+		-warp"
+
+
+#	xfce4-terminal --command=" 													\
+#	/usr/bin/xpet                                                               \
+#		-directory data/PET/ -moncommand obj/pettil.mon0						\
+#		-config data/sdl-700251-vicerc	 										\
+#		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
+#		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 pet4:
 	cp data/my.dww data/dwwimage.dww
