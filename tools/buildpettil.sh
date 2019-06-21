@@ -10,6 +10,9 @@
 	echo target id: $1  romopts: $2  studio: $3  load: $4
 
 	make clean
+	if [ ! -d obj ]; then
+		mkdir -v obj
+	fi
 #	echo . Phase I
 #	echo . . . . Building PETTIL core = PETTIL-CORE.OBJ
 	cd ./src/core/ &&                                                           \

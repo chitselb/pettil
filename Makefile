@@ -7,31 +7,59 @@ SHELL = /bin/bash
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
-all: pristine mkpet pet700251
+#~
+all: pristine perturb
 
-# build target machines
-# [ ] 0 PET (maize & blue) #700251
-# [ ] 1 PET (green) BASIC 4.0
-# [ ] 2 PET (amber) Upgrade BASIC
-# [ ] 3 PET (green) 80-column
-# [ ] 4 VIC-20 +24K
-# [ ] 5 C=64
-# [ ] 6 C128
-# [ ] 7 Plus/4
+# build a fresh PETTIL from source
+#~
+mkpettil:
+	echo +++ PETTIL
+	./tools/mkpettil
+#sh ./tools/buildpettil.sh 0     5       6500  0401  # my pet #700251
+#sh ./tools/buildpettil.sh 4     32      6500  1201 # VIC20 +01235(all) RAM
 
-# 0
-pet700251:
-	cp data/my.dww data/dwwimage.dww
-	xfce4-terminal --command="xpet		\
-		-moncommand obj/pettil.mon0		\
-		-config data/sdl2_chitselb.vicerc \
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww \
-		-8 chitselb.d64		 			\
-		-9 pettil.d64					\
-		-warp"
+# `mkpet` build targets
+#
+#id target  look
+# 0 pet   	maize & blue
+# 1 pet3 	amber
+# 2 pet4 	green
+# 3 pet80 	green
+# 4 vic20 	??
+# 5 c64 	??
+# 6 c128 	??
+# 7 plus4 	??
+
+# the general form, launches PET and a VIC-20
+#~
+mkpet: mkd64
+	echo +++ MKPET
+	pwd
+	./tools/mkpet 0 4
+
+# 0 (PET 2001-N #700251)
+#~
+pet: mkd64
+	./tools/mkpet 0
 
 # 1
-pet4:
+#~ use sdl2_ config
+#~
+pet3: mkd64
+	echo +++ PET3
+	cp data/my.dww data/dwwimage.dww
+	xfce4-terminal --command=" 													\
+	/usr/bin/xpet                                                               \
+		-directory data/PET/ -moncommand obj/pettil.mon3						\
+		-config data/x11_pet3.vicerc 											\
+		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
+		-warp -8 chitselb.d64 -9 pettil.d64" &
+
+# 2
+#~ use sdl2_ config
+#~
+pet4: mkd64
+	echo +++ PET4
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command="xpet                                              \
 		-directory data/PET/ -moncommand obj/pettil.mon3						\
@@ -43,18 +71,11 @@ pet4:
 		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
-# 2
-pet3:
-	cp data/my.dww data/dwwimage.dww
-	xfce4-terminal --command=" 													\
-	/usr/bin/xpet                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon3						\
-		-config data/x11_pet3.vicerc 											\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
-		-warp -8 chitselb.d64 -9 pettil.d64" &
-
 # 3
-pet80:
+#~ use sdl2_ config
+#~
+pet80: mkd64
+	echo +++ PET80
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command=" 													\
 	/usr/bin/xpet                                                               \
@@ -68,7 +89,8 @@ pet80:
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 # 4
-vic20:
+#~
+vic20: mkd64
 	echo +++ VIC20
 	pwd
 	xfce4-terminal --command="xvic		\
@@ -79,7 +101,9 @@ vic20:
 		-warp"
 
 # 5
-c64:
+#~ use sdl2_ config
+#~
+c64: mkd64
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command=" 													\
 	/usr/bin/x64                                                                \
@@ -88,7 +112,9 @@ c64:
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 # 6
-c128:
+#~ use sdl2_ config
+#~
+c128: mkd64
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command=" 													\
 	/usr/bin/x64                                                                \
@@ -97,6 +123,8 @@ c128:
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 # 7
+#~ use sdl2_ config
+#~
 plus4:
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command="xplus4 \
@@ -104,6 +132,9 @@ plus4:
 		-config data/gtk3_c64.vicerc 	 										\
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
+# Upgrade ROM, DWW +8k RAM expansion, PicChip
+#~ use sdl2_ config
+#~
 petpic:
 	xfce4-terminal 																\
                 --hide-menubar 													\
@@ -118,40 +149,14 @@ petpic:
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # build and perform all feats of testing
-perturb: mkpet
-	echo +++ PERTURB
-	at now -f tools/mkperturb
-#	xfce4-terminal 																\
-#				--hide-menubar 													\
-#				--hide-borders 													\
-#				--geometry=80x40+630+28	 										\
-#				--command="/usr/bin/xvic                                        \
-#	-directory data/VIC20/ -moncommand obj/perturb.mon4            				\
-#	-config data/gtk3_vic.vicerc         						                \
-#	-warp -8 chitselb.d64 -9 pettil.d64" &
+#~
+perturb: mkpettil
+	./tools/mkperturb
+#	at now -f tools/mkperturb
 
-mkpet:
-	echo +++ MKPET
-	pwd
-	./tools/mkpet
-
+#~
+mkd64: mkpettil
 	c1541 -attach pettil.d64													\
 		-write obj/pettil.prg0 pettil.prg 										\
 		-write tapes/pettilpackets
@@ -162,53 +167,32 @@ mkpet:
 		c1541 -attach pettil.d64 -write $$object ;								\
     done
 
-testupgradepet:
-	~/bin/xpet                                                                  \
-		-directory data/PET/ -moncommand obj/pettil.mon2						\
-		-config data/gtk3_upgrade.vicerc 										\
-		-rom9 data/MYNR90_MicroMon.bin                                          \
-		-romA data/MYNRa0_picchip_MMpl_DOS.bin                                  \
-		-warp -8 chitselb.d64 -9 pettil.d64
-
-# SDL2 VIC-20 +35K(banks 01235)
-testvic:
-	xfce4-terminal --command="xvic		\
-		-directory data/VIC20/ 			\
-		-moncommand perturb/perturb.mon4		\
-		-config data/sdl2_chitselb.vicerc \
-		-warp							\
-		-8 chitselb.d64		 			\
-		-9 pettil.d64" &
-
-testpet:
-	xfce4-terminal --command="xpet		\
-		-directory data/PET/ 			\
-		-moncommand perturb/pettil.mon0		\
-		-config data/sdl2_chitselb.vicerc \
-		-warp							\
-		-8 chitselb.d64		 			\
-		-9 pettil.d64" &
-
+#~
 compile: clean pettil tiddlypettil
 
+#~
 doc: tiddlypettil publish
 
+#~
 pristine: clean
 	echo +++ PRISTINE
 	rm -rf ./obj/
 	mkdir -v ./obj/
 
+#~
 clean:
 	echo +++ CLEAN
 	rm -rf ./tmp/
 	mkdir -v ./tmp/
 	c1541 -format pettil,09 d64 pettil.d64
 
+#~
 pristine: clean
 	echo +++ PRISTINE
 	rm -rf ./obj/
 	mkdir -v ./obj/
 
+#~
 tiddlypettil:
 	echo +++ TIDDLYPETTIL
 	echo . Phase IV
@@ -221,6 +205,7 @@ tiddlypettil:
 	cd ./tmp/tiddlypettil/ && ~/.npm-packages/bin/tiddlywiki --load ../pettil.json --rendertiddler $$:/core/save/all tiddlypettil.html text/plain >/dev/null
 	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./doc/tiddlypettil.html
 
+#~
 publish:
 	scp ./doc/tiddlypettil.html www-data@puri.chitselb.com:chitselb.com/current/public/files/
 #	scp ./doc/tiddlypettil.html www-puri:chitselb.com/current/public/files/
