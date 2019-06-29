@@ -429,7 +429,7 @@ puts @label   if @label == "STUDIO"
     end
 
     # outputs a definitions file for the transient dictionary
-    def write_core_defs(outputfile,labels)
+    def write_defs_file(outputfile,labels)
         # these labels have an address that conflicts with a keyword,
         # e.g. addresses containing 'bc' or 'add' used by Sweet-16
 
@@ -551,12 +551,14 @@ puts @label   if @label == "STUDIO"
     labels = add_labels "pettil-core.lab"
 
     # write out core definitions so the transient dictionary can find stuff
-    write_core_defs "pettil-core.def",labels
+    write_defs_file "pettil-core.def",labels
 
     # now we add the rest of the symbols from the transient dictionary
     all_labels = labels.merge(add_labels "pettil-studio.lab")
 
-    # build an xpet monitor file with both core and transient labels
+    write_defs_file "pettil-studio.def",all_labels
+
+    # write an xpet monitor file with both core and transient labels
     write_xpet_monfile "pettil.mon",all_labels
 
     # Changing any files here?  Also modify src/core/pettil-core.a65
