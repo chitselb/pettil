@@ -2,43 +2,156 @@
 # ~/pettil/tools/mkperturb
 #
 cd ~/pettil
-if [ ! -d obj/perturb ]; then
-    mkdir -v obj/perturb
-fi
 
 for pettilobj in obj/pettil.prg?
 do
-    ls $pettilobj
+    pettiladdr=$(dd  bs=1 count=2 conv=swab status=none <${pettilobj} | xxd -p)
     targetid=${pettilobj: -1}
-#    pertub=$(echo "ibase=10;obase=16;$(echo `stat -c'%s' ${pettilobj}` "+" `echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ${pettilobj})"|bc`|bc)"|bc)
     objsize=$(stat -c'%s' ${pettilobj})
-    objaddr=$(echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ${pettilobj})"|bc)
-    perturb=$(echo "${objsize} + ${objaddr}"|bc)
-    echo $perturb $objsize $objaddr
+    perturb=$(echo "${objsize} + ${pettiladdr}"|bc)
+    echo pettilobj: ${pettilobj}
+    echo pettiladdr: ${load}
+    echo targetid: ${targetid}
+    echo objsize: ${objsize}
+    echo perturb: ${perturb}
+    echo
     for tricks in $(ls -d src/perturb/*/)
     do
         cheese=$(basename ${tricks#*/})
         replicant="perturb-${cheese}"
-        foo=`echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ./obj/pettil.prg${target})"|bc`
-        echo derp ${tricks} ${cheese} ${replicant} ${foo}
-        cat ./perturb/${cheese}/*.i65> ./tmp/perturb/${replicant}.a65
-        ls -la ${tricks}
-
-        cd ./tmp/perturb
-
-#            cat ${replicant}.a65
-        xa ${replicant}.a65                     \
-            -DPERTURB=${replicant}              \
-            -DROM_OPTIONS=${romopts}            \
-            -DHITOP=${hitop}                   \
-            -DSPECIALOPTS=${load}               \
-            -I ../../src/common                 \
-            -o ./${replicant}.obj${target}     \
-            -e ./${replicant}.err${target}     \
-            -l ./${replicant}.lab${target}     \
+        case ${targetid} in
+            0)
+                echo "wow! my PET!"
+                romopts=5
+                hitop=6400
+                ;;
+            4)
+                echo "hey! VIC-20!"
+                romopts=32
+                hitop=6300
+                ;;
+        esac
+        echo tricks: ${tricks}
+        echo cheese: ${cheese}
+        echo replicant: ${replicant}
+        echo romopts: ${romopts}
+        echo hitop: ${hitop}
+        echo
+#        foo=`echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ${pettilobj})"|bc`
+        pwd
+        ls ./src/perturb/${cheese}/*.i65  ./tmp/perturb/${replicant}.a65
+        cat ./src/perturb/${cheese}/*.i65> ./tmp/perturb/${replicant}.a65
+        cd ./tmp/perturb/
+        xa ${replicant}.a65                             \
+            -DPERTURB=${replicant}                      \
+            -DPERTURBORG=${perturb}                     \
+            -DROM_OPTIONS=${romopts}                    \
+            -DHITOP=${hitop}                            \
+            -DSPECIALOPTS=${load}                       \
+            -I ../../src/common/                        \
+            -I ../                                      \
+            -o ../../obj/perturb/${replicant}.prg${targetid}      \
+            -e ../${replicant}.err${targetid}    \
+            -l ../${replicant}.lab${targetid}    \
             -v
         cd -
-        ls -la ./obj/${replicant}.prg${target}
+        cd obj
+#        c1541 -attach ../pettil.d64 -del ${replicant}.prg${targetid}
+        c1541                           \
+            -attach ../pettil.d64       \
+            -write ./perturb/${replicant}.prg${targetid} \
+            -dir
+        cd -
+    done
+done
+echo +++ obj/ contents:
+ls -laR obj/
+echo +++ Y2 a hollow voice says
+exit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+for pettilobj in obj/pettil.prg?
+do
+    load=$(dd  bs=1 count=2 conv=swab status=none <${pettilobj} | xxd -p)
+    echo load addr ${load}
+    targetid=${pettilobj: -1}
+    echo "targetid $targetid"
+#    pertub=$(echo "ibase=10;obase=16;$(echo `stat -c'%s' ${pettilobj}` "+" `echo "obase=10;ibase=16;$(hd -e '"%04x"' -n2 ${pettilobj})"|bc`|bc)"|bc)
+    objsize=$(stat -c'%s' ${pettilobj})
+    objaddr=$(echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ${pettilobj})"|bc)
+    perturb=$(echo "${objsize} + ${objaddr}"|bc)
+    echo ${targetid} ${perturb} ${objsize} ${objaddr}
+    for tricks in $(ls -d src/perturb/*/)
+    do
+        cheese=$(basename ${tricks#*/})
+        replicant="perturb-${cheese}"
+        foo=`echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ${pettilobj})"|bc`
+        echo derp ${tricks} derp ${cheese} derp ${replicant} derp ${foo}
+        cat ./src/perturb/${cheese}/*.i65> ./tmp/perturb/${replicant}.a65
+        ls ${tricks}
+        pwd
+        cd ./tmp/perturb/
+        ls -la
+
+        case ${targetid} in
+            0)
+                echo "wow! my PET!"
+                romopts=5
+                hitop=6400
+                ;;
+            4)
+                echo "hey! VIC-20!"
+                romopts=32
+                load=1201
+                hitop=6300
+                ;;
+        esac
+
+#            cat ${replicant}.a65
+echo before comment
+: <<'ENDO'
+removed './doc/sizes.txt'
+'./tmp/sizes.csv' -> 'doc/sizes.csv4'
+./tools/mkperturb
+mkdir: created directory 'obj/perturb'
+obj/pettil.prg0
+18867 17842 1025
+derp src/perturb/i/ derp i derp perturb-i derp
+ENDO
+echo after comment
+
+#            cat ${replicant}.a65
+        xa ${replicant}.a65                             \
+            -DPERTURB=${replicant}                      \
+            -DPERTURBORG=${perturb}                     \
+            -DROM_OPTIONS=${romopts}                    \
+            -DHITOP=${hitop}                            \
+            -DSPECIALOPTS=${load}                       \
+            -I ../common/                               \
+            -I ../../tmp/                               \
+            -o ../../obj/perturb/${replicant}.prg${targetid}      \
+            -e ../../tmp/${replicant}.err${targetid}    \
+            -l ../../tmp/${replicant}.lab${targetid}    \
+            -v
+        cd -
+        pwd
+        ls -la ./obj/perturb/${replicant}.prg${targetid}
+        cd obj
+#        c1541 -attach ../pettil.d64 -del ${replicant}.prg${targetid}
+        c1541 -attach ../pettil.d64 -write ./perturb/${replicant}.prg${targetid}
    done
 #            cat obj/pettil-core.obj${target}                                    \
 #                tmp/${replicant}.obj${target} > obj/${replicant}.prg${target}
@@ -49,7 +162,30 @@ do
 #            c1541 -attach pettil.d64 -dir
 
 done
-exit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 if [ 1 -eq 0 ]; then
 
@@ -64,7 +200,7 @@ fi
 # cd pettil
 
 # This script usually runs the test automation in the `at` queue.
-
+echo you are not at Y2
     pwd
     mkdir -v obj/perturb
     c1541 -attach pettil.d64 -dir
@@ -72,7 +208,9 @@ fi
     echo -----------------
     c1541 -attach pettil.d64 -del "perturb*" -dir
     for target in 0 4
+    for pettilprg in obj/pettil.prg?
     do
+        pettilfile=$(basename ${pettilprg#*/})
         echo "target $target"
       #sh ./tools/buildpettil.sh 0     5       6500  0401
           case $target in
@@ -94,14 +232,13 @@ fi
         do
             cheese=$(basename ${suite#*/})
             replicant="perturb-${cheese}"
-            foo=`echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ./obj/pettil.prg${target})"|bc`
+            foo=`echo "obase=10;ibase=16;$(hd -e '"%04x"' -n2 ./obj/pettil.prg${target})"|bc`
             echo replicant cheese
             echo $replicant $cheese $foo
             cat ./perturb/${cheese}/*.i65> ./tmp/perturb/${replicant}.a65
 
             cd ./tmp/perturb
 
-#            cat ${replicant}.a65
             xa ${replicant}.a65                     \
                 -DPERTURB=${replicant}              \
                 -DROM_OPTIONS=${romopts}            \

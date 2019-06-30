@@ -34,7 +34,6 @@ mkpettil:
 #~
 mkpet: mkd64
 	echo +++ MKPET
-	pwd
 	./tools/mkpet 0 4
 
 # 0 (PET 2001-N #700251)
@@ -92,7 +91,6 @@ pet80: mkd64
 #~
 vic20: mkd64
 	echo +++ VIC20
-	pwd
 	xfce4-terminal --command="xvic		\
 		-moncommand obj/pettil.mon4		\
 		-config data/sdl2_chitselb.vicerc \
@@ -174,23 +172,13 @@ compile: clean pettil tiddlypettil
 doc: tiddlypettil publish
 
 #~
-pristine: clean
-	echo +++ PRISTINE
-	rm -rf ./obj/
-	mkdir -v ./obj/
-
-#~
 clean:
-	echo +++ CLEAN
-	rm -rf ./tmp/
-	mkdir -v ./tmp/
+	rm -rf ./tmp/ && mkdir -p ./tmp/perturb
 	c1541 -format pettil,09 d64 pettil.d64
 
 #~
 pristine: clean
-	echo +++ PRISTINE
-	rm -rf ./obj/
-	mkdir -v ./obj/
+	rm -rf ./obj/ && mkdir -p ./obj/perturb
 
 #~
 tiddlypettil:
