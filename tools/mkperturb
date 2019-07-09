@@ -6,11 +6,15 @@ cd ~/pettil
 for pettilobj in obj/pettil.prg?
 do
     pettiladdr=$(dd  bs=1 count=2 conv=swab status=none <${pettilobj} | xxd -p)
+    padr=$(echo "obase=10;ibase=16;${pettiladdr}"|bc)
     targetid=${pettilobj: -1}
     objsize=$(stat -c'%s' ${pettilobj})
-    perturb=$(echo "${objsize} + ${pettiladdr}"|bc)
+    perturb=$(echo "${objsize} + ${padr}"|bc)
+    badr=$(echo "obase=16;ibase=10;${perturb}"|bc)
     echo pettilobj: ${pettilobj}
-    echo pettiladdr: ${load}
+    echo pettiladdr: ${pettiladdr}
+    echo padr: ${padr}
+    echo badr: ${badr}
     echo targetid: ${targetid}
     echo objsize: ${objsize}
     echo perturb: ${perturb}
@@ -21,12 +25,12 @@ do
         replicant="perturb-${cheese}"
         case ${targetid} in
             0)
-                echo "wow! my PET!"
+                echo "my PET!"
                 romopts=5
-                hitop=6400
+                hitop=6300
                 ;;
             4)
-                echo "hey! VIC-20!"
+                echo "VIC-20!"
                 romopts=32
                 hitop=6300
                 ;;
@@ -36,6 +40,7 @@ do
         echo replicant: ${replicant}
         echo romopts: ${romopts}
         echo hitop: ${hitop}
+        echo perturb: ${perturb}
         echo
 #        foo=`echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ${pettilobj})"|bc`
         pwd
@@ -55,18 +60,29 @@ do
             -l ../${replicant}.lab${targetid}    \
             -v
         cd -
-        cd obj
 #        c1541 -attach ../pettil.d64 -del ${replicant}.prg${targetid}
+        dd bs=1 if=${pettilobj} of=tmp/t.1 skip=0 count=15 status=none
+        echo -e -n "\x${badr:2:2}\x${badr:0:2}" > tmp/t.2
+        dd bs=1 if=${pettilobj} of=tmp/t.3 skip=17 status=none
+        cat tmp/t.1 tmp/t.2 tmp/t.3 obj/perturb/${replicant}.prg${targetid} \
+            > obj/perturb/perturb-${cheese}.${targetid}
+#        echo "AA" >> perturb/perturb-${cheese}.${targetid}
+#        dd bs=1 if=${pettilobj} of=perturb/${cheese}.${targetid}            skip=15 count=2 status=none
+#        dd if=${pettilobj} of=perturb/perturb-${cheese}.${targetid} bs=1 count=13
+#        echo "AA" >> perturb/perturb-${cheese}.${targetid}
+#        dd if=${pettilobj} of=perturb/perturb-${cheese}.${targetid} bs=1 count=13
         c1541                           \
-            -attach ../pettil.d64       \
-            -write ./perturb/${replicant}.prg${targetid} \
+            -attach ./pettil.d64       \
+            -write obj/perturb/perturb-${cheese}.${targetid} \
             -dir
-        cd -
     done
 done
 echo +++ obj/ contents:
 ls -laR obj/
 echo +++ Y2 a hollow voice says
+c1541                           \
+    -attach ./pettil.d64       \
+    -dir
 exit
 
 
