@@ -17,116 +17,51 @@ mkpettil:
 #sh ./tools/buildpettil.sh 0     5       6500  0401  # my pet #700251
 #sh ./tools/buildpettil.sh 4     32      6500  1201 # VIC20 +01235(all) RAM
 
-# `mkpet` build targets
-#
-#id target  look
-# 0 pet   	maize & blue
-# 1 pet3 	amber
-# 2 pet4 	green
-# 3 pet80 	green
-# 4 vic20 	??
-# 5 c64 	??
-# 6 c128 	??
-# 7 plus4 	??
-
-# the general form, launches PET and a VIC-20
-#~
+# launches PET and a VIC-20
 mkpet:
 	./tools/mkpet 0 4
 
 # 0 (PET 2001-N #700251)
-#~
+#           maize & blue
 pet:
 	./tools/mkpet 0
 
-# 1
-#~ use sdl2_ config
-#~
+# 1 (PET 3032 Upgrade ROM)
+#           amber
 pet3:
-	cp data/my.dww data/dwwimage.dww
-	xfce4-terminal --command=" 													\
-	/usr/bin/xpet                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon3						\
-		-config data/x11_pet3.vicerc 											\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
-		-warp -8 chitselb.d64 -9 pettil.d64" &
+	./tools/mkpet 1
 
-# 2
-#~ use sdl2_ config
-#~
+# 2 (PET 4032 4.0 ROM)
+#           green
 pet4:
-	cp data/my.dww data/dwwimage.dww
-	xfce4-terminal --command="xpet                                              \
-		-directory data/PET/ -moncommand obj/pettil.mon3						\
-		-model 4032																\
-			+confirmexit														\
-			-CRTChwscale 														\
-			-CRTCfilter 0 														\
-			-virtualdev 														\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
-		-warp -8 chitselb.d64 -9 pettil.d64" &
+	./tools/mkpet 2
 
-# 3
-#~ use sdl2_ config
-#~
+# 3 (PET 8032 4.0 ROM)
+#           green
 pet80:
-	cp data/my.dww data/dwwimage.dww
-	xfce4-terminal --command=" 													\
-	/usr/bin/xpet                                                               \
-		-directory data/PET/ -moncommand obj/pettil.mon2						\
-		-model 8032																\
-			+confirmexit														\
-			-CRTChwscale 														\
-			-CRTCfilter 0 														\
-			-virtualdev 														\
-		-iosize 2048 -petdww -petdwwimage data/dwwimage.dww 					\
-		-warp -8 chitselb.d64 -9 pettil.d64" &
+	./tools/mkpet 3
 
-# 4
-#~
+# 4 (VIC-20 expanded)
+#           colodore
 vic20:
-	xfce4-terminal --command="xvic		\
-		-moncommand obj/pettil.mon4		\
-		-config data/sdl2_chitselb.vicerc \
-		-8 chitselb.d64		 			\
-		-9 pettil.d64					\
-		-warp"
+	./tools/mkpet 4
 
-# 5
-#~ use sdl2_ config
-#~
+# 5 (C=64)
+#           colodore
 c64:
-	cp data/my.dww data/dwwimage.dww
-	xfce4-terminal --command=" 													\
-	/usr/bin/x64                                                                \
-		-directory data/C64/ -moncommand obj/pettil.mon5						\
-		-config data/gtk3_c64.vicerc 	 										\
-		-warp -8 chitselb.d64 -9 pettil.d64" &
+	./tools/mkpet 5
 
-# 6
-#~ use sdl2_ config
-#~
-c128: mkd64
-	cp data/my.dww data/dwwimage.dww
-	xfce4-terminal --command=" 													\
-	/usr/bin/x64                                                                \
-		-directory data/C64/ -moncommand obj/pettil.mon5						\
-		-config data/gtk3_c64.vicerc 	 										\
-		-warp -8 chitselb.d64 -9 pettil.d64" &
+# 6 (C128)
+#           colodore
+c128:
+	./tools/mkpet 6
 
-# 7
-#~ use sdl2_ config
-#~
+# 7 (Plus/4)
+#           colodore
 plus4:
-	cp data/my.dww data/dwwimage.dww
-	xfce4-terminal --command="xplus4 \
-		-directory data/PLUS64/ -moncommand obj/pettil.mon5						\
-		-config data/gtk3_c64.vicerc 	 										\
-		-warp -8 chitselb.d64 -9 pettil.d64" &
+	./tools/mkpet 7
 
 # Upgrade ROM, DWW +8k RAM expansion, PicChip
-#~ use sdl2_ config
-#~
 petpic:
 	xfce4-terminal 																\
                 --hide-menubar 													\
@@ -139,15 +74,7 @@ petpic:
 		-romA data/MYNRa0_picchip_MMpl_DOS.bin                                  \
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
-
-
-# build and perform all feats of testing
-#~
-perturb: mkd64
-	./tools/mkperturb
-#	at now -f tools/mkperturb
-
-#~
+# build PETTIL disk image
 mkd64: mkpettil
 	c1541 -attach pettil.d64													\
 		-write obj/pettil.prg0 pettil.prg 										\
@@ -159,22 +86,20 @@ mkd64: mkpettil
 		c1541 -attach pettil.d64 -write $$object ;								\
     done
 
-#~
-compile: clean pettil tiddlypettil
+# build and perform all feats of testing
+perturb: mkd64
+	./tools/mkperturb
 
-#~
-doc: tiddlypettil publish
-
-#~
+# clear build output area
 clean:
 	rm -rf ./tmp/ && mkdir -p ./tmp/perturb
 	c1541 -format pettil,09 d64 pettil.d64
 
-#~
+# clear build ouput and staging areas
 pristine: clean
 	rm -rf ./obj/ && mkdir -p ./obj/perturb
 
-#~
+# build documentation
 tiddlypettil:
 	mkdir -p ./tmp/tiddlypettil/tiddlers
 	cd ./doc/images/ && for a in *.png;do echo $${a};echo title: $${a} > ../statictiddlers/$${a}.tid && echo type: image/png >> ../statictiddlers/$${a}.tid&& echo  >> ../statictiddlers/$${a}.tid && base64 -w0 $$a >> ../statictiddlers/$${a}.tid;done && cd ../../
@@ -184,7 +109,10 @@ tiddlypettil:
 	cd ./tmp/tiddlypettil/ && ~/.npm-packages/bin/tiddlywiki --load ../pettil.json --rendertiddler $$:/core/save/all tiddlypettil.html text/plain >/dev/null
 	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./doc/tiddlypettil.html
 
-#~
+# upload PETTIL Tiddlywiki to website
 publish:
 	scp ./doc/tiddlypettil.html www-data@puri.chitselb.com:chitselb.com/current/public/files/
 #	scp ./doc/tiddlypettil.html www-puri:chitselb.com/current/public/files/
+
+# build and publish PETTIL Tiddlywiki
+doc: tiddlypettil publish
