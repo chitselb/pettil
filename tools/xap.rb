@@ -10,7 +10,7 @@
     # after nextline of source
     class PettilSource
         def initialize(filenames)
-            puts filenames
+#            puts filenames
             @files=filenames.collect
         end
 
@@ -610,7 +610,7 @@ puts @label   if @label == "STUDIO"
             forthword = ForthWord.new
         end
     end
-puts "finis"
+#puts "finis"
 
 
     #calculate the @size field of each forthword

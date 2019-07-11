@@ -2,7 +2,6 @@
 # pettil/tools/perturb.sh
 #
 # the thing that runs the test automation in the `at` queue.
-pwd
 c1541 -attach pettil.d64 -dir
 export DISPLAY=:0
 for perturbshow in obj/perturb*.prg4

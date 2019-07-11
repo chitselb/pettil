@@ -6,8 +6,7 @@
 #              romopts         VIC-20   |    |
 #              studio          tdict addr    |
 #              pettil                load addr
-	echo +++ BUILDPETTIL
-	echo target id: $1  romopts: $2  studio: $3  load: $4
+#	echo target id: $1  romopts: $2  studio: $3  load: $4
 
 #	echo . Phase I
 #	echo . . . . Building PETTIL core = PETTIL-CORE.OBJ
@@ -20,8 +19,7 @@
 		-I ../../tmp/ 			                                    			\
 		-o ../../tmp/pettil-core.obj 	                                        \
 		-e ../../tmp/pettil-core.err                                            \
-		-l ../../tmp/pettil-core.lab                                            \
-		-v
+		-l ../../tmp/pettil-core.lab
 	cd -
 #	echo . . . . Generating core labels = PETTIL-CORE.DEF
 	ruby ./tools/xap.rb
@@ -35,8 +33,7 @@
 	  -I ../common			                                                    \
 	  -o ../../tmp/pettil-studio.obj                                            \
 	  -e ../../tmp/pettil-studio.err                                            \
-	  -l ../../tmp/pettil-studio.lab                                            \
-	  -v
+	  -l ../../tmp/pettil-studio.lab
 	cd -
 	cp -v ./tmp/pettil-studio.lab ./tmp/pettil-studio.lab$1
 #	echo . Phase IV
