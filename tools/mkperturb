@@ -10,71 +10,129 @@ do
     targetid=${pettilobj: -1}
     objsize=$(stat -c'%s' ${pettilobj})
     perturb=$(echo "${objsize} + ${padr}"|bc)
-    badr=$(echo "obase=16;ibase=10;${perturb}"|bc)
-    echo pettilobj: ${pettilobj}
-    echo pettiladdr: ${pettiladdr}
-    echo padr: ${padr}
-    echo badr: ${badr}
-    echo targetid: ${targetid}
-    echo objsize: ${objsize}
-    echo perturb: ${perturb}
-    echo
+    badr=$(echo "obase=16;ibase=10;${perturb}-2"|bc)
     for tricks in $(ls -d src/perturb/*/)
     do
         cheese=$(basename ${tricks#*/})
-        replicant="perturb-${cheese}"
+        feat="perturb-${cheese}"
         case ${targetid} in
             0)
                 echo "my PET!"
                 romopts=5
                 hitop=6300
+                vpet=xpet
+                abend=E089
                 ;;
             4)
                 echo "VIC-20!"
                 romopts=32
                 hitop=6300
+                vpet=xvic
+                abend=E089
                 ;;
         esac
+        echo targetid: ${targetid}
         echo tricks: ${tricks}
+        echo
+        echo pettilobj: ${pettilobj}
+        echo pettiladdr: ${pettiladdr}
+        echo padr: ${padr}
+        echo badr: ${badr}
+        echo objsize: ${objsize}
+        echo perturb: ${perturb}
         echo cheese: ${cheese}
-        echo replicant: ${replicant}
+        echo feat: ${feat}
         echo romopts: ${romopts}
         echo hitop: ${hitop}
-        echo perturb: ${perturb}
         echo
 #        foo=`echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ${pettilobj})"|bc`
         pwd
-        ls ./src/perturb/${cheese}/*.i65  ./tmp/perturb/${replicant}.a65
-        cat ./src/perturb/${cheese}/*.i65> ./tmp/perturb/${replicant}.a65
+        ls ./src/perturb/${cheese}/*.i65  ./tmp/perturb/${feat}.a65
+        cat ./src/perturb/${cheese}/*.i65> ./tmp/perturb/${feat}.a65
         cd ./tmp/perturb/
-        xa ${replicant}.a65                             \
-            -DPERTURB=${replicant}                      \
-            -DPERTURBORG=${perturb}                     \
-            -DROM_OPTIONS=${romopts}                    \
-            -DHITOP=${hitop}                            \
-            -DSPECIALOPTS=${load}                       \
-            -I ../../src/common/                        \
-            -I ../                                      \
-            -o ../../obj/perturb/${replicant}.prg${targetid}      \
-            -e ../${replicant}.err${targetid}    \
-            -l ../${replicant}.lab${targetid}    \
+        xa ${feat}.a65                                                     \
+            -DPERTURB=${feat}                                              \
+            -DPERTURBORG=${perturb}                                             \
+            -DROM_OPTIONS=${romopts}                                            \
+            -DHITOP=${hitop}                                                    \
+            -DSPECIALOPTS=${load}                                               \
+            -I ../../src/common/                                                \
+            -I ../                                                              \
+            -o ../../obj/perturb/${feat}.prg${targetid}                    \
+            -e ../${feat}.err${targetid}                                   \
+            -l ../${feat}.lab${targetid}                                   \
             -v
         cd -
-#        c1541 -attach ../pettil.d64 -del ${replicant}.prg${targetid}
-        dd bs=1 if=${pettilobj} of=tmp/t.1 skip=0 count=15 status=none
-        echo -e -n "\x${badr:2:2}\x${badr:0:2}" > tmp/t.2
-        dd bs=1 if=${pettilobj} of=tmp/t.3 skip=17 status=none
-        cat tmp/t.1 tmp/t.2 tmp/t.3 obj/perturb/${replicant}.prg${targetid} \
-            > obj/perturb/perturb-${cheese}.${targetid}
-#        echo "AA" >> perturb/perturb-${cheese}.${targetid}
-#        dd bs=1 if=${pettilobj} of=perturb/${cheese}.${targetid}            skip=15 count=2 status=none
+        echo "LD addr: $(egrep -l ^LD, ./tmp/*.lab${targetid})"
+        # (`10 sys1037` BASIC hook & JMP(indirect) opcode)
+        # 0401 0B 04 0A 00 9E 31 30 33 37 00 00 00 6C
+        dd bs=1 if=${pettilobj} status=none     of=tmp/t.1 skip=0 count=15
+        # replacement `perturb` address
+        echo -e -n "\x${badr:2:2}\x${badr:0:2}"  > tmp/t.2
+        # the rest of the original PETTIL binary
+        dd bs=1 if=${pettilobj} status=none     of=tmp/t.3 skip=17
+#       echo "bk E089\ncommand 9 \"scrsh \\\"perturb/${namer}.scrsh\\\" 2;quit\"\nkeybuf load\"${cheese}\",9\x0drun\x0d" >> tmp/perturb.mon4
+#\\ncommand 9 \\"scrsh \\\\"perturb\/%s.scrsh\\\" 2;quit\\"\\nkeybuf  load\\"${cheese}\\",9\\x0drun\\x0d\
+        awk -F,                                                                 \
+            -v feat=${feat}                                               \
+            -v target=${targetid}                                               \
+            -v abend=${abend}                                             \
+            -v petcommand="load \"xyzzy\""                                      \
+                'BEGIN {                                                        \
+                    printf("; %s\n", feat)                                     \
+                }                                                               \
+                {                                                               \
+                    printf("al C:%4s .%s\n", substr($2,4,4), $1)                \
+                }                                                               \
+                END {                                                           \
+                    print "bk .disp1  ;dis 1";                                  \
+                    print "bk .disp2  ;dis 2";                                  \
+                    print "bk .disp3  ;dis 3";                                  \
+                    print "bk .nexto  ;dis 4";                                  \
+                    print "bk .exit   ;dis 5";                                  \
+                    print "bk .restart;dis 6";                                  \
+                    print "bk .plugh";                                          \
+                    print "bk .xyzzy";                                          \
+                    printf("bk %4s\n",abend);                                   \
+                    printf("command 9 \"scrsh \\\"%s.scrsh\\\" 2;quit\"\n",     \
+                     feat);                                                     \
+                    printf("keybuf load\"%s.%s\",9\\x0drun\\x0d\n",             \
+                     feat, target);                                             \
+                    print "; stack sentinel value, VICE first time is dicey ";  \
+                    print "watch store 7f if a != 10";                          \
+                    print "watch store 4f if a != 01";                          \
+                }'                                                              \
+            ./tmp/${feat}.lab${targetid} >                                 \
+            ./obj/perturb/${feat}.mon${targetid}
+
+        # save original `startup` address like so:
+        # unneeded because PERTURB source includes PETTIL labels
+        # dd bs=1 if=${pettilobj} status=none   of=tmp/t.0 skip=15 count=2
+
+        cat tmp/t.1 tmp/t.2 tmp/t.3 obj/perturb/${feat}.prg${targetid} \
+            > obj/perturb/${feat}.${targetid}
+#        dd bs=1 if=${pettilobj} of=perturb/${cheese}.${targetid}skip=15 count=2 status=none
 #        dd if=${pettilobj} of=perturb/perturb-${cheese}.${targetid} bs=1 count=13
 #        echo "AA" >> perturb/perturb-${cheese}.${targetid}
 #        dd if=${pettilobj} of=perturb/perturb-${cheese}.${targetid} bs=1 count=13
         c1541                           \
             -attach ./pettil.d64       \
-            -write obj/perturb/perturb-${cheese}.${targetid} \
+            -write obj/perturb/${feat}.${targetid} \
             -dir
+        echo $feat
+        echo $targetid
+        xfce4-terminal --command="${vpet}                                       \
+            -moncommand obj/perturb/${feat}.mon${targetid}                      \
+            -config data/sdl2_chitselb.vicerc                                   \
+            -8 chitselb.d64                                                     \
+            -9 pettil.d64                                                       \
+            -warp"
+
+        petproc=$(pgrep -n x\(vic\|pet\))
+        echo petproc: $petproc
+        ps -p ${petproc} -o comm=
+        sleep 4
+        kill -9 ${petproc}
     done
 done
 echo +++ obj/ contents:
@@ -113,10 +171,10 @@ do
     for tricks in $(ls -d src/perturb/*/)
     do
         cheese=$(basename ${tricks#*/})
-        replicant="perturb-${cheese}"
+        feat="perturb-${cheese}"
         foo=`echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ${pettilobj})"|bc`
-        echo derp ${tricks} derp ${cheese} derp ${replicant} derp ${foo}
-        cat ./src/perturb/${cheese}/*.i65> ./tmp/perturb/${replicant}.a65
+        echo derp ${tricks} derp ${cheese} derp ${feat} derp ${foo}
+        cat ./src/perturb/${cheese}/*.i65> ./tmp/perturb/${feat}.a65
         ls ${tricks}
         pwd
         cd ./tmp/perturb/
@@ -136,7 +194,7 @@ do
                 ;;
         esac
 
-#            cat ${replicant}.a65
+#            cat ${feat}.a65
 echo before comment
 : <<'ENDO'
 removed './doc/sizes.txt'
@@ -149,31 +207,31 @@ derp src/perturb/i/ derp i derp perturb-i derp
 ENDO
 echo after comment
 
-#            cat ${replicant}.a65
-        xa ${replicant}.a65                             \
-            -DPERTURB=${replicant}                      \
+#            cat ${feat}.a65
+        xa ${feat}.a65                             \
+            -DPERTURB=${feat}                      \
             -DPERTURBORG=${perturb}                     \
             -DROM_OPTIONS=${romopts}                    \
             -DHITOP=${hitop}                            \
             -DSPECIALOPTS=${load}                       \
             -I ../common/                               \
             -I ../../tmp/                               \
-            -o ../../obj/perturb/${replicant}.prg${targetid}      \
-            -e ../../tmp/${replicant}.err${targetid}    \
-            -l ../../tmp/${replicant}.lab${targetid}    \
+            -o ../../obj/perturb/${feat}.prg${targetid}      \
+            -e ../../tmp/${feat}.err${targetid}    \
+            -l ../../tmp/${feat}.lab${targetid}    \
             -v
         cd -
         pwd
-        ls -la ./obj/perturb/${replicant}.prg${targetid}
+        ls -la ./obj/perturb/${feat}.prg${targetid}
         cd obj
-#        c1541 -attach ../pettil.d64 -del ${replicant}.prg${targetid}
-        c1541 -attach ../pettil.d64 -write ./perturb/${replicant}.prg${targetid}
+#        c1541 -attach ../pettil.d64 -del ${feat}.prg${targetid}
+        c1541 -attach ../pettil.d64 -write ./perturb/${feat}.prg${targetid}
    done
 #            cat obj/pettil-core.obj${target}                                    \
-#                tmp/${replicant}.obj${target} > obj/${replicant}.prg${target}
+#                tmp/${feat}.obj${target} > obj/${feat}.prg${target}
 #            cd obj
-#                c1541 -attach ../pettil.d64 -del ${replicant}.prg${target}
-#                c1541 -attach ../pettil.d64 -write ${replicant}.prg${target}
+#                c1541 -attach ../pettil.d64 -del ${feat}.prg${target}
+#                c1541 -attach ../pettil.d64 -write ${feat}.prg${target}
 #            cd ..
 #            c1541 -attach pettil.d64 -dir
 
@@ -247,32 +305,32 @@ echo you are not at Y2
         for suite in `ls -d ./src/perturb/*/`
         do
             cheese=$(basename ${suite#*/})
-            replicant="perturb-${cheese}"
+            feat="perturb-${cheese}"
             foo=`echo "obase=10;ibase=16;$(hd -e '"%04x"' -n2 ./obj/pettil.prg${target})"|bc`
-            echo replicant cheese
-            echo $replicant $cheese $foo
-            cat ./perturb/${cheese}/*.i65> ./tmp/perturb/${replicant}.a65
+            echo feat cheese
+            echo $feat $cheese $foo
+            cat ./perturb/${cheese}/*.i65> ./tmp/perturb/${feat}.a65
 
             cd ./tmp/perturb
 
-            xa ${replicant}.a65                     \
-                -DPERTURB=${replicant}              \
+            xa ${feat}.a65                     \
+                -DPERTURB=${feat}              \
                 -DROM_OPTIONS=${romopts}            \
                 -DHITOP=${hitop}                   \
                 -DSPECIALOPTS=${load}               \
                 -I ../../src/common                 \
-                -o ./${replicant}.obj${target}     \
-                -e ./${replicant}.err${target}     \
-                -l ./${replicant}.lab${target}     \
+                -o ./${feat}.obj${target}     \
+                -e ./${feat}.err${target}     \
+                -l ./${feat}.lab${target}     \
                 -v
             cd -
 
 #            cat obj/pettil-core.obj${target}                                    \
-#                tmp/${replicant}.obj${target} > obj/${replicant}.prg${target}
-            ls -la ./obj/${replicant}.prg${target}
+#                tmp/${feat}.obj${target} > obj/${feat}.prg${target}
+            ls -la ./obj/${feat}.prg${target}
 #            cd obj
-#                c1541 -attach ../pettil.d64 -del ${replicant}.prg${target}
-#                c1541 -attach ../pettil.d64 -write ${replicant}.prg${target}
+#                c1541 -attach ../pettil.d64 -del ${feat}.prg${target}
+#                c1541 -attach ../pettil.d64 -write ${feat}.prg${target}
 #            cd ..
 #            c1541 -attach pettil.d64 -dir
         done

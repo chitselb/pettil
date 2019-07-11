@@ -19,8 +19,8 @@
 		-I ../common/ 															\
 		-I ../../tmp/ 			                                    			\
 		-o ../../tmp/pettil-core.obj 	                                        \
-		-e ../../tmp/pettil-core.err 	                                        \
-		-l ../../tmp/pettil-core.lab 	                                        \
+		-e ../../tmp/pettil-core.err                                            \
+		-l ../../tmp/pettil-core.lab                                            \
 		-v
 	cd -
 #	echo . . . . Generating core labels = PETTIL-CORE.DEF
@@ -38,6 +38,7 @@
 	  -l ../../tmp/pettil-studio.lab                                            \
 	  -v
 	cd -
+	cp -v ./tmp/pettil-studio.lab ./tmp/pettil-studio.lab$1
 #	echo . Phase IV
 #	echo . . . . Generating combined symbol table = PETTIL.SYM
 	ruby ./tools/xap.rb

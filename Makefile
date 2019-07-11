@@ -13,7 +13,6 @@ all: pristine perturb
 # build a fresh PETTIL from source
 #~
 mkpettil:
-	echo +++ PETTIL
 	./tools/mkpettil
 #sh ./tools/buildpettil.sh 0     5       6500  0401  # my pet #700251
 #sh ./tools/buildpettil.sh 4     32      6500  1201 # VIC20 +01235(all) RAM
@@ -32,20 +31,18 @@ mkpettil:
 
 # the general form, launches PET and a VIC-20
 #~
-mkpet: mkd64
-	echo +++ MKPET
+mkpet:
 	./tools/mkpet 0 4
 
 # 0 (PET 2001-N #700251)
 #~
-pet: mkd64
+pet:
 	./tools/mkpet 0
 
 # 1
 #~ use sdl2_ config
 #~
-pet3: mkd64
-	echo +++ PET3
+pet3:
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command=" 													\
 	/usr/bin/xpet                                                               \
@@ -57,8 +54,7 @@ pet3: mkd64
 # 2
 #~ use sdl2_ config
 #~
-pet4: mkd64
-	echo +++ PET4
+pet4:
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command="xpet                                              \
 		-directory data/PET/ -moncommand obj/pettil.mon3						\
@@ -73,8 +69,7 @@ pet4: mkd64
 # 3
 #~ use sdl2_ config
 #~
-pet80: mkd64
-	echo +++ PET80
+pet80:
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command=" 													\
 	/usr/bin/xpet                                                               \
@@ -89,8 +84,7 @@ pet80: mkd64
 
 # 4
 #~
-vic20: mkd64
-	echo +++ VIC20
+vic20:
 	xfce4-terminal --command="xvic		\
 		-moncommand obj/pettil.mon4		\
 		-config data/sdl2_chitselb.vicerc \
@@ -101,7 +95,7 @@ vic20: mkd64
 # 5
 #~ use sdl2_ config
 #~
-c64: mkd64
+c64:
 	cp data/my.dww data/dwwimage.dww
 	xfce4-terminal --command=" 													\
 	/usr/bin/x64                                                                \
@@ -149,7 +143,7 @@ petpic:
 
 # build and perform all feats of testing
 #~
-perturb: mkpettil
+perturb: mkd64
 	./tools/mkperturb
 #	at now -f tools/mkperturb
 
@@ -182,9 +176,6 @@ pristine: clean
 
 #~
 tiddlypettil:
-	echo +++ TIDDLYPETTIL
-	echo . Phase IV
-	echo . . . . Building doc/tiddlypettil.html
 	mkdir -p ./tmp/tiddlypettil/tiddlers
 	cd ./doc/images/ && for a in *.png;do echo $${a};echo title: $${a} > ../statictiddlers/$${a}.tid && echo type: image/png >> ../statictiddlers/$${a}.tid&& echo  >> ../statictiddlers/$${a}.tid && base64 -w0 $$a >> ../statictiddlers/$${a}.tid;done && cd ../../
 	cp ./doc/statictiddlers/tiddlywiki.info ./tmp/tiddlypettil/
