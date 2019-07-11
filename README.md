@@ -10,13 +10,12 @@ Objectives of this project are, in no particular order:
 
 PETTIL is my implementation of the Forth programming language, following the FORTH-83 standard.  It has some interesting features.
 
-* PERTURB test automation
-* Direct-threaded 
-* 15 clock cycle NEXT
-* virtual memory on cassette tape
-* built-in Sweet16
-* * PETTIL core
+* PETTIL core
+* * Direct-threaded 
+* * 15 clock cycle NEXT
 * * lightweight runtime core, under 6K
+* * virtual memory on cassette tape
+* * built-in Sweet16
 * PETTIL studio
 * * FORTH-83 standard
 * * interactive developer environment
@@ -25,6 +24,8 @@ PETTIL is my implementation of the Forth programming language, following the FOR
 * * editor
 * * compiler
 * * assembler
+* PERTURB test automation
+* Tiddlywiki documentation
 
 Target | Machine | Status
 ------------ | ------------- | ------------
@@ -34,10 +35,10 @@ Target | Machine | Status
 3 | PET 8032 (80-column) | unstable
 4 | VIC-20 | unstable
 5 | C=64 | pending
-6 | C128 | pending
-7 | Commodore Plus/4 | pending
-8 | Apple ][ | pending
-9 | Atari 800 | pending
+6 | C128 native | future
+7 | Commodore Plus/4 | future
+8 | Apple ][ | future
+9 | Atari 800 | future
 
 Toolstack:
 * Ubuntu Linux
@@ -46,8 +47,8 @@ Toolstack:
 * xa65
 * tiddlywiki
 * git
-* bash make nodejs awk ruby
-* kdenlive OBS ffmpeg shutter audacity blender GIMP
+* bash make Nodejs awk Ruby
+* kdenlive OBS ffmpeg Shutter Audacity Blender GIMP
 
 Link | Purpose
 ------------ | -------------
