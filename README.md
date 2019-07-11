@@ -15,16 +15,16 @@ PETTIL is my implementation of the Forth programming language, following the FOR
 * 15 clock cycle NEXT
 * virtual memory on cassette tape
 * built-in Sweet16
-** PETTIL core
-** lightweight runtime core, under 6K
+* * PETTIL core
+* * lightweight runtime core, under 6K
 * PETTIL studio
-** FORTH-83 standard
-** interactive developer environment
-** uses Commodore native screen editor
-** interpreter
-** editor
-** compiler
-** assembler
+* * FORTH-83 standard
+* * interactive developer environment
+* * uses Commodore native screen editor
+* * interpreter
+* * editor
+* * compiler
+* * assembler
 
 Target | Machine | Status
 ------------ | ------------- | ------------
@@ -49,13 +49,12 @@ Toolstack:
 * bash make nodejs awk ruby
 * kdenlive OBS ffmpeg shutter audacity blender GIMP
 
-Links:
-http://pettilmobile.com
-pettilmobile@gmail.com
+Link | Purpose
+------------ | -------------
+http://pettilmobile.com | Project homepage
+pettilmobile@gmail.com | Please email ideas and suggestions for the project.  
+http://pettilmobile.com/files/tiddlypettil.html | PETTIL Documentation
+http://pettil.tumblr.com | PETTIL language development
+http://twitter.com/pettilmobile | 
+https://www.facebook.com/chitselb.pettil/ |
 
-http://twitter.com/pettilmobile
-http://pettil.tumblr.com
-http://pettilmobile.com/files/tiddlypettil.html
-https://www.facebook.com/chitselb.pettil/
-
-Please email chitselb@gmail.com with ideas and suggestions for the project.  
