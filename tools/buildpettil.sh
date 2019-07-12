@@ -35,7 +35,7 @@
 	  -e ../../tmp/pettil-studio.err                                            \
 	  -l ../../tmp/pettil-studio.lab
 	cd -
-	cp -v ./tmp/pettil-studio.lab ./tmp/pettil-studio.lab$1
+	cp ./tmp/pettil-studio.lab ./tmp/pettil-studio.lab$1
 #	echo . Phase IV
 #	echo . . . . Generating combined symbol table = PETTIL.SYM
 	ruby ./tools/xap.rb
@@ -59,7 +59,7 @@
 		cat ./tmp/t.t ./tools/vice/pettil$1.dbg > ./obj/pettil.mon$1
 	fi
 #	ls -l ./tmp/*.obj ./tmp/*.sym > ./doc/sizes.txt
-	rm -v ./doc/sizes.txt
+	rm ./doc/sizes.txt
 	stat -c '%8s %n' obj/* | sed -e 's/obj\///' >> ./doc/sizes.txt
-	cp -v ./tmp/sizes.csv doc/sizes.csv$1
+	cp ./tmp/sizes.csv doc/sizes.csv$1
 

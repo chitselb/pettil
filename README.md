@@ -1,7 +1,7 @@
 Objectives of this project are, in no particular order:
 
 * (PETTIL)          make a Forth that runs on my Commodore PET 2001
-* (PETTILmob)       find others who are interested in this project 
+* (PETTILmob)       find others who are interested in this project
 * (PETTILmini)      Raspberry Pi PET emulator with a replica keyboard/case
 * (PETTILmobile)    tour the USA in a bus a vintage computer museum
 * create YouTube videos
@@ -11,21 +11,18 @@ Objectives of this project are, in no particular order:
 PETTIL is my implementation of the Forth programming language, following the FORTH-83 standard.  It has some interesting features.
 
 * PETTIL core
-* * Direct-threaded 
+* * Direct-threaded
 * * 15 clock cycle NEXT
 * * lightweight runtime core, under 6K
 * * virtual memory on cassette tape
 * * built-in Sweet16
 * PETTIL studio
-* * FORTH-83 standard
 * * interactive developer environment
 * * uses Commodore native screen editor
-* * interpreter
-* * editor
-* * compiler
-* * assembler
+* * interpreter editor compiler assembler
 * PERTURB test automation
 * Tiddlywiki documentation
+* obsessively optimized for speed & space
 
 Target | Machine | Status
 ------------ | ------------- | ------------
@@ -53,9 +50,9 @@ Toolstack:
 Link | Purpose
 ------------ | -------------
 http://pettilmobile.com | Project homepage
-pettilmobile@gmail.com | Please email ideas and suggestions for the project.  
+pettilmobile@gmail.com | Please email ideas and suggestions for the project.
 http://pettilmobile.com/files/tiddlypettil.html | PETTIL Documentation
 http://pettil.tumblr.com | PETTIL language development
-http://twitter.com/pettilmobile | 
+http://twitter.com/pettilmobile |
 https://www.facebook.com/chitselb.pettil/ |
 

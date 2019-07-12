@@ -4,6 +4,8 @@
 
 SHELL = /bin/bash
 
+TARGETS=01234
+
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
@@ -74,7 +76,9 @@ petpic:
 		-romA data/MYNRa0_picchip_MMpl_DOS.bin                                  \
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
-# build PETTIL disk image
+
+
+# build PETTIL disk images
 mkd64: mkpettil
 	# first program is PETTIL.PRG for reference machine
 	# and also include PETTILPACKETS
@@ -90,6 +94,11 @@ mkd64: mkpettil
     done
 	c1541 -attach pettil.d64 -dir
 
+#	foo="XYzzy045"
+#	for (( i=0; i<${#foo}; i++ )); do
+#	  echo "${foo:$i:1}"
+#	done
+
 # build and perform all feats of testing
 perturb: mkd64
 	./tools/mkperturb
@@ -97,7 +106,7 @@ perturb: mkd64
 # clear build output area
 clean:
 	rm -rf ./tmp/ && mkdir -p ./tmp/perturb
-	c1541 -format pettil,09 d64 pettil.d64
+	c1541 -format pettil,09 d81 pettil.d64
 
 # clear build ouput and staging areas
 pristine: clean
@@ -111,7 +120,7 @@ tiddlypettil:
 	cp ./doc/statictiddlers/*.tid ./tmp/tiddlypettil/tiddlers/
 	export MMDDYY=`date +"documentation generated %Y-%m-%d"`;sed "s/datetimestamp/$${MMDDYY}/" <./doc/statictiddlers/AboutPETTIL.tid >./tmp/tiddlypettil/tiddlers/AboutPETTIL.tid
 	cd ./tmp/tiddlypettil/ && ~/.npm-packages/bin/tiddlywiki --load ../pettil.json --rendertiddler $$:/core/save/all tiddlypettil.html text/plain >/dev/null
-	mv -v ./tmp/tiddlypettil/output/tiddlypettil.html ./doc/tiddlypettil.html
+	mv ./tmp/tiddlypettil/output/tiddlypettil.html ./doc/tiddlypettil.html
 
 # upload PETTIL Tiddlywiki to website
 publish:
