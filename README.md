@@ -23,6 +23,8 @@ PETTIL is my implementation of the Forth programming language, following the FOR
 * PERTURB test automation
 * Tiddlywiki documentation
 * obsessively optimized for speed & space
+* integration with Rhialto Seibert's KOSMON
+* metacompilation
 
 Target | Machine | Status
 ------------ | ------------- | ------------
