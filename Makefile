@@ -10,7 +10,7 @@ TARGETS=012345
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
 #~
-all: pristine perturb
+all: pristine remote
 
 remote: mkd64
 	scp pettil.d64 samosa:pettil/
