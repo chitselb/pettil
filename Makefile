@@ -14,7 +14,7 @@ all: pristine remote
 
 remote: mkd64
 	scp pettil.d64 samosa:pettil/
-	samosa DISPLAY=:0.0 ./bin/mkperturb
+	samosa DISPLAY=:0.0 ./pettil/tools/mkperturb
 
 # build a fresh PETTIL from source
 #~
@@ -113,7 +113,7 @@ pristine: clean
 	rm -rf ./obj/ && mkdir -p ./obj/perturb
 
 # build and perform all feats of testing
-perturb: pristine mkd64
+perturb: mkd64
 	./tools/mkperturb
 
 # build documentation
