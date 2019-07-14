@@ -20,8 +20,7 @@
 		-o ../../tmp/pettil-core.obj 	                                        \
 		-e ../../tmp/pettil-core.err                                            \
 		-l ../../tmp/pettil-core.lab
-echo biz
-	cd -
+	cd - >/dev/null
 #	echo . . . . Generating core labels = PETTIL-CORE.DEF
 	ruby ./tools/xap.rb
 #	echo . Phase II
@@ -34,15 +33,14 @@ echo biz
 	  -I ../common			                                                    \
 	  -o ../../tmp/pettil-studio.obj                                            \
 	  -e ../../tmp/pettil-studio.err                                            \
-	  -l ../../tmp/pettil-studio.lab
-	cd -
-	cp ./tmp/pettil-studio.lab ./tmp/pettil-studio.lab$1
+	  -l ../../tmp/pettil-studio.lab$1
+	cd - >/dev/null
+#	cp ./tmp/pettil-studio.lab ./tmp/pettil-studio.lab${1}
 #	echo . Phase IV
 #	echo . . . . Generating combined symbol table = PETTIL.SYM
 	ruby ./tools/xap.rb
 #	echo . . . . Packing PETTIL.PRG binary = PETTIL-CORE.OBJ + PETTIL-TDICT.OBJ + PETTIL.SYM
 
-echo buz
 # PETTIL binary
 	cat \
 		./tmp/pettil-core.obj \
