@@ -3,14 +3,15 @@
 #
 
 SHELL = /bin/bash
-
-TARGETS=012345
+#TARGETS=01234567
+TARGETS=04
 
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
 #~
-all: pristine remote
+#all: pristine remote
+all: pristine perturb
 
 remote: mkd64
 	scp pettil.d64 samosa:pettil/

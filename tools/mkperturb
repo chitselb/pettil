@@ -3,17 +3,25 @@
 #
 cd ~/pettil
 
+# for each PETTIL target that was built by `mkpettil`
 for pettilobj in obj/pettil.prg?
 do
+    # PRG file load address is first two bytes, in little-endian
     pettiladdr=$(dd bs=1 count=2 conv=swab status=none <${pettilobj} | xxd -p)
+    # PRG file load address in decimal
     padr=$(echo "obase=10;ibase=16;${pettiladdr}"|bc)
+    # last char of filename is build target id
     targetid=${pettilobj: -1}
+    # size of file in bytes, decimal
     objsize=$(stat -c'%s' ${pettilobj})
+    # file size added to PRG load address is where PERTURB shall reside
     perturb=$(echo "${objsize} + ${padr}"|bc)
+    # PERTURB start address, in hexadecimal
     badr=$(echo "obase=16;ibase=10;${perturb}-2"|bc)
-    for tricks in $(ls -d src/perturb/*/)
+    # for each PERTURB feat (test suite), one feat per `src/perturb/{trick}/` dir
+    for feats in $(ls -d src/perturb/*/)
     do
-        cheese=$(basename ${tricks#*/})
+        cheese=$(basename ${feats#*/})
         feat="perturb-${cheese}"
         case ${targetid} in
             0)
@@ -124,21 +132,21 @@ do
         # unneeded because PERTURB source includes PETTIL labels
         # dd bs=1 if=${pettilobj} status=none   of=tmp/t.0 skip=15 count=2
 
-        cat tmp/t.1 tmp/t.2 tmp/t.3 obj/perturb/${feat}.prg${targetid} \
+        cat tmp/t.1 tmp/t.2 tmp/t.3 obj/perturb/${feat}.prg${targetid}          \
             > obj/perturb/${feat}.${targetid}
 #        dd bs=1 if=${pettilobj} of=perturb/${cheese}.${targetid}skip=15 count=2 status=none
 #        dd if=${pettilobj} of=perturb/perturb-${cheese}.${targetid} bs=1 count=13
 #        echo "AA" >> perturb/perturb-${cheese}.${targetid}
 #        dd if=${pettilobj} of=perturb/perturb-${cheese}.${targetid} bs=1 count=13
-        c1541                           \
-            -attach ./pettil.d64       \
+        c1541                                                                   \
+            -attach ./pettil.d64                                                \
             -write obj/perturb/${feat}.${targetid}
 #        export PERTURB=obj/perturb/${feat}.mon${targetid}
-#        xfce4-terminal --command="${vpet}                                       \
-#            -moncommand ${PERTURB}                                              \
-#            -config data/sdl2_chitselb.vicerc                                   \
-#            -8 chitselb.d64                                                     \
-#            -9 pettil.d64                                                       \
+#        xfce4-terminal --command="${vpet}                                      \
+#            -moncommand ${PERTURB}                                             \
+#            -config data/sdl2_chitselb.vicerc                                  \
+#            -8 chitselb.d64                                                    \
+#            -9 pettil.d64                                                      \
 #            -warp"
 
         PERTURB=${feat} timeout 30 ./tools/mkpet ${targetid}
