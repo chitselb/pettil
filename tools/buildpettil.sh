@@ -20,6 +20,7 @@
 		-o ../../tmp/pettil-core.obj 	                                        \
 		-e ../../tmp/pettil-core.err                                            \
 		-l ../../tmp/pettil-core.lab
+echo biz
 	cd -
 #	echo . . . . Generating core labels = PETTIL-CORE.DEF
 	ruby ./tools/xap.rb
@@ -41,6 +42,7 @@
 	ruby ./tools/xap.rb
 #	echo . . . . Packing PETTIL.PRG binary = PETTIL-CORE.OBJ + PETTIL-TDICT.OBJ + PETTIL.SYM
 
+echo buz
 # PETTIL binary
 	cat \
 		./tmp/pettil-core.obj \
@@ -62,4 +64,3 @@
 	rm ./doc/sizes.txt
 	stat -c '%8s %n' obj/* | sed -e 's/obj\///' >> ./doc/sizes.txt
 	cp ./tmp/sizes.csv doc/sizes.csv$1
-
