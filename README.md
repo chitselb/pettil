@@ -39,15 +39,16 @@ Target | Machine | Status
 8 | Apple ][ | future
 9 | Atari 800 | future
 
-Toolstack:
-* Ubuntu Linux
-* Sublime Text 3
-* VICE
-* xa65
-* tiddlywiki
-* git
-* bash make Nodejs awk Ruby
-* kdenlive OBS ffmpeg Shutter Audacity Blender GIMP
+current toolstack:
+------------ | ------------- | ------------
+Ubuntu Linux 18.04.2 LTS | also Ubuntu Studio, Manjaro |
+Sublime Text 3 | excellent code editor |
+VICE | VersatIle Commodore Emulator |
+xa65 | 6502 cross-assembler |
+tiddlywiki | for documentation |
+git | revision control |
+bash make Nodejs awk sed Ruby | unix languages & tools |
+kdenlive OBS ffmpeg Shutter Audacity Blender GIMP | multimedia tools |
 
 Link | Purpose
 ------------ | -------------
