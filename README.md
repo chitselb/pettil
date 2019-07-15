@@ -39,7 +39,7 @@ Target | Machine | Status
 8 | Apple ][ | future
 9 | Atari 800 | future
 
-current toolstack:
+current toolstack | |
 ------------ | ------------- | ------------
 Ubuntu Linux 18.04.2 LTS | also Ubuntu Studio, Manjaro |
 Sublime Text 3 | excellent code editor |
