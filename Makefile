@@ -9,7 +9,6 @@ TARGETS=04
 #all:  launch tiddlypettil
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
-#~
 #all: pristine remote
 all: pristine perturb
 
@@ -18,7 +17,6 @@ remote: mkd64
 	samosa DISPLAY=:0.0 ./pettil/tools/mkperturb
 
 # build a fresh PETTIL from source
-#~
 mkpettil:
 	./tools/mkpettil
 #sh ./tools/buildpettil.sh 0     5       6500  0401  # my pet #700251
