@@ -85,15 +85,15 @@ petpic:
 mkd64: mkpettil
 	# first program is PETTIL.PRG for reference machine
 	# and also include PETTILPACKETS
-	c1541 -attach pettil.d64													\
-		-write obj/pettil.prg0 pettil.prg 										\
-		-write tapes/pettilpackets
+	c1541 -attach pettil.d64                                                    \
+		-write obj/pettil.prg0 pettil.prg                                       \
+		-write tapes/pettilpackets pettilpackets
 
 	TARGETS=04
 	# add other targets
-	for object in obj/pettil*.prg[${TARGETS}] ; do 											\
-        ls -la $$object ; 														\
-		c1541 -attach pettil.d64 -write $$object ;								\
+	for object in obj/pettil*.prg[${TARGETS}] ; do                              \
+        ls -la $$object ;                                                       \
+		c1541 -attach pettil.d64 -write $$object ;                              \
     done
 	c1541 -attach pettil.d64 -dir
 
@@ -114,6 +114,7 @@ pristine: clean
 # build and perform all feats of testing
 perturb: mkd64
 	./tools/mkperturb
+	./tools/chkperturb
 
 # build documentation
 tiddlypettil:
