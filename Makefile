@@ -115,6 +115,7 @@ pristine: clean
 perturb: mkd64
 	./tools/mkperturb
 	./tools/chkperturb
+	./tools/lsperturb
 
 # build documentation
 tiddlypettil:
