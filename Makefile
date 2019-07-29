@@ -6,7 +6,7 @@ SHELL = /bin/bash
 #TARGETS=01234567
 TARGETS=04
 
-#all:  launch tiddlypettil
+#all:  launch tiddlypettil12
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
 #all: pristine remote
