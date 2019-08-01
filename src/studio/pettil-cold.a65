@@ -1,24 +1,26 @@
 ; pettil-cold.a65
 ;#echo .       pettil-cold.a65
-;#echo .       PETTIL cold start throwaway code to relocate tdict, display animated banner, DEADBEEF, etc...
+;#echo .       PETTIL cold start throwaway code to relocate studio, display animated banner, DEADBEEF, etc...
 
 ;--------------------------------------------------------------
 #if 0
 name=COLD
+stack=( -- )
 tags=system,startup,throwaway,nosymbol
 
-|`cold` startup tasks|<|h
-|`?aloha`| swap zeropage <--> zpbuf|
-|`sp!`| initialize stack|
-|`=irq`| set up IRQ vector|
-|`!sw16`| connect Sweet16 to BRK vector|
-|`diagfill`| fill screen (entertainment)|
-|`cmove tdict`|
-|`start splash`| (entertainment)|
-|`cmove symtab`|
-|`symdex`| build symtab index|
-|`deadbeef`| fill memory with a pattern|
-|`warm`| drop the user to a blinking cursor|
+|^`cold` startup tasks|<|h
+|^`?aloha`|^swap zeropage <--> zpbuf|
+|^`sp!`|^initialize stack|
+|^`=irq`|^set up IRQ vector|
+|^`!sw16`|^connect Sweet16 to BRK vector|
+|^`diagfill`|^fill screen (entertainment)|
+|^`studio cmove`|^copy `studio` to top of memory|
+|^`splash`|^(entertainment)|
+|^`symtab cmove`||
+|^`symtab !`||
+|^`symdex`|^build symtab index|
+|^`deadbeef`|^fill memory with a pattern|
+|^`warm`|^drop the user to a blinking cursor|
 
 
 A primitive relocator to move already-linked code to upper memory
@@ -31,14 +33,16 @@ Gets us from `pettil-core` to module LAUNCH
 Setting the `size` of the transient dictionary to 0 will prevent
 moving anything; control still transfers to `loadaddr+2`.
 
-*    ?aloha
-*    sp!
-*    =irq
-*    !sw16
-*    diagfill
-*    there @+ tuck over @ 2+ cmove 2+ startup !
-*    cold variables, cmove erase
-*    restart
+|task|description|h
+|^`?aloha`|^swap lower half of zero page<br/>if it isn't already|
+|^`sp!`|^reset data stack|
+|^`=irq`|^exchange IRQ vector<br/>with `userirq`|
+|^`!sw16`|^exchange BRK vector<br/>with `userirq`<br/>if it isn't already|
+|^`diagfill`|fill screen with '\' pattern|
+|^``there @+ tuck over @ 2+ cmove`|^copy `studio` to `hitop` area|
+|^`2+ startup !|^set `startup` to `studio`|
+|^cold variables<br/>`cmove erase`|^reset `cold` uservars|
+|^`restart`|launch `studio`|
 
 ```
 code cold   ( -- )
@@ -61,10 +65,10 @@ cold
     .word callz
 #include "page.i65"
     .word setsw16               ; so we may use BRK to access Sweet16
-#include "pass.i65"
+#include "pass.i65"                                ; ~ stack is empty
     .word dlit
     .word userirq
-    .word there+(splashirq-_studio+4)  ; `splashirq` low, before moving tdict
+    .word there+splashirq-hitop+4  ; `splashirq` low, before moving studio
 #include "page.i65"
     .word store
 #include "page.i65"
@@ -104,8 +108,6 @@ cold
     .word cmove
 #include "page.i65"
     .word erase
-#include "page.i65"
-    .word xyzzy
 #include "pass.i65"
     .word restart               ; restart #2 (of 3) --> `studio`
 
@@ -693,10 +695,8 @@ stack=( -- )
 tags=system,startup,throwaway,nosymbol
 Synchronize `actionidx` with `actionnow`
 
-
-
 ```
-| zp | stack | system | core | available RAM | vmbuf | blkbuf | symtab | tdict |
+| zp | stack | system | core | available RAM | vmbuf | blkbuf | symtab | studio |
 
 : ?letter   ( -- )
     begin
