@@ -129,8 +129,8 @@ tiddlypettil:
 
 # upload PETTIL Tiddlywiki to website
 publish:
-	scp ./doc/tiddlypettil.html www-data@puri.chitselb.com:chitselb.com/current/public/files/
+#	scp ./doc/tiddlypettil.html www-data@puri.chitselb.com:chitselb.com/current/public/files/
 #	scp ./doc/tiddlypettil.html www-puri:chitselb.com/current/public/files/
 
 # build and publish PETTIL Tiddlywiki
-doc: tiddlypettil publish
+doc: tiddlypettil

@@ -307,7 +307,7 @@ puts @label   if @label == "STUDIO"
             text = "!! //#{wikiname}//"   if @tags.index "nosymbol"
             text += ((@stack.nil?) ? "\n\n" : "&nbsp;&nbsp;&nbsp;#{@stack}\n\n")
             text += ((@prevword.nil?) ? '' : "[[<<|#{@prevword}]]&nbsp;")
-            text += ((@addr.nil?) ? 'wut?' : "address:&nbsp;$#{hex4out @addr}&nbsp;&nbsp;")
+            text += ((@addr.nil?) ? 'nada' : "address:&nbsp;$#{hex4out @addr}&nbsp;&nbsp;")
             text += ((@size.nil?) ? 'wut?' : "size:&nbsp;#{@size}&nbsp;")
             text += ((@nextword.nil?) ? "\n\n" : "[[>>|#{@nextword}]]\n\n")
             text += ((@desc.nil?) ? '' : @desc)

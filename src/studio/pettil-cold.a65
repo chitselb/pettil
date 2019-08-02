@@ -4,31 +4,27 @@
 
 ;--------------------------------------------------------------
 #if 0
-name=COLD
+name=(COLD)
 stack=( -- )
-tags=system,startup,throwaway,nosymbol
+tags=system,startup,throwaway,nosymbol,secondary
 
 |^`cold` startup tasks|<|h
-|^`?aloha`|^swap zeropage <--> zpbuf|
-|^`sp!`|^initialize stack|
-|^`=irq`|^set up IRQ vector|
-|^`!sw16`|^connect Sweet16 to BRK vector|
+|^`?aloha`|^swap zeropage <--> zpbuf<br/>$00-$8C|
+|^`sp!`|^initialize data stack|
+|^`=irq`|^set up IRQ vector<br/>$90-$91|
+|^`!sw16`|^connect Sweet16 to BRK vector<br/>$92-$93|
 |^`diagfill`|^fill screen (entertainment)|
 |^`studio cmove`|^copy `studio` to top of memory|
 |^`splash`|^(entertainment)|
 |^`symtab cmove`||
-|^`symtab !`||
+|^`!symtab`<br/>( start end -- symtab size ) |^set symbol table size|
 |^`symdex`|^build symtab index|
 |^`deadbeef`|^fill memory with a pattern|
 |^`warm`|^drop the user to a blinking cursor|
 
-
 A primitive relocator to move already-linked code to upper memory
 
 Gets us from `pettil-core` to module LAUNCH
-
-* CMOVE transient dictionary to upper memory
-* EXECUTE first word in transient dictionary
 
 Setting the `size` of the transient dictionary to 0 will prevent
 moving anything; control still transfers to `loadaddr+2`.
@@ -53,7 +49,7 @@ code cold   ( -- )
     cmove erase restart \ ;
 ```
 #endif
-cold
+pcold
     jsr qaloha
 #include "align.i65"
     jsr toforth                 ; transition from 6502 Assembly to Forth
@@ -110,6 +106,63 @@ cold
     .word erase
 #include "pass.i65"
     .word restart               ; restart #2 (of 3) --> `studio`
+
+;--------------------------------------------------------------
+#if 0
+name=!SYMTAB
+stack=( size -- size addr )
+tags=system,startup,throwaway,nosymbol
+Calculate `symtab` memory requirements, given a size
+
+
+|^0000|^00FF|^ zp |
+|^0100|^01FF|^ stack |
+|^0200|^0400|^ system |
+|^0401|^1A54|^ core |
+|^1A55|^0000|^ available RAM |
+|^0000|^0000|^ vmbuf |
+|^0000|^0000|^ blkbuf |
+|^0000|^0000|^ symtab |
+|^0000|^0000|^ studio |
+#endif
+#include "align.i65"
+_setsymtab
+    jsr enter
+#include "page.i65"
+    .word studio
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "pass.i65"
+    .word plit
+    .word $FF00
+#include "page.i65"
+    .word andx
+#include "pass.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SYMDEX
+stack=( -- )
+tags=system,startup,nosymbol
+Build thread index for `symtab`
+
+```
+: symdex   ( -- )
+    ;
+```
+#endif
+#include "align.i65"
+_symdex
+    jsr enter
+#include "page.i65"
+    .word xyzzy
+#include "pass.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
