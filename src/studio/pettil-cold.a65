@@ -211,6 +211,174 @@ _diagfill
 
 ;--------------------------------------------------------------
 #if 0
+name=SPLASHIRQ
+stack=( -- )
+tags=system,startup,nosymbol
+splash screen irq handler
+choose a random location
+check character on either page
+    4D?  replace it with 4E
+    4E?  replace it with 4D
+    else? leave it alone
+
+#endif
+splashirq
+    jsr splash
+    jsr countactions
+    jmp (userirq)
+
+;--------------------------------------------------------------
+#if 0
+name=COUNTACTIONS
+stack=( -- )
+tags=system,subroutine,startup,nosymbol
+Subroutine, bump the action number during startup
+
+0 nothing happened yet
+1 "P"
+2 "E"
+3 "T"
+4 "*"
+5 "T"
+6 "I"
+7 "L"
+etc...
+
+#endif
+countactions
+    dec actiondelay
+    bne countactions09
+    inc actionidx
+    lda #33
+    sta actiondelay
+countactions09
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=SPLASH
+stack=( -- )
+tags=system,subroutine,startup,nosymbol
+Subroutine, randomly dither diagonal lines on the screen
+
+#endif
+splash
+    lda #8
+    sta splashes
+splash01
+    jsr randu
+    tax
+    lda #>((VIDRAM + BPERSCR + $0100) & $0F00)  ; VIC-20 = 2; PET,C=64,Plus/4 = 4; PET80 = 8; how many pages/screen?
+    sta splashpage
+    lda #>VIDRAM
+    sta splash02+2
+    sta splash03+2
+splash02
+    lda VIDRAM,x
+    jsr splish
+splash03
+    sta VIDRAM,x
+    inc splash02+2
+    inc splash03+2
+    dec splashpage
+    bne splash02
+    dec splashes
+    bne splash01
+    rts
+
+splish
+    tay
+    eor #$4C                    ; swap \ <--> / else leave it alone
+    and #$7C
+    php
+    tya
+    plp
+    bne splish01
+    eor #3
+splish01
+    rts
+
+actiondelay
+    .byt 15
+
+actionidx
+    .byt 0
+
+actionnow
+    .byt 0
+
+actioncfa
+    .word pettillogo
+
+splashpage
+    .byt 0
+
+splashes
+    .byt 0
+
+;--------------------------------------------------------------
+#if 0
+name=MACKINAC
+stack=( -- )
+tags=system,startup,nosymbol
+Part of cold start, connect lower `core` and upper `studio` dictionaries
+
+6976
+5C20
+d56
+
+41CF
+347A
+d55
+
+The error path out of `warm` gets us here, in violation of the "never use the
+error path to perform normal processing" rule.  Once here,
+fix the error handler (`warning`) and `warm` now kicks out to `abort`
+
+: mackinac
+    (automem)
+    ( lowmem symtab symtab.size ) cmove
+
+
+#endif
+#include "align.i65"
+_mackinac
+    jsr enter
+#include "page.i65"
+    .word drop                  ; `warm` sent us an error #
+#include "page.i65"
+    .word here                  ; `here` now points to `there`
+#include "page.i65"
+    .word _pforget
+#include "pass.i65"
+    .word plits
+    .byt 5
+    .word userdp
+    .word userfence             ; @ swap !
+    .word _errormsg
+    .word userwarning           ; !
+    .word MAINIRQ               ; irq!
+#include "page.i65"
+;~~~    .word irqstore              ; restore default IRQ handler
+#include "page.i65"
+    .word store                 ; set `warning` to `error.msg`
+#include "page.i65"
+    .word fetch                 ; fix DP to reclaim startup code area
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word pl11
+#include "page.i65"
+    .word _deadbeef
+#include "page.i65"
+    .word _emptybuffers         ; do this again here, because DEADBEEF
+#include "pass.i65"
+    .word restart               ; restart #4 -> `warm`
+
+;--------------------------------------------------------------
+#if 0
 name=FLIPPER
 stack=( -- false )
 tags=system,startup,nosymbol
