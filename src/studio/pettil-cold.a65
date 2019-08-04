@@ -108,18 +108,18 @@ pcold
     .word five
 #include "page.i65"
     .word _jiffies
-#include "page.i65"
-    .word xyzzy
 #include "pass.i65"
     .word dlit
-    .word there+2
+    .word there
     .word EAL
 #include "page.i65"
     .word fetchplus
 #include "page.i65"
-    .word plus
+    .word dashrot
 #include "page.i65"
-    .word twoplus               ; start of symbols
+    .word fetchplus
+#include "page.i65"
+    .word plus
 #include "page.i65"
     .word swap
 #include "page.i65"
@@ -129,17 +129,15 @@ pcold
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word _setsymtab
-#include "page.i65"
-    .word symtab                ; points to unindexed symbol list
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word bl
-#include "page.i65"
-    .word plusunder
+    .word symtabset
 #include "page.i65"
     .word cmovegt
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word _setsymtab            ; `!symtab`
+#include "page.i65"
+    .word xyzzy
 #include "pass.i65"
     .word restart               ; restart #2 (of 3) --> `studio`
 
@@ -148,56 +146,103 @@ pcold
 name=!SYMTAB
 stack=( start end -- size addr )
 tags=system,startup,nosymbol
-Calculate `symtab` memory requirements, given a size
+Scan `symtab`
 
-|^0000|^00FF|^ zp |
-|^0100|^01FF|^ stack |
-|^0200|^0400|^ system |
-|^0401|^1A54|^ core |
-|^1A55|^0000|^ available RAM |
-|^0000|^0000|^ vmbuf |
-|^0000|^0000|^ blkbuf |
-|^0000|^0000|^ symtab |
-|^0000|^0000|^ studio |
+: !symtab   ( -- )
+    bloom 8 erase  sym.rewind
+    symtab @ bl
+    begin
+        sym.len <
+        if
+            n3> !+
+        then
+        bloomfilter cbit!
+        sym.len
+        3 sym+
+        sym.len 0=
+    until (!symtab) ;
+
+
 #endif
 #include "align.i65"
 _setsymtab
     jsr enter
 #include "page.i65"
-    .word studio
+    .word bloom
+#include "page.i65"
+    .word eight
+#include "page.i65"
+    .word erase                 ; reset the Bloom filter
+#include "page.i65"
+    .word symrewind
+#include "page.i65"
+    .word symtab
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word over
+    .word bl
 #include "page.i65"
-    .word minus
+samtab01
+    .word symlen
+#include "page.i65"
+    .word gt
+#include "page.i65"
+    .word qbranch
+    .byt <(samtab02-*+1)
 #include "pass.i65"
-    .word plit
-    .word $FF00
+    .word zpfrom
+    .byt ACC+2*N3
 #include "page.i65"
-    .word andx
+    .word _storeplus
+#include "page.i65"
+samtab02
+    .word _bloomfilter
+#include "page.i65"
+    .word cbitstore
+#include "page.i65"
+    .word symlen
+#include "pass.i65"
+    .word symplus
+    .byt 3
+#include "page.i65"
+    .word symlen
+#include "page.i65"
+    .word zeq
+#include "pass.i65"
+    .word qbranch
+    .byt <(samtab01-*+1)
+#include "page.i65"
+    .word symnew
+#include "page.i65"
+    .word psamtab               ; handle `symtab` tail
+#include "page.i65"
+    .word threedrop
 #include "pass.i65"
     .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=SYMDEX
-stack=( -- )
+name=(!SYMTAB)
+stack=( symlen addr -- )
 tags=system,startup,nosymbol
-Build thread index for `symtab`
+nip nip
+set 'symnew' once per (rehash) to the third null
+set 'symtail' = symnew-2
+write '0000' word at symtail
 
-```
-: symdex   ( -- )
-    ;
-```
+
 #endif
 #include "align.i65"
-_symdex
-    jsr enter
-#include "page.i65"
-    .word xyzzy
-#include "pass.i65"
-    .word exit
+psamtab
+    brk
+    .byt ld | N3
+    .byt std | TOS              ; set `symnew`
+    .byt popd | N3              ; 2-
+    .byt ld | N3
+    .byt std | TOS              ; set `symtail`
+    .byt sub | ACC
+    .byt std | N3               ; force cfa = 0
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
