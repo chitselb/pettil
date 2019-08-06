@@ -365,6 +365,8 @@ puts @label   if @label == "STUDIO"
                     labels[a[0]] = a[1].hex
                 end
             end
+        else
+            puts "missing +#{filename}"
         end
         return labels
     end
