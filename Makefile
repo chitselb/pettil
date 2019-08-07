@@ -175,7 +175,7 @@ launch: clean pettil pettild64
 
 pettild64:
 	c1541 -format pettil,09 d64 pettil.d64
-	c1541 -attach pettil.d64 -write pettil.prg -write tapes/pettilpackets -write s1e2scroll2
+	c1541 -attach pettil.d64 -write pettil.prg -write tapes/pettilpackets
 	c1541 -attach chitselb.d64
 
 pettil:
