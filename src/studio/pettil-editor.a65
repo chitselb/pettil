@@ -1380,6 +1380,8 @@ editmenuz
 name=(EDIT)
 stack=( scr -- )
 tags=editor,nosymbol
+`(edit)` is an endless loop that calls CHRIN
+
 #endif
 pedit
     stx z                       ; preserve Forth data stack pointer
@@ -1388,11 +1390,14 @@ pedit
 
 pedit01                         ; PET screen editor forever loop
     jsr CHRIN                   ; Kernel - blink the cursor, wait for a line of input, ignore it
+;~todo change to call ROM CR output
     lda #CR                     ; don't just leave the cursor two characters past end of line
     jsr CHROUT                  ; Kernel - so echo the carriage return
+;~todo make this a branch?
     jmp pedit01                 ; ... do this forever
 
-pedit02                         ; this is edit's IRQ handler, enabled/disabled by _editirqtoggle
+    ; this is edit's IRQ handler
+editorirq
     jsr GETSTOP
     bne pedit03
                                 ; someone pressed STOP. Exit the editor
@@ -1564,16 +1569,17 @@ _edit
 #include "pass.i65"
 edit00                          ; reentry to editor here
     .word plit
-    .word pedit02
+    .word editorirq
 #include "page.i65"
-;~~~    .word irqstore              ; enable STOP key trap
+    .word cinv
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word swapirq               ; enable STOP key trap
 #include "page.i65"
     .word pedit
-#include "pass.i65"
-    .word plit
-    .word MAINIRQ
 #include "page.i65"
-;~~~    .word irqstore              ; disable STOP key trap, also does CLI
+    .word swapirq               ; disable STOP key trap, also does CLI
 #include "page.i65"
     .word _editcmd              ; get and perform editor command
 #include "pass.i65"

@@ -30,6 +30,8 @@ For each PETTIL binary in pettil/obj/PETTIL
         6 = C128
         7 = Plus/4
 
+Source code for test feats is stored under pettil/src/perturb/ in directories named with lowercase roman numerals, e.g. pettil/src/perturb/iv/
+
     For each FEAT directory in pettil/src/perturb/FEAT/
         Do all of this
         figure out the start address of FEAT and link it in
@@ -38,9 +40,8 @@ For each PETTIL binary in pettil/obj/PETTIL
         run `xa65` to build a perturb object in pettil/obj/perturb/
         VICE emulator launches a virtual PET to run the object
 
-  PERTURB patches itself in at `restart` with every
-feat on every platform, and builds an object file, using `xa65`, from
-pettil/src/perturb/ into pettil/obj/perturb/ feat  e.g. src/perturb/iv/*.i65 .  Next, the VICE emulator launches a PET (or VIC-20 or
+PERTURB patches in by changing two bytes at `restart`. and builds an object file
+for all feats on all platforms, using `xa65`.  The source code is in pettil/src/perturb/FEAT and object code for our PET to run is in pettil/obj/perturb/ .  Next, the VICE emulator launches a PET (or VIC-20 or
 Plus/4, you get the idea...) which performs that feat, and finishes.
 
  into  a 'bag-on-the-side' system, designed for PETTIL test automation.  It  attaches itself to PETTIL by replacing `restart` with PERTURB's own load/start address (PERTURBORG).  This address immediately follows where PETTIL loads.  PERTURBORG is also passed to xa65, along with the complete `pettil-studio` symbol list.  This exposes the internals of PETTIL to PERTURB
