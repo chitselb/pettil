@@ -20,8 +20,8 @@
 		-o ../../tmp/pettil-core.obj 	                                        \
 		-e ../../tmp/pettil-core.err                                            \
 		-l ../../tmp/pettil-core.lab
-	cp ./tmp/pettil-core.lab ./tmp/pettil-core.lab${1}
 	cd - >/dev/null
+	cp ./tmp/pettil-core.lab ./tmp/pettil-core.lab${1}
 #	echo . . . . Generating core labels = PETTIL-CORE.DEF
 	ruby ./tools/xap.rb
 #	echo . Phase II
