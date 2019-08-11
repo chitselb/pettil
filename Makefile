@@ -4,7 +4,7 @@
 
 SHELL = /bin/bash
 #TARGETS=01234567
-TARGETS=01234
+TARGETS=012345
 
 #all:  launch tiddlypettil12
 #all: clean mkpet mypet vic20
@@ -115,7 +115,7 @@ pristine: clean
 perturb: mkd64
 	./tools/mkperturb
 	./tools/chkperturb
-	./tools/lsperturb 0.01
+#	./tools/lsperturb 0.01
 
 # build documentation
 tiddlypettil:
