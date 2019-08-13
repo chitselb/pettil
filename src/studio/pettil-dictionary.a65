@@ -46,9 +46,9 @@ set `n3` to the first symbol in the (sequential) `symtab`
 #include "align.i65"
 symrewind
     lda usersymtab+1
-    sta ACC+2*N3+1
+    sta R0L+2*N3+1
     lda #34
-    sta ACC+2*N3
+    sta R0L+2*N3
     bne symtabset99
 
 ;--------------------------------------------------------------
@@ -82,16 +82,16 @@ return the length of the current `nfa` stored in `n3`
 #endif
 symlens
     ldy #0              ;{2 {=23}}
-    lda ACC+2*N3+1              ; length = 0 if `n3` is 0
+    lda R0L+2*N3+1              ; length = 0 if `n3` is 0
     beq symlens01
-    lda (ACC+2*N3),y    ;{5}    ; length/flags
+    lda (R0L+2*N3),y    ;{5}    ; length/flags
 symlens01
     pha                 ;{3}    ; not using tay/tya preserves Y=0
     asl                 ;{2}
     asl                 ;{2}    ; Vocab bit to C flag
     pla                 ;{4}
     and #$1F            ;{2}    ; length
-    sta ACC+2*N8        ;{3}    ; N8L = visible length (omit vocab +1)
+    sta R0L+2*N8        ;{3}    ; N8L = visible length (omit vocab +1)
     rts
 
 ;--------------------------------------------------------------
@@ -117,8 +117,8 @@ symcopys
     adc #0
     tay
 symcopy01
-    lda (ACC+2*N3),y
-    sta (ACC+2*N7),y
+    lda (R0L+2*N3),y
+    sta (R0L+2*N7),y
     dey
     bpl symcopy01
     rts
@@ -141,13 +141,13 @@ symplus
     jmp bump
 
 sympluss
-    sta ACC
+    sta R0L+2*ACC
     jsr symlens
-    adc ACC
-    adc ACC+2*N3
-    sta ACC+2*N3
+    adc R0L+2*ACC
+    adc R0L+2*N3
+    sta R0L+2*N3
     bcc symplus01
-    inc ACC+2*N3+1
+    inc R0L+2*N3+1
 symplus01
     rts
 
@@ -175,11 +175,11 @@ table search if the bit is turned off.
 Calculate the bloom filter hash between 0..63.
 #endif
 bloomhash
-    ldy ACC+2*N8                ; length
+    ldy R0L+2*N8                ; length
     lda #0
     sta z
 bloomhash01
-    lda (ACC+2*N3),y
+    lda (R0L+2*N3),y
     eor #$30
     cmp #9
     bcs bloomhash02
@@ -262,7 +262,7 @@ symbol table entry
 #endif
 pearsonhash
     ldy #1
-    lda (ACC+2*N3),y    ; [5]
+    lda (R0L+2*N3),y    ; [5]
     and #$0F
     jmp push0a
 
@@ -336,20 +336,20 @@ Compare the provided CFA(N4) vs. CFA of current NFA in (N3)
 ptoname
     ldy #$FE
 ptoname02
-    dec ACC+2*N3+1
-    lda (ACC+2*N3),y
-    inc ACC+2*N3+1
+    dec R0L+2*N3+1
+    lda (R0L+2*N3),y
+    inc R0L+2*N3+1
     eor tos-$FE,y
     bne ptoname05
     iny
     bne ptoname02
-    lda ACC+2*N3
-    ldy ACC+2*N3+1
+    lda R0L+2*N3
+    ldy R0L+2*N3+1
 ptoname04
     jmp put
 ptoname05
     ldy #0
-    lda (ACC+2*N3),y
+    lda (R0L+2*N3),y
     beq ptoname04
     lda #3
     jsr sympluss                ; next!
@@ -427,14 +427,14 @@ Switches contents of N7 <--> N3
 #endif
 #include "align.i65"
 swap73
-    lda ACC+2*N7
-    ldy ACC+2*N3
-    sta ACC+2*N3
-    sty ACC+2*N7
-    lda ACC+2*N7+1
-    ldy ACC+2*N3+1
-    sta ACC+2*N3+1
-    sty ACC+2*N7+1
+    lda R0L+2*N7
+    ldy R0L+2*N3
+    sta R0L+2*N3
+    sty R0L+2*N7
+    lda R0L+2*N7+1
+    ldy R0L+2*N3+1
+    sta R0L+2*N3+1
+    sty R0L+2*N7+1
     jmp next
 
 ;--------------------------------------------------------------
@@ -466,7 +466,7 @@ extuntil01                      ; begin
 #include "pass.i65"
     .word exit
 extuntil02
-    jmp (ACC+2*R11)             ;[3]{5 {=5}}
+    jmp (R0L+2*R11)             ;[3]{5 {=5}}
 
 ;--------------------------------------------------------------
 #if 0
@@ -497,18 +497,18 @@ pseek
     .byt st | N3                ; `n3` is start of thread
     .byt rtn
 pseekb
-    lda ACC+2*N4+1              ; toggle sorted/unsorted flag in `n4h`
+    lda R0L+2*N4+1              ; toggle sorted/unsorted flag in `n4h`
     eor #$FF
-    sta ACC+2*N4+1              ; sorted = 0; unsorted = $FF
+    sta R0L+2*N4+1              ; sorted = 0; unsorted = $FF
 pseek00
     jsr symlens
     beq pseek08                 ; reached `symtail`? not found!
-    eor ACC+2*N4
+    eor R0L+2*N4
     beq pseekok1                ; same length? consider further...
-    bit ACC+2*N4+1
+    bit R0L+2*N4+1
     bmi pseek01                 ; unsorted list? next!
-    lda ACC+2*N8
-    cmp ACC+2*N4                ; length.current > length.seeking?
+    lda R0L+2*N8
+    cmp R0L+2*N4                ; length.current > length.seeking?
     bcs pseek08                 ; not found on sorted list!
 pseek01
     lda #3
@@ -516,17 +516,17 @@ pseek01
     bne pseek00                 ; bra
 pseekok1
     ;ldy #0                     ; thanks, symlens
-    lda (ACC+2*N3),y
+    lda (R0L+2*N3),y
     bmi pseek01                 ; smudged? next!
-    ldy ACC+2*N4
+    ldy R0L+2*N4
     iny
-    lda ACC+2*N5                ; compare vocabularies
+    lda R0L+2*N5                ; compare vocabularies
     bcc pseek04b
     .byt $2C
 pseekok2
-    lda (ACC+2*N7),y            ; `n7` name we are looking for
+    lda (R0L+2*N7),y            ; `n7` name we are looking for
 pseek04
-    eor (ACC+2*N3),y            ; `n3` current name under consideration
+    eor (R0L+2*N3),y            ; `n3` current name under consideration
 pseek04b
     bne pseek01                 ; different symbol? next!
 pseek05
@@ -550,7 +550,7 @@ Returns `true` if there is a next vocabulary
 #endif
 tothread
     ldy #1
-    lda (ACC+2*N7),y            ; use `nfa` in `n7`, get first character
+    lda (R0L+2*N7),y            ; use `nfa` in `n7`, get first character
     and #$0F                    ; simplified replacement for Pearson hash
     asl                         ; *2
     sta tos                     ; `symtab` always at a page boundary
@@ -566,7 +566,7 @@ Otherwise returns -1
 #endif
 immedornot
     ldy #0
-    lda (ACC+2*N3),y            ; length/flags of curr `nfa`
+    lda (R0L+2*N3),y            ; length/flags of curr `nfa`
     and #$20                    ; immediate?
     lsr
     lsr
@@ -746,7 +746,7 @@ foundq01                        ;     begin (loop through vocabs)
 #include "page.i65"
 found04                         ; then
     .word zpfrom
-    .byt ACC+2*N7               ; original `nfa`
+    .byt R0L+2*N7               ; original `nfa`
 #include "page.i65"
     .word false                 ; and nope, this name was not found
 #include "pass.i65"
@@ -754,7 +754,7 @@ found04                         ; then
 #include "pass.i65"
 foundq03                        ; found it
     .word zpfrom
-    .byt ACC+2*N3               ; the CFA
+    .byt R0L+2*N3               ; the CFA
 #include "page.i65"
     .word namefrom
 #include "page.i65"
@@ -996,7 +996,7 @@ _pcreate
 #include "page.i65"
 pcreate01
     .word zpfrom
-    .byt ACC+2*N3
+    .byt R0L+2*N3
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -1225,7 +1225,7 @@ _automem
     jsr toforth                 ; `>forth jsr, forth ] >n5 dup ...`
 #include "pass.i65"
     .word tozp
-    .byt ACC+2*N5
+    .byt R0L+2*N5
 #include "page.i65"
     .word dup
 #include "page.i65"
@@ -1598,7 +1598,7 @@ _pforgetpass1
 ;#refactor
 #include "pass.i65"
     .word zpfrom                ; nfa
-    .byt ACC+2*N3
+    .byt R0L+2*N3
 #include "page.i65"
     .word namefrom              ; nfa>cfa
 #include "page.i65"
@@ -1658,7 +1658,7 @@ _pforgetpass2
     jsr enter
 #include "pass.i65"
     .word zpfrom                ; nfa
-    .byt ACC+2*N3
+    .byt R0L+2*N3
 #include "page.i65"
     .word namefrom              ; nfa>cfa
 #include "page.i65"
