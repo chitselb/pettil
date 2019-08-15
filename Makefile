@@ -10,7 +10,7 @@ TARGETS=0
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
 #all: pristine remote
-all: pristine perturb
+all: pristine perturb mkd64pettil mkd64perturb
 
 remote: perturb
 	scp pettil.d64 samosa:pettil/
@@ -82,20 +82,24 @@ petpic:
 
 
 # build PETTIL disk images
-mkd64: mkpettil
+mkd64:
 	# first program is PETTIL.PRG for reference machine
 	# and also include PETTILPACKETS
-	c1541 -attach pettil.d64                                                    \
+	c1541 pettil.d64                                                    \
 		-write obj/pettil.prg0 pettil.prg                                       \
 		-write tapes/pettilpackets pettilpackets
 
-	TARGETS=04
-	# add other targets
-	for object in obj/pettil*.prg[${TARGETS}] ; do                              \
-        ls -la $$object ;                                                       \
-		c1541 -attach pettil.d64 -write $$object ;                              \
+mkd64pettil: mkd64
+	for object in obj/pettil*.prg? ; do                              \
+		c1541 pettil.d64 -write $$object ;                              \
     done
-	c1541 -attach pettil.d64 -dir
+	c1541 pettil.d64 -dir
+
+mkd64perturb:
+	for object in obj/perturb/perturb-*.? ; do                              \
+		c1541 pettil.d64 -write $$object ;                              \
+    done
+	c1541 pettil.d64 -dir
 
 #	foo="XYzzy045"
 #	for (( i=0; i<${#foo}; i++ )); do
@@ -112,9 +116,14 @@ pristine: clean
 	rm -rf ./obj/ && mkdir -p ./obj/perturb
 
 # build and perform all feats of testing
-perturb: mkd64
+perturb: mkpettil
 	./tools/mkperturb
-	./tools/chkperturb
+
+#		c1541                                                                   \
+#        -attach ./pettil.d64                                                \
+#        -write ${a}
+
+
 #	./tools/lsperturb 0.01
 
 # build and perform all feats of testing, remotely
