@@ -12,9 +12,9 @@ TARGETS=0
 #all: pristine remote
 all: pristine perturb
 
-remote: mkd64
+remote: perturb
 	scp pettil.d64 samosa:pettil/
-	samosa DISPLAY=:0.0 ./pettil/tools/mkperturb
+	samosa DISPLAY=:0.0 ./pettil/tools/mkdisturb
 
 # build a fresh PETTIL from source
 mkpettil:
@@ -116,6 +116,10 @@ perturb: mkd64
 	./tools/mkperturb
 	./tools/chkperturb
 #	./tools/lsperturb 0.01
+
+# build and perform all feats of testing, remotely
+disturb: clean perturb
+	./tools/mkdisturb
 
 # build documentation
 tiddlypettil:
