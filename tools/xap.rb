@@ -620,23 +620,16 @@ puts @label   if @label == "STUDIO"
 #    puts all_words["STUDIO"].addr
 #    puts all_words.each { | word| word }
     set_sizes all_words   unless all_words["STUDIO"].addr.nil?
-
     # output symbol table file
     write_symtab_file "pettil.sym",all_words
-
     # output symbol table file in CSV, for metrics
     write_symtab_dump "symtab.csv",all_words
-
     # output tiddlers for tiddlypettil
     write_json_file "pettil.json",all_words
-
     # output word sizes as csv
     write_size_file "sizes.csv",all_words
-
     # output word names for pearson cruncher
     write_pearson_file "pearson.txt",all_words
-
     # kick out a csv file of symbols and addresses for performance tuning
     write_xpet_csvfile "pettil.csv",all_words
-
     exit

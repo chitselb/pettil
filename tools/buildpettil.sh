@@ -48,13 +48,15 @@
 
     sort ./tmp/pettil.mon > ./tmp/t.t
 
-    if [ -e ./tools/vice/perturb${1}.dbg ]; then
-        cat ./tmp/t.t ./tools/vice/perturb${1}.dbg
+    if [ -e ./tools/vice/perturb${1}.dbg ]
+    then
+        cat ./tmp/t.t ./tools/vice/perturb${1}.dbg \
           > ./obj/perturb/perturb.mon${1}
     fi
 
-    if [ -e ./tools/vice/pettil${1}.dbg ]; then
-        cat ./tmp/t.t ./tools/vice/pettil${1}.dbg
+    if [ -e ./tools/vice/pettil${1}.dbg ]
+    then
+        cat ./tmp/t.t ./tools/vice/pettil${1}.dbg \
           > ./obj/pettil.mon${1}
     fi
 

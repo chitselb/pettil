@@ -19,6 +19,7 @@ remote: disturb
 # build a fresh PETTIL from source
 mkpettil:
 	./tools/mkpettil
+
 #sh ./tools/buildpettil.sh 0     5       6500  0401  # my pet #700251
 #sh ./tools/buildpettil.sh 4     32      6500  1201 # VIC20 +01235(all) RAM
 
