@@ -20,7 +20,7 @@ do
     badr=$(echo "obase=16;ibase=10;${perturb}-2"|bc)
     # for each PERTURB feat (test suite), one feat per `src/perturb/{trick}/` dir
 
-    for feats in $(ls -d src/perturb/*/)
+    for feats in $(ls -d ./src/perturb/*/)
     do
         cheese=$(basename ${feats#*/})
         feat="perturb-${cheese}"
@@ -86,22 +86,25 @@ do
 
 #        foo=`echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ${pettilobj})"|bc`
 #        ls ./src/perturb/${cheese}/*.i65  ./tmp/perturb/${feat}.a65
-        cat ./src/perturb/${cheese}/*.i65> ./tmp/perturb/${feat}.a65
+        cat ./src/perturb/${cheese}/*.i65                                       \
+            > ./tmp/perturb/${feat}.a65
+        cat ./src/perturb/${cheese}/*.i65                                       \
+            > ./tmp/perturb/perturb.${targetid}-${cheese}.a65
         # set tmp/pettil-studio.def include file to current target
         awk --non-decimal-data -F, '{ printf("%s = %d\n", $1, $2) }'            \
             ./tmp/pettil-studio.lab${targetid} >                                \
             ./tmp/pettil-studio.def${targetid}
         cp ./tmp/pettil-studio.def${targetid} ./tmp/pettil-studio.def
         cd ./tmp/perturb/
-        echo "${romopts}  ${targetid}"
-        xa -v ${feat}.a65   ${romopts}                                             \
-            -DPERTURB=${feat}                                                   \
+        xa  perturb.${targetid}-${cheese}.a65                                   \
+            ${romopts}                                                          \
+            -DPERTURB="${cheese}.${targetid}"                                   \
             -DPERTURBORG=${perturb}                                             \
             -DHITOP=${hitop}                                                    \
             -DSPECIALOPTS=${load}                                               \
             -I ../../src/common/                                                \
             -I ../                                                              \
-            -o ../../obj/perturb/${feat}.prg${targetid}                         \
+            -o ../../tmp/perturb/${feat}.prg${targetid}                         \
             -e ./${feat}.err${targetid}                                         \
             -l ./${feat}.lab${targetid}
         cd -
@@ -133,14 +136,14 @@ do
                     printf("keybuf load\"%s.%s\",9\\x0drun\\x0d\n",             \
                      feat, targetid);                                           \
                 }'                                                              \
-            ./tmp/perturb/${feat}.lab${targetid} >                              \
-            ./obj/perturb/${feat}.mon${targetid}
+                ./tmp/perturb/${feat}.lab${targetid}                            \
+                > ./obj/perturb/${feat}.mon${targetid}
 
         # save original `startup` address like so:
         # unneeded because PERTURB source includes PETTIL labels
         # dd bs=1 if=${pettilobj} status=none   of=tmp/t.0 skip=15 count=2
 
-        cat tmp/t.1 tmp/t.2 tmp/t.3 obj/perturb/${feat}.prg${targetid}          \
+        cat tmp/t.1 tmp/t.2 tmp/t.3 tmp/perturb/${feat}.prg${targetid}          \
             > obj/perturb/${feat}.${targetid}
 #        dd bs=1 if=${pettilobj} of=perturb/${cheese}.${targetid}skip=15 count=2 status=none
 #        dd if=${pettilobj} of=perturb/perturb-${cheese}.${targetid} bs=1 count=13
@@ -149,19 +152,8 @@ do
         c1541                                                                   \
             -attach ./pettil.d64                                                \
             -write obj/perturb/${feat}.${targetid}
-#        export PERTURB=obj/perturb/${feat}.mon${targetid}
-#        xfce4-terminal --command="${vpet}                                      \
-#            -moncommand ${PERTURB}                                             \
-#            -config data/sdl2_chitselb.vicerc                                  \
-#            -8 chitselb.d64                                                    \
-#            -9 pettil.d64                                                      \
-#            -warp"
 
         PERTURB=${feat} ./tools/mkpet ${targetid}
-        if [ ! -z ${VIDEOSLOWDOWN+0} ]
-        then
-            sleep ${VIDEOSLOWDOWN}
-        fi
     done
 done
 

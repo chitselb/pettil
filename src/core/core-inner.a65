@@ -534,18 +534,6 @@ ppdq
 
 ;--------------------------------------------------------------
 #if 0
-name=PADJUST3
-stack=( -- )
-tags=pads,nosymbol
-!!!Subroutine
-
-convenient entry point for primitive to skip past a 1-byte inline argument
-#endif
-padjust3
-    lda #1
-    ; fall through
-;--------------------------------------------------------------
-#if 0
 name=PADJUST
 stack=( -- )
 tags=pads,nosymbol
@@ -553,60 +541,23 @@ tags=pads,nosymbol
 Allows primitives to adjust `IP` when there are inline arguments,
 to properly cross a page boundary.
 
-|IP+A lo|IP lo|IP hi|
-| C set| IP+A| +1|
-||||
-| < FD| IP+A| IP+A|
-| FD| FE| +1|
-| FE| FE| +1|
-| FF| FE| +1|
-
-                                ; fb -> fb
-                                ; fc -> fc
-                                ; ---
-lda #$fd
-cmp #$fe
-    c = c
-
-lda #$fe
-cmp #$fe
-    c = s
-
-lda #$fe
-cmp #$fd
-    c = s
-
-                                ; fd -> fe +page
-                                ; fe -> fe +page
-                                ; ---
-                                ; ff -> ff  +page
-                                ; 00 -> 00  +page
-* a
-*  IP+offset is on the same page
-**   do nothing with page
-
-*  IP+offset is on the next page
-**   page++
-*  IP+offset is > $FD
-**   page++
-*  IP+offset is $FD (bad)
-**   page++
+~todo: simplify this
 
 #endif
 padjust
     sec                         ; A+1 = offset to be added to IP
     adc ip
     sta ip
-    bcs padjust02               ; crossed a page boundary?
+    bcs qadjust02               ; crossed a page boundary?
     ;clc
     adc #$03                    ; xxFD xxFE xxFF will set carry flag
-    bne padjust01               ; was it $FD?  avoid `jmp ($xxFF)`
+    bne qadjust01               ; was it $FD?  avoid `jmp ($xxFF)`
     inc ip                      ; bump `ip` to xxFE when it is xxFD
-padjust01
-    bcc padjust03               ; about to cross a page boundary?
-padjust02
+qadjust01
+    bcc qadjust03               ; about to cross a page boundary?
+qadjust02
     inc ip+1                    ; move `ip` to next page
-padjust03
+qadjust03
     rts
 
 ;--------------------------------------------------------------
@@ -907,8 +858,8 @@ branch02
     .byt $29
 branch05
     tay
-    lda #0          ;[2]
-    adc ip+1        ;[3]
+    lda ip+1        ;[3]
+    adc #0          ;[2]
     bcc jumpay      ;[3] bra /18/
 
 ;--------------------------------------------------------------

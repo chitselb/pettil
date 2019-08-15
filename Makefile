@@ -4,7 +4,7 @@
 
 SHELL = /bin/bash
 #TARGETS=01234567
-TARGETS=012345
+TARGETS=0
 
 #all:  launch tiddlypettil12
 #all: clean mkpet mypet vic20
