@@ -15,6 +15,7 @@ all: pristine remote
 remote: disturb
 	scp pettil.d64 samosa:pettil/
 	scp -r ./obj/ samosa:pettil/
+	scp -r ./data/perturb/ samosa:pettil/data/
 
 # build a fresh PETTIL from source
 mkpettil:
