@@ -10,11 +10,11 @@ TARGETS=0
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
 #all: pristine remote
-all: pristine perturb mkd64pettil mkd64perturb
+all: pristine remote
 
-remote: perturb
+remote: disturb
 	scp pettil.d64 samosa:pettil/
-	samosa DISPLAY=:0.0 ./pettil/tools/mkdisturb
+	scp -r ./obj/ samosa:pettil/
 
 # build a fresh PETTIL from source
 mkpettil:
@@ -127,7 +127,7 @@ perturb: mkpettil
 #	./tools/lsperturb 0.01
 
 # build and perform all feats of testing, remotely
-disturb: clean perturb
+disturb: clean perturb mkd64pettil mkd64perturb
 	./tools/mkdisturb
 
 # build documentation
