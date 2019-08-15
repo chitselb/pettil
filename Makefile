@@ -12,11 +12,8 @@ TARGETS=0
 #all: pristine remote
 all: pristine remote
 
-remote: disturb
-	scp pettil.d64 samosa:pettil/
-	scp -r ./obj/ samosa:pettil/
-	scp -r ./data/perturb/ samosa:pettil/data/
-	samosa DISPLAY=:0.0 ./pettil/tools/mkdisturb
+remote:
+	at now < ./tools/remote.disturb.at
 
 # build a fresh PETTIL from source
 mkpettil:
