@@ -93,13 +93,13 @@ mkd64pettil: mkd64
 	for object in obj/pettil*.prg? ; do                              \
 		c1541 pettil.d64 -write $$object ;                              \
     done
-	c1541 pettil.d64 -dir
+#	c1541 pettil.d64 -dir
 
 mkd64perturb:
 	for object in obj/perturb/perturb-*.? ; do                              \
 		c1541 pettil.d64 -write $$object ;                              \
     done
-	c1541 pettil.d64 -dir
+#	c1541 pettil.d64 -dir
 
 #	foo="XYzzy045"
 #	for (( i=0; i<${#foo}; i++ )); do
