@@ -16,7 +16,7 @@ remote: disturb
 	scp pettil.d64 samosa:pettil/
 	scp -r ./obj/ samosa:pettil/
 	scp -r ./data/perturb/ samosa:pettil/data/
-	samosa DISPLAY=:0.0 mkdisturb
+	samosa DISPLAY=:0.0 ./pettil/tools/mkdisturb
 
 # build a fresh PETTIL from source
 mkpettil:
