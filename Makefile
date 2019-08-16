@@ -6,21 +6,17 @@ SHELL = /bin/bash
 #TARGETS=01234567
 TARGETS=0
 
-#all:  launch tiddlypettil12
-#all: clean mkpet mypet vic20
-#all: clean mkpet vic20 perturb
-#all: pristine remote
-
 # work locally on tarabuza
-#all: pristine perturb mkd64perturb pet
+all: pristine perturb mkd64perturb pet
+
 # perform test feats on samosa
-all: pristine remote
+#all: pristine remote
 
 remote:
 	at now < ./tools/remote.disturb.at
 
 # build a fresh PETTIL from source
-mkpettil:
+pettil:
 	./tools/mkpettil
 
 #sh ./tools/buildpettil.sh 0     5       6500  0401  # my pet #700251
@@ -120,7 +116,7 @@ pristine: clean
 	rm -rf ./obj/ && mkdir -p ./obj/perturb
 
 # build and perform all feats of testing
-perturb: mkpettil
+perturb: pettil
 	./tools/mkperturb
 
 #		c1541                                                                   \
