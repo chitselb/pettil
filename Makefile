@@ -10,7 +10,11 @@ TARGETS=0
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
 #all: pristine remote
-all: pristine mkpettil mkd64pettil pet
+
+# work locally on tarabuza
+#all: pristine perturb mkd64perturb pet
+# perform test feats on samosa
+all: pristine remote
 
 remote:
 	at now < ./tools/remote.disturb.at
