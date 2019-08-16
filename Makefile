@@ -10,7 +10,7 @@ TARGETS=0
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
 #all: pristine remote
-all: pristine mkd64 pet
+all: pristine mkpettil mkd64pettil pet
 
 remote:
 	at now < ./tools/remote.disturb.at
@@ -95,7 +95,7 @@ mkd64pettil: mkd64
     done
 #	c1541 pettil.d64 -dir
 
-mkd64perturb:
+mkd64perturb: mkd64pettil
 	for object in obj/perturb/perturb-*.? ; do                              \
 		c1541 pettil.d64 -write $$object ;                              \
     done
