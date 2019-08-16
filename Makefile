@@ -10,7 +10,7 @@ TARGETS=0
 #all: clean mkpet mypet vic20
 #all: clean mkpet vic20 perturb
 #all: pristine remote
-all: pristine remote
+all: pristine mkd64 pet
 
 remote:
 	at now < ./tools/remote.disturb.at
