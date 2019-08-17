@@ -7,10 +7,10 @@ SHELL = /bin/bash
 TARGETS=0
 
 # work locally on tarabuza
-all: pristine perturb mkd64perturb pet
+#all: pristine perturb mkd64perturb pet
 
 # perform test feats on samosa
-#all: pristine remote
+all: pristine remote
 
 remote:
 	at now < ./tools/remote.disturb.at
