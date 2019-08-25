@@ -570,21 +570,25 @@ Runtime behavior of a word built with `<builds ... does>`
 |before|<|after|<|h
 |^data<br/>stack|^return<br/>stack|^data<br/>stack|^return<br/>stack|h
 |||||
+
 #endif
 dodoes
-    pla
-    tay
-    pla
-    sta z
     jsr slip
+    dex
+    jsr rts2rti
+    pla
+    sta stackl,x
+    pla
+    sta stackh,x
+    jsr rts2rti
     pla
     sta tos
     pla
     sta tos+1
-    jsr inctos
-    bne enter01     ;    bra
-;yikes2
-;    jmp yikes2
+    ldy pip
+    iny
+    iny
+    bne enter03     ;    bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -596,23 +600,33 @@ return stack and nests into a secondary.
 
 #endif
 enter
+    dex                         ; open a spot on data stack
     pla
     tay
+    iny                         ; Y is PFA low
+    sty stackl,x
     pla
-    sta z
+    sta stackh,x                ; ready for `execute` or `nexto`
 enter01
+    ldy pip
+    iny
+enter02
+    cpy #$FE
+    iny                         ; IP+2
+    bcc enter03                 ; maybe wrap page if $00
+    inc pip+1
+frotz
+    bne enter02
+enter03
     lda pip+1
     pha
-    lda pip
+    tya
     pha
-    cpy #$FD        ; if page-wrap is required, sets C flag
-    iny
-    lda z
-    bcc enter00     ; is Y at top of page? (last 3 bytes xxFD xxFE xxFF)
-    ldy #0          ; if so, move Y to start of
-    adc #0          ; next page
 enter00
-    bcc jumpay
+    ldy stackl,x
+    lda stackh,x
+    inx
+    bne jumpay                  ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -700,7 +714,8 @@ tags=inner,nosymbol,pads,forth-83
 The runtime behavior of ;
 Exits a colon definition, unnesting to the next higher level of
 the return stack
-#endif
+
+```
 exit
     lda #2          ; [2]
 exit04
@@ -716,6 +731,21 @@ exit01
                     ; pass AY = new IP
                     ; >FORTH -- Sets IP <- AY then NEXT, essentially a GOTO AY
                     ; transition from 6502 Assembly back up to to Forth
+jumpay
+    sta pip+1        ; [3]
+exit03
+    sty pip          ; [3]
+    jmp nexto       ; [3]
+```
+
+
+
+
+#endif
+exit
+    pla
+    tay
+    pla
 jumpay
     sta pip+1        ; [3]
 exit03
