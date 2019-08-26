@@ -230,13 +230,17 @@ following this word depending on `flag`
 
 ~ Fix this page management. When `(?:)` is at $xxFA the page pointer gets bumped twice, first by `padjust` and again when `exit` executes
 
-#endif
 pquerycolon
-    ldy #3
+    jsr incpip2
+    lda tos
+    ora tos+1
+    php
+    beq pquerycolon
+    ldy #1
     lda tos
     ora tos+1
     bne pquerycolon01           ; true?
-    ldy #5                      ; false.
+    ldy #3                      ; false.
 pquerycolon01
     lda (pip),y
     pha
@@ -245,7 +249,29 @@ pquerycolon01
     pha
     lda #3
     jsr padjust
-    bne exec01                  ; bra
+    ;clc                        - thanks, `padjust`
+    bcc exec01                  ; bra
+
+
+
+#endif
+pquerycolon
+    jsr incpip2
+    ldy #1
+    lda tos
+    ora tos+1
+    bne pquerycolon01           ; true?
+    ldy #3                      ; false.
+pquerycolon01
+    lda (pip),y
+    pha
+    dey
+    lda (pip),y
+    pha
+    lda #3
+    jsr padjust
+    ;clc                        - thanks, `padjust`
+    bcc exec01                  ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -429,8 +455,7 @@ qerror
     lda tos
     ora tos+1
     beq qerror01
-    ldy #2
-    lda (pip),y
+    jsr incpip2
     tay
     bne error                   ; bra
 qerror01
@@ -545,17 +570,16 @@ to properly cross a page boundary.
 padjust
     sec                         ; A+1 = offset to be added to IP
     adc pip
-    sta pip
+    tay
     bcs qadjust02               ; crossed a page boundary?
-    ;clc
-    adc #$03                    ; xxFD xxFE xxFF will set carry flag
-    bne qadjust01               ; was it $FD?  avoid `jmp ($xxFF)`
-    inc pip                      ; bump `pip` to xxFE when it is xxFD
-qadjust01
-    bcc qadjust03               ; about to cross a page boundary?
+    cpy #$FF
+    bne qadjust02
+    iny
 qadjust02
-    inc pip+1                    ; move `pip` to next page
-qadjust03
+    lda pip+1
+    adc #0
+    sta pip+1
+    sty pip
     rts
 
 ;--------------------------------------------------------------
@@ -843,8 +867,7 @@ offset values are typically generated with [[<RESOLVE]] or [[>MARK]] .
 (`IP`)+2 = the offset to `IP`,  calculated the same as for 6502 branches.
 #endif
 branch
-    ldy #2          ; [2]
-    lda (pip),y      ; [5]
+    jsr incpip2
     bpl pad         ; [2|3]
     dec pip+1        ; [5]
 pad
@@ -935,6 +958,31 @@ pdo03
 
 ;--------------------------------------------------------------
 #if 0
+name=DLIT
+stack=( -- d )
+tags=nosymbol,inner
+Runtime behavior of DLITERAL
+
+#endif
+dlit
+    jsr incpip2
+    dex
+    sta stackl,x
+    iny
+    lda (pip),y
+    sta stackh,x
+    jsr slip
+    iny
+    lda (pip),y
+    sta tos
+    iny
+    lda (pip),y
+    sta tos+1
+    tya
+    bne pad
+
+;--------------------------------------------------------------
+#if 0
 name=I
 tags=inner,forth-83
 stack=( -- index )
@@ -979,47 +1027,6 @@ push0a
 
 ;--------------------------------------------------------------
 #if 0
-name=DLIT
-stack=( -- d )
-tags=nosymbol,inner
-Runtime behavior of DLITERAL
-
-```
-    jsr slip
-    dex
-    pla
-    sta n
-    pla
-    sta n+1
-    ldy #4
-    lda (n),y
-    sta tos+1
-    dey
-    lda (n),y
-    sta tos
-    dey
-    lda (n),y
-    sta stackh,x
-    dey
-    lda (n),y
-    sta stackl,x
-    jmp next
-```
-#endif
-dlit
-    ldy #5
-dlit01
-    lda (pip),y
-    pha
-    dey
-    bne dlit01
-    pla
-    lda #3
-    jsr padjust
-    jmp tworfrom                ; move IP past double constant, `2r>`
-
-;--------------------------------------------------------------
-#if 0
 name=R@
 stack=( -- n ) ( R; n -- n )
 tags=forth-83,nucleus,stack
@@ -1053,7 +1060,6 @@ tags=ext
 Used by the business end of defining words to retrieve the address of the child
 word from the return stack.
 
-~wut? could this be squeezed with the sec/clc trick?
 #endif
 caller
     jsr slip
@@ -1077,10 +1083,7 @@ caller
 name=INCPIP2
 stack=( -- n )
 tags=ext,subroutine,nosymbol
-Used by the business end of defining words to retrieve the address of the child
-word from the return stack.
 
-~wut? could this be squeezed with the sec/clc trick?
 #endif
 incpip2
     inc pip
@@ -1090,10 +1093,7 @@ incpip2
 name=INCPIP
 stack=( -- n )
 tags=ext,subroutine,nosymbol
-Used by the business end of defining words to retrieve the address of the child
-word from the return stack.
 
-~wut? could this be squeezed with the sec/clc trick?
 #endif
 incpip
     inc pip
