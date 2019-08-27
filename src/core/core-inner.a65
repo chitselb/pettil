@@ -102,6 +102,31 @@ threedrop
 
 ;--------------------------------------------------------------
 #if 0
+name=LSB
+stack=( u -- c )
+tags=primitive,ext
+Returns the low byte of a cell
+
+#endif
+lsb
+    lda tos
+    .byt $2C                    ; BIT abs opcode
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=MSB
+stack=( u -- c )
+tags=primitive,ext
+Returns the most significant byte of a cell
+#endif
+msb
+    lda tos+1
+put0a
+    ldy #0
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
 name=C@
 stack=( addr -- 8b )
 tags=forth-79,nucleus,memory,forth-83
@@ -126,15 +151,16 @@ Leave the 16 bit contents of address.
 #endif
 fetch
     sec
+    ;
     ldy #0
+fetch01
     lda (tos),y
-    bcc put
-
-; out; YA = (tos),Y+1 (tos),Y
-; in; Y = offset
-; C = clear
-; A = low byte
+    bcc put0a
+; in     C = clear
+;        Y = offset
+; out   YA = (tos),Y+1 (tos),Y
 fetchyax
+    lda (tos),y
     pha
     iny
     lda (tos),y
@@ -180,7 +206,6 @@ stack=( -- c )
 tags=nosymbol,inner,primitive
 Child runtime action of words defined by `cconstant`
 
-#endif
 docconst
     clc
     jsr slip
@@ -193,6 +218,17 @@ docconst
     bcs fetchyax
     dey
     bcc put                     ; bra
+
+#endif
+docconst
+    clc
+    jsr slip
+    pla
+    sta tos
+    pla                         ; ~#callers
+    sta tos+1
+    ldy #1
+    bne fetch01
 
 ;--------------------------------------------------------------
 #if 0
@@ -210,6 +246,23 @@ spstoreo
 
 ;--------------------------------------------------------------
 #if 0
+name=PARMPUSH
+stack=( -- )
+tags=inner,subroutine,nosymbol
+
+#endif
+parmpush
+    jsr slip
+parmputs
+    lda (pip),y
+    sta tos
+    iny
+    lda (pip),y
+    sta tos+1
+    rts
+
+;--------------------------------------------------------------
+#if 0
 name=(?:)
 stack=( flag -- )
 tags=inner,nosymbol,pads
@@ -221,57 +274,25 @@ following this word depending on `flag`
 |2os| . ||
 |ip| addr | addr+6 |
 
-
 |addr-2|||||
 |addr|(?:)||||
 |addr+2|yeah||||
 |addr+4|nope||||
 |addr+6|||||
 
-~ Fix this page management. When `(?:)` is at $xxFA the page pointer gets bumped twice, first by `padjust` and again when `exit` executes
-
-pquerycolon
-    jsr topfas
-    lda tos
-    ora tos+1
-    php
-    beq pquerycolon
-    ldy #1
-    lda tos
-    ora tos+1
-    bne pquerycolon01           ; true?
-    ldy #3                      ; false.
-pquerycolon01
-    lda (pip),y
-    pha
-    dey
-    lda (pip),y
-    pha
-    lda #3
-    jsr padjust
-    ;clc                        - thanks, `padjust`
-    bcc exec01                  ; bra
-
-
-
 #endif
 pquerycolon
     jsr topfas
-    ldy #1
     lda tos
     ora tos+1
-    bne pquerycolon01           ; true?
-    ldy #3                      ; false.
+    bne pquerycolon01
+    iny
+    iny
 pquerycolon01
-    lda (pip),y
-    pha
-    dey
-    lda (pip),y
-    pha
+    jsr parmputs
     lda #3
     jsr padjust
-    ;clc                        - thanks, `padjust`
-    bcc exec01                  ; bra
+    ; fall through
 
 ;--------------------------------------------------------------
 #if 0
@@ -361,36 +382,40 @@ qexit01
 
 ;--------------------------------------------------------------
 #if 0
-name=BYE
-stack=( -- )
-tags=primitive,system,ext
-Restores BASIC zero page and exits to READY. prompt
+name=(LITS)
+stack=( a b c d e f n == ; -- a b c d e f )
+tags=primitive,system,startup,ext,nosymbol
+Works like `(LIT)` but for a group, will pile several inline literal
+constants onto the stack.  Think if `(lits)` as `list` (of literals),
+spelled sideways
 
+```
+: (lits)   ( 0 [args...] "name" == ; -- [args...] )
+    caller c@+ 0 do @+ swap loop drop ; [23]
+
+usage:
+    : foo  [ 64 41 17 12  4 ] literals ;
+    foo .s
+```
+The `setip` exit is used by `(.")` to move `ip` past the inline string.
 #endif
-bye
-    jsr seeya
-    jmp ($FFFA)
-seeya
-    lsr zpmode
-    jsr aloha                   ; restore BASIC zpage
-    jsr swapbrk                 ; turn off Sweet16
-    jsr swapnmi                 ;
-    lsr zpmode                  ; lights off!
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=MON
-stack=( -- )
-tags=primitive,system,ext
-Restores BASIC zero page and exits to the TIM or KOSMON monitor
-
-#endif
-mon
-    jsr swapbrk                 ; turn off Sweet16
-    brk
-    ;
-    jmp restart
+plits
+    jsr slip
+    jsr topfas
+    sta n
+plits01
+    dex
+    jsr plusparms
+    sta stackl,x
+    jsr plusparms
+    sta stackh,x
+    dec n
+    bne plits01
+setip
+                           ; useful entry point, pass in Y=offset
+    jsr slide
+    jsr qpages
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -449,6 +474,22 @@ name=(?ERROR)
 stack=( error# == ; flag -- )
 tags=compiler,extension,nosymbol
 Aborts with the inline numbered error if the flag is true
+
+qerror
+    jsr topfas                  ; PFA is error#
+    tay
+    lda tos
+    ora tos+1
+    php
+    jsr slide
+    plp
+    bne error                   ; bra
+
+    beq qerror01
+    tay
+qerror01
+    jmp bump
+
 
 #endif
 qerror
@@ -622,8 +663,8 @@ return stack and nests into a secondary.
 
 #endif
 enter
-    dex                         ; open a spot on data stack
     jsr rts2rti
+    dex                         ; open a spot on data stack
     pla
     sta stackl,x
     pla
@@ -741,49 +782,35 @@ exit
     tay
     pla
 jumpay
-    sta pip+1        ; [3]
+    sta pip+1
 exit03
-    sty pip          ; [3]
-    jmp nexto       ; [3]
+    sty pip
+    jmp nexto
 
 ;--------------------------------------------------------------
 #if 0
 name=>FORTH
-tags=inner,nosymbol,pads
+tags=inner,pads,nosymbol
 stack=( -- )
 Passes control from 6502 assembly to high level Forth following the
 `jsr toforth` instruction.
 
-here is how using it might look in xa65 assembly source...
-
-```
-    dey
-    bpl warm02
-    lda this                    ; and blah blah blah
-    sta that
-#include "align.i65"
-   jsr toforth                 ; Assembly-to-Forth bridge `>forth`
-#include "page.i65"             ; make sure target word is page-aligned
-    .word rpstore               ; and we're off...
-#include "page.i65"
-    .word spstore
-#include "page.i65"
-```
 #endif
 toforth
     pla
     tay
     pla
+chkpage
     cpy #$FF
     adc #0
     iny
-    jmp jumpay
+    bcc jumpay
 
 ;--------------------------------------------------------------
 #if 0
 name=DOPAGE
 stack=( -- )
-tags=nosymbol,pads
+tags=inner,nosymbol
 Page boundary crossing is handled by the compiler inserting 'page'
 when the DP gets to $xxFD or $xxFE.  IP = $xxFF is never supposed
 to occur, and indicates an error in the compiler.
@@ -844,6 +871,7 @@ name=?BRANCH
 stack=( flag -- )
 tags=inner,nosymbol
 If the flag is zero, take the branch
+
 #endif
 qbranch
     lda tos
@@ -971,17 +999,14 @@ dlit
     dex
     jsr topfas
     sta stackl,x
-    iny
-    lda (pip),y
+    jsr plusparms
     sta stackh,x
-    iny
-    lda (pip),y
+    jsr plusparms
     sta tos
-    iny
-    lda (pip),y
+    jsr plusparms
     sta tos+1
-    tya
-    bne pad
+    jsr qpages
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -1082,6 +1107,20 @@ caller
 
 ;--------------------------------------------------------------
 #if 0
+name=?PAGES
+stack=( -- n )
+tags=ext,subroutine,nosymbol
+
+(query-page)
+#endif
+qpages
+    ldy pip
+    iny
+    beq plusparms
+    rts
+
+;--------------------------------------------------------------
+#if 0
 name=TOPFAS
 stack=( -- n )
 tags=ext,subroutine,nosymbol
@@ -1094,10 +1133,11 @@ A = first byte in parameter field
 #endif
 topfas
     inc pip
+plusparms
     inc pip
-    bne getparm
+    bne getparms
     inc pip+1
-getparm
+getparms
     ldy #0
     lda (pip),y
     rts
