@@ -57,8 +57,9 @@ drop
     lda stackl,x
     inx
 put
-    sty tos+1
     sta tos
+puty
+    sty tos+1
     jmp next
 
 ;--------------------------------------------------------------
@@ -177,7 +178,7 @@ tags=nosymbol,inner
 Runtime behavior of a word defined by 2CONSTANT
 #endif
 dotwoconst
-    pla                         ; ~#callers
+    pla
     sta n
     pla
     sta n+1
@@ -206,26 +207,14 @@ stack=( -- c )
 tags=nosymbol,inner,primitive
 Child runtime action of words defined by `cconstant`
 
-docconst
-    clc
-    jsr slip
-    pla
-    sta tos
-    pla                         ; ~#callers
-    sta tos+1
-    ldy #1
-    lda (tos),y
-    bcs fetchyax
-    dey
-    bcc put                     ; bra
-
 #endif
 docconst
     clc
+    ;
     jsr slip
     pla
     sta tos
-    pla                         ; ~#callers
+    pla
     sta tos+1
     ldy #1
     bne fetch01
@@ -265,7 +254,7 @@ parmputs
 #if 0
 name=(?:)
 stack=( flag -- )
-tags=inner,nosymbol,pads
+tags=inner,nosymbol
 The runtime of `?:`, invokes one of the two high-level Forth words
 following this word depending on `flag`
 
@@ -397,25 +386,24 @@ usage:
     : foo  [ 64 41 17 12  4 ] literals ;
     foo .s
 ```
-The `setip` exit is used by `(.")` to move `ip` past the inline string.
 #endif
 plits
     jsr slip
     jsr topfas
     sta n
 plits01
-    dex
-    jsr plusparms
+    ;beq weredone
+    iny
+    lda (pip),y
     sta stackl,x
-    jsr plusparms
-    sta stackh,x
+    iny
+    lda (pip),y
+    sta stackl,x
     dec n
     bne plits01
-setip
-                           ; useful entry point, pass in Y=offset
     jsr slide
-    jsr qpages
-    jmp next
+    tya
+    jmp pad                     ; bra   ~ok
 
 ;--------------------------------------------------------------
 #if 0
@@ -541,7 +529,7 @@ fail02
 #if 0
 name=(")
 stack=( -- addr )
-tags=inner,pads,nosymbol
+tags=inner,nosymbol
 Returns the address of an inline string
 #endif
 #include "align.i65"
@@ -556,60 +544,17 @@ _pquote
 
 ;--------------------------------------------------------------
 #if 0
-name=(.")
-stack=( -- )
-tags=inner,nosymbol,pads
-Displays an inline string
-
-```
-: (.")
-    r> 2+ count 2dup type  >6502  ( `;code` instead? )
-    stackl ,x   lda,
-    ip          sta,
-    stackh ,x   lda,
-    ip 1+       sta,
-                inx,
-    tos         ldy,
-                dey,
-    setip       jmp,
-```
-#endif
-#include "align.i65"
-_pdq
-    jsr enter
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word count
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word type
-#include "pass.i65"
-    .word *+2
-    lda stackl,x
-    sta pip
-    lda stackh,x
-    sta pip+1
-    inx
-    ldy tos
-    dey
-    jmp setip
-
-;--------------------------------------------------------------
-#if 0
 name=PADJUST
 stack=( -- )
-tags=pads,nosymbol
+tags=nosymbol
 !!!Subroutine
 Allows primitives to adjust `IP` when there are inline arguments,
 to properly cross a page boundary.
 
-~todo: simplify this
-
 #endif
 padjust
     sec                         ; A+1 = offset to be added to IP
+padjustb
     adc pip
     tay
     bcs qadjust02               ; crossed a page boundary?
@@ -621,7 +566,7 @@ qadjust02
     adc #0
     sta pip+1
     sty pip
-    rts
+    rts                                 ; ~ok
 
 ;--------------------------------------------------------------
 #if 0
@@ -630,45 +575,61 @@ tags=inner,nosymbol
 stack=( -- )
 Runtime behavior of a word built with `<builds ... does>`
 
-|before|<|after|<|h
-|^data<br/>stack|^return<br/>stack|^data<br/>stack|^return<br/>stack|h
-|||||
-
+    make a place on the stack
 #endif
 dodoes
-    jsr slip
     dex
-    jsr rts2rti
     pla
     sta stackl,x
     pla
     sta stackh,x
-    jsr rts2rti
+    jsr oneplunders
     pla
     sta tos
     pla
     sta tos+1
+    jsr inctos
+    ;push PIP + 2
     ldy pip
     iny
     iny
-    bne enter03     ;    bra
+    bne enter03                 ;    bra    ~orly?
 
 ;--------------------------------------------------------------
 #if 0
 name=ENTER
 stack=( -- )
-tags=nosymbol,inner,pads
+tags=inner,nosymbol
 Performs 'secondary' words defined by `:`, pushes the current IP to the
 return stack and nests into a secondary.
 
+    retrieve the address of the secondary that called us from the return stack
+    stash it somewhere, we'll need it later to load the instruction pointer
+
+
+
 #endif
 enter
-    jsr rts2rti
+//      .      .      .      .      .      .      .      .      .      .      //
+
+// PURPOSE:
+// `exit` is compiled by `;` to terminate `:` definitions
+// it will unnest from within a secondary begun earlier by `enter`
+
+// METHOD:
+// * pop from the return stack to IP, unmodified
+
+// TRICKS:
+// * multiple entry points
+
+//      .      .      .      .      .      .      .      .      .      .      //
     dex                         ; open a spot on data stack
     pla
     sta stackl,x
     pla
-    sta stackh,x                ; ready for `execute` or `nexto`
+    sta stackh,x
+    lda #1
+    jsr padjust
 enter01
     ldy pip
     iny
@@ -677,7 +638,7 @@ enter02
     iny                         ; IP+2
     bcc enter03                 ; maybe wrap page if $00
     inc pip+1
-    bne enter02
+    bcs enter02
 enter03
     lda pip+1
     pha
@@ -771,13 +732,26 @@ unloop01
 #if 0
 name=EXIT
 stack=( -- )
-tags=inner,nosymbol,pads,forth-83
+tags=inner,forth-83,nosymbol
 The runtime behavior of ;
-Exits a colon definition, unnesting to the next higher level of
-the return stack
-
+Exits a colon definition, pop one level of the return stack
 #endif
+
 exit
+
+//      .      .      .      .      .      .      .      .      .      .      //
+
+// PURPOSE:
+// `exit` is compiled by `;` to terminate `:` definitions
+// it will unnest from within a secondary begun earlier by `enter`
+
+// METHOD:
+// * pop from the return stack to IP, unmodified
+
+// TRICKS:
+// * multiple entry points
+
+//      .      .      .      .      .      .      .      .      .      .      //
     pla
     tay
     pla
@@ -790,7 +764,7 @@ exit03
 ;--------------------------------------------------------------
 #if 0
 name=>FORTH
-tags=inner,pads,nosymbol
+tags=inner,nosymbol
 stack=( -- )
 Passes control from 6502 assembly to high level Forth following the
 `jsr toforth` instruction.
@@ -815,11 +789,6 @@ Page boundary crossing is handled by the compiler inserting 'page'
 when the DP gets to $xxFD or $xxFE.  IP = $xxFF is never supposed
 to occur, and indicates an error in the compiler.
 
-pad is also used by LITERAL, string, and other words which
-contain inline arguments to offset IP at runtime
-
-It is important that callers to `pad` set Carry
-
 #endif
 page
     inc pip+1
@@ -829,25 +798,23 @@ page
 ;--------------------------------------------------------------
 #if 0
 name=(CLIT)
-tags=inner,nosymbol,pads
+tags=inner,nosymbol
 stack=( -- n )
 Runtime behavior of `literal`. Pushes the single byte following IP
 on the stack
 
-    jsr topfas
 #endif
 clit
     clc
-    lda #0
-    beq lit01                   ; bra
-
+    .byt $29
+    ; fall through
 ;--------------------------------------------------------------
 #if 0
 name=(LIT)
-tags=inner,nosymbol,pads
+tags=inner,nosymbol
 stack=( -- n )
 Runtime behavior of `literal`, puts a number `n` on the stack
-#endif
+
 plit
     sec                         ; add 2 to IP
     ldy #3
@@ -864,6 +831,23 @@ bump
     clc                         ; add 1 to IP
     lda #3                      ; ip+3 or ip+4 depending on Carry
     bne branch02                ; bra
+
+#endif
+plit
+    sec
+    ;
+    php
+    jsr slip
+    jsr topfas
+    sta tos
+    sty tos+1
+    lda #1
+    jsr padjustb                ; C flag is passed at this entry point
+    plp
+    bcc plit01
+    jsr parmputs
+plit01
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -887,7 +871,7 @@ qbranch
 #if 0
 name=BRANCH
 stack=( -- )
-tags=inner,nosymbol,pads
+tags=inner,nosymbol
 Compiles an unconditional branch operation. When used in the form:
 [[COMPILE]] [[BRANCH]] , an unconditional branch operation is compiled.
 A one-byte signed offset follows the pointer to `BRANCH`.  These branch
@@ -935,7 +919,7 @@ pqleave
 #if 0
 name=(?DO)
 stack=( end begin -- )
-tags=inner,nosymbol,pads
+tags=inner,nosymbol
 Performs a do-loop if end<>begin
 
 #endif
@@ -947,7 +931,7 @@ pqdo
 #if 0
 name=(DO)
 stack=( end begin -- )
-tags=inner,nosymbol,pads
+tags=inner,nosymbol
 runtime code for [[DO]] [[LOOP]]
 
 #endif
@@ -956,12 +940,14 @@ pdo
     ;
     rol z
     jsr topfas
+
     clc             ; {2}
     adc pip          ; {3}
     tay             ; {2}
     dey             ; {2}
     lda pip+1        ; {3}
     adc #0          ; {2}
+
     pha             ; {3}
     tya             ; {2}
     pha             ; {3}
@@ -984,7 +970,51 @@ pdo02
     bpl pdo02
 pdo03
     jsr slide
-    bne bump                    ; bra
+bump
+    lda #3
+    bne pad                     ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=(.")
+stack=( -- )
+tags=inner,nosymbol
+Displays an inline string
+
+```
+: (.")
+    r> count 2dup type  >6502  ( `;code` instead? )
+    tos         lda,
+    bumps       jsr,
+    stackh ,x   lda,
+                pha,
+    stackl ,x   lda,
+                pha,
+                inx,
+    exit        bne,
+```
+#endif
+#include "align.i65"
+_pdq
+    jsr enter
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word type
+#include "pass.i65"
+    .word *+2
+    lda tos
+    jsr bumps
+    lda stackh,x
+    pha
+    lda stackl,x
+    pha
+    inx
+    jmp exit                    ; ~shorten to bne/bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -993,8 +1023,6 @@ stack=( -- d )
 tags=nosymbol,inner
 Runtime behavior of DLITERAL
 
-#endif
-dlit
     jsr slip
     dex
     jsr topfas
@@ -1006,7 +1034,21 @@ dlit
     jsr plusparms
     sta tos+1
     jsr qpages
-    jmp next
+    jmp next [30]
+
+
+#endif
+dlit
+    jsr topfas
+    ldy #3
+    tya
+    jsr padjust
+dlit01
+    lda (pip),y
+    pha
+    dey
+    bpl dlit01
+    jmp tworfrom
 
 ;--------------------------------------------------------------
 #if 0
@@ -1117,6 +1159,18 @@ qpages
     ldy pip
     iny
     beq plusparms
+    rts
+
+bumps
+    ; pass in A
+    clc
+    adc pip
+    sta pip
+    tay
+    bcc bumps01
+    inc pip+1
+bumps01
+    lda pip+1
     rts
 
 ;--------------------------------------------------------------
