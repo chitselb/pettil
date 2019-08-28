@@ -69,7 +69,6 @@ stack=( n -- )
 tags=nosymbol
 !!!Subroutine
 Drop the top stack item
-
 Always clears Z flag on return
 #endif
 slide
@@ -575,7 +574,6 @@ tags=inner,nosymbol
 stack=( -- )
 Runtime behavior of a word built with `<builds ... does>`
 
-    make a place on the stack
 #endif
 dodoes
     dex
@@ -600,55 +598,53 @@ dodoes
 name=ENTER
 stack=( -- )
 tags=inner,nosymbol
-Performs 'secondary' words defined by `:`, pushes the current IP to the
-return stack and nests into a secondary.
+Performs 'secondary' words defined by `:`, pushes the current
+IP to the return stack and nests into a secondary.
 
-    retrieve the address of the secondary that called us from the return stack
-    stash it somewhere, we'll need it later to load the instruction pointer
-
-
+    retrieve the address of the secondary that called us from
+    the return stack stash it somewhere, we'll need it later
+    to load the instruction pointer
 
 #endif
-enter
-//      .      .      .      .      .      .      .      .      .      .      //
 
+enter
+
+// ENTER   ( -- )                              (primitive; inner interpreter) //
+//
 // PURPOSE:
 // `exit` is compiled by `;` to terminate `:` definitions
 // it will unnest from within a secondary begun earlier by `enter`
-
+//
 // METHOD:
 // * pop from the return stack to IP, unmodified
-
+//
 // TRICKS:
-// * multiple entry points
+// `enter` pre-increments IP, so `exit` can just take the address and go
+//
+// FEATS:
+//  first exercised in `iii`
+//
 
-//      .      .      .      .      .      .      .      .      .      .      //
-    dex                         ; open a spot on data stack
     pla
-    sta stackl,x
-    pla
-    sta stackh,x
-    lda #1
-    jsr padjust
-enter01
-    ldy pip
+    tay
     iny
-enter02
-    cpy #$FE
-    iny                         ; IP+2
-    bcc enter03                 ; maybe wrap page if $00
+    pla
+    sta z
+    inc pip
+    inc pip
+    lda #$FE
+    cmp pip
+    bcs enter01
+    inc pip
     inc pip+1
-    bcs enter02
-enter03
+enter01
     lda pip+1
     pha
-    tya
+    lda pip
     pha
-enter00
-    ldy stackl,x
-    lda stackh,x
-    inx
-    bne jumpay                  ; bra
+enter03
+    lda z
+    jmp jumpay
 
 ;--------------------------------------------------------------
 #if 0
@@ -662,30 +658,30 @@ four bytes of zero page for the inner loop index/limit, for speed
 [[Posted question on comp.lang.forth|https://groups.google.com/d/msg/comp.lang.forth/V9evPkLwRoM/Khwons3O4QwJ]]
 #endif
 pploop
-    sec             ; [2]
-    lda zi          ; [3]
-    sbc zlim        ; [3]
-    sta n           ; [3]
-    lda zi+1        ; [3]
-    sbc zlim+1      ; [3]
-    eor #$80        ; [2]
-    tay             ; [2]
-    clc             ; [2]
-    lda n           ; [3]
-    adc tos         ; [3]
-    tya             ; [2]
-    adc tos+1       ; [3]
-    php             ; [3]
-    clc             ; [2]
-    lda tos         ; [3]
-    adc zi          ; [3]
-    sta zi          ; [3]
-    lda tos+1       ; [3]
-    adc zi+1        ; [3]
-    sta zi+1        ; [3]
-    jsr slide       ; [.]
-    plp             ; [4]
-    bvc branch      ; [2]
+    sec
+    lda zi
+    sbc zlim
+    sta n
+    lda zi+1
+    sbc zlim+1
+    eor #$80
+    tay
+    clc
+    lda n
+    adc tos
+    tya
+    adc tos+1
+    php
+    clc
+    lda tos
+    adc zi
+    sta zi
+    lda tos+1
+    adc zi+1
+    sta zi+1
+    jsr slide
+    plp
+    bvc branch
     bvs unloop
 
 ;--------------------------------------------------------------
@@ -774,6 +770,11 @@ toforth
     pla
     tay
     pla
+/*
+
+                    should iny come before cpy?
+
+                                                                              */
 chkpage
     cpy #$FF
     adc #0
@@ -836,18 +837,30 @@ bump
 plit
     sec
     ;
+    jsr slip
+    jsr topfas
+    sta tos
+    sty tos+1
+    bcc plit01
+    jsr parmputs
+plit01
+    tya
+    bpl pad
+
+/*
     php
     jsr slip
     jsr topfas
     sta tos
     sty tos+1
     lda #1
-    jsr padjustb                ; C flag is passed at this entry point
+    jsr padjustb                ; passes C flag
     plp
     bcc plit01
     jsr parmputs
 plit01
-    jmp next
+    jmp nexto
+*/
 
 ;--------------------------------------------------------------
 #if 0
@@ -1036,18 +1049,21 @@ Runtime behavior of DLITERAL
     jsr qpages
     jmp next [30]
 
-
 #endif
 dlit
     jsr topfas
     ldy #3
-    tya
-    jsr padjust
 dlit01
     lda (pip),y
     pha
     dey
     bpl dlit01
+    lda #3
+    jsr padjust
+    ; ~hack
+    dey
+    dey
+    sty pip
     jmp tworfrom
 
 ;--------------------------------------------------------------

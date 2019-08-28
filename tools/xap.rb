@@ -98,7 +98,8 @@ _semi
         # accepts lines from the input stream that are potentially out of
         # order and evolves the object as more information is received
         def feed(line, labelhash)
-            @skip = line.empty?
+            @skip = line.empty? || (line =~ /^\;(-)\1*$/)
+
             # this goes first
             is_done? line
             return if @done || @skip
