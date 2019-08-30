@@ -69,7 +69,11 @@ stack=( n -- )
 tags=nosymbol
 !!!Subroutine
 Drop the top stack item
+
+Returns `tos` low in A
 Always clears Z flag on return
+
+
 #endif
 slide
     lda stackh,x                ;[10]{4 {=22}}    [bytes]{clocks {=total}}
@@ -370,6 +374,42 @@ qexit01
 
 ;--------------------------------------------------------------
 #if 0
+name=(.")
+stack=( -- )
+tags=inner,nosymbol
+Displays an inline string
+
+```
+: (.")
+    r> count 2dup type  >6502  ( `;code` instead? )
+    tos         lda,
+    bumps       jsr,
+    stackh ,x   lda,
+                pha,
+    stackl ,x   lda,
+                pha,
+                inx,
+    exit        bne,
+```
+#endif
+#include "align.i65"
+_pdq
+    jsr enter
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word tuck
+#include "page.i65"
+    .word type
+#include "page.i65"
+    .word *+2
+    ldy tos
+    bne pdq99                   ; bra
+
+;--------------------------------------------------------------
+#if 0
 name=(LITS)
 stack=( a b c d e f n == ; -- a b c d e f )
 tags=primitive,system,startup,ext,nosymbol
@@ -381,6 +421,8 @@ spelled sideways
 : (lits)   ( 0 [args...] "name" == ; -- [args...] )
     caller c@+ 0 do @+ swap loop drop ; [23]
 
+[plits] [3] [word3os] [word2os] [wordtos]
+
 usage:
     : foo  [ 64 41 17 12  4 ] literals ;
     foo .s
@@ -390,16 +432,18 @@ plits
     jsr slip
     jsr topfas
     sta n
-plits01
     ;beq weredone
+plits01
     iny
     lda (pip),y
+    dex
     sta stackl,x
     iny
     lda (pip),y
     sta stackl,x
     dec n
     bne plits01
+pdq99
     jsr slide
     tya
     jmp pad                     ; bra   ~ok
@@ -576,22 +620,132 @@ Runtime behavior of a word built with `<builds ... does>`
 
 #endif
 dodoes
-    dex
-    pla
-    sta stackl,x
-    pla
-    sta stackh,x
-    jsr oneplunders
-    pla
-    sta tos
-    pla
-    sta tos+1
-    jsr inctos
-    ;push PIP + 2
+/*
+start
+    DS          howmany
+                from
+    RS          dofill+2
+                blank+2
+    ip          1a8a in `(cold)`
+
+near end of (does>)
+    DS          blank+3
+                howmany
+                from
+    RS          dofill+3
+                1a8c *
+    ip          dofill+3
+
+exit...                         c@ fill ;
+
+    lda #1
+    jsr padjust                 ; where do we come from?
+    jsr slip
+    stx z
+    tsx
+    ldy 0104,x
+    sty tos+1
+    ldy 0103,x
+    iny
+    sty tos                     ; pushed blank+3
+    bne +
+    inc tos+1
++
+    ldy pip+1
+    sty 0104,x
     ldy pip
     iny
+    sty 0103,x                  ; straight up copy IP to RS
+    bne +
+    inc 0104,x
++
+
+    inc 0101,x                  ; incrs
+    bne +
+    inc 0102,x
++
+    ldx z
+    jmp exit
+***
+    dex
+    pla
+    tay
+    pla
+    jsr incay
+    sta stackh,x
+    sty stackl,x
+    pla
+    tay
+    pla
+    jsr incay
+    sta tos+1
+    sty tos
+
+    lda pip+1
+    ldy pip
     iny
-    bne enter03                 ;    bra    ~orly?
+    jsr incay
+    pha
+    tya
+    pha
+    jmp exit
+
+incay
+    clc
+    iny
+    bne incay01
+    adc #1
+incay01
+    ;clc                        always return C=0
+    rts
+
+*/
+    jsr slip
+    stx z
+    tsx
+    lda $0104,x
+    sta tos+1
+    lda $0103,x
+    sta tos                     ; pushed blank+2
+    jsr inctos
+    jsr topfas                  ; IP +2
+    lda pip+1
+    sta $0104,x
+    lda pip
+    sta $0103,x
+    ldx z
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=>FORTH
+tags=inner,nosymbol
+stack=( -- )
+Passes control from 6502 assembly to high level Forth following the
+`jsr toforth` instruction.
+
+#endif
+toforth
+    jsr incrs                   ;   "the compiler was kind to us" -- our motto
+    jmp exit
+
+;--------------------------------------------------------------
+#if 0
+name=INCRS
+tags=inner,subroutine,nosymbol
+stack=( -- )
+Add 1 to (presumed) 16-bit value on return stack
+
+#endif
+incrs
+    txa
+incrsb
+    tsx                         ; S +2 at this entry point
+incrs01
+    inx
+    inc $0102,x
+    beq incrs01                 ; assumes we never wrap 16 bit value
+    tax
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -759,30 +913,6 @@ exit03
 
 ;--------------------------------------------------------------
 #if 0
-name=>FORTH
-tags=inner,nosymbol
-stack=( -- )
-Passes control from 6502 assembly to high level Forth following the
-`jsr toforth` instruction.
-
-#endif
-toforth
-    pla
-    tay
-    pla
-/*
-
-                    should iny come before cpy?
-
-                                                                              */
-chkpage
-    cpy #$FE
-    adc #0
-    iny
-    bcc jumpay
-
-;--------------------------------------------------------------
-#if 0
 name=DOPAGE
 stack=( -- )
 tags=inner,nosymbol
@@ -792,9 +922,10 @@ to occur, and indicates an error in the compiler.
 
 #endif
 page
-    inc pip+1
     ldy #0
-    beq exit03      ; bra
+pageb
+    inc pip+1
+    bne exit03                  ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -837,14 +968,45 @@ stack=( flag -- )
 tags=inner,nosymbol
 If the flag is zero, take the branch
 
+start
+    DS          true, skip the branch
+    ip          x
+after
+    DS
+    ip          x+3 via topfas *
+
+start
+    DS          false, take the branch
+    ip          x
+middle
+    DS
+    ip          x
+     A
+start
+    DS          false, take the branch
+    ip          x
+after
+    DS
+    ip          x+@(x+2) (branch)
+
+
+near end of (does>)
+    DS          blank+3
+                howmany
+                from
+    RS          dofill+3
+                1a8c *
+    ip          dofill+3
+
+
 #endif
 qbranch
-    lda tos
-    ldy stackl,x
+    lda tos                     ; get half of flag before
+    ldy stackl,x                ; replace it with `2os`
     sty tos
     ldy stackh,x
     inx
-    ora tos+1
+    ora tos+1                   ; check upper half
     sty tos+1
     bne bump
     ; fall through
@@ -862,22 +1024,22 @@ offset values are typically generated with [[<RESOLVE]] or [[>MARK]] .
 (`IP`)+2 = the offset to `IP`,  calculated the same as for 6502 branches.
 #endif
 branch
-    jsr topfas
+    ldy #2
+    lda (pip),y
     bpl pad
     dec pip+1
 pad
     sec
+    ;
 branch02
     adc pip
     tay
-    iny
-    bne branch05
-    inc pip+1
-    .byt $29
-branch05
-    tay
     lda pip+1
     adc #0
+    sta pip+1
+    iny
+    beq pageb
+    dey
     bcc jumpay                          ; bra
 
 ;--------------------------------------------------------------
@@ -952,50 +1114,8 @@ pdo02
 pdo03
     jsr slide
 bump
-    lda #3
+    lda #2
     bne pad                     ; bra
-
-;--------------------------------------------------------------
-#if 0
-name=(.")
-stack=( -- )
-tags=inner,nosymbol
-Displays an inline string
-
-```
-: (.")
-    r> count 2dup type  >6502  ( `;code` instead? )
-    tos         lda,
-    bumps       jsr,
-    stackh ,x   lda,
-                pha,
-    stackl ,x   lda,
-                pha,
-                inx,
-    exit        bne,
-```
-#endif
-#include "align.i65"
-_pdq
-    jsr enter
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word count
-#include "page.i65"
-    .word twodup
-#include "page.i65"
-    .word type
-#include "pass.i65"
-    .word *+2
-    lda tos
-    jsr bumps
-    lda stackh,x
-    pha
-    lda stackl,x
-    pha
-    inx
-    jmp exit                    ; ~shorten to bne/bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -1112,23 +1232,23 @@ tags=ext
 Used by the business end of defining words to retrieve the address of the child
 word from the return stack.
 
+
 #endif
 caller
-    jsr slip
-    pla
-    tay
-    pla
-    sta z
-    pla
-    sta tos
-    pla
-    sta tos+1
-    lda z
-    pha
-    tya
-    pha
-    jmp oneplus
-;[22]
+    jsr slip        ;[.]
+    txa             ;[2]
+    tsx             ;[2]
+    ldy $0104,x     ;[4]
+    sty tos+1       ;[3]
+    ldy $0103,x     ;[4]
+    tax             ;[2]
+    iny             ;[2]
+    sty tos         ;[3]
+    bne caller01    ;[3]
+    inc tos+1           ;[-1+5]
+caller01
+    jmp next        ;[3]
+;[24]            26
 
 ;--------------------------------------------------------------
 #if 0
@@ -1142,18 +1262,6 @@ qpages
     ldy pip
     iny
     beq plusparms
-    rts
-
-bumps
-    ; pass in A
-    clc
-    adc pip
-    sta pip
-    tay
-    bcc bumps01
-    inc pip+1
-bumps01
-    lda pip+1
     rts
 
 ;--------------------------------------------------------------
