@@ -675,9 +675,52 @@ IP to the return stack and nests into a secondary.
     the return stack stash it somewhere, we'll need it later
     to load the instruction pointer
 
+    txa
+    pha
+    txs
+    ldy $0103,x
+    iny
+
+
+;interleaved repopulating return stack with A & Y
+; in pop direction, add +1 with pagebump for $00
+; in push direction, add +2 with pagewrap for $FF or $00
+; pop return stack and 16-bit add 1, that becomes new IP.
+; finish with nexto
+
 #endif
 enter
-    lda #2
+    txa             ;[2]
+    pha             ;[3]
+    tsx             ;[2]
+;
+    lda pip         ;[3]
+/*
+    cmp #$FF
+    bcs *                       ; ~runtime paging error
+    ;clc                        ; unnecessary if CMP is present
+*/
+    clc             ;[2]
+    adc #2          ;[2]
+    ldy $0102,x     ;[4]
+    sta $0102,x     ;[5]
+    iny             ;[2]
+    bne enter02     ;[3]
+    inc $0103,x
+enter02
+    sty pip         ;[3]
+    lda pip+1       ;[3]
+    ldy $0103,x     ;[4]
+    sta $0103,x     ;[5]
+    sty pip+1       ;[3]
+;
+    pla             ;[4]
+    tax             ;[2]
+    jmp nexto       ;[3]
+                    ;[55 clocks]
+/*
+enter
+    lda #1
     jsr paday
     dex
     sta stackh,x
@@ -695,9 +738,8 @@ enter
     pha
     inx
 ;    jsr plugh
-    jmp nexto
+    jmp next1
 
-/*
 enter
 
 // ENTER   ( -- )                              (primitive; inner interpreter) //
@@ -1120,7 +1162,7 @@ bump
 paday
     sec                         ; A+1 = offset to be added to IP
 ;    .byt $29                    ; AND # opcode to skip CLC
-padaync
+;padaync
 ;    clc
     ;
     adc pip

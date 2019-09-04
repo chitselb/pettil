@@ -24,6 +24,10 @@ pettil:
 #sh ./tools/buildpettil.sh 4     32      6500  1201 # VIC20 +01235(all) RAM
 
 # launches PET and a VIC-20
+feats:
+	./tools/mkfeats
+
+# launches PET and a VIC-20
 mkpet:
 	./tools/mkpet 0 4
 
