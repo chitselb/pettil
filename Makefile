@@ -7,10 +7,10 @@ SHELL = /bin/bash
 TARGETS=0
 
 # work locally on tarabuza
-#all: pristine perturb mkd64perturb pet
+#all: pristine perturb pet
 
 # perform test feats on samosa
-all: pristine remote
+all: pristine disturb pet
 
 remote:
 	at now < ./tools/remote.disturb.at
@@ -79,8 +79,6 @@ petpic:
 		-romA data/MYNRa0_picchip_MMpl_DOS.bin                                  \
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
-
-
 # build PETTIL disk images
 mkd64:
 	# first program is PETTIL.PRG for reference machine
@@ -126,8 +124,8 @@ perturb: pettil
 
 #	./tools/lsperturb 0.01
 
-# build and perform all feats of testing, remotely
-disturb: clean perturb mkd64pettil mkd64perturb
+# build PERTURB distribution before both remote and local feats of testing
+disturb: clean perturb mkd64perturb
 
 # build documentation
 tiddlypettil:
