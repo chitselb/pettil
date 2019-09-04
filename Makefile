@@ -10,7 +10,8 @@ TARGETS=0
 #all: pristine perturb pet
 
 # perform test feats on samosa
-all: pristine disturb pet
+#all: pristine disturb pet
+all: pristine disturb remote
 
 remote:
 	at now < ./tools/remote.disturb.at
