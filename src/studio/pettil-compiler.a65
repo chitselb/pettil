@@ -102,36 +102,28 @@ stack=( -- )
 tags=compiler,nosymbol
 Moves [[DP]] to the next page if needed, to preserve page alignment
 
+[ here 2+ , ]
+    lda userdp
+    bpl +
+    lda #0
+    sta userdp
+    inc userdp+1
+
+$FF here lsb < ?exit
+
 ```
 : nextpage   ( -- )
     ['] page here !
     $100 herelsb - dp +! ;
+
+$FD here lsb < ?exit compile page
+
+here lsb c>s negate allot ;
+
 ```
 #endif
 #include "align.i65"
 _nextpage
-    jsr enter
-#include "parm.i65"
-    .word plit
-    .word page
-#include "pad.i65"
-    .word here
-#include "page.i65"
-    .word store
-#include "parm.i65"
-    .word plit
-    .word $100
-#include "pad.i65"
-    .word here
-#include "page.i65"
-    .word lsb
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word _allot
-#include "past.i65"
-    .word exit
-
 ;--------------------------------------------------------------
 #if 0
 name=?COMP
@@ -143,52 +135,162 @@ error if [[STATE]] is off ([[INTERPRET]] mode)
 
 ```
 : ?comp   ( -- )
-    compiling? [ 5 ] ?error ;
+    compiling? not [ 5 ] ?error ;
 ```
 #endif
 #include "align.i65"
 qcomp
     lda userstate
-    bne pagemargin01
+    bne storecsp01 ; next
     ldy #5
+qcomp01
     jmp error                   ; "COMPILATION ONLY"
+;[10]
 
 ;--------------------------------------------------------------
 #if 0
-name=PAGEMARGIN
-stack=( `margin` == ; -- )
+name=?CSP
+stack=( -- )
+tags=compiler,nosymbol
+Generates an error if the data stack is unbalanced when defining
+`CODE` or `:` words
+#endif
+qcsp
+    ldy #4                      ; DEFINITION UNFINISHED
+    cpx usercsp
+    bne qcomp01
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=!CSP
+tags=compiler,nosymbol
+#endif
+storecsp
+    stx usercsp
+storecsp01
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=?PAGE
+stack=( -- )
 tags=compiler,pads,nosymbol
-Compile `page` if the `lsb` of `dp` is past the `margin` (inline), to avoid the NMOS jmp ($xxFF) bug.  The value of `margin` is the highest usable address within a page, which is `$xxFC` by default.  The `margin` is located in the code immediately following the call to `pagemargin`.
-
-
+When `dp` nears the top of the page (>= xxFD) this will compile `page` and
+also `allot` the remaining byte, if there is one.
 
 
 #endif
-pagemargin
-    ldy #1
-    inc pip                      ; unsafe, but only used in pettil-compiler
-    lda userdp
-    cmp (pip),y
-    bcs _nextpage
-pagemargin01
-    jmp next
+#include "align.i65"
+_qpage
+    jsr enter
+#include "parm.i65"
+    .word blit
+    .byt $FD
+#include "pad.i65"
+    .word herelsb
+#include "page.i65"
+    .word lt
+#include "page.i65"
+    .word _qexit
+#include "parm.i65"
+    .word docompile
+    .word page
+#include "page.i65"
+    .word herelsb
+#include "page.i65"
+    .word ctos
+#include "page.i65"
+    .word negate
+#include "page.i65"
+    .word _allot
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?ALIGN
+stack=( -- )
+tags=compiler,pads,nosymbol
+When `dp` nears the top of the page (>= xxFD) this will compile `page` and
+also `allot` the remaining byte, if there is one.
+
+
+#endif
+#include "align.i65"
+_qalign
+    jsr enter
+#include "parm.i65"
+    .word blit
+    .byt  $FC
+#include "pad.i65"
+    .word herelsb
+#include "page.i65"
+    .word ne
+#include "page.i65"
+    .word _qexit
+#include "parm.i65"
+    .word blit
+    .byt  $EA
+#include "page.i65"
+    .word _ccomma
+#include "past.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
 name=PAGEALIGN
 stack=( -- )
 tags=compiler,nosymbol
-Inserts a NOP instruction (if necessary) to align a JSR ENTER with a page
-boundary
-#endif
+
+called by `:` ~and probably `does>` to ensure JSR ENTER / JSR DODOES will
+not crash the code at a page boundary
+
 pagealign
     lda userdp
     cmp #$fd
-    bne pagemargin01
+    bne storecsp01
     jsr slip
     ;lda #0                     ; not necessary because C, ignores high byte
     ;sta tos+1
     lda #$ea
+    sta tos
+    jmp _ccomma
+;[17]
+: pagealign
+    here
+    lsb
+    blit $FD
+    =
+    if
+        blit $ea
+        c,
+    then ;
+;[22]
+
+code pagealign
+    brk
+    .byt set | N1
+    .word $00FD
+    .byt set | N0
+    .word userdp+1
+    .byt pop | N0
+    .byt cpr | N1
+    .byt bnz , <(pagealign06-*-2)
+    .byt set | ACC
+    .word $00EA
+    .byt sti | N0
+pagealign06
+    .byt nxt
+;[15]
+#endif
+pagealign
+    lda userdp
+    cmp #$FC
+    bne storecsp01
+    jsr slip
+    ;lda #0                     ; not necessary because C, ignores high byte
+    ;sta tos+1
+    lda #$EA
     sta tos
     jmp _ccomma
 
@@ -214,9 +316,8 @@ it globally.
 #include "align.i65"
 _xtcomma
     jsr enter
-#include "parm.i65"
-    .word pagemargin
-    .byt $FD
+#include "page.i65"
+    .word _qpage
 #include "pad.i65"
     .word _comma
 #include "past.i65"
@@ -559,8 +660,10 @@ _does
     .byt <(does01-*+1)
 #include "pad.i65"
     .word _dpswap
-#include "parm.i65"
+#include "page.i65"
 does01
+    .word _qalign
+#include "parm.i65"
     .word plit
     .word dodoes
 #include "pad.i65"
@@ -1397,28 +1500,6 @@ _dliteral
     .word _comma
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?CSP
-stack=( -- )
-tags=compiler,nosymbol
-Generates an error if the data stack is unbalanced when defining
-`CODE` or `:` words
-#endif
-qcsp
-    ldy #4                      ; DEFINITION UNFINISHED
-    cpx usercsp
-    bne comperror
-    ; fall through
-;--------------------------------------------------------------
-#if 0
-name=!CSP
-tags=compiler,nosymbol
-#endif
-storecsp
-    stx usercsp
-    jmp next
 
 ;--------------------------------------------------------------
 #if 0
