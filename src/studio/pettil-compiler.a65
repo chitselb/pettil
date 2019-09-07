@@ -175,26 +175,35 @@ storecsp01
 name=?PAGE
 stack=( -- )
 tags=compiler,pads,nosymbol
-When `dp` nears the top of the page (>= xxFD) this will compile `page` and
+Compiler check for page rollover, inserting call to `page` when `dp` nears the top of the page (>= xxFD) this will compile `page` and
 also `allot` the remaining byte, if there is one.
 
+```
+: ?page   ( -- )
+    here< $FD < ?exit
+    'page ,  here< c>s negate allot ;
 
+If `here<` isn't 0, that would mean we just compiled `page` at xxFF!
+\    here< 13 ?error (new message, "PAGING").
+```
 #endif
 #include "align.i65"
 _qpage
     jsr enter
+#include "page.i65"
+    .word herelsb
 #include "parm.i65"
     .word blit
     .byt $FD
 #include "pad.i65"
-    .word herelsb
-#include "page.i65"
     .word lt
 #include "page.i65"
     .word _qexit
 #include "parm.i65"
-    .word docompile
+    .word plit
     .word page
+#include "pad.i65"
+    .word _comma                ; because `xt,` checks `?page` again
 #include "page.i65"
     .word herelsb
 #include "page.i65"
@@ -523,14 +532,12 @@ _closedef
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word qdup
+    .word dup
 #include "parm.i65"
-    .word qbranch
-    .byt <(closedef01-*+1)
-#include "pad.i65"
+    .word pquerycolon
     .word smudge
+    .word drop
 #include "pad.i65"
-closedef01
     .word _lbracket
 #include "past.i65"
     .word exit

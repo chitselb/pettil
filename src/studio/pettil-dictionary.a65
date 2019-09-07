@@ -427,6 +427,11 @@ Switches contents of N7 <--> N3
 #endif
 #include "align.i65"
 swap73
+    lda #>(next-1)
+    pha
+    lda #<(next-1)
+    pha
+swap73s
     lda R0L+2*N7
     ldy R0L+2*N3
     sta R0L+2*N3
@@ -435,7 +440,7 @@ swap73
     ldy R0L+2*N3+1
     sta R0L+2*N3+1
     sty R0L+2*N7+1
-    jmp next
+    rts
 
 ;--------------------------------------------------------------
 #if 0
@@ -890,6 +895,14 @@ move symtail
 write a tail
 
 
+* check for missing name after ":"
+* see if it exists in the dictionary (search path)
+    - issue a warning message:  .name ." exists"
+    - `redefined` set to NFA of existing name
+    ~ don't smudge it yet
+~ make sure to search the `current` vocabulary too!
+*
+
 >C:0000  00 00 49 1a  01 10 f9 10  d2 06 c0 06  22 57 00 00   @@Izap.pRf.f"W@@
 >C:0010  b7 06 01 02  04 00 34 d5  00 01 0d d0  0e 83 86 00   .fabd@4U@amPn..@
 >C:0040  aa aa aa aa  aa aa aa 08  88 6c 01 22  c0 d2 f9 01   .......h.la".R.a
@@ -984,29 +997,13 @@ if `current` is nonzero, join this to the vocabulary
 |unsmudged?|prior|`newest`|
 ```
 : (create)   ( cfa -- )
-    span @ 0= 4 ?error          \ "MISSING NAME"
-    bl name
-    bloom ( symtail 2+ )
-    current 2swap over cfa,
-    >syms here 3- ((create))
-    3coff dup smudge newest !
-    false (seekb)
-    if
-        unsmudge
-    else
-        <n3 dup redefined !
-        RVSON emit
-        id. ." exists{OFF}"
-    then ;
-
-: (create)   ( cfa -- )
     eol? 4 ?error               \ "MISSING NAME"
     redefined off
     \ no need to set the bloom bit first
     exists? ?dup
     if                          ( cfa )
-        <n3 dup redefined ! smudge
-        .rvs <n7 $. ."  [OFF]exists "
+        <n7 dup redefined !
+        .rvs  $. ."  [OFF]exists "
     then                        ( cfa )
     bloom                       ( symtail 2+ )
     current
@@ -1045,7 +1042,7 @@ _pcreate
     .byt <(pcreate02-*+1)
 #include "parm.i65"
     .word zpfrom
-    .byt R0L+2*N3
+    .byt R0L+2*N7
 #include "pad.i65"
     .word dup
 #include "page.i65"
@@ -1053,13 +1050,8 @@ _pcreate
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word smudge
-#include "page.i65"
     .word dotrvs
-#include "parm.i65"
-    .word zpfrom
-    .byt R0L+2*N7
-#include "pad.i65"
+#include "page.i65"
     .word _stringdot
 #include "parm.i65"
     .word _pdq
@@ -1073,8 +1065,8 @@ pcreate02
 #include "page.i65"
     .word current
 #include "page.i65"
-    .word third
-// ( cfa symtail+2 current cfa )
+    .word rot
+// ( symtail+2 current cfa )
 #include "page.i65"
     .word _qalign
 #include "page.i65"
@@ -1083,67 +1075,61 @@ pcreate02
     .word here
 #include "page.i65"
     .word threeminus
-// CFA may move up one byte if $EA was enclosed (for paging)
-//
-#include "page.i65"
-    .word xyzzy
-#include "past.i65"
-    .word exit
-
-#include "past.i65"
-    .word *+2
-    jsr harvests10
-    brk
-    .byt popd | N0               ; symtail @
-    .byt st | N5
-    .byt ld | TOS               ; cfa'
-    .byt std | N5               ; !
-    .byt ld | N5
-    .byt st | N7                ; newest
-    .byt add | N8
-    .byt st | N5
-    .byt inr | N5
-    .byt ext
-    .word symcopys              ; copy the symbol/length
-    .byt inr | N7
-    .byt ldi | N1
-    .byt bz , <(ppcreate01-*-2)
-    .byt sti | N5
-    .byt set | TOS
-    .word $40
-    .byt pop | N7
-    .byt add | TOS
-    .byt sti | N7
-ppcreate01
-    .byt dcr | N7               ; newest
-    .byt ld | N7                ; newest
-    .byt st | TOS
-    .byt ld | N5
-    .byt std | N0               ; symtail !
-    .byt push
-    .byt ld | N4                ; set up for (seek)
-    .byt st | N3                ; `n3` is symbol pointer `sym0`
-    .byt ld | N8
-    .byt st | N4                ; `n4l` is length, `n4h` is 0 (unsorted)
-    .byt ld | N1
-    .byt st | N5                ; `n5` is seek vocab
-    .byt rtn
-#include "align.i65"
-    jsr toforth
-#include "page.i65"
-    .word threecoff
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word smudge
 #include "page.i65"
     .word newest
-#include "page.i65"
-    .word store
+// CFA may move up one byte if $EA was enclosed (for paging)
+//
 #include "past.i65"
-    .word exit
+    .word *+2
+    jsr harvests6
+// tos=newest n0=symtail+2 n1=current n2=here
+// * copy symbol @n7 to symtail
+// * enclose 'here' as new CFA
+// * current nonzero?
+//      - set vocabulary bit
+//      - append `current` at symtail
+// * drop out a 00 00 00    symtail `3coff`
+// * update symtail
+// * set newest
+
+    brk
+    .byt popd | N0               ; symtail @
+// N0 = usersymtail ACC = symtail
+    .byt st | N3
+    .byt ld | N2                ; cfa'
+    .byt std | N3               ; write CFA to symtab, +2 N5 pointer
+    .byt ld | N3
+    .byt std | TOS              ; populate `newest`
+    .byt ext
+    .word swap73s
+    .byt ext
+    .word symcopys              ; copy the symbol/length
+    .byt ldi | N1
+    .byt bz , <(ppcreate01-*-2)
+    .byt set | ACC
+    .word $40
+ppcreate01
+    .byt st | TOS               ; TOS = $00 or $40 if vocab
+    .byt inr | N7
+    .byt pop | N7
+    .byt st | N5
+    .byt add | TOS
+    .byt sti | N7               ; symbol length with a proper vocab bit
+    .byt ld | N7
+    .byt add | N5
+    .byt st | N7
+    .byt pop | N1
+    .byt bz , <(ppcreate02-*-2)
+    .byt sti | N7
+ppcreate02
+    .byt ld | N7
+    .byt std | N0               ; update symtail
+    .byt sub | ACC
+    .byt sti | N7
+    .byt std | N7
+    .byt pull
+    .byt rtn
+    jmp exit
 
 ;--------------------------------------------------------------
 #if 0

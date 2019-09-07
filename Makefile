@@ -28,8 +28,8 @@ feats:
 	./tools/mkfeats
 
 # launches PET and a VIC-20
-mkpet:
-	./tools/mkpet 0 4
+vicpic:
+	VICPIC=1 ./tools/mkpet 4
 
 # 0 (PET 2001-N #700251)
 #           maize & blue
