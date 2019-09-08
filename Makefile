@@ -87,13 +87,13 @@ mkd64:
 	# first program is PETTIL.PRG for reference machine
 	# and also include PETTILPACKETS
 	c1541 pettil.d64                                                    \
-		-write obj/pettil.prg0 pettil.prg                                       \
-		-write tapes/pettilpackets pettilpackets
+		-write obj/pettil.prg0 pettil.prg
 
 mkd64pettil: mkd64
 	for object in obj/pettil*.prg? ; do \
 		t=$${object: -1}; \
 		c1541 pettil$${t}.d64  -delete $$object -write $$object ; \
+		c1541 pettil$${t}.d64  -delete pettilpackets -write ./tapes/pettilpackets; \
     done
 #	c1541 pettil.d64 -dir
 
