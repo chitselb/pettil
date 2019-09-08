@@ -1,0 +1,968 @@
+; pettil-utils.a65
+;#echo .       pettil-utils.a65          Utility words
+
+;--------------------------------------------------------------
+#if 0
+name=.@
+stack=( x y -- )
+tags=ext
+
+```
+-1 .. -25    comes in from the bottom
+0 .. 24    comes in from the top
+-1 .. -40  from the right
+0 .. 39    from the left
+
+usage
+
+"13 -20 cursor: +center+
+```
+#endif
+#include "align.i65"
+setcursor
+    lda tos
+    sta PNTR    ; C6 horizontal position of cursor
+    lda stackl,x
+    sta TBLX    ; D8 screen line
+    jsr PUTCURSOR
+    jmp twodrop
+
+;--------------------------------------------------------------
+#if 0
+name=-->
+stack=( -- )
+tags=interpreter
+flags=immediate
+An immediate word which loads the next screen of Forth source
+
+!!! pronounced: "next-block"
+
+```
+: -->   ( -- )
+    blk 1+!  >in off  source! ; immediate
+```
+: -->
+    ?loading 0 in !
+    b/scr blk @ over mod -
+    blk +! ;
+L18be .byt 3 | bit7 | bit6
+ .byt "--",">"|bit7
+ .word L1885
+DASHDASHGT
+ .word DOCOL
+ .word QLOADING
+ .word ZERO
+ .word IN
+ .word STORE
+ .word BSCR
+ .word BLK
+ .word FETCH
+ .word OVER
+ .word MOD
+ .word NEGATE
+ .word BLK
+ .word PSTORE
+ .word SEMIS
+#endif
+#include "align.i65"
+_nextblock
+    jsr enter
+#include "page.i65"
+    .word blk
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word backslash             ; span off
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=.S
+tags=i/o,stack,ext
+Output the data stack
+
+```
+: .s ( ?? -- ?? )
+    depth ?dup
+    if
+        0 do
+            depth i - 1- pick  7 u.r space
+        loop
+    else
+        ." stack empty"
+    then ;
+```
+#endif
+#include "align.i65"
+_dots
+    jsr enter
+#include "page.i65"
+    .word depth
+#include "page.i65"
+    .word qdup
+#include "parm.i65"
+    .word qbranch
+    .byt <(dots02-*+1)
+#include "pad.i65"
+    .word zero
+#include "parm.i65"
+    .word pdo
+    .byt <(dots04-*+1)
+#include "pad.i65"
+dots01
+    .word depth
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+    .word pick
+#include "page.i65"
+    .word _udot
+#include "parm.i65"
+    .word ploop
+    .byt <(dots01-*+1)
+#include "parm.i65"
+dots02
+    .word _pdq
+    .byt dots03-*-1
+    .asc "STACK EMPTY "
+dots03
+#include "past.i65"
+dots04
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=PETSCII"
+stack=( -- c )
+tags=string,ext
+Converts a quoted character to its numeric value
+
+usage: `petscii" x" .` responds `88  ok`
+
+```
+#endif
+#include "align.i65"
+_petscii
+    jsr enter
+#include "parm.i65"
+    .word blit
+    .byt QUOTE
+#include "pad.i65"
+    .word _name
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word cfetch
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=.H
+stack=( c -- )
+tags=i/o
+Prints out a number as an unsigned hexadecimal byte
+```
+: .h   ( c -- )
+    base @ hex swap
+    0 <# # # #> type
+    base ! ;
+```
+#endif
+#include "align.i65"
+_doth
+    jsr enter
+#include "page.i65"
+    .word base
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word hex
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word _ltsharp
+#include "page.i65"
+    .word _sharp
+#include "page.i65"
+    .word _sharp
+#include "page.i65"
+    .word _sharpgt
+#include "page.i65"
+    .word type
+#include "page.i65"
+    .word base
+#include "page.i65"
+    .word store
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=.4H
+stack=( u -- )
+tags=i/o
+Prints out a number as an unsigned hexadecimal word
+```
+: .4h   ( u -- )
+    dup msb .h
+    lsb .h ;
+```
+#endif
+#include "align.i65"
+_dotfourh
+    jsr enter
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word msb
+#include "page.i65"
+    .word _doth
+#include "page.i65"
+    .word lsb
+#include "page.i65"
+    .word _doth
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=XLATE
+stack=( char -- printablechar )
+tags=i/o,nosymbol
+
+#endif
+xlate
+    lda tos
+    and #$7f
+    cmp #$20
+    bcs xlate01
+    lda #'.'
+    sta tos
+xlate01
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=DUMP
+stack=( addr size -- )
+tags=i/o
+Dumps a region of memory as lines of eight bytes each
+
+```
+: dump   ( addr size -- )
+    1+ 0
+    ?do
+        #out @ 0=
+        if
+            dup msb .h
+            dup lsb .h
+        then
+        c@+ space .h
+        l/scr #out @ <
+        if
+            space 18 ( RVSON ) emit
+            dup 8 - under
+            do i c@ xlate emit loop cr
+        then
+        ?terminal  if leave then
+    loop
+    drop ;
+```
+#endif
+#include "align.i65"
+_dump
+    jsr enter
+#include "page.i65"
+    .word cr
+#include "page.i65"
+    .word zero
+#include "parm.i65"
+    .word pqdo
+    .byt <(dump06-*+1)
+#include "pad.i65"
+dump01
+    .word numout
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zeq
+#include "parm.i65"
+    .word qbranch
+    .byt <(dump02-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word _dotfourh
+#include "page.i65"
+dump02
+    .word cfetchplus
+#include "page.i65"
+    .word space
+#include "page.i65"
+    .word _doth
+#include "page.i65"
+    .word lperscr               ; 25
+#include "page.i65"
+    .word numout
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word lt
+#include "parm.i65"
+    .word qbranch
+    .byt <(dump05-*+1)
+#include "pad.i65"
+    .word space
+#include "parm.i65"
+    .word blit
+    .byt RVSON
+#include "pad.i65"
+    .word emit
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word eight
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word under
+#include "parm.i65"
+    .word pdo
+    .byt <(dump04-*+1)
+#include "pad.i65"
+dump03
+    .word i
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word xlate
+#include "page.i65"
+    .word emit
+#include "parm.i65"
+    .word ploop
+    .byt <(dump03-*+1)
+#include "pad.i65"
+dump04
+    .word _pausecr
+#include "parm.i65"
+dump05
+    .word ploop
+    .byt <(dump01-*+1)
+#include "pad.i65"
+dump06
+    .word drop
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ID.
+stack=( -- )
+tags=compiler
+Displays the name at the current `nfa` in `n3`
+
+```
+: id.   ( -- )
+    <n3 1+ sym.len type ;
+```
+#endif
+#include "align.i65"
+_iddot
+    jsr enter
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word oneplus
+#include "page.i65"
+    .word symlen
+#include "page.i65"
+    .word type
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ID.L
+stack=( nfa -- )
+tags=ext,nosymbol
+
+#endif
+#include "align.i65"
+_iddotl
+    jsr enter
+#include "page.i65"
+    .word _iddot
+#include "page.i65"
+    .word space
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ID.WL
+stack=( -- )
+tags=ext,nosymbol
+emits a carriage return in `words` output to avoid wrapping lines
+
+```
+: id.wl   ( -- )
+    sym.len #out @ + 1+ 40 >
+    if ?pause cr then ;
+```
+#endif
+#include "align.i65"
+_iddotwl
+    jsr enter
+#include "page.i65"
+    .word symlen
+#include "page.i65"
+    .word numout
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word width
+#include "page.i65"
+    .word gt
+#include "parm.i65"
+    .word pquerycolon
+    .word _pausecr
+    .word space
+#include "pad.i65"
+    .word _iddot
+#include "past.i65"
+qcr02
+    .word exit
+
+; ?CR   ( -- )
+#include "align.i65"
+_pausecr
+    jsr enter
+#include "page.i65"
+    .word _qquit
+#include "page.i65"
+    .word _qpause
+#include "page.i65"
+    .word cr
+#include "past.i65"
+    .word exit
+
+; ?QUIT   ( -- )
+#include "align.i65"
+_qquit
+    jsr enter
+#include "page.i65"
+    .word qterminal
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word _qexit
+#include "past.i65"
+    .word _quit
+
+;--------------------------------------------------------------
+#if 0
+name=(VOC)
+stack=( -- voc )
+tags=ext,nosymbol
+return the `voc` of the current `nfa` in `n3`
+#endif
+pvoc
+    jsr symlens
+    bcc pvoc05
+    tay
+    iny
+    lda (R0L+2*N3),y
+    .byt $24
+pvoc05
+    tya
+    jmp push0a
+
+;--------------------------------------------------------------
+#if 0
+name=WORD-LIST
+stack=( voc -- )
+tags=interpreter,dictionary,forth-83
+Displays all words in vocabulary `n`
+
+user symcurr  ( -- addr )
+
+
+	symcurr off
+	sym+  ( -- )
+
+for each symbol
+    is it in the right vocab?
+        dup id.
+next
+
+dup c@ $40 and 0=               \ TRUE if in core
+
+
+```
+: wordlist   ( voc -- )
+    sym.rewind
+    begin
+        (voc) over =
+        ?terminal 0= and
+        if  ?cr id.l  then
+        3 sym+ 0=
+    until drop ;
+
+: word-list   ( voc -- )
+    sym.rewind
+    begin
+        (voc) over =
+        if id.wl then
+        3 sym+
+        symlen 0=
+    until  drop ;
+```
+#endif
+#include "align.i65"
+_wordlist
+    jsr enter
+#include "page.i65"
+    .word symrewind
+#include "page.i65"
+wordlist01
+    .word pvoc
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word eq
+#include "parm.i65"
+    .word qbranch
+    .byt <(wordlist02-*+1)
+#include "pad.i65"
+    .word _iddotwl
+#include "parm.i65"
+wordlist02
+    .word symplus
+    .byt 3
+#include "pad.i65"
+    .word symlen
+#include "page.i65"
+    .word zeq
+#include "parm.i65"
+    .word qbranch
+    .byt <(wordlist01-*+1)
+#include "pad.i65"
+    .word drop
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=WORDS
+stack=( -- )
+tags=interpreter,dictionary,forth-83
+When `vocabs` is empty, display the `forth` vocabulary
+otherwise, show search (context) vocabularies
+
+```
+: words   ( -- )
+    cr vocabs 1+ dup
+    begin
+        c@+ ?dup
+    while
+        word-list
+    repeat
+    - 1+ dup
+    ?: drop word-list ;
+```
+#endif
+#include "align.i65"
+_words
+    jsr enter
+#include "page.i65"
+    .word cr
+#include "page.i65"
+    .word vocabs
+#include "page.i65"
+    .word oneplus               ; skip the count
+#include "page.i65"
+    .word dup
+#include "page.i65"
+words01
+    .word cfetchplus
+#include "page.i65"
+    .word qdup
+#include "parm.i65"
+    .word qbranch
+    .byt <(words02-*+1)
+#include "pad.i65"
+    .word _wordlist
+#include "parm.i65"
+    .word branch
+    .byt <(words01-*+1)
+#include "pad.i65"
+words02
+    .word minus
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word dup                   ; something to drop
+#include "page.i65"
+    .word pquerycolon
+    .word drop
+    .word _wordlist
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?MARGIN
+stack=( size -- )
+tags=ext,nosymbol
+perform `cr` when Xcurpos + `size` is greater than `width`
+
+```
+: id.8   ( cfa -- )
+    dup >name drop 7 sym.len -
+    spaces id.l execute ;
+```
+#endif
+#include "align.i65"
+_qmargin
+    jsr enter
+#include "page.i65"
+    .word numout
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word width
+#include "page.i65"
+    .word gt
+#include "parm.i65"
+    .word qbranch
+    .byt <(qmargin01-*+1)
+#include "pad.i65"
+    .word _pausecr
+#include "past.i65"
+qmargin01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ID.8
+stack=( cfa -- )
+tags=ext,nosymbol
+formatted output, three-column layout used by `info`
+
+```
+: id.8   ( cfa -- )
+    dup >name drop 7 sym.len -
+    spaces id.l execute ;
+```
+#endif
+#include "align.i65"
+_iddot8
+    jsr enter
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word _toname
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word seven
+#include "page.i65"
+    .word symlen
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _spaces
+#include "page.i65"
+    .word _iddotl
+#include "page.i65"
+    .word execute
+#include "past.i65"
+    .word exit
+
+info05
+; 3-column layout
+
+;            BASE     #BLK    VMBUF
+    .word    base,  numblk,   vmbuf
+
+;           FENCE      SCR   SYMTAB
+    .word   fence,     scr,  symtab
+
+;              DP     PREV   SYMNEW
+    .word      dp,    prev,  symnew
+
+;          LIMIT   EDITING  SYMTAIL
+    .word  limit,  editing, symtail
+
+;            DRV#     #VOC    ++
+    .word  drvnum,  numvoc,   studio
+
+;             SA#  CURRENT      TDP
+    .word   sanum, current,     tdp
+
+; end
+    .word 0
+
+;--------------------------------------------------------------
+#if 0
+name=INFO
+stack=( -- )
+tags=editor
+Displays info on various editor and memory system variables
+
+```
+: info   ( -- )
+    info05 c@ 0
+    do
+        i ?: 6spaces next
+        i 2* 1+ info05 + @ dup
+        >name.l10 execute
+        @ .4h
+    loop
+    cr ['] vocabs >name id. 3 spaces
+    vocabs 10 0
+    do
+        c@+ space .h
+    loop
+    drop cr
+    ['] filename >name.l10
+    filename @ dup .4h space dup c@ .h
+    space $. cr
+    ['] startup >name.l10
+    startup @ >name.l10 ;
+
+: info   ( -- )
+    cr 'info05
+    begin
+        @+ ?dup
+    while
+        dup
+        >name >n8 8 sym.len - spaces id.l
+        drop execute @ .4h  13 ?margin
+    repeat
+    vocabs >name drop id.l
+    vocabs count 0
+    do
+        c@+ .h space
+    loop
+    drop cr 'filename >name drop id.l filename @ dup .4h space dup c@ .h space $. ;
+```
+#endif
+#include "align.i65"
+_info
+    jsr enter
+#include "page.i65"
+    .word cr
+#include "parm.i65"
+    .word plit
+    .word info05
+#include "pad.i65"
+info01
+    .word fetchplus
+#include "page.i65"
+    .word qdup
+#include "parm.i65"
+    .word qbranch
+    .byt <(info02-*+1)
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word _toname
+#include "parm.i65"
+    .word tozp
+    .byt R0L+2*N8
+#include "pad.i65"
+    .word eight
+#include "page.i65"
+    .word symlen
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _spaces
+#include "page.i65"
+    .word _iddotl
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word execute
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _dotfourh
+#include "parm.i65"
+    .word blit
+    .byt 13
+#include "pad.i65"
+    .word _qmargin
+#include "parm.i65"
+    .word branch
+    .byt <(info01-*+1)
+#include "parm.i65"
+info02
+    .word plit
+    .word filename
+#include "pad.i65"
+    .word _toname
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word _iddotl
+#include "page.i65"
+    .word filename
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word _dotfourh
+#include "page.i65"
+    .word space
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word _doth
+#include "page.i65"
+    .word space
+#include "page.i65"
+    .word _stringdot
+#include "page.i65"
+    .word cr
+#include "parm.i65"
+    .word plit
+    .word vocabs
+#include "pad.i65"
+    .word nip
+#include "page.i65"
+    .word _toname
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word _iddotl
+#include "page.i65"
+    .word vocabs
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word zero
+#include "parm.i65"
+    .word pdo
+    .byt <(info04-*+1)
+#include "pad.i65"
+info03
+    .word cfetchplus
+#include "page.i65"
+    .word _doth
+#include "page.i65"
+    .word space
+#include "parm.i65"
+    .word ploop
+    .byt <(info03-*+1)
+#include "pad.i65"
+info04
+    .word drop
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=INDEX
+stack=( -- )
+tags=secondary,extra
+
+```
+: index
+    #blk @ 0 do i block 40 type loop ;
+```
+#endif
+#include "align.i65"
+_index
+    jsr enter
+#include "page.i65"
+    .word numblk
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word zero
+#include "parm.i65"
+    .word pqdo
+    .byt <(index02-*+1)
+#include "pad.i65"
+index01
+    .word i
+#include "page.i65"
+    .word _block
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word i
+#include "page.i65"
+    .word fortytimes
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word forty
+#include "page.i65"
+    .word cmove
+#include "parm.i65"
+    .word ploop
+    .byt <(index01-*+1)
+#include "past.i65"
+index02
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=VMDUMP
+stack=( addr -- )
+tags=test
+
+```
+: vmdump
+    vmbuf @ dup .4h $fff8 and
+    blkbuf over - dump ;
+```
+#endif
+#include "align.i65"
+_vmdump
+    jsr enter
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word _dotfourh
+#include "parm.i65"
+    .word plit
+    .word $FFF8                 ; align dump output
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word blkbuf
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _dump
+#include "past.i65"
+    .word exit
+

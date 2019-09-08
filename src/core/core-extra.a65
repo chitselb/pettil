@@ -1,0 +1,760 @@
+; core-extra.a65
+;#echo .       core-extra.a65            Extra stuff
+
+;--------------------------------------------------------------
+#if 0
+name=VIDRAM
+stack=( -- $8000 )
+tags=primitive,i/o,const
+Constant, address of PET video memory $8000
+
+|PET|$8000|
+|VIC|$1000|
+|C64|$0400|
+|128||
+|C16||
+
+#endif
+vidram
+    jsr doconst
+    .word VIDRAM
+
+;--------------------------------------------------------------
+#if 0
+name=WIDTH
+stack=( -- addr )
+tags=primitive
+`width` of the screen
+
+#endif
+width
+    clc
+    lda LNMX
+    adc #1
+    jmp push0a
+
+;--------------------------------------------------------------
+#if 0
+name=EOSCR
+stack=( -- $83E8 )
+tags=primitive,i/o,const
+Constant, address of PET `vidram b/scr +`
+
+If it's a VIC-20, read it from the VIC registers
+
+#endif
+eoscr
+    jsr doconst
+    .word VIDRAM+BPERSCR
+
+;--------------------------------------------------------------
+#if 0
+name=BENJAMIN
+stack=( -- $100 )
+tags=primitive,i/o,const
+Constant, 256
+
+#endif
+benjamin
+    jsr doconst
+    .word $100
+
+;--------------------------------------------------------------
+#if 0
+name=XYZZY
+stack=( -- )
+tags=primitive,ext
+This word doesn't do much (executes a `next`.  This magic word has no effect on a real hardware PET, but in my build setup it invokes the VICE debugger.
+
+See `plugh` for low-level variant of this.
+
+see also:  `pettil.dbg` configuration file
+
+#endif
+xyzzy
+    jmp next                    ; used as a VICE monitor breakpoint
+
+;--------------------------------------------------------------
+#if 0
+name=@SWAP!
+stack=( addr1 addr2 -- )
+tags=secondary,ext
+Exchanges the 16-bit values at `addr1` and `addr2`
+
+```
+: @swap!   ( a b -- )
+    dup>r @
+    over @ r> !
+    swap ! ;
+```
+#endif
+#include "align.i65"
+_fetchswapstore
+    jsr enter
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word store
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=PAUSE
+stack=( flag -- )
+tags=secondary,nucleus,ext
+Waits for a keypress from the user before exiting
+
+```
+: pause   ( flag -- )
+    if
+        ." \nPRESS ANY KEY\n"
+    then
+    key drop ;
+```
+#endif
+#include "align.i65"
+_pause
+    jsr enter
+#include "page.i65"
+    .word qbranch
+    .byt <(pause02-*+1)
+#include "parm.i65"
+    .word _pdq
+    .byt <(pause01-*-1)
+    .asc CR,"PRESS ANY KEY",CR
+pause01
+#include "pad.i65"
+pause02
+    .word key
+#include "page.i65"
+    .word drop
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?PAUSE
+stack=( -- )
+tags=secondary,nucleus,ext
+Scans keyboard and if 'space' was pressed, pauses until any key
+is pressed.
+
+```
+: ?pause   ( -- )
+    ?key bl =
+    if false pause then ;
+```
+#endif
+#include "align.i65"
+_qpause
+    jsr enter
+#include "page.i65"
+    .word qkey
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word eq
+#include "parm.i65"
+    .word qbranch
+    .byt <(qpause01-*+1)
+#include "pad.i65"
+    .word false
+#include "page.i65"
+    .word _pause
+#include "past.i65"
+qpause01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=JIFFY@
+stack=( -- d )
+tags=primitive,system,ext
+The number of jiffies since powerup or midnight as a double
+
+#endif
+#include "align.i65"
+jiffyfetch
+    sei
+    lda TIME+1
+    pha
+    lda TIME+2
+    pha
+    lda #0
+    pha
+    lda TIME
+    pha
+    cli
+    jmp tworfrom
+
+;--------------------------------------------------------------
+#if 0
+name=JIFFIES
+stack=( u -- )
+tags=secondary,ext
+
+```
+: jiffies   ( n -- )
+    s->d jiffy@ d+
+    begin
+        jiffy@ 2over d>
+    until 2drop ;
+```
+#endif
+#include "align.i65"
+_jiffies
+    jsr enter
+#include "page.i65"
+    .word stod
+#include "page.i65"
+    .word jiffyfetch
+#include "page.i65"
+    .word dplus
+#include "page.i65"
+jiffies01
+    .word jiffyfetch
+#include "page.i65"
+    .word twoover
+#include "page.i65"
+    .word _dge
+#include "parm.i65"
+    .word qbranch
+    .byt <(jiffies01-*+1)
+#include "pad.i65"
+    .word twodrop
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=RANDMASK
+stack=( n -- mask )
+tags=secondary,ext
+returns the next power of 2 mask >= n
+
+```
+: randmask   ( n -- mask )
+    1
+    begin
+        2* 2dup u<
+    until nip ;
+```
+#endif
+#include "align.i65"
+_randmask
+    jsr enter
+#include "page.i65"
+    .word one
+#include "page.i65"
+randmask01
+    .word twostar
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word ult
+#include "parm.i65"
+    .word qbranch
+    .byt <(randmask01-*+1)
+#include "pad.i65"
+    .word oneminus
+#include "page.i65"
+    .word nip
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=RNDMAX
+stack=( max -- rnd )
+tags=secondary,ext
+generate a random unsigned byte less than `max`
+
+```
+: rndmax   ( max -- )
+    dup 0= ?exit
+    1- dup randmask
+    begin
+        randuc
+        3dup and >
+    while
+        drop
+    repeat
+    and nip ;
+```
+#endif
+#include "align.i65"
+_rndmax
+    jsr enter
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word _randmask
+#include "page.i65"
+rndmax01
+    .word randuc
+#include "page.i65"
+    .word _threedup
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word lt
+#include "parm.i65"
+    .word qbranch
+    .byt <(rndmax02-*+1)
+#include "pad.i65"
+    .word drop
+#include "parm.i65"
+    .word branch
+    .byt <(rndmax01-*+1)
+#include "pad.i65"
+rndmax02
+    .word andx
+#include "page.i65"
+    .word nip
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=40/MOD
+stack=( u -- u%40 u/40 )
+tags=primitive,math,ext
+[[Routine courtesy of Mike B.|http://forum.6502.org/viewtopic.php?f=2&t=3051#p34802]]
+Thank you sir!
+
+Perform a divide by 40 and a modulo 40, useful for screen positioning and
+[[Radix50|http://en.wikipedia.org/wiki/DEC_Radix-50]]
+#endif
+slashmod40
+    jsr slip
+    lda #0
+    ldy #16
+slmod40b
+    cmp #20
+    bcc slmod40c
+    sbc #20
+slmod40c
+    rol tos
+    rol tos+1
+    rol
+    dey
+    bne slmod40b
+slmod40d                        ; also an exit for
+    sta stackl,x
+    sty stackh,x
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=2NIP
+stack=( d2 d1 -- d1 )
+tags=primitive,double,ext
+discards the 2nd double on the stack
+
+#endif
+twonip
+    lda stackl,x
+    ldy stackh,x
+    inx
+    inx
+    bne slmod40d                ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=40*
+stack=( u -- u*40 )
+tags=primitive,math
+
+Fast integer unsigned `tos` multiply by 40, no overflow checking
+
+#endif
+fortytimes
+    lda tos+1
+    pha
+    lda tos
+    asl
+    rol tos+1
+    asl
+    rol tos+1
+    adc tos
+    sta tos
+    pla
+    adc tos+1
+    asl tos
+    rol
+    asl tos
+    rol
+    asl tos
+    rol
+    sta tos+1
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=CSPLIT
+stack=( ab -- b a )
+tags=primitive,ext
+Split the word on `tos` into two bytes
+input: word `ab`
+output: tos = high byte `a`; 2os = low byte `b`
+
+: csplit ( ab -- 0b 0a )
+    dup lsb swap msb ; [13]
+
+~golf branch to msb to set tos?
+#endif
+csplit
+    jsr slip
+    lda stackh,x
+    ldy #0
+    sty stackh,x
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=CJOIN
+stack=( ab cd -- db )
+tags=primitive,ext
+Join low byte of `2os` with high byte of `tos`
+Combines tos.low/2os.low bytes into a word
+
+#endif
+cjoin
+    ldy tos
+    lda stackl,x
+    inx
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=CSWAP
+stack=( ab -- ba )
+tags=primitive,ext
+Swaps high and low byte of `tos`
+
+#endif
+cswap
+    ldy tos
+    lda tos+1
+    jmp put
+
+;--------------------------------------------------------------
+#if 0
+name=(CASE#)
+stack=( addr idx -- )
+tags=secondary,ext
+`execute` the cfa at the `idx`-th word above `addr`, an ON-GOSUB-like capability
+
+```
+: (case#)   ( addr idx -- )
+    2* + @ execute ;
+```
+#endif
+#include "align.i65"
+_casenum
+    jsr enter
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word execute
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+;#if 0
+;name=/STRING
+;stack=( addr1 u1 n -- addr2 u2 )
+;tags=string
+;Adjust the character string at c-addr1 by n characters. The resulting
+;character string, specified by c-addr2 u2, begins at c-addr1 plus n
+;characters and is u1 minus n characters long.
+;
+;!!!pronounced "slash-string"
+;#endif
+;#include "align.i65"
+;_slashstring
+;    jsr enter
+;#include "page.i65"
+;    .word duptor
+;#include "page.i65"
+;    .word minus
+;#include "page.i65"
+;    .word rfrom
+;#include "page.i65"
+;    .word plusunder
+;#include "past.i65"
+;    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=$INDEX
+stack=( addr char -- +index|0 )
+tags=primitive,string,ext
+returns the (1-based) index of char within the counted string at `addr`.
+otherwise returns `0`
+
+#endif
+dolindex
+    jsr harvests2
+    ;ldy #0                     ; thanks, `harvests2`
+    lda (n),y
+    tay                         ; Y = length of string
+dolindex01
+    lda (n),y
+    eor tos
+    beq dolindex02
+    dey
+    bne dolindex01
+dolindex02
+    tya
+    jmp put0a
+
+;--------------------------------------------------------------
+#if 0
+name=LOWER
+stack=( -- )
+tags=primitive,ext
+Switch to upper/lowercase alphabet
+
+#endif
+lower
+#ifdef IS_PET
+    lda #$0E
+    .byt $2C    ; BIT abs opcode
+    ;fall through
+#endif
+#ifdef IS_VIC20
+    lda VIC6560+5
+    and #($FF-$02)
+    sta VIC6560+5
+    bne cmdoff02
+#endif
+
+;--------------------------------------------------------------
+#if 0
+name=UPPER
+stack=( -- )
+tags=primitive,ext
+Switch to uppercase/graphics alphabet
+
+#endif
+upper
+#ifdef IS_PET
+    lda #$0C
+    ;
+    sta VIAPCR                  ; CHARGEN ROM select is bit 1
+#endif
+#ifdef IS_VIC20
+    lda VIC6560+5
+    ora #$02
+    sta VIC6560+5
+#endif
+#ifdef IS_C64
+#endif
+#ifdef IS_C128
+#endif
+    bne cmdoff02
+
+;--------------------------------------------------------------
+#if 0
+name=CMDOFF
+tags=primitive,i/o,kernel
+stack=( -- )
+Restore default I/O channels
+
+#endif
+cmdoff
+    stx z
+    jsr CLRCHN
+spnext
+    ldx z
+cmdoff02
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=XY@
+stack=( row column -- addr )
+tags=primitive,ext
+Calculate address in video memory at row,column.  Values may be signed.
+
+```
+ 0   \  -25        0                                     39
+ .   /   .         v......................................v
+ .   \   .         /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+ .   /   .         ^......................................^
+ .   \   .         -40                                   -1
+ .   /   .
+ .   \   .                      +-------------+
+ .   /   .         screen       |             |
+ .   \   .         coords       |      x      |
+24   /  -1        to address    |             |
+                                +-------------+
+```
+( row column )
+    2dup
+( row column  row column )
+    0<
+( row column  row flag )
+    ?: width 0
+( row column  row 40|0 )
+    rot
+( row row 40|0 column  )
+    +
+            dup
+
+
+
+( row row 'column  )
+    -rot
+( 'column row row )
+    0<
+( 'column row flag )
+    ?: l/scr 0
+( 'column row 25|0 )
+     +
+( 'column 'row )
+     40*
+( 'column 'row*40 )
+    + vidram +
+( addr )
+    ;
+
+-1      24
+-2      23
+-25      0
+
+
+00C4 PNT  address, start of logical line
+00C5
+00C6 PNTR column of cursor on line
+
+00CD QTSW 0=direct cursor; else printed control chars
+00D5 LNMX screen width (39 or 79)
+
+00D8 `tblx` physical line of cursor
+
+? what cursor routines does Mr. ROM Chip present to us?
+
+$CD  $C6  $D8  ($C4)     $D5
+QTSW,PNTR,TBLX,PNT,PNT+1,LNMX
+quotes col row row*40    span
+               +blkbuf
+
+~ write this
+#endif
+#include "align.i65"
+_setcursor
+    jsr enter
+#include "page.i65"
+    .word twodrop
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name==CURSOR
+stack=( addr|0 -- )
+tags=primitive,ext
+This word serves the purposes of:
+
+# Simultaneously fetch and store the firmware cursor in a portable way
+# Manage multiple cursor instances
+
+|tos|swap `cursor` uservar with...|<|h
+|0|hardware cursor|(use `0`, although any zp address works)|
+|256..65535|6 consecutive bytes at `addr`||
+
+```
+        0 =cursor               \ swap 6 bytes at `cursor` uservar with firmware cursor values
+ mycursor =cursor               \ swap 6 bytes at `cursor` with `mycursor`
+```
+#endif
+exchgcursor
+    stx z
+    ldx #<(-6)
+    ldy #0
+excur01
+    lda tos+1
+    bne excur02                 ; when argument is 0,
+    ldy firmwarecursor-250,x    ; get Y from a list of cursor zeropage addresses
+excur02
+    lda (tos),y
+    pha
+    lda usercursor-250,x
+    sta (tos),y
+    iny
+    pla
+    sta usercursor-250,x
+    inx
+    bmi excur01
+dropfixup
+    ldx z
+    jmp drop
+
+firmwarecursor
+    ;    $AF   $C6  $D5  ($C4)     $D8
+    .byt DFLTN,PNTR,TBLX,PNT,PNT+1,LNMX
+    ;    3     in   lin  lin*40    span
+    ;                    +blkbuf
+; C4 PNT   current (logical) screen line address
+; C6 PNTR  current cursor column on current line
+; D8 LNMX  width of the screen (39 or 79)
+
+;--------------------------------------------------------------
+#if 0
+name=BYE
+stack=( -- )
+tags=primitive,system,ext
+Restores BASIC zero page and exits to READY. prompt
+
+#endif
+bye
+    jsr seeya
+    jmp ($FFFA)
+seeya
+    lsr alive
+    jsr aloha                   ; restore BASIC zpage
+    jsr swapbrk                 ; turn off Sweet16
+    jsr swapnmi                 ;
+    lsr alive                   ; lights off!
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=MON
+stack=( -- )
+tags=primitive,system,ext
+Restores BASIC zero page and exits to the TIM or KOSMON monitor
+
+#endif
+mon
+    jsr swapbrk                 ; turn off Sweet16
+    brk
+    ;
+    jmp restart

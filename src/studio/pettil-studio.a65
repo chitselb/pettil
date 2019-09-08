@@ -1,0 +1,536 @@
+; pettil-studio.a65
+;#echo .       pettil-studio.a65
+;#echo .       PETTIL Developer Studio (intepreter, compiler, editor, assembler)
+
+#include "setopts.i65"
+#include "sweet16.i65"
+#include "../../tmp/pettil-core.def"
+hitop=$HITOP
+
+;==============================================================
+#ifdef pigs_flying_is_a_thing
+
+Legend:
+    [space] system
+>   `here` dictionary grows upward
+|   single 1K block buffer
+<   `vmbuf` virtual memory grows downward
+.   unused
+=   symtab
++   code
+:   vidram
+
+
+load "pettil.prg"
+
+   0 1 2 3 4 5 6 7 8 9 a b c d e f
+ 0         core+ + + + + + + + + +
+ 1 + + + + + + + + + + cold+ + + +
+ 2 studio+ + + + + + + + + + + + +
+ 3 + + + + + + + + symtab= = = = =
+ 4 = perturb + + + + + . . . . . .
+ 5 . . . . . . . . . . . . . . . .
+ 6 . . . . . . . . . . . . . . . .
+ 7 . . . . . . . . . . . . . . . .
+ 8 : : : :
+
+
+run
+
+   0 1 2 3 4 5 6 7 8 9 a b c d e f
+ 0         core+ + + + + + + + + +
+ 1 + + + + + + + + + + > . . . . .
+ 2 . . . . . . . . . . . . . . . .
+ 3 . . . . . . . . . . . . . . . .
+ 4 . . . . . . . . . . . . . . . .
+ 5 . . . . . < |blkbuf|symtab= = =
+ 6 = = = = = studio+ + + + + + + +
+ 7 + + + + + + + + + + + + + + + +
+ 8 : : : :
+
+
+VIC-20 +35K
+
+one possible memory layout, for fully expanded VIC-20
+after `symtab` is free, VIC may access $1000-1FFF region
+
+~todo: PORTAL handles RAM configuration
+
+   0 1 2 3 4 5 6 7 8 9 a b c d e f
+ 0 # # # # |blkbuf|c o r e + + + + /-- bank 0 +3K
+ 1 : : s y m t a b = = = = = = = =     (VIC chip 4K)
+ 2 > . . . . . . . . . . . . . . . |__ bank 1 +8K
+ 3 . . . . . . . . . . . . . . . . /
+ 4 . . . . . . . . . . . . . . . . |__ bank 2 +8K
+ 5 . . . . . . . . . . . . . . . . /
+ 6 . . . . < s t u d i o + + + + + |__ bank 3 +8K
+ 7 + + + + + + + + + + + + + + + + /
+ 8 character rom
+ 9 i/o chips
+ a c o r e + + + + + + + + + + + + |__ bank 5 +8K
+ b + + + + + + + + + + + + + + + + /
+ c basic rom
+ d basic rom
+ e editor rom
+ f kernal rom
+
+#endif
+*=fencepost
+#print *
+
+#include "pettil-cold.a65"
+    .word hitop-2               ; load address
+    .word studioend-_studio     ; size of the transient dictionary in bytes
+;==============================================================
+; pettil-studio code follows
+*=hitop
+
+;--------------------------------------------------------------
+#if 0
+name=STUDIO
+stack=( -- )
+tags=system,startup,throwaway,nosymbol
+
+```
+    0000 00FF zeropage
+    0100 01FF stack
+    0200 0400 kernel
+basic
+    0401 1A54 core
+    1A55 1F70 {throwaway startup code, jumbo letters etc...}
+there
+    2174 2175 6800
+    2176 3911 {studio_load_image}
+    3912 3914 EA EA EA
+    3915 40D3 {symtab_load_image}
+    40D4 40D6 00 00 00
+    40D7 40D8 40D9
+PERTURBORG
+    40D9
+
+: studio
+    empty-buffers cold
+    ['] there+2 @+ + 32 - symtab !
+    chilly cmove
+    ." banner message"
+    cold
+
+```
+#endif
+#include "align.i65"
+_studio
+    jsr enter
+#include "page.i65"
+    .word _cold
+#include "past.i65"
+    .word restart
+
+;--------------------------------------------------------------
+#if 0
+name=DEADBEEF
+stack=( -- )
+tags=startup,secondary,nosymbol
+Fill available memory with the 32-bit value `$DEADBEEF` . Discarded after
+running once at startup.  Used to assist in debugging.
+
+#endif
+#include "align.i65"
+_deadbeef
+    jsr enter
+#include "parm.i65"
+    .word _pdq
+    .byt deadbeef00-*-1
+    .asc HOME,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc DOWN,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc DOWN,DOWN,DOWN,DOWN,LEFT,LEFT,LEFT
+    .asc LEFT,LEFT,RVSON,"RAM ",LEFT,LEFT,LEFT,LEFT
+deadbeef00
+#include "pad.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "parm.i65"
+deadbeef01
+    .word dlit
+    .word $efbe
+    .word $adde           ; little-endian makes pretty 8-bit hex dumps
+#include "pad.i65"
+    .word rot
+#include "page.i65"
+    .word four
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word lt
+#include "parm.i65"
+    .word qbranch
+    .byt <(deadbeef02-*+1)
+#include "pad.i65"
+    .word dashrot
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word twostore
+#include "parm.i65"
+    .word branch
+    .byt <(deadbeef01-*+1)
+#include "pad.i65"
+deadbeef02
+    .word drop
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word twostore
+#include "parm.i65"
+    .word _pdq
+    .byt deadbeef03-*-1
+    .asc    RVSOFF,"INIT",CR,CR
+deadbeef03
+#include "pad.i65"
+    .word _swapirq
+#include "page.i65"
+    .word cinv
+#include "page.i65"
+    .word off
+#include "past.i65"
+    .word restart               ; restart #2 (of 3) --> `studio`
+
+;--------------------------------------------------------------
+#if 0
+name=SPLASHIRQ
+stack=( -- )
+tags=system,startup,nosymbol
+splash screen irq handler
+choose a random location
+check character on either page
+    4D?  replace it with 4E
+    4E?  replace it with 4D
+    else? leave it alone
+
+#endif
+splashirq
+    jsr splash
+    jsr countactions
+    jmp (userirq)
+
+;--------------------------------------------------------------
+#if 0
+name=COUNTACTIONS
+stack=( -- )
+tags=system,subroutine,startup,nosymbol
+Subroutine, bump the action number during startup
+
+0 nothing happened yet
+1 "P"
+2 "E"
+3 "T"
+4 "*"
+5 "T"
+6 "I"
+7 "L"
+etc...
+
+#endif
+countactions
+    dec actiondelay
+    bne countactions09
+    inc actionidx
+    lda #33
+    sta actiondelay
+countactions09
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=SPLASH
+stack=( -- )
+tags=system,subroutine,startup,nosymbol
+Subroutine, randomly dither diagonal lines on the screen
+
+#endif
+splash
+    lda #8
+    sta splashes
+splash01
+    jsr randu
+    tax
+; how many pages/screen?
+; VIC-20 = 2; PET,C=64,Plus/4 = 4; PET80 = 8
+#ifdef IS_VIC20
+    lda #2
+#else
+    lda #4
+#ifdef IS_PET80
+    lda #8
+#endif
+#endif
+    sta splashpage
+    lda #>VIDRAM
+    sta splash02+2
+    sta splash03+2
+splash02
+    lda VIDRAM,x
+    jsr splish
+splash03
+    sta VIDRAM,x
+    inc splash02+2
+    inc splash03+2
+    dec splashpage
+    bne splash02
+    dec splashes
+    bne splash01
+    rts
+
+
+splish
+    tay
+    eor #$4C                    ; swap \ <--> / else leave it alone
+    and #$7C
+    php
+    tya
+    plp
+    bne splish01
+    eor #3
+splish01
+    rts
+
+actiondelay
+    .byt 15
+
+actionidx
+    .byt 0
+
+actionnow
+    .byt 0
+
+actioncfa
+    .word pettillogo
+
+splashpage
+    .byt 0
+
+splashes
+    .byt 0
+
+
+
+
+
+
+
+
+
+
+
+
+    .dsb hitop+256-*,$EA       ; ~#resizestudio
+
+;--------------------------------------------------------------
+#if 0
+name=USER0STUDIO
+stack=( -- )
+tags=nosymbol
+Bottom edge of `studio` and code below is unnecessary after startup.
+
+#endif
+user0studio
+                .word user0studio
+user0tdp        .word studioend
+user0numvoc     .word 2         ; `editor` & `assembler`
+user0vocabs     .byt 9
+ustudio
+
+; ---- copy from initialization values
+userstudio      = uendcore+0    ;1
+usertdp         = uendcore+2    ;2
+usernumvoc      = uendcore+4    ;3
+uservocabs      = uendcore+6    ;                                       10-byte
+
+; ---- WARM will set to 0
+usercsp         = uendcore+16
+usercurrent     = uendcore+18
+userredefined   = uendcore+20
+usernewest      = uendcore+22
+userstate       = uendcore+24
+userpwrap       = uendcore+26   ;                                        4-byte
+userpaste       = uendcore+30
+usersymnew      = uendcore+32   ;1
+usersymtail     = uendcore+34   ;2
+userbloom       = uendcore+36   ;3                                       64-bit
+userpassbits    = uendcore+44   ;                                        32-bit
+utend = uendcore+48
+
+;--------------------------------------------------------------
+#if 0
+name=~ Error messages
+tags=general,nosymbol
+PETTIL system messages, output by [[FAIL]]
+#endif
+messages
+    .word msg00,msg01,msg02,msg03,msg04,msg05,msg06,msg07
+    .word msg08,msg09,msg10,msg11,msg12,msg13
+msg00
+    .byt msg01-*-1
+    .asc CR,"WELCOME TO PETTIL "
+#ifdef IS_PET4
+#ifdef IS_PET80
+    .asc "(80 COLUMN)"
+#else
+#ifdef IS_PET_CHITSELB
+    .asc "(#700251)"
+#else
+    .asc "(4.0 PET)"
+#endif
+#endif
+#endif
+#ifdef IS_PET3
+    .asc "(UPGRADE ROM)"
+#endif
+#ifdef IS_VIC20
+    .asc CR,"(VIC-20)"
+#endif
+#ifdef IS_C64
+    .asc "(C=64)"
+#endif
+#ifdef IS_C128
+    .asc "(C128)"
+#endif
+#ifdef IS_PLUS4
+    .asc "(PLUS/4)"
+#endif
+msg01
+    .byt msg02-*-1
+    .asc "STACK UNDERFLOW"
+msg02
+    .byt msg03-*-1
+    .asc "STACK OVERFLOW"
+msg03
+    .byt msg04-*-1
+    .asc "NOT FOUND"
+msg04
+    .byt msg05-*-1
+    .asc "MISSING NAME"
+msg05
+    .byt msg06-*-1
+    .asc "COMPILATION ONLY"
+msg06
+    .byt msg07-*-1
+    .asc "UNPAIRED CONDITIONALS"
+msg07
+    .byt msg08-*-1
+    .asc "NOT BELOW FENCE"
+msg08
+    .byt msg09-*-1
+    .asc "BLOCK OUT OF RANGE"
+msg09
+    .byt msg10-*-1
+    .asc "MISSING DELIM"
+msg10
+    .byt msg11-*-1
+    .byt "CORRUPT VIRTUAL MEMORY"
+msg11
+    .byt msg12-*-1
+    .byt "BAD ADDRESSING MODE"
+msg12
+    .byt msg13-*-1
+    .byt "BAD VM PACKET"
+msg13
+
+;--------------------------------------------------------------
+#if 0
+name=COLD
+stack=( -- )
+tags=system,startup
+discards all but `editor` and `assembler` vocabularies
+
+#endif
+#include "align.i65"
+_cold
+    jsr enter
+#include "parm.i65"
+    .word plits
+    .byt 8
+    .word user0studio           ; cmove
+    .word userstudio
+    .word ustudio-user0studio
+    .word ustart                ; erase
+    .word uendcore-ustart
+    .word userarea              ; cmove
+    .word ucore
+    .word uarea-userarea
+#include "pad.i65"
+    .word cmove
+#include "page.i65"
+    .word erase
+#include "page.i65"
+    .word cmove                 ; reset `studio` `tdp` `#voc`
+#include "parm.i65"
+    .word plits
+    .byt 3
+perturbpatch
+    .word _errormsg
+    .word _warm
+    .word userstartup           ; `2!` sets `startup`, also sets `warning`
+#include "pad.i65"
+    .word twostore
+#include "page.i65"
+    .word _emptybuffers
+#include "past.i65"
+    .word restart
+
+;--------------------------------------------------------------
+#if 0
+name=WARM
+stack=( -- )
+tags=system,startup
+
+#endif
+_warm
+    jsr qaloha
+#include "align.i65"
+    jsr enter
+#include "parm.i65"
+    .word plits
+    .byt 5
+    .word uservocabs+1          ; erase
+    .word usersymnew-uservocabs-1
+    .word user0studio           ; cmove
+    .word userstudio
+    .word ustudio-user0studio
+#include "pad.i65"
+    .word cmove                 ; reset `studio` `tdp` `#voc`
+#include "page.i65"
+    .word erase                 ; reset
+#include "page.i65"
+    .word zero
+#include "past.i65"
+    .word fail
+
+;==============================================================
+#include "pettil-name.a65"
+#include "pettil-number.a65"
+#include "pettil-user.a65"
+#include "pettil-dictionary.a65"
+#include "pettil-interpreter.a65"
+#include "pettil-compiler.a65"
+#include "pettil-utils.a65"
+#include "pettil-editor.a65"
+#include "pettil-assembler.a65"
+
+nop
+nop
+nop
+
+;--------------------------------------------------------------
+#if 0
+name=STUDIOEND
+stack=( -- )
+tags=nosymbol,nosymbol
+This label marks the upper boundary of the studio dictionary ([[TDP]])
+#endif
+studioend
+;==============================================================

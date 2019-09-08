@@ -1,0 +1,379 @@
+; pettil-name.a65
+;#echo .       pettil-name.a65           Text parser
+
+;--------------------------------------------------------------
+#if 0
+name=SKIP
+stack=( -- offset )
+tags=nosymbol
+`addr1` is the starting address in the input stream where up
+to `size1` bytes are skipped *WHILE* they match `delim` in `n6`.  Returns
+`addr2` as the address of the first non-matching character and
+`count2` as the remaining number of bytes in the buffer.
+#endif
+skip
+    lda #$F0                    ; BEQ opcode
+    .byt $2C                    ; BIT abs
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=SCAN
+stack=( -- offset )
+tags=self-modifying,nosymbol
+Pass through the input stream until `delim` either matches (or for `skip`, does not match).  Leave the `offset` into the line buffer on the stack.
+
+N6 line buffer
+N7 char delimiter
+#endif
+scan
+    lda #$D0                    ; BNE opcode
+    sta skipscan03              ; #selfmodifying
+    ldy userin                  ; `in`
+    dey
+skipscan01
+    iny
+    cpy userspan                ; Carry true at end of line
+    bcc skipscan02
+    inc usereoi                 ; flag end of line
+    lda userblk
+    beq skipscan04
+    lda userlin
+    cmp #LPERSCR
+    bcs skipscan04
+    dec usereoi                 ; unflag end of line
+    beq skipscan04              ; bra
+skipscan02
+    lda (R0L+2*N6),y            ; get char from buffer
+    eor R0L+2*N7                ; compare to character we seek
+skipscan03
+    bvc skipscan01              ; dummy opcode, BEQ(skip) BNE(scan)
+skipscan04
+    sty userin                  ; found char !, move `in`
+    tya
+    jmp push0a                  ;( offset )
+
+;--------------------------------------------------------------
+#if 0
+name=EOI?
+stack=( -- flag )
+tags=primitive,outer,extra,nosymbol
+Return `eoi` status, also clear it
+
+#endif
+eoiq
+    lsr usereoi
+    bpl eolq01                  ; bra
+
+;--------------------------------------------------------------
+#if 0
+name=EOL?
+stack=( -- flag )
+tags=primitive,outer,extra,nosymbol
+Return `true` when end of line input buffer is reached
+
+#endif
+eolq
+    lda userin
+    cmp userspan
+eolq01
+    jmp xpushc
+
+;--------------------------------------------------------------
+#if 0
+name=LINE.SIZE
+stack=( -- size )
+tags=outer,extra,nosymbol
+PETTIL uses a non-traditional lazy-load approach to the outer interpreter.  All `load` source routes through here!  ~todo: make entry to `block` a primitive that exits early with blkbuf|vidram when the block is already loaded (prev==blk)
+
+'The ugly has to go somewhere' -- an engineer I once worked with.
+
+You will find most of it is here.  `line.size` sets up a cursor image pointing at a fake screen in the `blkbuf` region of RAM.  Then `expect` scrapes the screen codes from a logical line in the buffer, copying it to `sib`.  The `CHRIN` subroutine converts these screen images to normal text.
+
+```
+firmwarecursor
+    ;    $AF   $C6  $D5  ($C4)     $D8
+    .byt DFLTN,PNTR,TBLX,PNT,PNT+1,LNMX
+    ;    3     in   lin  lin*40    span
+    ;          (0)       +blkbuf
+
+: line.size   ( -- size|0 )
+    cursor
+    3 !+
+    lin c!+                     \ cursor+2
+    blk@ block
+    lin 40* +                   \ cursor+2 addr
+    !+                          \ cursor+4
+    >r
+    lin buf.wrap >bit cbit@     \ addr flag
+    in 1+ over ?: 1+! 2+!
+    ?: forty eighty
+    r>
+    under 1-under c! ;
+```
+#endif
+#include "align.i65"
+_linesize
+    jsr enter
+#include "page.i65"
+    .word cursor
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word _storeplus
+#include "page.i65"
+    .word lin
+#include "page.i65"
+    .word cstoreplus
+#include "page.i65"
+    .word blkfetch
+#include "page.i65"
+    .word _block
+#include "page.i65"
+    .word lin
+#include "page.i65"
+    .word fortytimes
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word _storeplus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word lin
+#include "page.i65"
+    .word _bufwrap
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word cbitfetch
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word cstoreplus
+#include "page.i65"
+    .word over
+#include "parm.i65"
+    .word pquerycolon
+    .word oneplusstore
+    .word twoplusstore
+#include "parm.i65"
+    .word pquerycolon
+    .word forty
+    .word eighty
+#include "pad.i65"
+    .word rfrom
+#include "page.i65"
+    .word under
+#include "page.i65"
+    .word oneminusunder
+#include "page.i65"
+    .word cstore
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=REFILL
+stack=( -- )
+tags=primitive,outer,extra,nosymbol
+Load `sib` with a logical line of input.  An interactive session always return the value 80.  Return value is the width of the line.  Zero will only be returned when `loading?` at the end of a screen.
+
+```
+: refill   ( -- )
+    eoi? ?exit
+    sib line.size
+    0 =cursor  expect  0 =cursor ;
+```
+#endif
+#include "align.i65"
+_refill
+    jsr enter
+#include "page.i65"
+    .word eoiq
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word sib
+#include "page.i65"
+    .word _linesize
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word exchgcursor
+#include "page.i65"
+    .word expect
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word exchgcursor
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NAME.PARSE
+stack=( -- nfa|0 )
+tags=secondary,outer,extra,nosymbol
+
+* set n7 delimiter char
+* refill the line buffer (if empty)
+* skip/scan move `in` past token
+* set n8 token length
+* put length before text in buffer
+* move `in` past trailing space
+
+```
+: name.parse   ( -- length )
+    skip dup 1- <n6 +
+    scan rot -
+    dup !nfa ;
+
+: !nfa
+    >n8 over c!  in 1+! ;
+```
+#endif
+#include "align.i65"
+_nameparse
+    jsr enter
+#include "page.i65"
+    .word skip                  ; start of name
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word oneminus
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N6               ; line buffer
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word scan                  ; end of name (and/or buffer)
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word minus                 ; length
+#include "parm.i65"
+    .word tozp
+    .byt R0L+2*N8               ; name.len
+#include "pad.i65"
+    .word over
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word oneplusstore
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=REFILL?
+stack=( -- flag )
+tags=primitive,outer,extra,nosymbol
+Load either `sib` or `tib` with a logical line of input.  An interactive session always return the value 80.  Return value is the width of the line.  Zero will only be returned when `loading?` at the end of a screen.
+
+```
+: ?refill   ( -- )
+    eol?
+    if
+        blk@ ?: refill query
+    then ;
+```
+#endif
+#include "align.i65"
+_qrefill
+    jsr enter
+#include "page.i65"
+    .word eolq
+#include "parm.i65"
+    .word qbranch
+    .byt <(qrefill01-*+1)
+#include "pad.i65"
+    .word blkfetch
+#include "parm.i65"
+    .word pquerycolon
+    .word _refill
+    .word _query
+#include "past.i65"
+qrefill01
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NAME
+stack=( char -- nfa|0 )
+tags=outer,extra
+Parse the next `word` from the `input stream`.  Return `false` if the input stream is exhausted, or returns the `nfa` of the found word, which will be a counted string somewhere in `tib` or `sib`.
+
+Leading delimiters are ignored.   If the delimiter `char` is not found the value of `in` will be the size of the input stream.  If `char` is found, `in` will point to the character following the delimiter. When the end of the input line is reached, `name.parse` clears `span` to let us exit.  Similarly, `line.size` will clear `blk` when `lin` reaches the `height` physical line of `blkbuf` to exit after loading a screen.
+
+This is one of PETTIL's slight departures from the Forth-83 standard.  In PETTIL `name` replaces the //required// reserved word `word`. The reason is that PETTIL uses a lazy loading design while the standard uses active loading.
+
+|What is a WORD?|<|<|h
+|1|word|entry in the Forth dictionary|
+|2|word|16 bits of memory|
+|3|word|an English word|
+|4|word|//required// reserved Forth-83 standard word to parse the input stream|
+|5|word|things Cameo say before `up`|
+
+Here we see that `word` means (at least) five things, and we are dispensing with one of those (meaning #4) by renaming `word` to `name` and altering the stack diagram slightly.
+
+* set `n6` to `tib`(interactive) or `sib`(loading)
+* set `n7` to delimiter char ' '
+* `refill?` will refill the line buffer, if needed
+
+* test if line buffer (and screen buffer, if loading) exhausted
+* set `n8` length
+* return `false` or `nfa`
+* Advance `in` past the parsed `word`.
+
+
+```
+: name   ( char -- nfa|0 )
+    blk@ ?: sib tib n6 2!
+
+`eoi` true when skip/scan reached end of line last time through
+eoi? ?: refill?
+
+
+
+    eol? ?: refill? name.parse ;
+\    refill? ?: name.parse false ;
+
+: name   ( char -- nfa|0 )
+    blk@ ?: sib tib n6 2!
+    refill?  ?: name.parse false ;
+
+: name   ( char -- nfa|0 )
+    blk@ ?: sib tib n6 2!
+    ?refill
+    eol? ?: false name.parse ;
+```
+#endif
+#include "align.i65"
+_name
+    jsr enter
+#include "page.i65"
+    .word blkfetch
+#include "page.i65"
+    .word pquerycolon
+    .word sib
+    .word tib
+#include "parm.i65"
+    .word blit
+    .byt R0L+2*N6
+#include "pad.i65"
+    .word twostore              ; set n6=lib; n7=char
+#include "page.i65"
+    .word _qrefill
+#include "page.i65"
+    .word eolq
+#include "parm.i65"
+    .word pquerycolon
+    .word false
+    .word _nameparse
+#include "past.i65"
+    .word exit

@@ -1,0 +1,230 @@
+;001 - perturb-v
+
+;--------------------------------------------------------------
+#if 0
+name=PERTURB-V
+tags=system,test,nosymbol
+
+#endif
+_perturb_v
+    .word plits
+    .byt 8
+;
+    .word userstartup
+    .word restart+1
+;
+    .word restart               ; instead of clearing memory and erasing PERTURB...
+    .word perturbpreserve
+;
+    .word _perturb_v_callback
+    .word there+perturbpatch-hitop+4
+;
+    .word perturb_v_expect
+    .word expect+1
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word store
+#include "past.i65"
+    .word restart
+
+#include "align.i65"
+_perturb_v_callback
+    jsr toforth
+#ifdef IS_VIC20
+;#include "parm.i65"
+    .word dlit
+    .byt $00,$3D
+    .word VIC6560+$0E
+#include "pad.i65"
+    .word store
+#endif
+#ifdef IS_C64
+#include "parm.i65"
+    .word dlit
+    .byt $05,$0D                ; lt green background / dk green border
+    .word VIC6567+$20
+#include "pad.i65"
+    .word store
+#include "parm.i65"
+    .word blit
+    .byt 31                     ; dk blue
+#include "pad.i65"
+    .word emit
+#endif
+#include "page.i65"
+    .word dotclr
+#include "parm.i65"
+    .word docursor
+#ifdef IS_PET
+#ifdef IS_PET80
+    .byt 45                     ; X column
+    .byt 17                     ; Y line
+#else
+    .byt 23                     ; X column
+    .byt 16                     ; Y line
+#endif
+#else
+#ifdef IS_VIC20
+    .byt 13                     ; X column
+    .byt 15                     ; Y line
+#else
+    .byt 23                     ; X column
+    .byt 16                     ; Y line
+#endif
+#endif
+
+#include "parm.i65"
+    .word blit
+    .asc "V"
+#include "pad.i65"
+    .word emit
+#include "page.i65"
+    .word four
+#include "page.i65"
+    .word _jiffies
+#include "parm.i65"
+    .word dlit
+    .word _errormsg
+    .word userwarning
+#include "pad.i65"
+    .word store
+#include "past.i65"
+    .word _warm
+
+dokeybuf
+    jsr dodoes
+#include "page.i65"
+    .word cfetchplus
+#include "page.i65"
+    .word duptor
+#include "parm.i65"
+    .word blit
+    .byt NDX
+#include "pad.i65"
+    .word cstore
+#include "page.i65"
+    .word rfetch
+#include "page.i65"
+    .word zero
+#include "parm.i65"
+    .word pqdo
+    .byt <(dokeybuf02-*+1)
+#include "pad.i65"
+dokeybuf01
+    .word cfetchplus
+#include "page.i65"
+    .word i
+#include "parm.i65"
+    .word plit
+    .word KEYD
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word cstore
+#include "parm.i65"
+    .word ploop
+    .byt <(dokeybuf01-*+1)
+#include "pad.i65"
+dokeybuf02
+    .word rdrop
+#include "page.i65"
+    .word drop
+#include "past.i65"
+    .word exit
+
+infocommand
+    jsr dokeybuf
+    .byt <(infocommand01-*-1)
+    .asc "INFO",CR
+infocommand01
+    .word 0
+
+#include "align.i65"
+perturb_v_expectxxx
+    lda pip
+    sta infocommand01
+    lda pip+1
+    sta infocommand01+1
+    jsr toforth
+#include "page.i65"
+    .word infocommand
+#include "parm.i65"
+    .word dlit                  ; replace original EXPECT
+    .word harvests2
+    .word expect+1
+#include "pad.i65"
+    .word store
+#include "past.i65"
+    .word *+2
+    lda infocommand01
+    sta pip
+    lda infocommand01+1
+    sta pip+1
+    jmp harvests2
+
+commands
+    .byt <(commands01-*-1)
+    .asc "INFO",CR
+commands01
+    .byt <(commands02-*-1)
+    .asc "CI","NV @ ",CR
+commands02
+    .byt <(commands03-*-1)
+    .asc ".4H =I","RQ",CR
+commands03
+    .byt <(commands04-*-1)
+    .asc "CI","NV DUP",CR
+commands04
+    .byt <(commands05-*-1)
+    .asc ".4H OFF",CR
+commands05
+    .byt <(commands06-*-1)
+    .asc "_",CR,3,"Q"
+commands06
+    .byt <(commands07-*-1)
+    .asc "INFO",CR
+commands07
+    .byt <(commands08-*-1)
+    .asc "_",CR,3,"Q"
+commands08
+    .byt <(commands09-*-1)
+    .asc ".S",CR
+commands09
+    .byt <(commands10-*-1)
+    .asc "INFO",CR
+commands10
+    .word 0
+
+cmdidx
+    .word commands
+
+perturb_v_expect
+    jsr slip
+    lda cmdidx
+    sta tos
+    lda cmdidx+1
+    sta tos+1
+    ldy #0
+    lda (tos),y
+    beq perturb_v_expect02
+    tay
+    sec
+    adc cmdidx
+    sta cmdidx
+    lda cmdidx+1
+    adc #0
+    sta cmdidx+1
+    sty NDX
+perturb_v_expect01
+    lda (tos),y
+    sta KEYD-1,Y
+    dey
+    bne perturb_v_expect01
+perturb_v_expect02
+    jsr slide
+    jmp harvests2

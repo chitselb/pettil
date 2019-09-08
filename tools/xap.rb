@@ -10,7 +10,7 @@
     # after nextline of source
     class PettilSource
         def initialize(filenames)
-            puts filenames
+#            puts filenames
             @files=filenames.collect
         end
 
@@ -98,11 +98,11 @@ _semi
         # accepts lines from the input stream that are potentially out of
         # order and evolves the object as more information is received
         def feed(line, labelhash)
-            @skip = false
+            @skip = line.empty? || (line =~ /^\;(-)\1*$/)
 
             # this goes first
             is_done? line
-            return if @done
+            return if @done || @skip
 
             is_name? line
             is_flags? line
@@ -307,7 +307,7 @@ puts @label   if @label == "STUDIO"
             text = "!! //#{wikiname}//"   if @tags.index "nosymbol"
             text += ((@stack.nil?) ? "\n\n" : "&nbsp;&nbsp;&nbsp;#{@stack}\n\n")
             text += ((@prevword.nil?) ? '' : "[[<<|#{@prevword}]]&nbsp;")
-            text += ((@addr.nil?) ? 'wut?' : "address:&nbsp;$#{hex4out @addr}&nbsp;&nbsp;")
+            text += ((@addr.nil?) ? 'nada' : "address:&nbsp;$#{hex4out @addr}&nbsp;&nbsp;")
             text += ((@size.nil?) ? 'wut?' : "size:&nbsp;#{@size}&nbsp;")
             text += ((@nextword.nil?) ? "\n\n" : "[[>>|#{@nextword}]]\n\n")
             text += ((@desc.nil?) ? '' : @desc)
@@ -365,6 +365,8 @@ puts @label   if @label == "STUDIO"
                     labels[a[0]] = a[1].hex
                 end
             end
+        else
+            puts "missing +#{filename}"
         end
         return labels
     end
@@ -429,7 +431,7 @@ puts @label   if @label == "STUDIO"
     end
 
     # outputs a definitions file for the transient dictionary
-    def write_core_defs(outputfile,labels)
+    def write_defs_file(outputfile,labels)
         # these labels have an address that conflicts with a keyword,
         # e.g. addresses containing 'bc' or 'add' used by Sweet-16
 
@@ -454,9 +456,12 @@ puts @label   if @label == "STUDIO"
     end
 
     def set_sizes(forthwordhash)
-#forthwordhash.each do  |wordname, stuff|
-#    puts stuff.addr.to_s + '     ' + wordname
-#end
+
+=begin
+forthwordhash.each do  |wordname, stuff|
+    puts stuff.addr.to_s + '     ' + wordname
+end
+=end
         sortedbyaddr = forthwordhash.sort_by {|wordname, stuff| stuff.addr}
         for i in 0..(sortedbyaddr.size-2)
             prevword = (i>0) ? sortedbyaddr[i-1][1].wikititle : nil
@@ -479,7 +484,7 @@ puts @label   if @label == "STUDIO"
 #    puts wordname, stuff
 # end
     def write_symtab_file(outputfile,forthwordhash)
-        sortedbylen = forthwordhash.sort_by {|wordname, stuff| stuff.symbol.length.chr+stuff.symbol}
+        sortedbylen = forthwordhash.sort_by {|wordname, stuff|(stuff.symbol.bytes[0]&15).chr+stuff.symbol.length.chr+stuff.symbol.bytes[0].chr}
         symfile = File.open("./tmp/"+outputfile,'wb')
         sortedbylen.each do |wordname, stuff|
             if !(stuff.symbol_table_entry.nil?) && !(stuff.tags.index "nosymbol")
@@ -551,15 +556,17 @@ puts @label   if @label == "STUDIO"
     labels = add_labels "pettil-core.lab"
 
     # write out core definitions so the transient dictionary can find stuff
-    write_core_defs "pettil-core.def",labels
+    write_defs_file "pettil-core.def",labels
 
     # now we add the rest of the symbols from the transient dictionary
     all_labels = labels.merge(add_labels "pettil-studio.lab")
 
-    # build an xpet monitor file with both core and transient labels
+    write_defs_file "pettil-studio.def",all_labels
+
+    # write an xpet monitor file with both core and transient labels
     write_xpet_monfile "pettil.mon",all_labels
 
-    # Changing any files here?  Also modify src/pettil-core.a65
+    # Changing any files here?  Also modify src/core/pettil-core.a65
     files = \
         "sweet16.a65 "\
         "core-locals.a65 "\
@@ -570,13 +577,13 @@ puts @label   if @label == "STUDIO"
         "core-double.a65 "\
         "core-vm.a65 "\
         "core-io.a65 "\
-        "test-general.a65 "\
         "pettil-core.a65 "\
 
-    core_files = files.split(" ").collect { |filename| "./core/src/"+filename }
+    core_files = files.split(" ").collect { |filename| "./src/core/"+filename }
 
-    # Adding new files here?  Also add them to src/pettil-tdict.a65
+    # Changing any files here?  Also modify studio/src/pettil-studio.a65
     files = \
+        "pettil-cold.a65 "\
         "pettil-studio.a65 "\
         "pettil-name.a65 "\
         "pettil-number.a65 "\
@@ -588,7 +595,7 @@ puts @label   if @label == "STUDIO"
         "pettil-editor.a65 "\
         "pettil-assembler.a65 "
 
-    studio_files = files.split(" ").collect { |filename| "./studio/src/"+filename }
+    studio_files = files.split(" ").collect { |filename| "./src/studio/"+filename }
 
     all_words = Hash.new
     pettil = PettilSource.new core_files+studio_files
@@ -604,35 +611,28 @@ puts @label   if @label == "STUDIO"
                 forthword = nil
             end
         end
-        # scan for '#ifdef 0'
         if line =~ /^\#if 0$/
             forthword = ForthWord.new
         end
     end
-puts "finis"
+#puts "finis"
 
 
     #calculate the @size field of each forthword
-    puts all_words["STUDIO"].addr
+#puts all_words
+#    puts all_words["STUDIO"].addr
 #    puts all_words.each { | word| word }
     set_sizes all_words   unless all_words["STUDIO"].addr.nil?
-
     # output symbol table file
     write_symtab_file "pettil.sym",all_words
-
     # output symbol table file in CSV, for metrics
     write_symtab_dump "symtab.csv",all_words
-
     # output tiddlers for tiddlypettil
     write_json_file "pettil.json",all_words
-
     # output word sizes as csv
     write_size_file "sizes.csv",all_words
-
     # output word names for pearson cruncher
     write_pearson_file "pearson.txt",all_words
-
     # kick out a csv file of symbols and addresses for performance tuning
     write_xpet_csvfile "pettil.csv",all_words
-
     exit

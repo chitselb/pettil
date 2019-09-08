@@ -1,0 +1,893 @@
+; pettil-cold.a65
+;#echo .       pettil-cold.a65
+;#echo .       PETTIL first time startup code, disappeared by DEADBEEF after use
+
+;--------------------------------------------------------------
+#if 0
+name=(COLD)
+stack=( -- )
+tags=system,startup,throwaway,nosymbol,secondary
+
+|^`(cold)` startup tasks|<|h
+|^`?aloha`|^swap zeropage <--> zpbuf<br/>$00-$8C|
+|^`sp!`|^initialize data stack|
+|^`=irq`|^set up IRQ vector<br/>$90-$91|
+|^`!sw16`|^connect Sweet16 to BRK vector<br/>$92-$93|
+|^`diagfill`|^fill screen (entertainment)|
+|^`studio cmove`|^copy `studio` to top of memory|
+|^`splash`|^(entertainment)|
+|^`symtab cmove`||
+|^`!symtab`<br/>( start end -- symtab size ) |^set symbol table size|
+|^`symdex`|^build symtab index|
+|^`deadbeef`|^fill memory with a pattern|
+|^`warm`|^drop the user to a blinking cursor|
+
+A primitive relocator to move already-linked code to upper memory
+
+Gets us from `pettil-core` to module LAUNCH
+
+Setting the `size` of the transient dictionary to 0 will prevent
+moving anything; control still transfers to `loadaddr+2`.
+
+|task|description|h
+|^`?aloha`|^swap lower half of zero page<br/>if it isn't already|
+|^`sp!`|^reset data stack|
+|^`=irq`|^exchange IRQ vector<br/>with `userirq`|
+|^`!sw16`|^exchange BRK vector<br/>with `userirq`<br/>if it isn't already|
+|^`diagfill`|fill screen with '\' pattern|
+|^``there @+ tuck over @ 2+ cmove`|^copy `studio` to `hitop` area|
+|^`2+ startup !|^set `startup` to `studio`|
+|^cold variables<br/>`cmove erase`|^reset `cold` uservars|
+|^`restart`|launch `studio`|
+
+```
+code cold   ( -- )
+    '?aloha jsr,
+    >forth,
+    sp! 'there @+ tuck over @ 2+ cmove 2+ startup !
+    (lits) 5 'ustart 'uendcore 'ustart - 'userarea 'ucore 'uarea 'userarea -
+    cmove erase restart \ ;
+```
+#endif
+pcold
+    jsr qaloha
+#include "align.i65"
+    jsr toforth                 ; transition from 6502 Assembly to Forth
+#include "page.i65"
+    .word spstore
+#include "page.i65"
+    .word _diagfill             ; fill the screen with '/' graphic
+#include "parm.i65"
+    .word callz
+    .word setsw16               ; so we may use BRK to access Sweet16
+#include "pad.i65"                                ; ~ stack is empty
+    .word plit
+    .word there
+#include "pad.i65"
+    .word fetchplus             ; link to upper dictionary
+#include "page.i65"
+    .word tuck
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word cmove                 ; but first, make an upper dictionary
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word startup
+#include "page.i65"
+    .word store                 ; `studio` -> `startup` for 2nd `restart`
+#include "parm.i65"
+    .word plit
+    .word splashirq
+#include "page.i65"
+    .word cinv
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word _swapirq
+#include "parm.i65"
+    .word dlit
+    .word EAL
+    .word there
+#include "pad.i65"
+    .word fetchplus
+#include "page.i65"
+    .word dashrot
+#include "page.i65"
+    .word fetchplus
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word symtabset
+#include "page.i65"
+    .word cmovegt
+#include "page.i65"
+    .word drop
+#include "parm.i65"
+    .word dlit
+#ifdef IS_VIC20
+    .word VIDRAM+11*22
+    .word 12*22
+#else
+    .word VIDRAM+11*40
+    .word 14*40
+#endif
+#include "pad.i65"
+    .word blank
+#include "page.i65"
+    .word five
+#include "page.i65"
+    .word _jiffies
+#include "page.i65"
+    .word _setsymtab            ; `!symtab`
+#include "past.i65"
+perturbpreserve
+    .word _deadbeef
+
+;--------------------------------------------------------------
+#if 0
+name=!SYMTAB
+stack=( start end -- size addr )
+tags=system,startup,nosymbol
+Scan `symtab`
+
+: !symtab   ( -- )
+    bloom 8 erase  sym.rewind
+    symtab @ bl
+    begin
+        sym.len <
+        if
+            n3> !+
+        then
+        bloomfilter cbit!
+        sym.len
+        3 sym+
+        sym.len 0=
+    until (!symtab) ;
+
+
+#endif
+#include "align.i65"
+_setsymtab
+    jsr enter
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word eight
+#include "page.i65"
+    .word erase                 ; reset the Bloom filter
+#include "page.i65"
+    .word symrewind
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word bl
+#include "page.i65"
+samtab01
+    .word symlen
+#include "page.i65"
+    .word gt
+#include "page.i65"
+    .word qbranch
+    .byt <(samtab02-*+1)
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word _storeplus
+#include "page.i65"
+samtab02
+    .word _bloomfilter
+#include "page.i65"
+    .word cbitstore
+#include "page.i65"
+    .word symlen
+#include "parm.i65"
+    .word symplus
+    .byt 3
+#include "pad.i65"
+    .word symlen
+#include "page.i65"
+    .word zeq
+#include "parm.i65"
+    .word qbranch
+    .byt <(samtab01-*+1)
+#include "pad.i65"
+    .word symnew
+#include "page.i65"
+    .word psamtab               ; handle `symtab` tail
+#include "page.i65"
+    .word threedrop
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(!SYMTAB)
+stack=( symlen addr -- )
+tags=system,startup,nosymbol
+nip nip
+set 'symnew' once per (rehash) to the third null
+set 'symtail' = symnew-2
+write '0000' word at symtail
+
+
+#endif
+#include "align.i65"
+psamtab
+    brk
+    .byt ld | N3
+    .byt std | TOS              ; set `symnew`
+    .byt popd | N3              ; 2-
+    .byt ld | N3
+    .byt std | TOS              ; set `symtail`
+    .byt sub | ACC
+    .byt std | N3               ; force cfa = 0
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=DIAGFILL
+stack=( -- )
+tags=system,startup,nosymbol
+fill the screen with a rapidly changing diagonal maze effect
+
+#endif
+#include "align.i65"
+_diagfill
+    jsr enter
+#include "parm.i65"
+    .word callz
+    .word CLRSCR
+#ifdef IS_VIC20
+#include "pad.i65"
+    .word spnext
+#include "parm.i65"
+    .word plits
+    .byt 6
+    .word $9400                 ;color memory
+    .word BPERSCR
+    .word 5
+    .word 255
+    .word 36879
+    .word 156                   ;purple
+#include "pad.i65"
+    .word emit
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word fill
+#endif
+#include "page.i65"
+    .word vidram
+#include "page.i65"
+    .word bperscr
+#include "parm.i65"
+    .word blit
+    .byt (BACKDIAG & $7F)
+#include "pad.i65"
+    .word fill
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=FLIPPER
+stack=( -- false )
+tags=system,startup,nosymbol
+
+```
+: flipper  2-
+    9 40* vidram dup +under
+    do
+        i c@ c>s 0<
+        if $66 i c! then
+    loop ;
+```
+#endif
+#include "align.i65"
+_flipper
+    jsr enter
+#include "page.i65"
+    .word vidram
+#include "parm.i65"
+    .word plit
+#ifdef IS_VIC20
+    .word 9*22
+#else
+    .word 9*40
+#endif
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word vidram
+#include "parm.i65"
+    .word pdo
+    .byt <(flipper03-*+1)
+#include "pad.i65"
+flipper01
+    .word i
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word ctos
+#include "page.i65"
+    .word zlt
+#include "parm.i65"
+    .word qbranch
+    .byt <(flipper04-*+1)
+#include "parm.i65"
+    .word blit
+    .byt WEDGESE | $80
+#include "pad.i65"
+    .word over
+#include "page.i65"
+    .word eq
+#include "parm.i65"
+    .word blit
+    .byt $E1
+#include "pad.i65"
+    .word third
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word orx
+#include "parm.i65"
+    .word blit
+    .byt $A0
+#include "pad.i65"
+    .word swap
+#include "parm.i65"
+    .word pquerycolon
+    .word drop
+    .word nip
+#include "pad.i65"
+flipper04
+    .word i
+#include "page.i65"
+    .word cstore
+#include "parm.i65"
+flipper02
+    .word ploop
+    .byt <(flipper01-*+1)
+#include "past.i65"
+flipper03
+    .word exit
+
+
+pettillogo
+    .word pl0,pl1,pl2,pl3,pl4,pl5,pl6,pl7,pl8
+
+;"setup screen"
+#include "align.i65"
+pl0
+    jsr enter
+#include "parm.i65"
+    .word _pdq
+    .byt (pl0x-*-1)
+#ifdef IS_VIC20
+    .asc HOME,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc DOWN,DOWN,DOWN,DOWN,DELETE,DOWN
+    .asc DELETE,RIGHT,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+pl0x
+    .word _pdq
+    .byt (pl0y-*-1)
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE,DELETE
+    .asc DELETE
+pl0y
+#else
+    .asc HOME,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc DOWN,"SORTING SYMBOLS... 30 SECONDS"
+pl0x
+#endif
+#include "past.i65"
+    .word exit
+
+;"P"
+#include "align.i65"
+pl1
+    jsr enter
+;1000  6b 73 71 72                                          ksqr
+#include "parm.i65"
+    .word _pdq
+    .byt (pl1x-*-1)
+#ifdef IS_VIC20
+    .asc HOME,DOWN,DOWN
+    .asc RVSON,WEDGESE,DIAG,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT,LEFT
+    .asc RVSON,DIAG,$EB,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT,LEFT
+    .asc RVSON,DIAG,RIGHT,DIAG
+    .asc DOWN,LEFT,LEFT,LEFT
+    .asc RVSON,DIAG,DIAG,RVSOFF,WEDGESE
+    .asc DOWN,LEFT,LEFT,LEFT
+    .asc RVSON,DIAG,DOWN,LEFT
+    .asc RVSON,$F3,DOWN,LEFT
+    .asc RVSOFF,WEDGESE
+    .asc UP,UP,UP,UP,UP,UP,RIGHT,RIGHT,RIGHT
+#else
+    .asc    HOME,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc    DOWN,DOWN,RVSON,$CE,RVSOFF,$E9,RVSON
+    .asc    UP,LEFT,LEFT,$CE,$CE
+    .asc    UP,LEFT,LEFT,$EB,$CE
+    .asc    UP,LEFT,LEFT,$CE,$CE
+    .asc    UP,LEFT,LEFT,$CE,$CE
+    .asc    UP,LEFT,LEFT,$CE,$CE
+    .asc    UP,LEFT,LEFT,$E9,$F2,$CE,$CE,$CE,$DF
+    .asc    DOWN,LEFT,LEFT,LEFT,LEFT,$CE,$CE,$CE,$CE
+    .asc    DOWN,LEFT,LEFT,$EB,$CE
+    .asc    DOWN,LEFT,LEFT,LEFT,LEFT,$CE,$CE,$CE,RVSOFF,$E9
+#endif
+pl1x
+#include "past.i65"
+    .word exit
+
+
+;"E"
+#include "align.i65"
+pl2
+    jsr enter
+#include "parm.i65"
+    .word _pdq
+    .byt (pl2x-*-1)
+#ifdef IS_VIC20
+    .asc RVSON,WEDGESE,DIAG,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT,LEFT
+    .asc RVSON,DIAG,DIAG,$EB,RVSOFF
+    .asc DOWN,LEFT,LEFT,LEFT
+    .asc RVSON,DIAG,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,DIAG,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT
+    .asc RVSON,$F3,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,DIAG,DIAG,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT,LEFT
+    .asc RVSON,DIAG,$EB,RVSOFF,WEDGESE
+    .asc UP,UP,UP,UP,UP,UP,RIGHT
+#else
+    .asc HOME,DOWN,DOWN,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT
+    .asc RVSON,$E9,$CE,$CE,$CE,$CE,$CE,LEFT,LEFT,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $CE,$CE,$F1,$CE,$CE,$CE,LEFT,LEFT,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $CE,$CE,LEFT,LEFT,DOWN
+    .asc $F3,$CE,$CE,$CE,RVSOFF,$E9,RVSON,LEFT,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $CE,$CE,LEFT,LEFT,DOWN
+    .asc $CE,$CE,$CE,$CE,$F2,$CE,LEFT,LEFT,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $CE,$F1,$CE,$CE,$CE,RVSOFF,$E9,RVSON
+#endif
+pl2x
+#include "past.i65"
+    .word exit
+
+;"T"1
+#include "align.i65"
+pl3
+    jsr enter
+#include "parm.i65"
+    .word _pdq
+    .byt (pl3x-*-1)
+#ifdef IS_VIC20
+    .asc RVSON,WEDGESE,DIAG,$F2,RVSOFF
+    .asc DOWN,LEFT,LEFT,LEFT
+    .asc RVSON,DIAG,DIAG,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT
+    .asc RVSON,$F1,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,DIAG,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,DIAG,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,DIAG,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSOFF,WEDGESE
+    .asc UP,UP,UP,UP,UP,UP,RIGHT,RIGHT
+#else
+    .asc HOME,DOWN,DOWN,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RVSON,$E9,$F2,$CE,$CE,$CE,$CE,LEFT
+    .asc LEFT,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $CE,$CE,$CE,$CE,$F1,RVSOFF,$E9,RVSON,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $CE,$CE,LEFT,LEFT,DOWN
+    .asc $CE,$CE,LEFT,LEFT,DOWN
+    .asc $CE,$CE,LEFT,LEFT,DOWN
+    .asc $CE,$F3,LEFT,LEFT,DOWN
+    .asc $CE,RVSOFF,$E9,RVSON
+#endif
+pl3x
+#include "past.i65"
+    .word exit
+
+;"personal electronic transactor"
+#include "align.i65"
+pl4
+    jsr enter
+#include "page.i65"
+    .word _flipper
+#include "parm.i65"
+    .word _pdq
+    .byt (pl4x-*-1)
+#ifdef IS_VIC20
+    .asc HOME,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc RIGHT,RVSON,"PERSONAL ELECTRONIC",CR
+    .asc RIGHT,RVSON,"TRANSACTOR",CR
+    .asc HOME,DOWN,DOWN,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT
+#else
+    .asc HOME,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RVSOFF,$D6,RVSON,CR,CR,CR,CR,CR,CR,CR
+    .asc "     PERSONAL ELECTRONIC TRANSACTOR",CR
+#endif
+pl4x
+#include "past.i65"
+    .word exit
+
+;"T"2
+#include "align.i65"
+pl5
+    jsr enter
+#include "parm.i65"
+    .word _pdq
+    .byt (pl5x-*-1)
+#ifdef IS_VIC20
+    .asc RVSON,WEDGESE,DIAG,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT,LEFT
+    .asc RVSON,DIAG,$EB,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT
+    .asc RVSON,DIAG,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,DIAG,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,DIAG,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,$F3,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSOFF,WEDGESE
+    .asc UP,UP,UP,UP,UP,UP,RIGHT,RIGHT
+#else
+    .asc "     THREADED INTERPRETIVE LANGUAGE",CR
+#endif
+pl5x
+#include "past.i65"
+    .word exit
+
+;"I"
+#include "align.i65"
+pl6
+    jsr enter
+#include "parm.i65"
+    .word _pdq
+    .byt (pl6x-*-1)
+#ifdef IS_VIC20
+    .asc RVSON,WEDGESE,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT
+    .asc RVSON,DIAG,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT
+    .asc RVSON,$A1,RVSOFF,$A1
+    .asc DOWN,LEFT,LEFT
+    .asc RVSON,$A1,RVSOFF,$A1
+    .asc DOWN,LEFT,LEFT
+    .asc RVSON,$A1,RVSOFF,$A1
+    .asc DOWN,LEFT,LEFT
+    .asc RVSON,DIAG,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT
+    .asc RVSON,DIAG,$EB,RVSOFF
+    .asc UP,UP,UP,UP,UP,UP,RIGHT
+#else
+    .asc HOME,DOWN,DOWN,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RVSON,$E9,$CE,$CE,$CE,$CE,$CE,LEFT,LEFT,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $CE,$F1,$CE,$CE,$CE,RVSOFF,$E9,RVSON,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $CE,$CE,LEFT,LEFT,DOWN
+    .asc $CE,$CE,LEFT,LEFT,DOWN
+    .asc $CE,$F3,LEFT,LEFT,DOWN
+    .asc $CE,$CE,LEFT,LEFT,DOWN
+    .asc $CE,RVSOFF,$E9,RVSON
+#endif
+pl6x
+#include "past.i65"
+    .word exit
+
+;"L"
+#include "align.i65"
+pl7
+    jsr enter
+#include "parm.i65"
+    .word _pdq
+    .byt (pl7x-*-1)
+#ifdef IS_VIC20
+    .asc RVSON,WEDGESE,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,DIAG,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,$EB,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,DIAG,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,DIAG,RVSOFF
+    .asc DOWN,LEFT
+    .asc RVSON,DIAG,RIGHT,DELETE,DIAG,LEFT,INSERT,DIAG,RVSOFF
+    .asc DOWN,LEFT,LEFT
+    .asc RVSON,DIAG,RIGHT,DELETE,RVSOFF,WEDGESE
+    .asc RVSON,LEFT,INSERT,DIAG,RVSOFF
+#else
+    .asc HOME,DOWN,DOWN,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RVSON,$E9,$CE,$CE,$CE,$CE,LEFT,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $CE,$CE,$CE,$F1,RVSOFF,$E9,RVSON,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc RVSOFF,$AA,RVSON,$CE,RVSOFF,$B4,RVSON,LEFT,LEFT,LEFT,DOWN
+    .asc RVSOFF,$AA,RVSON,$CE,RVSOFF,$B4,RVSON,LEFT,LEFT,LEFT,DOWN
+    .asc RVSOFF,$AA,RVSON,$CE,RVSOFF,$B4,RVSON,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $E9,$CE,$CE,$CE,$CE,LEFT,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $CE,$F1,$CE,$CE,RVSOFF,$E9,RVSON
+#endif
+pl7x
+#include "past.i65"
+    .word exit
+
+
+;"threaded interpretive language"
+#include "align.i65"
+pl8
+    jsr enter
+#include "parm.i65"
+    .word _pdq
+    .byt (pl8x-*-1)
+#ifdef IS_VIC20
+    .asc HOME,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RVSON," THREADED",CR
+    .asc RVSON,"INTERPRETIVE LANGUAGE",CR
+#else
+    .asc HOME,DOWN,DOWN,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RIGHT,RIGHT,RIGHT,RIGHT,RIGHT,RIGHT
+    .asc RVSON,$E9,$CE,LEFT,LEFT,DOWN
+    .asc $CE,$F3,LEFT,LEFT,DOWN
+    .asc $CE,$CE,LEFT,LEFT,DOWN
+    .asc $EB,$CE,LEFT,LEFT,DOWN
+    .asc $CE,$CE,LEFT,LEFT,DOWN
+    .asc $CE,$CE,$CE,$CE,$F2,$CE,LEFT,LEFT,LEFT,LEFT,LEFT,LEFT,DOWN
+    .asc $CE,$CE,$CE,$CE,$CE,RVSOFF,$E9
+#endif
+pl8x
+#include "past.i65"
+    .word exit
+
+#include "align.i65"
+pl9
+    jsr enter
+#include "parm.i65"
+    .word _pdq
+    .byt (pl9x-*-1)
+#ifdef IS_VIC20
+    .asc HOME,CR,CR,CR,CR,CR,CR,CR,CR,CR,CR,CR,CR,CR,CR
+    .asc "GITHUB:CHITSELB/PETTIL"
+    .asc RIGHT,RVSON,"FORTH FOR THE VIC-20",CR
+pl9x
+#include "pad.i65"
+    .word _flipper
+#else
+    .asc HOME,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc RIGHT,RVSON,"FORTH FOR THE COMMODORE PET",CR
+pl9x
+#endif
+#include "past.i65"
+    .word exit
+
+#include "align.i65"
+pl11
+    jsr enter
+#include "parm.i65"
+    .word _pdq
+    .byt (pl11x-*-1)
+    .asc HOME,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc DOWN,DOWN
+;p
+    .asc $CD,SPACE,SPACE,UP,LEFT,SPACE,UP,LEFT,SPACE
+    .asc UP,LEFT,SPACE,SPACE,SPACE,SPACE,SPACE
+    .asc UP,LEFT,SPACE,UP,LEFT,SPACE,UP,LEFT,SPACE
+    .asc UP,LEFT,$CD
+    .asc DOWN,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+;e
+    .asc $CD,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,UP,LEFT,SPACE
+    .asc UP,LEFT,SPACE,UP,LEFT,LEFT,LEFT,LEFT,LEFT
+    .asc SPACE,SPACE,SPACE,SPACE,UP,LEFT,SPACE,UP
+    .asc LEFT,LEFT,LEFT,LEFT,SPACE,SPACE,SPACE,SPACE,SPACE
+    .asc UP,LEFT,SPACE,UP,LEFT,$CD
+    .asc DOWN,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+;t
+    .asc RIGHT,RIGHT,$CD,SPACE,SPACE,UP,LEFT,SPACE
+    .asc UP,LEFT,SPACE,UP,LEFT,SPACE,UP,LEFT,SPACE
+    .asc UP,LEFT,SPACE,SPACE,SPACE,UP,LEFT,SPACE,UP,LEFT,$CD
+    .asc DOWN,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+;t
+    .asc RIGHT,RIGHT,$CD,SPACE,SPACE,UP,LEFT,SPACE
+    .asc UP,LEFT,SPACE,UP,LEFT,SPACE,UP,LEFT,SPACE
+    .asc UP,LEFT,SPACE,SPACE,SPACE,UP,LEFT,SPACE,UP,LEFT,$CD
+    .asc DOWN,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+;i
+    .asc $CD,SPACE,SPACE,SPACE,SPACE,SPACE,UP,LEFT,SPACE
+    .asc UP,LEFT,SPACE,UP,LEFT,LEFT,SPACE,UP,LEFT,SPACE
+    .asc UP,LEFT,SPACE,SPACE,UP,LEFT,SPACE,UP,LEFT,$CD
+;l
+    .asc RIGHT,RIGHT,$CD,DOWN,LEFT,SPACE,DOWN,LEFT,SPACE
+    .asc DOWN,LEFT,SPACE,DOWN,LEFT,SPACE,DOWN,DOWN,DOWN
+    .asc LEFT,LEFT,LEFT,$CD,SPACE,SPACE,SPACE,SPACE,SPACE
+pl11x
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NEXTACTION
+stack=( -- )
+tags=system,startup,nosymbol
+
+
+```
+: nextaction   ( -- )
+    'actioncfa dup>r @ @+ execute r> ! ;
+```
+#endif
+#include "align.i65"
+_nextaction
+    jsr enter
+#include "parm.i65"
+    .word plit
+    .word actioncfa
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word fetchplus
+#include "page.i65"
+    .word execute
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word store
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?LETTER
+stack=( -- )
+tags=system,startup,throwaway,nosymbol
+Synchronize `actionidx` with `actionnow`
+
+```
+| zp | stack | system | core | available RAM | vmbuf | blkbuf | symtab | studio |
+
+: ?letter   ( -- )
+    begin
+        'actionidx @ csplit =
+    ?exit
+        nextaction 'actionnow 1+!
+    again
+```
+#endif
+#include "align.i65"
+_qletter
+    jsr enter
+#include "parm.i65"
+qletter01
+    .word plit
+    .word actionidx
+#include "pad.i65"
+    .word fetch
+#include "page.i65"
+    .word csplit
+#include "page.i65"
+    .word eq
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word _nextaction           ; ( -- false )
+#include "parm.i65"
+    .word plit
+    .word actionnow
+#include "pad.i65"
+    .word oneplusstore
+#include "parm.i65"
+    .word branch
+    .byt <(qletter01-*+1)
+
+;--------------------------------------------------------------
+#if 0
+name=BANNER
+stack=( -- )
+tags=system,startup,nosymbol
+splash screen irq handler
+choose a random location
+check character on either page
+    4D?  replace it with 4E
+    4E?  replace it with 4D
+    else? leave it alone
+
+#endif
+#include "align.i65"
+_banner
+    jsr enter
+#include "parm.i65"
+    .word _pdq
+    .byt (bannermsg01-*-1)      ; length of bannermsg
+    .asc    HOME,DOWN,DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc    DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc    DOWN,DOWN,DOWN,DOWN,DOWN
+    .asc    "VERSION: 2019-12-13",CR
+    .asc    "1928 JACK TRAMIEL'S BIRTHDAY",CR
+            ;123456789.123456789.123456789.123456789.
+bannermsg01
+#include "past.i65"
+    .word exit
+
+there

@@ -1,0 +1,155 @@
+#!/bin/bash
+# ~/pettil/tools/mkperturb
+#
+cd ~/pettil >/dev/null
+
+# for each PETTIL target that was built by `mkpettil`
+for pettilobj in obj/pettil.prg?
+do
+    # PRG file load address is first two bytes, in little-endian
+    pettiladdr=$(dd bs=1 count=2 conv=swab status=none <${pettilobj} | xxd -p)
+    # PRG file load address in decimal
+    padr=$(echo "obase=10;ibase=16;${pettiladdr}"|bc)
+    # last char of filename is build target id
+    targetid=${pettilobj: -1}
+    # size of file in bytes, decimal
+    objsize=$(stat -c'%s' ${pettilobj})
+    # file size added to PRG load address is where PERTURB shall reside
+    perturb=$(echo "${objsize} + ${padr}"|bc)
+    # PERTURB start address, in hexadecimal
+    badr=$(echo "obase=16;ibase=10;${perturb}-2"|bc)
+    # for each PERTURB feat (test suite), one feat per `src/perturb/{trick}/` dir
+
+    for feats in $(ls -d ./src/perturb/*/)
+    do
+        cheese=$(basename ${feats#*/})
+        feat="perturb-${cheese}"
+
+        case ${targetid} in
+            0)
+            # 0 PET 2001-N #700251
+                romopts=" -DROM_OPTIONS=05 "
+                hitop=6300
+                vpet=xpet
+                abend=B09B
+                ;;
+            1)
+                # 1 PET 3032
+                romopts=" -DROM_OPTIONS=02 "
+                hitop=6300
+                vpet=xpet
+                abend=FB97
+                ;;
+            2)
+                # 2 PET 4032
+                romopts=" -DROM_OPTIONS=04 "
+                hitop=6300
+                vpet=xpet
+                abend=B09B
+                ;;
+            3)
+                # 3 PET 8032
+                romopts=" -DROM_OPTIONS=12 "
+                hitop=6300
+                vpet=xpet
+                abend=B09B
+                ;;
+            4)
+                # 4 VIC-20
+                romopts=" -DROM_OPTIONS=32 "
+                hitop=6300
+                vpet=xvic
+                abend=FFDF
+                ;;
+            5)
+                # 5 C=64
+                romopts=" -DROM_OPTIONS=64 "
+                hitop=6300
+                vpet=x64sc
+                abend=FBAA
+                ;;
+            6)
+                # 6 C128
+                romopts=" -DROM_OPTIONS=128 "
+                hitop=6300
+                vpet=x128
+                abend=F2A0
+                ;;
+            7)
+                # 7 Plus/4
+                romopts=" -DROM_OPTIONS=16 "
+                hitop=6300
+                vpet=xplus4
+                abend=8427
+                ;;
+        esac
+
+#        foo=`echo "obase=10;ibase=16;$(hexdump -e '"%04x"' -n2 ${pettilobj})"|bc`
+#        ls ./src/perturb/${cheese}/*.i65  ./tmp/perturb/${feat}.a65
+        cat ./src/perturb/${cheese}/*.i65                                       \
+            > ./tmp/perturb/${feat}.a65
+        cat ./src/perturb/${cheese}/*.i65                                       \
+            > ./tmp/perturb/perturb.${targetid}-${cheese}.a65
+        # set tmp/pettil-studio.def include file to current target
+        awk --non-decimal-data -F, '{ printf("%s = %d\n", $1, $2) }'            \
+            ./tmp/pettil-studio.lab${targetid} >                                \
+            ./tmp/pettil-studio.def${targetid}
+        cp ./tmp/pettil-studio.def${targetid} ./tmp/pettil-studio.def
+        cd ./tmp/perturb/>/dev/null
+        xa  perturb.${targetid}-${cheese}.a65                                   \
+            ${romopts}                                                          \
+            -DPERTURB="${cheese}.${targetid}"                                   \
+            -DPERTURBORG=${perturb}                                             \
+            -DHITOP=${hitop}                                                    \
+            -DSPECIALOPTS=${load}                                               \
+            -I ../../src/common/                                                \
+            -I ../                                                              \
+            -o ../../tmp/perturb/${feat}.prg${targetid}                         \
+            -e ./${feat}.err${targetid}                                         \
+            -l ./${feat}.lab${targetid}
+        cd - >/dev/null
+        # (`10 sys1037` BASIC hook & JMP(indirect) opcode)
+        # 0401 0B 04 0A 00 9E 31 30 33 37 00 00 00 6C
+        dd bs=1 if=${pettilobj} status=none     of=tmp/t.1 skip=0 count=15
+        # replacement `perturb` address
+        echo -e -n "\x${badr:2:2}\x${badr:0:2}"  > tmp/t.2
+        # the rest of the original PETTIL binary
+        dd bs=1 if=${pettilobj} status=none     of=tmp/t.3 skip=17
+#       echo "bk E089\ncommand 9 \"scrsh \\\"perturb/${namer}.scrsh\\\" 2;quit\"\nkeybuf load\"${cheese}\",9\x0drun\x0d" >> tmp/perturb.mon4
+#\\ncommand 9 \\"scrsh \\\\"perturb\/%s.scrsh\\\" 2;quit\\"\\nkeybuf  load\\"${cheese}\\",9\\x0drun\\x0d\
+        awk -F,                                                                 \
+            -v cheese=${cheese}                                                 \
+            -v feat=${feat}                                                     \
+            -v targetid=${targetid}                                             \
+            -v abend=${abend}                                                   \
+                'BEGIN {                                                        \
+                    printf("; %s\n", cheese)                                    \
+                }                                                               \
+                {                                                               \
+                    printf("al C:%4s .%s\n", substr($2,4,4), $1)                \
+                }                                                               \
+                END {                                                           \
+                    system("cat src/perturb/bkpt.dbg");                         \
+                    printf("bk %4s\n",abend);                                   \
+                    printf("command 9 \"scrsh \\\"tmp/perturb/perturb.%s-%s.scrsh\\\" 2;quit\"\n",   \
+                     targetid, cheese);                                         \
+                    printf("keybuf load\"%s.%s\",9\\x0drun\\x0d\n",             \
+                     feat, targetid);                                           \
+                }'                                                              \
+                ./tmp/perturb/${feat}.lab${targetid}                            \
+                > ./obj/perturb/${feat}.mon${targetid}
+
+        # save original `startup` address like so:
+        # unneeded because PERTURB source includes PETTIL labels
+        # dd bs=1 if=${pettilobj} status=none   of=tmp/t.0 skip=15 count=2
+
+        cat tmp/t.1 tmp/t.2 tmp/t.3 tmp/perturb/${feat}.prg${targetid}          \
+            > obj/perturb/${feat}.${targetid}
+#        dd bs=1 if=${pettilobj} of=perturb/${cheese}.${targetid}skip=15 count=2 status=none
+#        dd if=${pettilobj} of=perturb/perturb-${cheese}.${targetid} bs=1 count=13
+#        echo "AA" >> perturb/perturb-${cheese}.${targetid}
+#        dd if=${pettilobj} of=perturb/perturb-${cheese}.${targetid} bs=1 count=13
+    done
+done
+
+exit

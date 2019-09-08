@@ -1,0 +1,59 @@
+#!/bin/bash
+# ~/pettil/tools/mkperturb
+#
+cd ~/pettil >/dev/null
+
+#pets=$(pgrep -x x\(pet\|vic\|64sc\|128\|plus4\))
+#while [ "${pets}" ]; do
+#    echo -n .
+#    sleep 1
+#    pets=$(pgrep -x x\(pet\|vic\|64sc\|128\|plus4\))
+#done
+#echo
+
+date -Iseconds >> ./perturb.log
+
+for object in ./tmp/perturb/perturb.*.png
+do
+    cheese=$(basename ${object#*/})
+
+    if [ ! -f data/perturb/${cheese} ]; then
+#        display ${object}
+        echo -e "fail 🍅 ${cheese}\t-- not in data/perturb!"                                    \
+        >> ./perturb.log
+    fi
+
+    diff -s -b ./tmp/perturb/${cheese} ./data/perturb/                          \
+    |sed 's/^.*\/\(.*\)\ are\ identical$/pass 🥑 \1/'                                \
+    |sed 's/^.*\/\(.*\)\ differ$/fail 🍅 \1 \t\t...different!/'                      \
+    >> ./perturb.log
+done
+
+for object in ./data/perturb/perturb.*.png
+do
+    cheese=$(basename ${object#*/})
+    echo ${cheese}
+    if [ ! -f tmp/perturb/${cheese} ]; then
+#        display ${object}
+        echo -e "fail 🍅 ${cheese}\t-- not in tmp/perturb!"                                    \
+        >> ./perturb.log
+    fi
+done
+
+awk '/^2([[:digit:]])+/ {c=NR; a=$0;next} END { { print c } }' ./perturb.log    \
+  | xargs -I{} awk 'BEGIN {FS="[T .-]"; ORS="\r";x=ARGV[2]}                     \
+  { if (NR==x)                                                                  \
+      {  OFS="";                                                                \
+         print "\x22",toupper($1),"/",toupper($2),"/",toupper($3),              \
+                " ",$4,"\x22"};                                                 \
+    if (NR>x)                                                                   \
+      { OFS=","; print toupper($1),toupper($4),toupper($5)}                     \
+  } ' ./perturb.log {}                                                          \
+  >obj/perturb/results.dat 2>/dev/null
+
+c1541 pettil.d64 -delete "results.dat" -write obj/perturb/results.dat "results.dat,s,w"
+VICPIC=1 mkpet 4
+convert obj/perturb/results.scrsh.png -crop 434x234+0+0 obj/results.png
+scp obj/results.png pettilmobile.com:
+pettilmobile.com ./bin/newpic
+

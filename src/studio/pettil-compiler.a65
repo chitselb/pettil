@@ -1,0 +1,2204 @@
+; pettil-compiler.a65
+;#echo .       pettil-compiler.a65       Compiler
+
+;--------------------------------------------------------------
+#if 0
+name=ALLOT
+stack=( n -- )
+tags=compiler,forth-83
+Allocate space in the dictionary
+
+```
+    brk
+    .byt set | N0
+    .word userdp+2
+    .byt popd | N0
+    .byt add | TOS
+    .byt std | N0
+    .byt pull
+    .byt nxt
+```
+#endif
+#include "align.i65"
+_allot
+    jsr enter
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word plusstore
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=,
+stack=( w -- )
+tags=compiler,forth-83
+#endif
+#include "align.i65"
+_comma
+    jsr enter
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word two
+#include "page.i65"
+    .word _allot
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=C,
+stack=( b -- )
+tags=compiler
+#endif
+#include "align.i65"
+_ccomma
+    jsr enter
+#include "page.i65"
+    .word here
+#include "page.i65"20
+    .word cstore
+#include "page.i65"
+    .word one
+#include "page.i65"
+    .word _allot
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=CFA,
+stack=( addr -- )
+tags=compiler,nosymbol
+Set the code field of a new definition, taking page alignment
+into account.  The address is the creator word's CFA, e.g. [[:]]
+or [[VARIABLE]]
+
+```
+: cfa,   ( xt -- )
+    bl c, , ;
+```
+#endif
+#include "align.i65"
+_cfacomma
+    jsr enter
+#include "page.i65"
+    .word bl                    ; JSR instruction
+#include "page.i65"
+    .word _ccomma
+#include "page.i65"
+    .word _comma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NEXTPAGE
+stack=( -- )
+tags=compiler,nosymbol
+Moves [[DP]] to the next page if needed, to preserve page alignment
+
+[ here 2+ , ]
+    lda userdp
+    bpl +
+    lda #0
+    sta userdp
+    inc userdp+1
+
+$FF here lsb < ?exit
+
+```
+: nextpage   ( -- )
+    ['] page here !
+    $100 herelsb - dp +! ;
+
+$FD here lsb < ?exit compile page
+
+here lsb c>s negate allot ;
+
+```
+#endif
+#include "align.i65"
+_nextpage
+;--------------------------------------------------------------
+#if 0
+name=?COMP
+stack=( -- )
+tags=compiler,nosymbol
+Check the [[STATE]] variable to see if we are compiling, issue an
+error if [[STATE]] is off ([[INTERPRET]] mode)
+
+
+```
+: ?comp   ( -- )
+    compiling? not [ 5 ] ?error ;
+```
+#endif
+#include "align.i65"
+qcomp
+    lda userstate
+    bne storecsp01 ; next
+    ldy #5
+qcomp01
+    jmp error                   ; "COMPILATION ONLY"
+;[10]
+
+;--------------------------------------------------------------
+#if 0
+name=?CSP
+stack=( -- )
+tags=compiler,nosymbol
+Generates an error if the data stack is unbalanced when defining
+`CODE` or `:` words
+#endif
+qcsp
+    ldy #4                      ; DEFINITION UNFINISHED
+    cpx usercsp
+    bne qcomp01
+    ; fall through
+;--------------------------------------------------------------
+#if 0
+name=!CSP
+tags=compiler,nosymbol
+#endif
+storecsp
+    stx usercsp
+storecsp01
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=?PAGE
+stack=( -- )
+tags=compiler,pads,nosymbol
+Compiler check for page rollover, inserting call to `page` when `dp` nears the top of the page (>= xxFD) this will compile `page` and
+also `allot` the remaining byte, if there is one.
+
+```
+: ?page   ( -- )
+    here< $FD < ?exit
+    'page ,  here< c>s negate allot ;
+
+If `here<` isn't 0, that would mean we just compiled `page` at xxFF!
+\    here< 13 ?error (new message, "PAGING").
+```
+#endif
+#include "align.i65"
+_qpage
+    jsr enter
+#include "page.i65"
+    .word herelsb
+#include "parm.i65"
+    .word blit
+    .byt $FD
+#include "pad.i65"
+    .word lt
+#include "page.i65"
+    .word _qexit
+#include "parm.i65"
+    .word plit
+    .word page
+#include "pad.i65"
+    .word _comma                ; because `xt,` checks `?page` again
+#include "page.i65"
+    .word herelsb
+#include "page.i65"
+    .word ctos
+#include "page.i65"
+    .word negate
+#include "page.i65"
+    .word _allot
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?ALIGN
+stack=( -- )
+tags=compiler,pads,nosymbol
+When `dp` nears the top of the page (>= xxFD) this will compile `page` and
+also `allot` the remaining byte, if there is one.
+
+
+#endif
+#include "align.i65"
+_qalign
+    jsr enter
+#include "parm.i65"
+    .word blit
+    .byt  $FC
+#include "pad.i65"
+    .word herelsb
+#include "page.i65"
+    .word ne
+#include "page.i65"
+    .word _qexit
+#include "parm.i65"
+    .word blit
+    .byt  $EA
+#include "page.i65"
+    .word _ccomma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=PAGEALIGN
+stack=( -- )
+tags=compiler,nosymbol
+
+called by `:` ~and probably `does>` to ensure JSR ENTER / JSR DODOES will
+not crash the code at a page boundary
+
+pagealign
+    lda userdp
+    cmp #$fd
+    bne storecsp01
+    jsr slip
+    ;lda #0                     ; not necessary because C, ignores high byte
+    ;sta tos+1
+    lda #$ea
+    sta tos
+    jmp _ccomma
+;[17]
+: pagealign
+    here
+    lsb
+    blit $FD
+    =
+    if
+        blit $ea
+        c,
+    then ;
+;[22]
+
+code pagealign
+    brk
+    .byt set | N1
+    .word $00FD
+    .byt set | N0
+    .word userdp+1
+    .byt pop | N0
+    .byt cpr | N1
+    .byt bnz , <(pagealign06-*-2)
+    .byt set | ACC
+    .word $00EA
+    .byt sti | N0
+pagealign06
+    .byt nxt
+;[15]
+#endif
+pagealign
+    lda userdp
+    cmp #$FC
+    bne storecsp01
+    jsr slip
+    ;lda #0                     ; not necessary because C, ignores high byte
+    ;sta tos+1
+    lda #$EA
+    sta tos
+    jmp _ccomma
+
+;--------------------------------------------------------------
+#if 0
+name=XT,
+stack=( xt -- )
+tags=compiler,nosymbol
+Encloses the execution token into the dictionary, paying heed
+to page alignment and inserting the 'page' token into the
+dictionary stream at page boundaries
+
+~todo: at commit c21b59eb5a2f18c293d84f31e25bd93842985a66 there's a paging issue,
+fixed by moving it off the page boundary. study and understand this bug to resolve
+it globally.
+
+
+```
+: xt,   ( xt -- )
+    $FD pagemargin  , ;
+```
+#endif
+#include "align.i65"
+_xtcomma
+    jsr enter
+#include "page.i65"
+    .word _qpage
+#include "pad.i65"
+    .word _comma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=UNDEFINE
+stack=( -- )
+tags=interpreter,dictionary,nosymbol
+Removes the most recently defined symbol in SYMNEW.  Used by
+error recovery
+
+```
+: undefine   ( -- )
+    latest 2-  dup symtail !  dup @ dp !  3 erase ;
+```
+#endif
+#include "align.i65"
+_undefine
+    jsr enter
+#include "page.i65"
+    .word latest
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word symtail
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word threecoff
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=COMPILING?
+stack=( -- flag )
+tags=compiler,nosymbol
+Leaves contents of [[STATE]] on the stack
+
+ * [[TRUE]] if compile state,
+ * [[FALSE]] if interpret state
+
+```
+: compiling?   ( -- flag )
+    compiling? [ 5 ] ?error ;
+```
+#endif
+#include "align.i65"
+compilingq
+    lda userstate
+    ldy userstate+1
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=(COMPILE)
+stack=( -- )
+tags=compiler,nosymbol,forth-83
+
+#endif
+docompile
+    jsr topfas
+    jsr parmpush
+    jmp _xtcomma
+
+;--------------------------------------------------------------
+#if 0
+name=CREATE
+stack=( "name" -- )
+tags=compiler,defining,forth-83
+ A defining word executed in the form
+
+     `CREATE <name>`
+
+     Creates a dictionary entry for <name>.  After <name> is
+     created, the next available dictionary location is the first
+     byte of <name>'s parameter field.  When <name> is
+     subsequently executed, the address of the first byte of
+     <name>'s parameter field is left on the stack.  CREATE does
+     not allocate space in <name>'s parameter field.
+
+#endif
+#include "align.i65"
+_create
+    jsr enter
+#include "parm.i65"
+    .word plit
+    .word docreate
+#include "pad.i65"
+    .word _pcreate
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=:
+stack=( -- )
+tags=compiler,defining,fig,forth-83
+ A defining word executed in the form:
+
+ `: <name> ... ;`
+
+ Creates a word definition for `<name>` in the compilation
+ vocabulary and sets compilation state true. Text from the
+ input stream is subsequently compiled.  `<name>` is called
+ a "colon definition".  The newly created word definition
+ for `<name>` cannot be found in the dictionary until the
+ corresponding `;` or `;CODE` is successfully processed.
+
+ An error condition exists if a word is not found and cannot
+ be converted to a number or if, during compilation from mass
+ storage, the input stream is exhausted before encountering `;`
+ or `;CODE`.  The stack is checked for balance when a `;`
+ terminates the definition.
+
+!!!pronounced: //"colon"//
+
+```
+: :   ( -- )
+    0pairs  ['] enter literal (create)
+    !csp latest smudge ] ;
+```
+#endif
+#include "align.i65"
+_colon
+    jsr enter
+#include "page.i65"
+    .word _zeropairs
+#include "page.i65"
+    .word pagealign
+#include "parm.i65"
+    .word plit
+    .word enter
+#include "pad.i65"
+    .word _pcreate
+#include "page.i65"
+    .word storecsp
+#include "page.i65"
+    .word latest
+#include "page.i65"
+    .word smudge                ; smudge the newly minted symbol
+#include "page.i65"
+    .word _rbracket
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=CLOSE-DEFINITION
+stack=( -- )
+tags=compiler,fig,nosymbol
+Terminates `:` and `CODE` definitions. Used by `;` `;CODE` and `END-CODE`
+
+* unsmudge the header bit of the `newest` symbol
+
+
+```
+: close-definition   ( -- )
+    ?csp  latest unsmudge  redefined dup @ dup
+    ?: smudge drop  off  [ ;
+: close-definition   ( -- )
+    ?nopairs ?csp
+    latest unsmudge
+    redefined @ ?dup if smudge then [ ;
+```
+#endif
+#include "align.i65"
+_closedef
+    jsr enter
+#include "page.i65"
+    .word _qnopairs
+#include "page.i65"
+    .word qcsp
+#include "page.i65"
+    .word latest
+#include "page.i65"
+    .word unsmudge
+#include "page.i65"
+    .word redefined
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word dup
+#include "parm.i65"
+    .word pquerycolon
+    .word smudge
+    .word drop
+#include "pad.i65"
+    .word _lbracket
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=;
+stack=( -- )
+tags=compiler,fig,forth-83
+flags=immediate
+ An immediate word which terminates a colon-definition and
+ stops further compilation. Compiles the run-time `exit`
+
+!!!pronounced: //"semi"//
+
+```
+: ;   ( -- )
+    [compile] exit  closedefinition ; immediate
+```
+#endif
+#include "align.i65"
+_semi
+    jsr enter
+#include "parm.i65"
+    .word docompile
+    .word exit
+#include "pad.i65"
+    .word _closedef
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?:
+stack=( "name1" "name2" == ; flag -- )
+tags=compiler,ext
+flags=immediate
+Immediate word, compiles the CFA of `(?:)` followed by the CFA of a word to execute when `flag` is `true` and the CFA to execute when `flag` is false (six bytes).  Used in the form:  `( flag ) :? this that` which works the same as:  `( flag ) if this else that then` (ten bytes)
+
+```
+: ?:   ( "name1" "name2" -- )
+    ?comp  $f8 ?page [compile] (?:) ' , ' , ; immediate
+```
+#endif
+#include "align.i65"
+_querycolon
+    jsr enter
+#include "page.i65"
+    .word qcomp
+#include "parm.i65"
+    .word docompile
+    .word pquerycolon
+#include "pad.i65"
+    .word _tick
+#include "page.i65"
+    .word _comma
+#include "page.i65"
+    .word _tick
+#include "page.i65"
+    .word _comma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DPSWAP
+stack=( -- )
+tags=compiler,todo
+Switches the transient dictionary pointer [[TDP]] with the core
+dictionary pointer [[DP]]
+
+```
+: dpswap   ( -- )
+    dp tdp @swap! ;
+```
+#endif
+#include "align.i65"
+_dpswap
+    jsr enter
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word tdp
+#include "page.i65"
+    .word _fetchswapstore
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DOES>
+stack=( -- )
+tags=compiler,forth-83
+flags=immediate
+Terminates the compile-time (parent) code of a `<BUILDS ... DOES> ...`
+definition in the transient dictionary and begins compilation of the
+commonly shared run-time (child) code into the core dictionary
+
+```
+: does>
+    ?comp  0pairs [compile] exit dp @ tdp @ > if dpswap then
+    ['] dodoes cfa, ; immediate
+```
+#endif
+#include "align.i65"
+_does
+    jsr enter
+#include "page.i65"
+    .word qcomp
+#include "page.i65"
+    .word _zeropairs
+#include "parm.i65"
+    .word docompile
+    .word exit
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word tdp
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word gt
+#include "parm.i65"
+    .word qbranch
+    .byt <(does01-*+1)
+#include "pad.i65"
+    .word _dpswap
+#include "page.i65"
+does01
+    .word _qalign
+#include "parm.i65"
+    .word plit
+    .word dodoes
+#include "pad.i65"
+    .word _cfacomma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BISHWHET
+stack=( dp tdp latest -- a a c b-a )
+tags=compiler,defining,nosymbol
+helper word for `<BUILDS` in compile state
+
+```
+core                    studio            symnew
+----+----+---           ----+----*-       ----.-+-------
+    ^A   ^B                 ^C   ^D           ^E^F
+A = @E          B = @DP         C = @TDP        X = b-a
+DP = C+X        TDP = A         E = C           [C..D] = [A..B]
+0000  00 01 d7 63  76 06 86 06  00 00 05 50  00 01 07 70
+            latest dp    tdp
+```
+#endif
+bishwhet
+    jsr harvests4
+    brk
+    .byt popd | TOS
+    .byt st | N2                ; A
+    .byt ldd | N0               ; @dp
+    .byt popd | N0              ; reget B
+    .byt sub | N2               ; size
+    .byt st | N3                ; B-A
+    .byt ldd | N1               ; @tdp
+    .byt popd | N1              ; reget C
+    .byt st | N4
+    .byt std | TOS              ; set latest E = C
+    .byt add | N3
+    .byt std | N0               ; set DP = C+X
+    .byt ld | N2
+    .byt std | N1
+    .byt st | TOS               ; ( a )
+    .byt push                   ; ( a a )
+    .byt ld | N4
+    .byt push                   ; ( a a c )
+    .byt ld | N3
+    .byt push                   ; ( a a c b-a )
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=<BUILDS
+stack=( == ; "name" -- )
+tags=compiler,defining,todo
+ A defining word executed in the form
+
+ `<BUILDS <name> ... DOES> ... ;`
+
+Creates a dictionary entry for <name>.  After <name> is
+created, the next available dictionary location is the first
+byte of <name>'s parameter field.  When <name> is
+subsequently executed, the address of the first byte of
+<name>'s parameter field is left on the stack.  CREATE does
+not allocate space in <name>'s parameter field.
+<br/>
+The compile-time portion of the word between `<BUILDS ... DOES>`
+is added to the [[transient dictionary|TDICT]] to conserve
+space in core.  Run-time behavior shared by child words is
+added to the core dictionary.
+
+todo: why doesn't this use (CREATE) or CREATE ?
+todo: what is it doing with tdp?
+todo: probably replace this code or better explain what it does
+
+```
+: <builds   ( == ; "name" -- )
+    ?comp  0pairs dp tdp latest bishwhet cmove
+    [compile] plit , [compile] (create)
+    ; immediate
+
+e.g.
+: const   ( n == ; -- n )
+    <builds , does> @ ;
+69 const dude  ok
+dude . 69  ok
+```
+#endif
+#include "align.i65"
+_builds
+    jsr enter
+#include "page.i65"
+    .word qcomp
+#include "page.i65"
+    .word _zeropairs
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word tdp
+#include "page.i65"
+    .word latest
+#include "page.i65"
+    .word bishwhet
+#include "page.i65"
+    .word cmove
+#include "parm.i65"
+    .word docompile
+    .word plit
+#include "pad.i65"
+    .word _comma
+#include "parm.i65"
+    .word docompile
+    .word _pcreate
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=CONSTANT
+stack=( "name" ; n == ) ( -- n )
+tags=compiler,forth-83
+
+```
+: constant   ( "name" ; n == ) ( -- n )
+    doconst (create) , ;
+```
+#endif
+#include "align.i65"
+_constant
+    jsr enter
+#include "parm.i65"
+    .word plit
+    .word doconst
+#include "pad.i65"
+    .word _pcreate
+#include "page.i65"
+    .word _comma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=CCONSTANT
+stack=( "name" ; c == ) ( -- c )
+tags=compiler
+
+create an 8-bit constant
+
+```
+: cconstant   ( "name" ; c == ) ( -- c )
+    doconst (create) c, ;
+```
+#endif
+#include "align.i65"
+_cconstant
+    jsr enter
+#include "parm.i65"
+    .word plit
+    .word docconst
+#include "pad.i65"
+    .word _pcreate
+#include "page.i65"
+    .word _ccomma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=2CONSTANT
+stack=( "name" ; d == ) ( -- d )
+tags=compiler
+
+```
+: 2constant   ( "name" ; d == ) ( -- d )
+    '>2const (create) , , ;
+```
+#endif
+#include "align.i65"
+_twoconstant
+    jsr enter
+#include "parm.i65"
+    .word plit
+    .word dotwoconst
+#include "pad.i65"
+    .word _pcreate
+#include "page.i65"
+    .word _comma
+#include "page.i65"
+    .word _comma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=VARIABLE
+stack=( -- )
+tags=compiler,forth-79,forth-83
+A defining word executed in the form:
+       `VARIABLE <name>`
+A dictionary entry for <name> is created and two bytes are
+ALLOTted in its parameter field.  This parameter field is to
+be used for contents of the variable.  The application is
+responsible for initializing the contents of the variable
+which it creates.  When <name> is later executed, the
+address of its parameter field is placed on the stack.
+#endif
+#include "align.i65"
+_variable
+    jsr enter
+#include "page.i65"
+    .word _create
+#include "page.i65"
+    .word two
+#include "page.i65"
+    .word _allot
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=LATEST
+stack=( -- nfa )
+tags=compiler,nosymbol
+Leaves the name field address of the top-most word in the
+symbol table.
+
+#endif
+latest
+    lda usernewest
+    ldy usernewest+1
+    jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=$,
+stack=( addr size -- )
+tags=string
+Enclose a string in the dictionary.  Not the same as [[$!]]
+
+```
+: $,   ( addr  size -- )
+    dup>r here $! r> 1+ allot ;
+```
+#endif
+#include "align.i65"
+_stringcomma
+    jsr enter
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word _dolstore
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word _allot
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=$>PAD $.>PAD $>PAD $>PAD
+stack=( addr count -- )
+tags=string
+Move a string at `addr` to the [[PAD]] as a counted string
+
+```
+: $>pad   ( addr count -- pad )
+    pad under c!+
+```
+#endif
+#include "align.i65"
+_stringtopad
+    jsr enter
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word _dolstore
+#include "page.i65"
+    .word _pad
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(
+stack=( comment) -- )
+tags=forth-83
+flags=immediate
+Begins a Forth comment, terminated by the next ')' character in
+the input stream
+
+```
+: (   ( -- )
+    [ ')' ] literal  (word) 2drop ;
+```
+#endif
+#include "align.i65"
+_lparen
+    jsr enter
+#include "parm.i65"
+    .word blit
+    .asc ')'
+#include "pad.i65"
+    .word _name
+#include "page.i65"
+    .word zeq
+#include "parm.i65"
+    .word qerror
+    .byt 9                      ; "MISSING DELIM"
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=>"."
+stack=( cfa text" -- )
+tags=compiler,i/o,nosymbol,todo
+common code for ." and "
+
+```
+\ common behavior of ." and "
+: >"."   ( -- )
+    34 (word)
+( caller string count )
+    rot 2@  compiling?
+( string count run-word compile-word state )
+    if
+        nip xt, $,          \ compile (.") or (")
+    else
+        drop execute        \ perform TYPE or $>PAD
+    then ;
+```
+
+!!!pronounced: //"do-paren-dot-quote"//
+
+
+```
+: >(.")  ( cfa -- )
+    compiling?  dup>r  ?: xt, drop
+    [char] " ?char swap  r>
+    compiling? ?: $, drop ;
+: >(.")  ( addr -- )
+
+```
+#endif
+#include "align.i65"
+dopdq
+    jsr dodoes
+#include "parm.i65"
+    .word blit
+    .byt '"'
+#include "pad.i65"
+    .word _name
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word twofetch
+#include "page.i65"
+    .word compilingq
+#include "parm.i65"
+    .word qbranch
+    .byt <(dopdq01-*+1)
+#include "pad.i65"
+    .word nip
+#include "page.i65"
+    .word _xtcomma
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word _stringcomma
+#include "parm.i65"
+    .word branch
+    .byt <(dopdq02-*+1)
+#include "pad.i65"
+dopdq01
+    .word drop
+#include "page.i65"
+    .word execute
+#include "past.i65"
+dopdq02
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=."
+stack=( text" == ) ( -- )
+tags=string,forth-83,todo
+flags=immediate
+
+State-smart word to display a string literal.
+
+|Compile mode|[[(.")]]|enclose string and handler in dictionary|
+|Interpret mode|[[TYPE]]|immediately display the string|
+
+todo: rewrite, with words that use [[WORD]]
+
+```
+: ."   ( text" == ) ( -- addr )
+    [ ' (.") ] literal   (."")  $. ;
+```
+!!!pronounced: //"dot-quote"//
+#endif
+#include "align.i65"
+dotquote
+    jsr dopdq
+    .word _pdq                  ; compiling
+    .word _stringdot            ; executing
+
+;--------------------------------------------------------------
+#if 0
+name="
+stack=( text" == ) ( -- addr )
+tags=string,todo
+flags=immediate
+
+State-smart string literal.  In compile mode, encloses a string
+in the dictionary.  In interpret mode, returns the address of a
+string ([[PAD]])
+
+test:
+
+`" foo" " bar" $. $. .s barbarstack empty ok`
+
+todo: rewrite, with words that use [[WORD]]
+
+```
+: "   ( text" == ) ( -- addr )
+    [ ' (") ] literal   (."")  $>pad ;
+
+' (") ' $>pad >"." "
+```
+!!!pronounced: //"quote"//
+#endif
+#include "align.i65"
+quote
+    jsr dopdq
+    .word _pquote               ; compiling
+    .word _stringtopad          ; executing
+
+;--------------------------------------------------------------
+#if 0
+name=[ {
+stack=( -- )
+tags=compiler,forth-83
+flags=immediate
+Exit compile mode
+#endif
+#include "align.i65"
+_lbracket
+    jsr enter
+#include "page.i65"
+    .word state
+#include "page.i65"
+    .word off
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=] "]"
+stack=( -- )
+tags=compiler,forth-83
+
+#endif
+#include "align.i65"
+_rbracket
+    jsr enter
+#include "page.i65"
+    .word state
+#include "page.i65"
+    .word on
+#include "page.i65"
+    .word qstack
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=.(
+stack=( -- )
+tags=compiler,forth-83,deprecated,todo
+flags=immediate
+Display a comment
+
+todo: this is replaced by [[."]] which does a better job on a PET
+
+
+```
+: .(   ( -- )
+    [ ')' ] literal (word)  type ;
+```
+#endif
+#include "align.i65"
+_dotp
+    jsr enter
+#include "parm.i65"
+    .word blit
+    .asc ')'
+#include "pad.i65"
+    .word _name
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word type
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=['] {'}
+stack=( == ) ( -- n )
+tags=compiler,forth-83
+flags=immediate
+Enclose the code field address of the next word in the input stream
+into the dictionary as a [[literal|LITERAL]].  Forces compilation of
+immediate words
+#endif
+#include "align.i65"
+_brtick
+    jsr enter
+#include "page.i65"
+    .word qcomp
+#include "page.i65"
+    .word _tick
+#include "page.i65"
+    .word _literal
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=IMMEDIATE
+stack=
+tags=compiler,forth-83
+
+#endif
+#include "align.i65"
+_immediate
+    jsr enter
+#include "page.i65"
+    .word latest
+#include "parm.i65"
+    .word blit
+    .byt $80
+#include "pad.i65"
+    .word toggle
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NOSYMBOL
+stack=( -- )
+tags=compiler,forth-83
+flags=immediate
+Remove the symbol table entry for the most recently created `name` in `newest`
+
+#endif
+#include "align.i65"
+_nosymbol
+    jsr enter
+#include "page.i65"
+    .word latest
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word symtail
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word off
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=>VOCAB
+stack=( -- )
+tags=compiler,nosymbol
+The business end of a word defined by `vocabulary`.  Gets the
+vocid from the vocabulary and prepends it to `vocabs`
+
+New vocabularies compile a call to `>vocab` followed by an inline
+byte parameter (the vocabulary id).  This routine puts the vocab id
+at the front of the `vocabs` list (max 10).  Duplicates are removed.
+
+```
+: >vocab   ( -- )
+    caller vocabs dup 1+ 8 cmove> c@ vocabs c! dedupvocab ;
+
+: >vocab   ( -- )
+\ : vocabulary <builds  #voc dup 1+! @ c,
+    does> c@ dup>r
+                                ( voc ) ( r; voc )
+    vocabs dup r@ $index
+    vocabs dup count under 1+under r@ $index
+                                ( voc vocabs
+                                ( voc vocabs index ) ( r; voc )
+    ?dup ?: next nine
+                                ( voc vocabs index ) ( r; voc )
+
+
+: >vocab
+    does> c@ dup>r
+    vocabs count
+    under under 1+under
+    vocabs r> $index ?dup
+    if
+        nip 1-
+    then
+    cmove> c! ;
+```
+#endif
+#include "align.i65"
+dovocab
+    jsr dodoes
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word vocabs
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+    .word under
+#include "page.i65"
+    .word under
+#include "page.i65"
+    .word oneplusunder
+#include "page.i65"
+    .word vocabs
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word dolindex
+#include "page.i65"
+    .word qdup
+#include "parm.i65"
+    .word qbranch
+    .byt <(dovocab01-*+1)
+#include "pad.i65"
+    .word nip
+#include "page.i65"
+    .word oneminus
+#include "page.i65"
+dovocab01
+    .word cmovegt
+#include "page.i65"
+    .word cstore
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=VDROP
+stack=( -- )
+tags=vocabulary,ext
+Remove the first vocabulary from `vocabs`.  Invoking a vocabulary moves it to
+the first position.  e.g. `assembler vdrop` removes the assembler vocabulary
+from the search order.
+
+```
+: vdrop   ( -- )
+    vocabs 2+ vocabs count cmove ;
+```
+#endif
+#include "align.i65"
+_vdrop
+    jsr enter
+#include "page.i65"
+    .word vocabs
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word vocabs
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word cmove
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=VOCABULARY
+stack=( "name" -- )
+tags=compiler,forth-83
+PETTIL vocabularies are flat
+
+see [[FD-V05N3 p. 5|http://www.forth.org/fd/FD-V05N3.pdf]]
+
+```
+: vocabulary   ( "name" -- )
+    current dup @ over 2>r off
+    ['] dovocab  (create)  #voc dup 1+! @ c,
+    latest c@ $1f and swap c!
+    2r> ! ;
+```
+#endif
+#include "align.i65"
+_vocabulary
+    jsr enter
+#include "page.i65"
+    .word current
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word twotor
+#include "page.i65"
+    .word off
+#include "parm.i65"
+    .word plit
+    .word dovocab
+#include "pad.i65"
+    .word _pcreate
+#include "page.i65"
+    .word numvoc
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word oneplusstore
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word _ccomma
+#include "page.i65"
+    .word latest
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word cfetch
+#include "parm.i65"
+    .word blit
+    .byt $1f
+#include "pad.i65"
+    .word andx
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word store
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=2VARIABLE
+stack=( == ) ( -- )
+tags=compiler
+Create storage for a new double
+#endif
+#include "align.i65"
+_twovariable
+    jsr enter
+#include "page.i65"
+    .word _variable
+#include "page.i65"
+    .word two
+#include "page.i65"
+    .word _allot
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=LITERAL
+stack=( n == ) ( -- n )
+tags=compiler,forth-83
+flags=immediate
+Enclose `n` into the dictionary.  At runtime, leaves `n` on the
+stack.
+#endif
+#include "align.i65"
+_literal
+    jsr enter
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word benjamin
+#include "page.i65"
+    .word ult
+#include "parm.i65"
+    .word qbranch
+    .byt <(literal01-*+1)
+#include "parm.i65"
+    .word docompile
+    .word blit
+#include "pad.i65"
+    .word _ccomma
+#include "parm.i65"
+    .word branch
+    .byt <(literal02-*+1)
+#include "parm.i65"
+literal01
+    .word docompile
+    .word plit
+#include "pad.i65"
+    .word _comma
+#include "past.i65"
+literal02
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DLITERAL
+stack=( d == ) ( -- d )
+tags=compiler
+Compiles a double into the dictionary as a numeric literal
+!!!pronounced: //d-lit//
+
+#endif
+#include "align.i65"
+_dliteral
+    jsr enter
+#include "parm.i65"
+    .word docompile
+    .word dlit
+#include "pad.i65"
+    .word _comma
+#include "page.i65"
+    .word _comma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=PAIRS
+stack=( flag -- )
+tags=compiler,control,nosymbol
+Counters used by the compiler to match up conditional control words
+
+|Pair ID|Open|Middle|Close|<|h
+|^1|^IF|^ELSE|^THEN|^compiler|
+|||||~|
+|^2|^BEGIN|^WHILE|^REPEAT|~|
+|~|^BEGIN|<|^UNTIL|~|
+|~|^BEGIN|<|^AGAIN|~|
+|||||~|
+|^3|^DO|^LEAVE|^LOOP|~|
+|~|^DO|^?LEAVE|^LOOP|~|
+|~|^DO|<|^+LOOP|~|
+|~|^?DO|<|^LOOP|~|
+||||||
+|^4|^IF,|^ELSE,|^THEN,|^assembler|
+|||||~|
+|^5|^BEGIN,|^WHILE,|^REPEAT,|~|
+#endif
+pairs
+    jsr docreate
+pairs00
+    .dsb 5,0                    ; storage for counters
+
+;--------------------------------------------------------------
+#if 0
+name=0PAIRS
+stack=( -- )
+tags=compiler,nosymbol
+clear the [[PAIRS]] counters
+
+```
+: 0pairs   ( -- )
+    pairs 5 erase ;
+```
+!!!pronounced: //"zero-pairs"//
+#endif
+#include "align.i65"
+_zeropairs
+    jsr enter
+#include "page.i65"
+    .word pairs
+#include "page.i65"
+    .word five
+#include "page.i65"
+    .word erase
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?NOPAIRS
+stack=( -- )
+tags=compiler,nosymbol
+Aborts compilation if any control structures are still open
+
+```
+: ?nopairs   ( -- )
+    pairs c@+ swap 2@ or or or [ 6 ] ?error ;
+```
+!!!pronounced: //"query-no-pairs"//
+#endif
+#include "align.i65"
+_qnopairs
+    jsr enter
+#include "page.i65"
+    .word pairs
+#include "page.i65"
+    .word cfetchplus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word twofetch
+#include "page.i65"
+    .word orx
+#include "page.i65"
+    .word orx
+#include "parm.i65"
+    .word qerror
+    .byt 6                      ; UNPAIRED CONDITIONALS
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=+/-PAIRS
+stack=( family -- family )
+tags=compiler,control,nosymbol
+Increments or decrements the pair counter for the (signed) value
+passed in `family`.  The absolute value of `family` is returned,
+so that words like [[LEAVE]] [[?LEAVE]] [[ELSE]] and [[WHILE]]
+can decrement and increment the [[PAIRS]] counter as a check that
+the structure is open.  Words that open ([[DO]] [[?DO]] [[IF]]
+[[BEGIN]]) or close ([[LOOP]] [[+LOOP]] [[THEN]] [[UNTIL]] [[AGAIN]]
+[[REPEAT]]) the structure will [[DROP]] this returned value to
+maintain [[PAIRS]] balance.
+
+#endif
+plusminuspairs
+    stx z
+    ldx tos
+    bpl pluspairs
+    dex
+    txa
+    eor #$FF
+    sta tos
+    tax
+    lda #0
+    sta tos+1
+    dec pairs00-1,x
+    dec pairs00-1,x
+pluspairs
+    inc pairs00-1,x
+    bmi pairs03
+    jmp spnext
+    ;ldx z
+    ;jmp next
+pairs03
+    ldy #6                      ; UNPAIRED CONDITIONALS
+comperror
+    jmp error
+
+;--------------------------------------------------------------
+#if 0
+name=METHOD
+stack=( addr -- )
+tags=compiler,control,nosymbol
+Execute Forth code beginning at `addr`. Used by [[DOES>]] to return
+control to the child word.
+
+In the example below, when [[METHOD]] executes the address following
+`word` will be on the stack
+
+```
+e.g.
+: maker   ( word char -- )
+<builds
+    , c,
+does>
+    @+ swap c@+ swap method ;
+
+41 2000 maker foo
+    ] + . ;
+42 1492 maker bar
+    ] - . ;
+```
+#endif
+#include "align.i65"
+_method
+    jsr enter
+#include "page.i65"
+    .word rdrop
+#include "page.i65"
+    .word tor
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=>CONTROL
+stack=( addr == dp ) ( -- )
+tags=compiler,control,nosymbol
+Runtime behavior of control words
+
+```
+\ : >control   ( family cfa == )
+\   <builds , c,
+does>
+    ?comp  @+ swap c@+ family swap method ;
+```
+#endif
+#include "align.i65"
+docontrol
+    jsr dodoes
+#include "page.i65"
+    .word qcomp
+#include "page.i65"
+    .word fetchplus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word cfetchplus
+#include "page.i65"
+    .word plusminuspairs
+#include "page.i65"
+    .word swap
+#include "past.i65"
+    .word _method               ; transfers control to child word
+
+;--------------------------------------------------------------
+#if 0
+name=>MARK
+stack=( cfa family == start )
+tags=compiler,control,nosymbol
+Sets up a forward branch.  Compiles a forward-branching `cfa`
+with an unresolved offset of `0` to be handled later by the
+matching pair-closing word.  Leaves the address of the offset
+as the `start` of the control structure.
+
+Used by: [[DO]] [[?DO]] [[IF]] [[WHILE]]
+
+```
+: >mark  ( cfa family == start )
+    drop xt, here 0 c, ;
+```
+#endif
+#include "align.i65"
+_tomark
+    jsr enter
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word _xtcomma
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word _ccomma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=>RESOLVE
+stack=( start -- )
+tags=compiler,control,nosymbol
+Resolve a forward branch
+
+```
+: >resolve
+    here over - 1+ swap c! ;
+```
+!!!pronounced: //"to-resolve"//
+#endif
+#include "align.i65"
+_toresolve
+    jsr enter
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word oneplus
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word cstore
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=<RESOLVE
+stack=( addr cfa family == start )
+tags=compiler,control,nosymbol
+Compiles a backward branch to an address left by [[>MARK]] or [[HERE]]
+
+Backward branch handler used by [[LOOP]] [[+LOOP]]
+
+Used by: [[LOOP]] [[+LOOP]] [[REPEAT]] [[AGAIN]] [[UNTIL]]
+
+```
+: <resolve   ( addr cfa family == start )
+    drop xt, dup>r here 2- - c, r> ;
+```
+#endif
+#include "align.i65"
+_fromresolve
+    jsr enter
+#include "page.i65"
+    .word drop                  ; discard PAIRS index, we are closing
+#include "page.i65"
+    .word _xtcomma              ; compile the CFA of the backward branch
+#include "page.i65"
+    .word duptor
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word twominus
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word _ccomma
+#include "page.i65"
+    .word rfrom
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DO
+stack=( == dp ) ( limit start -- )
+tags=compiler,control,forth-83
+flags=immediate
+
+```
+' (do) 3 >control do ]
+    drop >mark ; immediate
+```
+#endif
+#include "align.i65"
+_do
+    jsr docontrol
+    .word pdo
+    .byt 3
+#include "pad.i65"
+    .word _tomark
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?DO
+stack=( == dp ) ( limit start -- )
+tags=compiler,control
+flags=immediate
+
+```
+' (?do) 3 >control ?do ]
+    drop xt, 0 c, here ; immediate
+```
+#endif
+#include "align.i65"
+_qdo
+    jsr docontrol
+    .word pqdo
+    .byt 3
+#include "pad.i65"
+    .word _tomark
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=LOOP
+stack=( == ) ( -- )
+tags=compiler,control,forth-83
+flags=immediate
+
+Immediate word, compiles runtime code to terminate a loop that
+counts up by 1.  The loop index and limit are treated as
+unsigned, e.g. `0 0 DO LOOP` will iterate 65536 times.  This
+is distinct from [[+LOOP]] which treats the loop index/limit
+both as signed integers.
+
+```
+' (loop) -3 >control loop ]
+    <resolve >resolve! ; immediate
+```
+#endif
+#include "align.i65"
+_loop
+    jsr docontrol
+    .word ploop
+    .byt <(-3)
+#include "pad.i65"
+    .word _fromresolve
+#include "page.i65"
+    .word _toresolve
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=+LOOP
+stack=( == ) ( increment -- )
+tags=compiler,control,forth-83
+flags=immediate
+
+Immediate word, compiles runtime code to terminate a loop that
+steps by an arbitrary value on the stack, terminating when the
+loop index goes past the limit.
+
+[[Posted question on comp.lang.forth|https://groups.google.com/d/msg/comp.lang.forth/V9evPkLwRoM/Khwons3O4QwJ]]
+
+```
+' (loop) -3 >control loop ]
+    <resolve >resolve! ; immediate
+```
+#endif
+#include "align.i65"
+_plusloop
+    jsr docontrol
+    .word pploop
+    .byt <(-3)
+#include "pad.i65"
+    .word _fromresolve
+#include "page.i65"
+    .word _toresolve
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=LEAVE
+stack=( -- )
+tags=compiler,control,forth-83
+flags=immediate
+
+```
+' unloop -3 >control leave ]
+    +/-pairs xt, ; immediate
+```
+#endif
+#include "align.i65"
+_leave
+    jsr docontrol
+    .word unloop
+    .byt <(-3)
+#include "pad.i65"
+    .word plusminuspairs
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word _xtcomma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?LEAVE
+stack=( )
+tags=compiler,control
+flags=immediate
+Equivalent to `IF LEAVE THEN`
+
+```
+' (?leave) -3 >control ?leave ]
+    +/-pairs xt, ; immediate
+```
+#endif
+#include "align.i65"
+_qleave
+    jsr docontrol
+    .word pqleave
+    .byt <(-3)
+#include "pad.i65"
+    .word plusminuspairs
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word _xtcomma
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=IF
+stack=( )
+tags=compiler,control,forth-83
+flags=immediate
+
+```
+' ?branch 2 >control if ]
+    drop >mark ; immediate
+```
+#endif
+#include "align.i65"
+_if
+    jsr docontrol
+    .word qbranch
+    .byt 2
+#include "pad.i65"
+    .word _tomark
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=CASE#[
+stack=( )
+tags=compiler,control,forth-83
+flags=immediate
+
+
+: alpha    13 + ;
+: bravo    57 + ;
+: charlie  97 + ;
+
+: foo ( n 1|2|3 -- n+? )
+    case# alpha bravo charlie #end ;
+: foo ( n 1|2|3 -- n+? )
+    case# alpha bravo charlie #else abort #end ;
+: foo ( n 1|2|3 -- n+? )
+    case# alpha bravo charlie then ;
+: foo ( n 1|2|3 -- n+? )
+    case# alpha bravo charlie else ." default" then ;
+
+
+37 2 foo . 94  ok
+37 1 foo . 50  ok
+37 3 foo . 134  ok
+37 -42 foo . default 37  ok
+37 0 foo . default 37  ok
+37 8 foo . default 37  ok
+
+
+
+
+
+```
+' ?branch 2 >control if ]
+    drop >mark ; immediate
+```
+#endif
+#include "align.i65"
+_casenumx
+    jsr docontrol
+    .word qbranch
+    .byt 2
+#include "pad.i65"
+    .word _tomark
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=ELSE
+stack=( == )
+tags=compiler,control,forth-83
+flags=immediate
+
+```
+' ?branch -2 >control else ]
+    +/-pairs >mark ; immediate
+```
+#endif
+#include "align.i65"
+_else
+    jsr docontrol
+    .word branch
+    .byt <(-2)
+#include "pad.i65"
+    .word plusminuspairs
+#include "page.i65"
+    .word _tomark
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word _toresolve
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=THEN
+stack=( )
+tags=compiler,control,forth-83
+flags=immediate
+
+```
+' ?branch 2 >control then ]
+    drop >resolve ; immediate
+```
+#endif
+#include "align.i65"
+_then
+    jsr docontrol
+    .word 0
+    .byt <(-2)
+#include "pad.i65"
+    .word twodrop
+#include "page.i65"
+    .word _toresolve
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=BEGIN
+stack=( )
+tags=compiler,control,forth-83
+flags=immediate
+
+```
+0 1 >control begin
+    ] 2drop here 1- ; immediate
+```
+#endif
+#include "align.i65"
+_begin
+    jsr docontrol
+    .word 0
+    .byt 1
+#include "pad.i65"
+    .word twodrop
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word oneminus
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=WHILE
+stack=( )
+tags=compiler,control,forth-83
+flags=immediate
+
+```
+' ?branch -1 >control while
+    ] +/-pairs >mark ; immediate
+```
+#endif
+#include "align.i65"
+_while
+    jsr docontrol
+    .word qbranch
+    .byt <(-1)
+#include "pad.i65"
+    .word plusminuspairs
+#include "page.i65"
+    .word _tomark
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=UNTIL
+stack=( )
+tags=compiler,control,forth-83
+flags=immediate
+
+```
+' ?branch -1 >control until
+    ] q<resolve drop ;
+```
+#endif
+#include "align.i65"
+_until
+    jsr docontrol
+    .word qbranch
+    .byt <(-1)
+#include "pad.i65"
+    .word _fromresolve
+#include "page.i65"
+    .word drop
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=AGAIN
+stack=( )
+tags=compiler,control
+flags=immediate
+synonym for REPEAT
+
+```
+' branch -1 >control again
+    ] <resolve drop ; immediate
+```
+#endif
+#include "align.i65"
+_again
+    ; fall through
+    jsr docontrol
+    .word branch
+    .byt <(-1)
+#include "pad.i65"
+    .word _fromresolve
+#include "page.i65"
+    .word drop
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=REPEAT
+stack=( )
+tags=compiler,control,forth-83
+flags=immediate
+
+```
+' ?branch 2 >control repeat
+    ] 2>r swap 2r> <resolve drop >resolve ; immediate
+```
+#endif
+#include "align.i65"
+_repeat
+    jsr docontrol
+    .word branch
+    .byt <(-1)
+#include "pad.i65"
+    .word twotor
+#include "page.i65"
+    .word swap
+#include "page.i65"
+    .word tworfrom
+#include "page.i65"
+    .word _fromresolve
+#include "page.i65"
+    .word drop
+#include "page.i65"
+    .word _toresolve
+#include "past.i65"
+    .word exit
