@@ -3,8 +3,6 @@
 #
 
 SHELL = /bin/bash
-#TARGETS=01234567
-TARGETS=0
 
 # work locally on tarabuza
 #all: pristine perturb pet
@@ -93,14 +91,19 @@ mkd64:
 		-write tapes/pettilpackets pettilpackets
 
 mkd64pettil: mkd64
-	for object in obj/pettil*.prg? ; do                              \
-		c1541 pettil.d64 -write $$object ;                              \
+	for object in obj/pettil*.prg? ; do \
+		t=$${object: -1}; \
+		c1541 pettil$${t}.d64  -delete $$object -write $$object ; \
     done
 #	c1541 pettil.d64 -dir
 
 mkd64perturb: mkd64pettil
-	for object in obj/perturb/perturb-*.? ; do                              \
-		c1541 pettil.d64 -write $$object ;                              \
+	for object in obj/perturb/perturb-*.? ; do      	                        \
+		t=$${object: -1}; 														\
+		c1541 pettil$${t}.d64 -delete $$object -write $$object;		            \
+		if [ $${t} != "7" ];then \
+		c1541 pettil.d64  -delete $$object -write $$object ; \
+		fi; \
     done
 #	c1541 pettil.d64 -dir
 
@@ -113,6 +116,10 @@ mkd64perturb: mkd64pettil
 clean:
 	rm -rf ./tmp/ && mkdir -p ./tmp/perturb
 	c1541 -format pettil,09 d81 pettil.d64
+	for t in 0 1 2 3 4 5 6 7;do  \
+		echo $${t}; \
+		c1541 -format pettil$${t},09 d81 pettil$${t}.d64; \
+	done
 
 # clear build ouput and staging areas
 pristine: clean
