@@ -416,22 +416,6 @@ _pktnxt
 
 ;--------------------------------------------------------------
 #if 0
-name=7FFF&
-stack=( n -- n&7FFF )
-tags=vm,ext,nosymbol
-useful for turning off the VIDRAM bit
-
-```
-: psize   ( header -- size )
-    $7FF and ;
-```
-#endif
-sevenfffand
-    lda #$7F
-    .byt $2C                    ; BIT abs opcode
-    ; fall through
-;--------------------------------------------------------------
-#if 0
 name=PSIZE
 stack=( header -- addr )
 tags=vm,ext,nosymbol
@@ -1262,7 +1246,6 @@ Unpack a screen or data packet from `vmbuf` to `blkbuf` or `vidram`
         uncompressed? ?: cmove rldecode
     then ;
 ```
-2018-08-21T19:15:36
 #endif
 #include "align.i65"
 _block
@@ -1576,7 +1559,7 @@ Restore Forth stack after BASIC system call
 #endif
 restoreforth
     jsr aloha
-    ldx stashforth01
+    ldx stashforth01            ; this messes up BASIC's USR() function
     jmp exit
 
 ;--------------------------------------------------------------
@@ -1620,7 +1603,37 @@ tags=vm,i/o,kernel,nosymbol
 psaveprg
     jsr _dotapeio
     .word SAVEPRG
+/*
+(C:$1132) d f6e3
+.C:f6e3  A5 D4       LDA $D4
+.C:f6e5  D0 05       BNE $F6EC          ; device 0?  (the keyboard? Suuuuure, Jan)
+.C:f6e7  A0 74       LDY #$74           ; ?DEVICE NOT PRESENT, BASIC crash
+.C:f6e9  4C AF F5    JMP $F5AF
+.C:f6ec  C9 03       CMP #$03           ; device 3? (let's save to the screen!  nahhhh)
+.C:f6ee  F0 F7       BEQ $F6E7
+.C:f6f0  90 50       BCC $F742          ; whew, made it.  okay tape or disk?
+.C:f6f2  A9 61       LDA #$61
+.C:f6f4  85 D3       STA $D3            ; SA
+.C:f6f6  A4 D1       LDY $D1            ; FNLEN length of current filename
+.C:f6f8  D0 03       BNE $F6FD
+.C:f6fa  4C 00 BF    JMP $BF00          ; SAVE"",8 ?? haha good one, user.  We'll call that one "?SYNTAX ERROR"
+.C:f6fd  20 A5 F4    JSR $F4A5          ; send name string to IEEE buss
+.C:f700  20 D5 F0    JSR $F0D5          ; send "untalk" or "unlisten"
+.C:f703  A5 D3       LDA $D3            ; secondary address
+.C:f705  20 43 F1    JSR $F143          ; send one char and clear ATN
+.C:f708  A0 00       LDY #$00
+.C:f70a  20 BB FB    JSR $FBBB          ; puts (FB) into (C7) - header pointer back to start of buffer
+.C:f70d  A5 C7       LDA $C7            ; SAL pointer - tape buffer/screen scrolling
+                                ;
+#define SAL         $C7
 
+.C:f70f  20 9E F1    JSR $F19E
+.C:f712  A5 C8       LDA $C8
+.C:f714  20 9E F1    JSR $F19E
+.C:f717  20 0B FD    JSR $FD0B
+.C:f71a  F0 10       BEQ $F72C
+
+*/
 ;--------------------------------------------------------------
 #if 0
 name=(READHEAD)
@@ -1739,29 +1752,32 @@ pfile
     .byt bz , <(pfile01-*-2)
     .byt ldi | N2
 pfile01
+/*
+~golf    at least on a PET, this might become a `2!`
+*/
     .byt set | N1               ; N1 walks through FNLEN, LA, SA, FA on a PET
     .word FNLEN
-    .byt sti | N1               ; set FNLEN ($d1)
+    .byt sti | N1               ; set FNLEN ($D1)
 
 ;    .byt set | N1
 ;    .word LA
     .byt sub | ACC              ; 0
-    .byt sti | N1               ; set LA ($d2)
+    .byt sti | N1               ; set LA ($D2)
 
 ;    .byt set | N1
 ;    .word SA
     .byt ldd | N0               ; get SA#
-    .byt sti | N1               ; set SA ($d3)
+    .byt sti | N1               ; set SA ($D3)
 
 ;    .byt set | N1
 ;    .word FA
     .byt ldd | N0               ; DRV#
-    .byt sti | N1               ; set FA ($d4)
+    .byt sti | N1               ; set FA ($D4)
 
     .byt set | N1
     .word FNADR
     .byt ld | N2
-    .byt std | N1               ; set FNADR ($da)
+    .byt std | N1               ; set FNADR ($DA)
     .byt nxt
 
 ;--------------------------------------------------------------
@@ -1795,12 +1811,205 @@ _pprgfile
 #include "page.i65"
     .word one
 #include "parm.i65"
-    .word blit                  ; ~ can remove this if using $f619
+    .word blit
     .byt TAPEID
 #include "pad.i65"
     .word cstore
 #include "page.i65"
     .word pfile
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SBUFS
+stack=( -- )
+tags=vm,i/o,kernel
+save those buffers
+
+subtract `vmbuf` from `blkbuf` to get file size
+store this at `vmbuf`, replacing the null-null tail
+save it from `vmbuf` to `blkbuf`, patterned after TIM
+
+```
+: save-buffers   ( -- )
+    blkbuf vmbuf @ - vmbuf !
+    ;
+```
+#endif
+#include "align.i65"
+_sbufs
+    jsr enter
+#include "page.i65"
+    .word _pprgfile             ; set up z.p. device, secondary, filename
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word blkbuf
+#include "page.i65"
+    .word minus                 ; negative buffer size
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word store
+#include "parm.i65"
+    .word blit
+    .byt <(next-1)
+#include "pad.i65"
+    .word tor
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word blkbuf
+#include "page.i65"
+    .word twotor
+#include "past.i65"
+// C9 EAL                          Tape End Addresses/End of Program
+// FB STAL                         I/O Start Address
+                                ; ( R; EAL(C9) STAL(FB) )
+    .word SETEALSTAL
+#include "page.i65"
+    .word psaveprg
+#include "past.i65"
+    .word xyzzy
+#include "past.i65"
+    .word exit
+
+/*
+vmbuf
+blkbuf
+
+
+blurgh
+    // start/end are on return stack
+    jmp SETEALSTAL
+
+
+
+callz
+    stx z
+    lda #>(spnext-1)
+    pha
+    lda #<(spnext-1)
+    pha
+    jmp next
+
+SETEALSTAL
+.C:f66e  68          PLA
+.C:f66f  85 C9       STA $C9
+.C:f671  68          PLA
+.C:f672  85 CA       STA $CA
+.C:f674  68          PLA
+.C:f675  85 FB       STA $FB
+.C:f677  68          PLA
+.C:f678  85 FC       STA $FC
+.C:f67a  60          RTS
+
+set up file channel to device `(prgfile)`
+call SETEALSTAL
+
+: save-buffers   ( -- )
+    (prg-file)
+    (vmbuf) next-1
+    >r 2>r
+    [ SETEALSTAL , ]
+    (saveprg) ;
+```
+_savebuffers
+    jsr enter
+    .word _pprgfile             ; set up z.p. device, secondary, filename
+    .word vmbuf
+    .word fetch
+    .word blkbuf
+    .word blit
+    .byt <(next-1)
+    .word tor
+    .word twotor
+    .word SETEALSTAL            ; invoke a ROM routine, RTS to NEXT
+    .word psaveprg
+    .word exit
+
+B4 TAPEID                       Tape buffer leading character (eg 1=PRG 2=DATA 3= 4=SEQ 5=EOT)
+C7 SAL                          pointer - tape buffer/screen scrolling
+D1 FNLEN                        Length of Current File Name
+D2 LA                           Current Logical File Number
+D3 SA                           Current Secondary Address
+D4 FA                           First Address (current device number)
+DA FNADR                        File Name Address
+
+pfile
+    brk
+    .byt set | N0
+    .word userfilename
+    .byt ldd | N0               ; FILENAME
+    .byt st | N2                ; pointer to FILENAME.length (could be 0)
+    .byt bz , <(pfile01-*-2)
+    .byt ldi | N2
+pfile01
+
+    .byt set | N1               ; N1 walks through FNLEN, LA, SA, FA on a PET
+    .word FNLEN
+    .byt sti | N1               ; set FNLEN ($D1)
+
+;    .byt set | N1
+;    .word LA
+    .byt sub | ACC              ; 0
+    .byt sti | N1               ; set LA ($D2)
+
+;    .byt set | N1
+;    .word SA
+    .byt ldd | N0               ; get SA#
+    .byt sti | N1               ; set SA ($D3)
+
+;    .byt set | N1
+;    .word FA
+    .byt ldd | N0               ; DRV#
+    .byt sti | N1               ; set FA ($D4)
+
+    .byt set | N1
+    .word FNADR
+    .byt ld | N2
+    .byt std | N1               ; set FNADR ($da)
+    .byt nxt
+
+
+
+
+: (prgfile)
+    sa# off  1 TAPEID c! (file) ;
+
+_pprgfile
+    jsr enter
+    .word sanum
+    .word off
+    .word one
+    .word blit                  ; ~ can remove this if using $f619
+    .byt TAPEID
+    .word cstore
+    .word pfile
+    .word exit
+
+
+*/
+
+
+
+#include "page.i65"
+    .word blkbuf
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word store
 #include "past.i65"
     .word exit
 
@@ -1904,6 +2113,21 @@ _ploadverify
 
 ;--------------------------------------------------------------
 #if 0
+name=CALCADDR
+stack=( -- )
+tags=vm,i/o,subroutine,nosymbol
+
+#endif
+calcaddr
+/*
+
+*/
+    brk
+    .byt rtn
+    rts
+
+;--------------------------------------------------------------
+#if 0
 name=TAPELOADVERIFY
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
@@ -1916,13 +2140,17 @@ _tapeloadverify
     .word _pprgfile
 #include "parm.i65"
     .word plits
-    .byt 6
+    .byt 10
     .word 0
     .word plugh-1
     .word READHEAD-1
-    .word plugh-1
     .word restoreforth-1
-    .word next-1
+    .word plugh-1
+    .word calcaddr-1
+    .word stashforth-1
+    .word READDATA-1
+    .word restoreforth-1
+    .word exit-1
 #include "pad.i65"
 tloadver01
     .word qdup
