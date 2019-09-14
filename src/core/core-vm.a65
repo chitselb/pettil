@@ -1532,6 +1532,37 @@ _copy
 #include "past.i65"
     .word exit
 
+
+;--------------------------------------------------------------
+#if 0
+name=>IO<
+stack=( -- )
+tags=vm,i/o,kernel,magic-number,nosymbol
+Subroutine to preserve the data stack pointer, stack, Sweet16 and
+other Forth zero page during a BASIC system call
+
+#endif
+doiooutside
+    jsr topfas
+    sta iooper+1
+    iny
+    lda (pip),y
+    sta iooper+2
+    stx iooutsidexreg
+    jsr aloha
+    lda #2                      ; set direct mode in CHRGET routine
+    sta $78                     ; so we get prompts during i/o
+iooper
+    jsr plugh
+    jsr aloha
+    ldx iooutsidexreg
+    jmp next
+
+
+iooutsidexreg
+    .byt 0
+
+
 ;--------------------------------------------------------------
 #if 0
 name=STASH-FORTH
@@ -1546,6 +1577,12 @@ stashforth
     jsr aloha
     lda #2                      ; set direct mode in CHRGET routine
     sta $78                     ; so we get prompts during i/o
+/*
+tapeop
+    jsr plugh
+
+*/
+
     rts
 stashforth01 .byt 0             ; temp storage for X register during tape I/O
 
@@ -1562,37 +1599,6 @@ restoreforth
     ldx stashforth01            ; this messes up BASIC's USR() function
     jmp exit
 
-;--------------------------------------------------------------
-#if 0
-name=DOTAPEIO
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-Perform a ROM call framed between calls to `aloha`. This is
-needed in particular for tape I/O, which might error out to a
-Commodore BASIC `ready.` prompt.
-
-Like `execute` and the Sweet-16 interpreter, this word
-uses the machine stack ($0100-$01ff) and RTS trick to transfer
-control from one subroutine to the next, so that code executes
-in this order:
-
-#endif
-#include "align.i65"
-_dotapeio
-    jsr enter
-#include "parm.i65"
-    .word plit
-    .word restoreforth-1
-#include "pad.i65"
-    .word caller
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word oneminus
-#include "page.i65"
-    .word twotor
-#include "past.i65"
-    .word stashforth
 
 ;--------------------------------------------------------------
 #if 0
@@ -1601,7 +1607,7 @@ stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
 psaveprg
-    jsr _dotapeio
+    jsr doiooutside
     .word SAVEPRG
 /*
 (C:$1132) d f6e3
@@ -1641,7 +1647,7 @@ stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
 preadhead
-    jsr _dotapeio
+    jsr doiooutside
     .word READHEAD
 
 ;--------------------------------------------------------------
@@ -1651,7 +1657,7 @@ stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
 preaddata
-    jsr _dotapeio
+    jsr doiooutside
     .word READDATA
 
 ;--------------------------------------------------------------
@@ -1701,84 +1707,6 @@ _file
     .word store
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(FILE)
-stack=( -- )
-tags=vm,i/o,nosymbol
-Called at start of tape or disk i/o, sets up zero page variables.
-Retrieves DRV# SA# and FILENAME uservariables and stores them
-in zero page locations FA SA FNLEN FNADR.
-
-Relies on [[SA#]], [[DRV#]], and [[FILENAME]] being adjacent in uarea
-
-|zero page|<|value|set by|description|h
-|^STATUS|^96|^0|rom|^i/o status byte|
-|^VERCK|^9d|^0|(file)|^0=load; 1=verify|
-|^TAPEID|^b4|^1|(prg-file)|^01=PRG; 02=data; 04=SEQ; 05=EOT|
-|^SAL|^c7-c8|^||^start address|
-|^EAL|^c9-ca|^||^end address|
-|^FNLEN|^d1|^FILENAME[0]|(file)|^File name length|
-|^LA|^d2|^0|(file)|^logical file #|
-|^SA|^d3|^SA#|(prg-file)|Secondary address|
-|^FA|^d4|^DRV#|(file)|Device number|
-|^FNADR|^da-db|^FILENAME[1..]|(file)|^File name address|
-|^STAL|^fb-fc|^||^start address|
-
-|save|load|verify|open|name|address|description|h
-|^?|^?|^?|^?|^FNLEN|^d1|^Length of file name|
-|^?|^?|^?|^?|^FNADR|^da-db|^File name address|
-|^&nbsp;|<|<|<|<|<|<|
-|^0|^0|^0|^0|^STATUS|^96|^Status byte ST|
-|^?|^0|^1|^?|^VERCK|^9d|^Load/Verify flag (0,1)|
-|^01|^?|^?|^?|^TAPEID|^b4|^Tape buffer leading char<br/>01=PRG 05=EOT|
-|^?|^?|^?|^?|^EAL|^c9-ca|^Tape end address|
-|^?|^?|^?|^?|^LA|^d2|^logical file number|
-|^?|^?|^?|^?|^SA|^d3|^secondary address|
-|^?|^?|^?|^?|^FA|^d4|^First address (device number)|
-|^?|^?|^?|^?|^TAPE1|^d6|^Pointer - start of tape buffer|
-|^?|^?|^?|^?|^FSBLK|^de|^Cassette read/write block count|
-|^?|^?|^?|^?|^STAL|^fb-fc|^I/O start address|
-|''?'' = don't care<br/>''x'' = don't initialize|<|<|<|<|<|<|f
-
-#endif
-pfile
-    brk
-    .byt set | N0
-    .word userfilename
-    .byt ldd | N0               ; FILENAME
-    .byt st | N2                ; pointer to FILENAME[0] or 0
-    .byt bz , <(pfile01-*-2)
-    .byt ldi | N2
-pfile01
-/*
-~golf    at least on a PET, this might become a `2!`
-*/
-    .byt set | N1               ; N1 walks through FNLEN, LA, SA, FA on a PET
-    .word FNLEN
-    .byt sti | N1               ; set FNLEN ($D1)
-
-;    .byt set | N1
-;    .word LA
-    .byt sub | ACC              ; 0
-    .byt sti | N1               ; set LA ($D2)
-
-;    .byt set | N1
-;    .word SA
-    .byt ldd | N0               ; get SA#
-    .byt sti | N1               ; set SA ($D3)
-
-;    .byt set | N1
-;    .word FA
-    .byt ldd | N0               ; DRV#
-    .byt sti | N1               ; set FA ($D4)
-
-    .byt set | N1
-    .word FNADR
-    .byt ld | N2
-    .byt std | N1               ; set FNADR ($DA)
-    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -1868,7 +1796,51 @@ _sbufs
 #include "past.i65"
     .word SETEALSTAL
 /*
-                                ; ( R; EAL(C9) STAL(FB) )
+
+SETEALSTAL
+F66E  68          PLA
+F66F  85 C9       STA $C9
+F671  68          PLA
+F672  85 CA       STA $CA
+F674  68          PLA
+F675  85 FB       STA $FB
+F677  68          PLA
+F678  85 FC       STA $FC
+F67A  60          RTS
+
+    .word _pprgfile             ; set up z.p. device, secondary, filename
+    .word vmbuf
+    .word fetch
+    .word duptor
+    .word blkbuf
+    .word minus                 ; negative buffer size
+    .word rfetch
+    .word store
+    .word blit
+    .byt <(next-1)
+    .word rexchg
+    .word blkbuf
+    .word twotor
+    .word SETEALSTAL
+
+
+
+
+                  (prgfile) vmbuf  @      dup>r  blkbuf
+17E2        20 CA  10 D0 17 98  07 00 10 DE  08 EA 13 13
+       -    r@   !   'next-1    =r    blkbuf  2>r  SETEALSTAL
+17F0  09 18 12 D5  0F 2F 11 85  CB 08 EA 13  D5 08 6E F6
+      (saveprg) xyzzy ;
+1800  7B 17 08 0E  1F 11 EA 13  98 07 00 10  13 09 98 07
+1810  D5 0F 1F 11  20 CA 10 D0  17 98 07 00  10 EA 13 2F
+1820  11 85 DC 08  D5 08 6E F6  7B 17 1F 11  20 CA 10 2F
+1830  11 9D D3 0F  D0 17 80 17  EA 13 8B 09  19 14 E4 0D
+1840  DE 08 AA 13  13 09 13 09  D3 13 02 13  85 17 86 15
+(C:$1850)
+
+
+
+                          ; ( R; EAL(C9) STAL(FB) )
 C9 EAL                          Tape End Addresses/End of Program
 FB STAL                         I/O Start Address
 */
@@ -2012,6 +1984,90 @@ _pprgfile
     .word store
 #include "past.i65"
     .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(FILE)
+stack=( -- )
+tags=vm,i/o,nosymbol
+Called at start of tape or disk i/o, sets up zero page variables.
+Retrieves DRV# SA# and FILENAME uservariables and stores them
+in zero page locations FA SA FNLEN FNADR.
+
+Relies on [[SA#]], [[DRV#]], and [[FILENAME]] being adjacent in uarea
+
+|zero page|<|value|set by|description|h
+|^STATUS|^96|^0|rom|^i/o status byte|
+|^VERCK|^9d|^0|(file)|^0=load; 1=verify|
+|^TAPEID|^b4|^1|(prg-file)|^01=PRG; 02=data; 04=SEQ; 05=EOT|
+|^SAL|^c7-c8|^||^start address|
+|^EAL|^c9-ca|^||^end address|
+|^FNLEN|^d1|^FILENAME[0]|(file)|^File name length|
+|^LA|^d2|^0|(file)|^logical file #|
+|^SA|^d3|^SA#|(prg-file)|Secondary address|
+|^FA|^d4|^DRV#|(file)|Device number|
+|^FNADR|^da-db|^FILENAME[1..]|(file)|^File name address|
+|^STAL|^fb-fc|^||^start address|
+
+|save|load|verify|open|name|address|description|h
+|^?|^?|^?|^?|^FNLEN|^d1|^Length of file name|
+|^?|^?|^?|^?|^FNADR|^da-db|^File name address|
+|^&nbsp;|<|<|<|<|<|<|
+|^0|^0|^0|^0|^STATUS|^96|^Status byte ST|
+|^?|^0|^1|^?|^VERCK|^9d|^Load/Verify flag (0,1)|
+|^01|^?|^?|^?|^TAPEID|^b4|^Tape buffer leading char<br/>01=PRG 05=EOT|
+|^?|^?|^?|^?|^EAL|^c9-ca|^Tape end address|
+|^?|^?|^?|^?|^LA|^d2|^logical file number|
+|^?|^?|^?|^?|^SA|^d3|^secondary address|
+|^?|^?|^?|^?|^FA|^d4|^First address (device number)|
+|^?|^?|^?|^?|^TAPE1|^d6|^Pointer - start of tape buffer|
+|^?|^?|^?|^?|^FSBLK|^de|^Cassette read/write block count|
+|^?|^?|^?|^?|^STAL|^fb-fc|^I/O start address|
+|''?'' = don't care<br/>''x'' = don't initialize|<|<|<|<|<|<|f
+
+#endif
+pfile
+    brk
+    .byt set | N0
+    .word userfilename
+    .byt ldd | N0               ; FILENAME
+    .byt st | N2                ; pointer to FILENAME[0] or 0
+    .byt bz , <(pfile01-*-2)
+    .byt ldi | N2
+pfile01
+/*
+~golf    at least on a PET, this might become a `2!`
+8   fnlen                       D1
+8   la                          D2
+8   sa                          D3
+8   fa                          D4
+16  fnadr                       DA
+
+*/
+    .byt set | N1               ; N1 walks through FNLEN, LA, SA, FA on a PET
+    .word FNLEN
+    .byt sti | N1               ; set FNLEN ($D1)
+
+;    .byt set | N1
+;    .word LA
+    .byt sub | ACC              ; 0
+    .byt sti | N1               ; set LA ($D2)
+
+;    .byt set | N1
+;    .word SA
+    .byt ldd | N0               ; get SA#
+    .byt sti | N1               ; set SA ($D3)
+
+;    .byt set | N1
+;    .word FA
+    .byt ldd | N0               ; DRV#
+    .byt sti | N1               ; set FA ($D4)
+
+    .byt set | N1
+    .word FNADR
+    .byt ld | N2
+    .byt std | N1               ; set FNADR ($DA)
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
