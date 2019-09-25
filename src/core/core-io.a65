@@ -98,16 +98,23 @@ cr
 name=EXPECT
 stack=( addr +n -- )
 tags=primitive,forth-83,i/o
-''Forth-83:''//  EXPECT       addr +n --                    M,83
-       Receive characters and store each into memory.  The transfer
-       begins at addr proceeding towards higher addresses one byte
-       per character until either a "return" is received or until
-       +n characters have been transferred.  No more than +n
-       characters will be stored.  The "return" is not stored into
-       memory.  No characters are received or transferred if +n is
-       zero.  All characters actually received and stored into
-       memory will be displayed, with the "return" displaying as a
-       space.  See:  SPAN  "9.5.2 EXPECT"//
+Receive a line of input into a buffer
+
+sources:
+user
+blkbuf
+
+targets:
+sib
+tib
+
+side effects:
+in = 0
+span = size
+(C4)        (PNT)
+C6          PNTR
+D5          LNMX
+
 
 Caller may set up hardware (with `cursor!`) prior to `expect`.  The hardware cursor state that `CHRIN` uses establishes context for input streams from either `vmbuf` when loading or `tib` in keyboard input mode.
 
@@ -125,8 +132,30 @@ Caller may set up hardware (with `cursor!`) prior to `expect`.  The hardware cur
 #endif
 expect
     jsr harvests2               ; `addr` to `n0`
+                                ; feat `v` patches here
+/*
+stuff I can put in one byte
+    lin
+    width
+
+not
+    in
+
+    when loading
+
+    call E116 directly?
+
+    lda tos
+    sta LNMX
+
+*/
 ;   ldy #0                      ; thanks, `harvests`
     sty userin                  ; `in coff`
+/*
+    lda blocks-or-keyboard
+*/
+        ; set D5 LNMX D5 = 40|80, if screens
+        ; set AF to not 3 to inhibit CROUT at E153
 expect01
     jsr CHRIN                   ; preserves `x` register!
     cmp #CR
@@ -139,7 +168,7 @@ expect02
     dey
     bmi expect03
     lda (n),y
-    eor #SPACE                  ; $20
+    eor #SPACE
     beq expect02
 expect03
     iny
@@ -333,11 +362,40 @@ name=HOLD
 stack=( char -- )
 tags=numword,forth-83
 
-
  Inserts  character into a pictured numeric out-
  put string.
  char is inserted into a pictured numeric output
  string.  Typically used between  [[<#]] and [[#>]] .
+
+hold
+    brk
+    .byt set | N0
+    .word userhld+2
+    .byt popd | N0
+    .byt dcr | ACC
+    .byt st | N1
+    .byt std | N0
+    .byt ld | TOS
+    .byt sti | N1
+    .byt pull
+    .byt nxt
+;[12] ~untested
+
+hold
+    ldy userhld
+    bne hold01
+    dec userhld+1
+hold01
+    dey
+    sty userhld
+    sty R0L+2*N0+1
+    lda userhld+1
+    sta R0L+2*N0+1
+    lda tos
+    ldy #0
+    sta (R0L+2*N0),y
+    jmp drop
+;[28] ~untested
 
 ```
 : hold   ( char -- )
@@ -359,6 +417,7 @@ _hold
     .word cstore
 #include "past.i65"
     .word exit
+;[15]
 
 ;--------------------------------------------------------------
 #if 0

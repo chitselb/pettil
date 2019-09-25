@@ -95,43 +95,6 @@ backslash01
 
 ;--------------------------------------------------------------
 #if 0
-name=QUERY
-stack=( -- )
-tags=secondary,fig,interpreter
-Accept a line of input from the keyboard to `tib` and set `span`
-
-query tib span @ dump  \ should echo what you typed
-
-```
-: query
-    tib 80 expect ;
-```
-#endif
-#include "align.i65"
-_query
-    jsr enter
-#include "page.i65"
-    .word tib
-#include "page.i65"
-    .word eighty
-#include "page.i65"
-    .word expect
-#include "page.i65"
-    .word qeoi
-#include "past.i65"
-    .word exit
-
-qeoi
-;    lda userblk
-;    beq qeoi01
-    lda userspan
-    bne qeoi01
-    inc usereoi
-qeoi01
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
 name=INTERPRET
 stack=( -- )
 tags=secondary,fig,forth-79,forth-83,interpreter
@@ -162,42 +125,16 @@ loading
 quit --> interpret --> name --> refill? --> refill.loading --> block -->
 sib line.size  expect
 
-
-
-
 ```
 : interpret   ( -- )
     begin
         ?stack
-        bl name  ( nfa|0 )
-        ?dup
-    while
-        dup found?
-        ?dup ?: interpret.cfa number
-    repeat ;
-
-: interpret   ( -- )
-    begin
-        ?stack
-        bl name  ( nfa|0 )
-        ?dup
+        eoi? ?exit
+        bl name ?dup
         if
-            dup found?
-            ?dup ?: interpret.cfa number
+            found? ?dup ?: interpret.cfa number
         then
-        eoi?
-    until ;
-
-: interpret   ( -- )
-    begin
-        ?stack
-        eoi? not
-    while
-        bl name  ( nfa|0 )
-        ?dup
-    until
-        found? ?dup ?: interpret.cfa number
-    repeat ;
+    again ;
 ```
 #endif
 #include "align.i65"
@@ -209,10 +146,7 @@ interpret01
 #include "page.i65"
     .word eoiq
 #include "page.i65"
-    .word not
-#include "parm.i65"
-    .word qbranch
-    .byt <(interpret03-*+1)
+    .word _qexit
 #include "pad.i65"
     .word bl
 #include "page.i65"
@@ -233,9 +167,6 @@ interpret01
 #include "parm.i65"
     .word branch
     .byt <(interpret01-*+1)
-#include "past.i65"
-interpret03
-    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -444,6 +375,20 @@ Redirect the input stream to screen `u` of Forth source and `interpret` it.
     blk tuck 3@>r !+ 2off prev on
     interpret
     blk 3r>!
+
+
+: load   ( u -- )
+    0 #blk @ 1- third between? 0=  8 ?error \ "BLOCK OUT OF RANGE"
+    blk tuck                    ( blk u blk )
+    \ bookmark location in the input stream
+    3@>r                        \ push `blk in lin span eoi` to return stack,
+    !+ 2off                     \ blk = u \ in = 0 \ lin = 0 \ span = 0 \ eoi = 0
+    prev on                     \ force a refresh of `blkbuf`
+    interpret                   \ process a screen before EOI
+    \ restore input stream bookmark
+    blk 3r>! ;                  \ pop `blk in lin span eoi` from return stack
+
+
 ```
 #endif
 #include "align.i65"
@@ -455,6 +400,8 @@ _load
     .word numblk
 #include "page.i65"
     .word fetch
+#include "page.i65"
+    .word oneminus
 #include "page.i65"
     .word third
 #include "page.i65"
@@ -473,7 +420,7 @@ _load
 #include "page.i65"
     .word _storeplus            ; just like `blk !  in`
 #include "page.i65"
-    .word twooff                ; `in` and `span` both off
+    .word twooff
 #include "page.i65"
     .word prev
 #include "page.i65"
