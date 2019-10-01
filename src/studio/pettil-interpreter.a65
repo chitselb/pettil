@@ -82,16 +82,188 @@ After `\`,  `interpret` will ignore all text to the end of the current line, use
 ```
 #endif
 backslash
-    lda userspan
-    sta userin
-backslash00
-    lda userblk
-    bne backslash01
-    inc usereoi
-;    lda #0
-;    sta userspan                ; ~wut? does not bother with high byte of SPAN
-backslash01
+    lda #0
+    sta userspan
     jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=REFILL
+stack=( -- )
+tags=secondary,outer,extra,nosymbol
+load `sib` with a logical line of input.
+
+```
+: refill   ( -- )
+    sib  blk@ block
+    cursor
+        3 c!+  0 !+
+        lin 40* rot + !+  >r
+        lin buf.wrap >bit cbit@
+        ?: forty eighty  dup  r> c!
+    0 =cursor  expect  0 =cursor ;
+```
+#endif
+#include "align.i65"
+_refill
+    jsr enter
+#include "page.i65"
+    .word sib
+#include "page.i65"
+    .word blkfetch
+#include "page.i65"
+    .word _block
+#include "page.i65"
+    .word cursor
+#include "page.i65"
+    .word three
+#include "page.i65"
+    .word cstoreplus
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word _storeplus
+#include "page.i65"
+    .word lin
+#include "page.i65"
+    .word fortytimes
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word _storeplus
+#include "page.i65"
+    .word tor
+#include "page.i65"
+    .word lin
+#include "page.i65"
+    .word _bufwrap
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word cbitfetch
+#include "parm.i65"
+    .word pquerycolon
+    .word forty
+    .word eighty
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word cstore
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word exchgcursor
+#include "page.i65"
+    .word expect
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word exchgcursor
+#include "page.i65"
+    .word linplus
+#include "past.i65"
+    .word exit
+
+linplus
+    sec
+    bit usercursor+5
+    bvc linplus01
+    clc
+linplus01
+    lda userlin
+    adc #1
+    sta userlin
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=EOL?
+stack=( -- flag )
+tags=primitive,outer,extra,nosymbol
+Return `true` when end of line input buffer is reached
+
+#endif
+eolq
+    lda userin
+    cmp userspan
+    jmp xpushc
+
+;--------------------------------------------------------------
+#if 0
+name=EOI?
+stack=( -- flag )
+tags=primitive,outer,extra,nosymbol
+false = there's more
+true = end of input
+
+last line? exit true
+end of line? exit true
+more on line? exit false
+
+#endif
+eoiq
+    lda userlin
+    cmp #LPERSCR
+    lda userblk
+    bne moreq09
+moreq01
+    lda userin
+    cmp userspan
+moreq09
+    jmp xpushc
+
+;--------------------------------------------------------------
+#if 0
+name=REFILL?
+stack=( -- flag )
+tags=secondary,nosymbol
+
+                    interactive                             loading
+            before              after               before              after
+    blk         0               0                   1                   1
+    in          0               0                   0                   0
+    lin         0               0                   0       buf.wrap    2
+    span        0       query   span                0       refill      80
+
+
+```
+: refill?   ( -- flag )
+    eol?  if  blk@ ?: refill query then
+    more? ;
+
+: more?   ( -- flag )
+\ true means input available
+\ false means end of input
+
+
+```
+#endif
+#include "align.i65"
+_qrefill
+    jsr enter
+#include "page.i65"
+    .word eoiq
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word eolq
+#include "parm.i65"
+    .word qbranch
+    .byt <(qrefill01-*+1)
+#include "pad.i65"
+    .word blkfetch
+#include "parm.i65"
+    .word pquerycolon
+    .word _refill
+    .word _query
+#include "pad.i65"
+qrefill01
+#include "past.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -139,6 +311,24 @@ sib line.size  expect
 
 : interpret   ( -- )
     begin
+        ?stack
+        span c@ 0<>
+        more?
+        and
+    while
+        ?refill
+        span c@
+    until
+
+        bl name ?dup
+        if
+            found? ?dup ?: interpret.cfa number
+        then
+    repeat ;
+
+
+: interpret   ( -- )
+    begin
         begin
             ?stack
             eoi? ?exit
@@ -150,6 +340,67 @@ sib line.size  expect
     while
         found? ?dup ?: interpret.cfa number
     repeat ;
+: interpret   ( -- )
+    begin
+        ?stack
+        refill?  ( !eoi )
+    while
+        bl name ?dup
+        if
+            found? ?dup
+            ?: interpret.cfa number
+        then
+    repeat ;
+
+: refill?   ( -- )
+
+: more?   ( -- flag )
+\ true = there's more
+\ false = end of input
+    blk@
+    if  ( loading )
+        eol? lin l/scr = and
+    else  ( interactive )
+        span @ 0=
+        eol? 0= or
+    then
+
+eosq
+    lda userlin
+    cmp #LPERSCR
+    bcc outtie
+eolq
+    lda userin
+    cmp userspan
+outtie
+    jmp xpushc
+
+: more?   ( -- flag )
+    blk@ ?: eos? eol? not ;
+
+    eol? blk@ and ?: true false
+
+    eol? and interactive = false
+    lin = 25 = false
+
+: interpret   ( -- )
+    begin
+        ?stack
+        more? eol? and
+        if
+            blk@ ?: refill query
+        then
+        more?
+    while
+        bl name ?dup
+        if
+            found? ?dup
+            ?: interpret.cfa number
+        then
+    repeat ;
+
+
+
 ```
 #endif
 #include "align.i65"
@@ -159,25 +410,13 @@ _interpret
 interpret01
     .word qstack
 #include "page.i65"
+    .word _qrefill
+#include "page.i65"
     .word eoiq
-#include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word eolq
 #include "parm.i65"
     .word qbranch
     .byt <(interpret02-*+1)
 #include "pad.i65"
-    .word blkfetch
-#include "parm.i65"
-    .word pquerycolon
-    .word _refill
-    .word _query
-#include "parm.i65"
-    .word branch
-    .byt <(interpret01-*+1)
-#include "pad.i65"
-interpret02
     .word bl
 #include "page.i65"
     .word _name                 ;( nfa|0 )
@@ -192,11 +431,14 @@ interpret02
     .word qdup
 #include "page.i65"
     .word pquerycolon
-    .word _interpretcfa         ; ( a -- )
-    .word _number               ; ( a -- )
+    .word _interpretcfa         ; ( cfa -- )
+    .word _number               ; ( nfa -- )
 #include "parm.i65"
     .word branch
     .byt <(interpret01-*+1)
+#include "past.i65"
+interpret02
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -234,7 +476,7 @@ This is the infinite outer interpreter loop.  PETTIL uses a lazy loading scheme 
 
 ```
 : quit
-    rp! blk 12 erase            \ erases line editing uservars
+    rp! blk 6 erase            \ erases line editing uservars
     begin                       \ `interpret` will get new line from keyboard
         interpret
         compiling? ?: cr .ok
@@ -248,13 +490,14 @@ _quit
     .word rpstore               ; reset return stack pointer
 #include "page.i65"
     .word blk
-#include "parm.i65"
-    .word blit
-    .byt 12                     ; `blk` `in` `span` `#out` `#line` `editing`
-#include "pad.i65"
-    .word erase
+#include "page.i65"
+    .word twooff
 #include "page.i65"
 quit01                          ; BEGIN
+    .word span
+#include "page.i65"
+    .word off
+#include "page.i65"
     .word _interpret            ; outer interpreter main loop
 #include "page.i65"
     .word compilingq
