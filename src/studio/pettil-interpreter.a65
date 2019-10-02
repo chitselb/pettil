@@ -181,87 +181,52 @@ linplus01
 
 ;--------------------------------------------------------------
 #if 0
-name=EOL?
+name=EOI?
 stack=( -- flag )
 tags=primitive,outer,extra,nosymbol
 Return `true` when end of line input buffer is reached
 
 #endif
-eolq
-    lda userin
-    cmp userspan
-    jmp xpushc
-
-;--------------------------------------------------------------
-#if 0
-name=EOI?
-stack=( -- flag )
-tags=primitive,outer,extra,nosymbol
-false = there's more
-true = end of input
-
-last line? exit true
-end of line? exit true
-more on line? exit false
-
-#endif
 eoiq
     lda userlin
     cmp #LPERSCR
-    lda userblk
-    bne moreq09
-moreq01
+    bcc eolq09
+
+;--------------------------------------------------------------
+#if 0
+name=EOL?
+stack=( -- flag )
+tags=primitive,outer,extra,nosymbol
+
+#endif
+eolq
     lda userin
     cmp userspan
-moreq09
+eolq09
     jmp xpushc
 
 ;--------------------------------------------------------------
 #if 0
-name=REFILL?
+name=MORE?
 stack=( -- flag )
-tags=secondary,nosymbol
-
-                    interactive                             loading
-            before              after               before              after
-    blk         0               0                   1                   1
-    in          0               0                   0                   0
-    lin         0               0                   0       buf.wrap    2
-    span        0       query   span                0       refill      80
-
+tags=secondary,outer,extra,nosymbol
 
 ```
-: refill?   ( -- flag )
-    eol?  if  blk@ ?: refill query then
-    more? ;
-
 : more?   ( -- flag )
-\ true means input available
-\ false means end of input
-
-
+    blk@ ?: eoi? eol? not ;
 ```
 #endif
 #include "align.i65"
-_qrefill
+_moreq
     jsr enter
 #include "page.i65"
-    .word eoiq
-#include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word eolq
-#include "parm.i65"
-    .word qbranch
-    .byt <(qrefill01-*+1)
-#include "pad.i65"
     .word blkfetch
 #include "parm.i65"
     .word pquerycolon
-    .word _refill
-    .word _query
+    .word eoiq
+    .word eolq
 #include "pad.i65"
-qrefill01
+    .word not
 #include "past.i65"
     .word exit
 
@@ -326,62 +291,20 @@ sib line.size  expect
         then
     repeat ;
 
-
-: interpret   ( -- )
-    begin
-        begin
-            ?stack
-            eoi? ?exit
-            eol?
-        while
-            blk@ ?: refill query
-        repeat
-        bl name ?dup
-    while
-        found? ?dup ?: interpret.cfa number
-    repeat ;
 : interpret   ( -- )
     begin
         ?stack
-        refill?  ( !eoi )
+        more?
     while
+         eol?  if  blk@ ?: refill query
+    repeat   ( then )
+
         bl name ?dup
         if
             found? ?dup
             ?: interpret.cfa number
         then
     repeat ;
-
-: refill?   ( -- )
-
-: more?   ( -- flag )
-\ true = there's more
-\ false = end of input
-    blk@
-    if  ( loading )
-        eol? lin l/scr = and
-    else  ( interactive )
-        span @ 0=
-        eol? 0= or
-    then
-
-eosq
-    lda userlin
-    cmp #LPERSCR
-    bcc outtie
-eolq
-    lda userin
-    cmp userspan
-outtie
-    jmp xpushc
-
-: more?   ( -- flag )
-    blk@ ?: eos? eol? not ;
-
-    eol? blk@ and ?: true false
-
-    eol? and interactive = false
-    lin = 25 = false
 
 : interpret   ( -- )
     begin
@@ -398,9 +321,6 @@ outtie
             ?: interpret.cfa number
         then
     repeat ;
-
-
-
 ```
 #endif
 #include "align.i65"
@@ -410,12 +330,26 @@ _interpret
 interpret01
     .word qstack
 #include "page.i65"
-    .word _qrefill
+    .word _moreq
 #include "page.i65"
-    .word eoiq
+    .word eolq
+#include "page.i65"
+    .word andx
 #include "parm.i65"
     .word qbranch
     .byt <(interpret02-*+1)
+#include "pad.i65"
+    .word blkfetch
+#include "parm.i65"
+    .word pquerycolon
+    .word _refill
+    .word _query
+#include "pad.i65"
+interpret02
+    .word _moreq
+#include "parm.i65"
+    .word qbranch
+    .byt <(interpret03-*+1)
 #include "pad.i65"
     .word bl
 #include "page.i65"
@@ -437,7 +371,7 @@ interpret01
     .word branch
     .byt <(interpret01-*+1)
 #include "past.i65"
-interpret02
+interpret03
     .word exit
 
 ;--------------------------------------------------------------
