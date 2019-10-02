@@ -103,6 +103,16 @@ load `sib` with a logical line of input.
         lin buf.wrap >bit cbit@
         ?: forty eighty  dup  r> c!
     0 =cursor  expect  0 =cursor ;
+
+: refill   ( -- )
+    eoi? ?exit
+    sib  blk@ block
+    cursor
+        3 c!+  0 !+
+        lin 40* rot + !+  >r
+        lin buf.wrap >bit cbit@
+        ?: forty eighty  dup  r> c!
+    0 =cursor  expect  0 =cursor ;
 ```
 #endif
 #include "align.i65"
@@ -168,8 +178,6 @@ _refill
     .word zero
 #include "page.i65"
     .word exchgcursor
-#include "page.i65"
-    .word linplus
 #include "past.i65"
     .word exit
 
@@ -267,64 +275,16 @@ quit --> interpret --> name --> refill? --> refill.loading --> block -->
 sib line.size  expect
 
 ```
-: interpret   ( -- )
-    begin
-        begin  ?stack  eoi? ?exit  eol?
-        while  blk@  ?: refill query
-        repeat
-        bl name  ?dup
-    while  found?
-        ?dup  ?: interpret.cfa number
-    repeat ;
-
-
-: interpret   ( -- )
-    begin
-        ?stack
-        span c@ 0<>
-        more?
-        and
-    while
-        ?refill
-        span c@
-    until
-
-        bl name ?dup
-        if
-            found? ?dup ?: interpret.cfa number
-        then
-    repeat ;
-
-: interpret   ( -- )
-    begin
-        ?stack
-        more?
-    while
-         eol?  if  blk@ ?: refill query
-    repeat   ( then )
-
-        bl name ?dup
-        if
-            found? ?dup
-            ?: interpret.cfa number
-        then
-    repeat ;
-
-: interpret   ( -- )
-    begin
-        ?stack
-        more? eol? and
-        if
-            blk@ ?: refill query
-        then
-        more?
-    while
-        bl name ?dup
-        if
-            found? ?dup
-            ?: interpret.cfa number
-        then
-    repeat ;
+: interpret   ( -- )           begin
+    ?stack eol?               if
+      blk@                if
+      refill lin+       else
+      query             then
+                            then
+    more?                      while
+    bl name ?dup               until
+    found? ?dup ?: interpret.cfa number
+                              repeat   ;
 ```
 #endif
 #include "align.i65"
@@ -337,19 +297,28 @@ interpret01
     .word eolq
 #include "parm.i65"
     .word qbranch
-    .byt <(interpret02-*+1)
+    .byt <(interpret04-*+1)
 #include "pad.i65"
     .word blkfetch
 #include "parm.i65"
-    .word pquerycolon
+    .word qbranch
+    .byt <(interpret02-*+1)
+#include "pad.i65"
     .word _refill
-    .word _query
+#include "page.i65"
+    .word linplus
+#include "parm.i65"
+    .word branch
+    .byt <(interpret04-*+1)
 #include "pad.i65"
 interpret02
+    .word _query
+#include "page.i65"
+interpret04
     .word _moreq
 #include "parm.i65"
     .word qbranch
-    .byt <(interpret03-*+1)
+    .byt <(interpret05-*+1)
 #include "pad.i65"
     .word bl
 #include "page.i65"
@@ -371,7 +340,7 @@ interpret02
     .word branch
     .byt <(interpret01-*+1)
 #include "past.i65"
-interpret03
+interpret05
     .word exit
 
 ;--------------------------------------------------------------
@@ -638,5 +607,9 @@ _load
     .word blk
 #include "page.i65"
     .word threerfromstore       ; restore prior `blk` `in` `span`
+#include "page.i65"
+    .word prev
+#include "page.i65"
+    .word on
 #include "past.i65"
     .word exit
