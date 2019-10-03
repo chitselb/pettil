@@ -99,9 +99,7 @@ firmwarecursor
 name=QUERY
 stack=( -- )
 tags=secondary,fig,interpreter
-Accept a line of input from the keyboard to `tib` and set `span`
-
-query tib span @ dump  \ should echo what you typed
+Accept another line of input from the keyboard to `tib`
 
 ```
 : query
@@ -112,12 +110,6 @@ query tib span @ dump  \ should echo what you typed
 #include "align.i65"
 _query
     jsr enter
-#include "page.i65"
-    .word span
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word _qexit
 #include "page.i65"
     .word tib
 #include "pad.i65"
@@ -243,8 +235,8 @@ linplus
     ldy userlin
     bmi linplus01               ; lin = -1 means top of screen
     bit usercursor+5
-    bvc linplus01
-    iny
+    bvc linplus01               ; 40
+    iny                         ; 80
 linplus01
     iny
     sty userlin
@@ -254,11 +246,21 @@ linplus01
     {programmer} --> CHRIN --> tib
     blkbuf  --> CHRIN --> sib
 
-    interpret all the words
+    interpret
+        begin
+            ?stack
+            name
+                parse
+        while
+            found?
+                true:   interpret.cfa
+                false:  number
+        repeat ;
 
     loading? get another line
     interactive? print "OK" and get another line
 
+    : !buf.cursor
 
 */
 
@@ -277,8 +279,7 @@ setbufcursor
     .byt pull
     .byt sti | N0
     .byt nxt
-
-
+;[14]
 
 ;--------------------------------------------------------------
 #if 0
@@ -289,6 +290,8 @@ Return `true` when end of line input buffer is reached
 
 #endif
 eoiq
+    lda userblk
+    beq eolq
     lda userlin
     cmp #LPERSCR
     bcc eolq09
@@ -333,9 +336,11 @@ _moreq
 
 ;--------------------------------------------------------------
 #if 0
-name=REFILL?
+name=?REFILL
 stack=( -- flag )
 tags=secondary,outer,extra,nosymbol
+Returns `true` then the input stream is available (not exhausted),
+after properly reloading the line buffers as needed.
 
 fill line buffer
 
@@ -448,9 +453,6 @@ blk@                    blk             interactive
 interactive
     empty when (span <> 0) AND (in >= span)
 
-empty
-    jsr slip
-
 eoiq_loading
     lda userblk
     beq eoiq_interactive
@@ -467,21 +469,104 @@ eoiq
 
 : refill?   ( -- flag )
     blk@ ?: eoi? eol? not ;
+
+: refill
+    \ build the cursor
+    \
+
+inputs
+    blk                     0 = interactive                 +u = loading
+    in                      position on line
+    lin
+    span
+    prev
+
+
+    N6                      line buffer pointer for `found?`                    set by `name`
+    N7                      search character                                    set by `name`
+    N8                      name.len                                            set by `parse`
+
+processes & outputs
+
+    cursor                      interactive                 loading
+        DFLTN                   Kernel screen               3
+        PNTR                    editor values               0
+        TBLX                                                0
+        PNT                                                 (blkbuf + lin * 40)
+        LNMX                                                40|80  <-- this line's linewrap bit
+    tib                         x
+    sib                                                     x
+
+eoi?                flag: end of input?
+eol?                flag: end of line?
+lin+                get linewrap bit for `lin` and add +1 or +2
+refill              `expect` current line into `sib` from `blkbuf`
+query               `expect` a line into `tib` from the terminal
+expect              zeroes `in`
+=cursor             switches hardware cursor with `cursor`
+expect              sets `in` = 0; `span` = line.len
+parse               sets N8 = name.len; adds +1 to `in`
+skip                skip to non-match of character N7 in line buffer (N6)
+scan                scan to next match of character N7 in line buffer (N6)
+
+buffloadedq
+    lda userspan
+    beq blq01
+    lda userin
+    cmp userspan
+
+
+
+
+
+: ?refill   ( -- )
+    blk@ ?: eoi? eol? span c@ and ?exit
+    blk@
+    if  eol?  if  lin+  then
+        eoi? ?exit  refill
+    else  query
+    then ;
 ```
 #endif
 #include "align.i65"
-_refillq
+_qrefill
     jsr enter
 #include "page.i65"
     .word blkfetch
-#include "page.i65"
-    .word xyzzy
 #include "parm.i65"
     .word pquerycolon
     .word eoiq
     .word eolq
+#include "page.i65"
+    .word span
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word blkfetch
+#include "parm.i65"
+    .word qbranch
+    .byt <(qrefill02-*+1)
 #include "pad.i65"
-    .word not
+    .word eolq
+#include "parm.i65"
+    .word qbranch
+    .byt <(qrefill01-*+1)
+#include "pad.i65"
+    .word linplus
+#include "page.i65"
+qrefill01
+    .word eoiq
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word _refill
+#include "page.i65"
+qrefill02
+    .word _query
 #include "past.i65"
     .word exit
 
@@ -579,7 +664,7 @@ PETTIL uses a lazy loading design pattern
 
 : name   ( char -- nfa|0 )
     blk@ ?: sib tib  N6 2!
-    empty? ?: false name.parse  ;
+    empty? ?: false parse  ;
 ```
 #endif
 #include "align.i65"
@@ -597,10 +682,12 @@ _name
 #include "pad.i65"
     .word twostore              ; set n6=lib; n7=char
 #include "page.i65"
-    .word _refillq
+    .word _qrefill
+#include "page.i65"
+    .word eoiq
 #include "parm.i65"
     .word pquerycolon
-    .word _parse
     .word false
+    .word _parse
 #include "past.i65"
     .word exit
