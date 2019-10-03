@@ -4,19 +4,17 @@
 ;--------------------------------------------------------------
 #if 0
 name=ERROR.MSG
-stack=( -- addr flag )
+stack=( -- )
 tags=interpreter,ext,nosymbol
 Instead of RESTART performing an ABORT at the end to start the
 QUIT-INTERPRET loop, it does a FENCE @ (FORGET) and sends us here.
 
-If WARNING is non-zero, FAIL executes it, which also points here.
-When WARNING is 0, FAIL will perform
+If `warning` is non-zero, FAIL executes it, which also points here.
+When `warning` is 0, `fail` performs `.err` which outputs the error number.
 
-WARNING @  ?: WARNING STARTUP  @ EXECUTE
-
-* Prints an error message
-* performs ABORT
 ```
+: error.msg   ( -- )
+    2* 'messages + @ space $. cr abort ; -2 allot
 ```
 #endif
 #include "align.i65"
@@ -88,162 +86,6 @@ backslash
 
 ;--------------------------------------------------------------
 #if 0
-name=REFILL
-stack=( -- )
-tags=secondary,outer,extra,nosymbol
-load `sib` with a logical line of input.
-
-```
-: refill   ( -- )
-    eoi? ?exit
-    sib  blk@ block
-    cursor
-        3 c!+  0 !+
-        lin 40* rot + !+  >r
-        lin buf.wrap >bit cbit@
-        ?: forty eighty  dup  r> c!
-    0 =cursor  expect  0 =cursor ;
-
-: refill   ( -- )
-    eoi? ?exit
-    sib  blk@ block
-    cursor
-        3 c!+  0 !+
-        lin 40* rot + !+  >r
-        lin buf.wrap >bit cbit@
-        ?: forty eighty  dup  r> c!
-    0 =cursor  expect  0 =cursor ;
-```
-#endif
-#include "align.i65"
-_refill
-    jsr enter
-#include "page.i65"
-    .word eoiq
-#include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word sib
-#include "page.i65"
-    .word blkfetch
-#include "page.i65"
-    .word _block
-#include "page.i65"
-    .word cursor
-#include "page.i65"
-    .word three
-#include "page.i65"
-    .word cstoreplus
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word _storeplus
-#include "page.i65"
-    .word lin
-#include "page.i65"
-    .word fortytimes
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word _storeplus
-#include "page.i65"
-    .word tor
-#include "page.i65"
-    .word lin
-#include "page.i65"
-    .word _bufwrap
-#include "page.i65"
-    .word tobit
-#include "page.i65"
-    .word cbitfetch
-#include "parm.i65"
-    .word pquerycolon
-    .word forty
-    .word eighty
-#include "pad.i65"
-    .word dup
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word cstore
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word exchgcursor
-#include "page.i65"
-    .word expect
-#include "page.i65"
-    .word zero
-#include "page.i65"
-    .word exchgcursor
-#include "past.i65"
-    .word exit
-
-linplus
-    lda usercursor+5
-    asl
-    asl                         ; ( 80=1 | 40=0 )
-linplus01
-    lda userlin
-    adc #1
-    sta userlin
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=EOI?
-stack=( -- flag )
-tags=primitive,outer,extra,nosymbol
-Return `true` when end of line input buffer is reached
-
-#endif
-eoiq
-    lda userlin
-    cmp #LPERSCR
-    bcc eolq09
-
-;--------------------------------------------------------------
-#if 0
-name=EOL?
-stack=( -- flag )
-tags=primitive,outer,extra,nosymbol
-
-#endif
-eolq
-    lda userin
-    cmp userspan
-eolq09
-    jmp xpushc
-
-;--------------------------------------------------------------
-#if 0
-name=MORE?
-stack=( -- flag )
-tags=secondary,outer,extra,nosymbol
-
-```
-: more?   ( -- flag )
-    blk@ ?: eoi? eol? not ;
-```
-#endif
-#include "align.i65"
-_moreq
-    jsr enter
-#include "page.i65"
-    .word blkfetch
-#include "parm.i65"
-    .word pquerycolon
-    .word eoiq
-    .word eolq
-#include "pad.i65"
-    .word not
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=INTERPRET
 stack=( -- )
 tags=secondary,fig,forth-79,forth-83,interpreter
@@ -285,6 +127,23 @@ sib line.size  expect
     bl name ?dup               until
     found? ?dup ?: interpret.cfa number
                               repeat   ;
+
+: interpret   ( -- )
+    begin
+        ?stack  more?
+    while
+        bl name ?dup
+        if
+            found? ?dup
+            ?: interpret.cfa number
+        then
+    repeat ;
+
+: interpret   ( -- )
+    begin   ?stack  bl name ?dup
+    while   found? ?dup
+            ?: interpret.cfa number
+    repeat ;
 ```
 #endif
 #include "align.i65"
@@ -294,32 +153,6 @@ _interpret
 interpret01
     .word qstack
 #include "page.i65"
-    .word eolq
-#include "parm.i65"
-    .word qbranch
-    .byt <(interpret04-*+1)
-#include "pad.i65"
-    .word blkfetch
-#include "parm.i65"
-    .word qbranch
-    .byt <(interpret02-*+1)
-#include "pad.i65"
-    .word _refill
-#include "page.i65"
-    .word linplus
-#include "parm.i65"
-    .word branch
-    .byt <(interpret04-*+1)
-#include "pad.i65"
-interpret02
-    .word _query
-#include "page.i65"
-interpret04
-    .word _moreq
-#include "parm.i65"
-    .word qbranch
-    .byt <(interpret05-*+1)
-#include "pad.i65"
     .word bl
 #include "page.i65"
     .word _name                 ;( nfa|0 )
@@ -327,9 +160,9 @@ interpret04
     .word qdup
 #include "parm.i65"
     .word qbranch
-    .byt <(interpret01-*+1)
+    .byt <(interpret05-*+1)
 #include "pad.i65"
-    .word _foundq               ; ( nfa -- cfa )
+    .word _foundq               ; ( nfa -- xfa flag )
 #include "page.i65"
     .word qdup
 #include "page.i65"
@@ -445,38 +278,6 @@ stack=( addr -- )
 tags=primitive,double,stack,ext
 pop 6 bytes from the return stack to `addr`
 
-~alternate, could be ( n addr -- ) stack diagram, which pops `n+1` bytes to replace memory at `addr+0`...`addr+n`
-
-These words are limited to moving 128 bytes to/from the return stack.  This is a good idea as long as PETTIL uses $0130..017F as `sib` (Screen Input Buffer)
-
-: load
-    5 blk #@>r
-    interpret
-    5 blk #r>!
-
-code #r>!   ( n addr -- )
-numrfromstore                   \ pop `n+1` bytes from return stack to `addr`
-    ldy #$FF
-numr01
-    iny
-    pla
-    sta (tos),y
-    tya
-    cmp stackl,x
-    bne numr01
-    jmp twodrop
-
-
-: #@>r   ( n addr -- )
-numfetchtor                     \ push `n+1` bytes to return stack from `addr`
-    ldy stackl,x
-numf01
-    lda (tos),y
-    pha
-    dey
-    bpl threef01
-    jmp drop
-
 #endif
 threerfromstore
     ldy #$FF
@@ -484,8 +285,10 @@ threer01
     iny
     pla
     sta (tos),y
-    cpy #5                      ; ~could be ` cpy stackl,x` for `#r>!`
-    bne threer01                ; ~if so, ` inx` here to remove 2os
+                    ;cpy stackl,x       alternative `#r>!   ( count addr -- )`
+    cpy #5
+    bne threer01
+                    ;inx
     jmp drop
 
 ;--------------------------------------------------------------
@@ -552,17 +355,17 @@ Redirect the input stream to screen `u` of Forth source and `interpret` it.
     interpret
     blk 3r>!
 
+( blk u blk )
+preload
+    push blk, in, lin, span to return stack
+
 
 : load   ( u -- )
     0 #blk @ 1- third between? 0=  8 ?error \ "BLOCK OUT OF RANGE"
-    blk tuck                    ( blk u blk )
-    \ bookmark location in the input stream
-    3@>r                        \ push `blk in lin span eoi` to return stack,
-    !+ 2off                     \ blk = u \ in = 0 \ lin = 0 \ span = 0 \ eoi = 0
-    prev on                     \ force a refresh of `blkbuf`
-    interpret                   \ process a screen before EOI
-    \ restore input stream bookmark
-    blk 3r>! ;                  \ pop `blk in lin span eoi` from return stack
+    6 blk m>r                   ( u ) \ push `blk in lin span` to return stack
+    blk !  in on  span off
+    interpret                   \ process an entire screen
+    6 blk r>m ;                 \ pop `blk in lin span` from return stack
 
 
 ```
@@ -596,20 +399,16 @@ _load
 #include "page.i65"
     .word _storeplus            ; just like `blk !  in`
 #include "page.i65"
-    .word twooff
+    .word true
 #include "page.i65"
-    .word prev
+    .word _storeplus
 #include "page.i65"
-    .word on                    ; forces `block` to load buffer
+    .word off
 #include "page.i65"
     .word _interpret            ; interpret has two clients, `load` and `quit`
 #include "page.i65"
     .word blk
 #include "page.i65"
     .word threerfromstore       ; restore prior `blk` `in` `span`
-#include "page.i65"
-    .word prev
-#include "page.i65"
-    .word on
 #include "past.i65"
     .word exit
