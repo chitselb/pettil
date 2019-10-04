@@ -273,131 +273,72 @@ _abort
 
 ;--------------------------------------------------------------
 #if 0
-name=3R>!
-stack=( addr -- )
-tags=primitive,double,stack,ext
-pop 6 bytes from the return stack to `addr`
+name=CHKBLK
+stack=( u -- u flag )
+tags=primitive,double,stack,nosymbol
+validate block number
+true: fail, block out of range
+false: okay, block is resident
 
 #endif
-threerfromstore
-    ldy #$FF
-threer01
-    iny
-    pla
-    sta (tos),y
-                    ;cpy stackl,x       alternative `#r>!   ( count addr -- )`
-    cpy #5
-    bne threer01
-                    ;inx
-    jmp drop
+chkblk
+    lda tos
+    sec
+    beq chkblk09                ; 0? fail!
+    cmp usernumblk              ; u >= #blk? fail
+chkblk09
+    jmp xpushc
+;[11]
 
 ;--------------------------------------------------------------
 #if 0
 name=LOAD
 stack=( u -- )
 tags=interpreter,forth-83
-Redirect the input stream to screen `u` of Forth source and `interpret` it.
+Load source non-interactively by redirecting the input stream from block `u`
 
-* 1 is the lowest block which may be loaded, as 0 is the keyboard
-* `load` will not create empty blocks
-* `u` must be presently available in `vmbuf`
-* error conditions (`BLOCK OUT OF RANGE`)
-** `u` < 1
-** `u` >= `#blk`
+* if `u` is outside the range `0 < u < #blk`, BLOCK OUT OF RANGE error
+* `blk = 0` means terminal input (interactive)
+* source code packet must be available in `vmbuf`
 
-
-
- The contents of >IN and BLK , which locate the current input
- stream, are saved.  The input stream is then redirected to
- the beginning of screen u by setting >IN to zero and BLK to
- u.  The screen is then interpreted.  If interpretation from
- screen u is not terminated explicitly it will be terminated
- when the input stream is exhausted and then the contents of
- >IN and BLK will be restored.  An error condition exists if
- u is zero.  See  [[>IN]] [[BLK]] [[BLOCK]]
-
-
+* check `u` within range: 0 < u < #blk
+* push `blk` `in` `lin` `span` to return stack
+* set `blk` = `u`
+* set `in` `lin` = true
+* set `span` = 0
+* `interpret`
+* pop `blk` `in` `lin` `span` from  return stack
 
 ```
-: load   ( scr -- )
-    ?dup
-    if
-    dup #blk @ > ?exit
-        blk 2@ ( >in @ ) 2>r
-        blk !  source! interpret
-        2r> ( >in ! ) blk 2!  source!
-    then ;
-
-: load   ( blk -- )
-    0 #blk @ third between? 0= 8 ?error
-    0 over < #blk @ third > or
-  \ checks requested block within range 0 .. #blk or error message
-  \ pushes >in and blk to return stack
-  \ resets >in
-  \ interpret
-  \ restores blk and >in from return stack
-  0 2dup  #blk @  between? 0=
-  8 ?error
-  blk 2@ ( >in @ )  2>r
-  blk 2! ( >in off )
-  interpret
-  2r>  blk 2! ( >in ! ) ;
-
-
-* check that `u` is in range of loaded blocks `0 < u < #blk`
-* push `blk` `in` `span` to return stack
-* interpret
-* pop `blk` `in` `span` from  return stack
-
 : load   ( u -- )
-    0 #blk @ third between? 0= 8 ?error
-    blk tuck 3@>r !+ 2off prev on
+    chkblk 8 ?error
+    6 blk m>r
+    blk ! in on [compile] \
     interpret
-    blk 3r>!
-
-( blk u blk )
-preload
-    push blk, in, lin, span to return stack
-
-
-: load   ( u -- )
-    0 #blk @ 1- third between? 0=  8 ?error \ "BLOCK OUT OF RANGE"
-    6 blk m>r                   ( u ) \ push `blk in lin span` to return stack
-    blk !  in on  span off
-    interpret                   \ process an entire screen
-    6 blk r>m ;                 \ pop `blk in lin span` from return stack
-
-
+    6 blk r>m
+    in c@ refill in c! ;
 ```
 #endif
 #include "align.i65"
 _load
     jsr enter
 #include "page.i65"
-    .word zero
-#include "page.i65"
-    .word numblk
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word oneminus
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word betweenq
-#include "page.i65"
-    .word zeq                   ; `blk` must be available in `vmbuf`
+    .word chkblk
 #include "parm.i65"
     .word qerror
     .byt 8                      ; "BLOCK OUT OF RANGE"
 #include "pad.i65"
+    .word six
+#include "page.i65"
+    .word blk                   ;( u 6 blk )
+#include "page.i65"
+    .word mtor                  ; push `blk` `in` `lin` `span` to return stack
+#include "page.i65"
     .word blk
 #include "page.i65"
-    .word tuck                  ;( blk u blk )
+    .word store
 #include "page.i65"
-    .word threefetchtor         ; stash `blk` `in` `span` on return stack
-#include "page.i65"
-    .word _storeplus            ; just like `blk !  in`
+    .word in
 #include "page.i65"
     .word on
 #include "page.i65"
@@ -405,8 +346,26 @@ _load
 #include "page.i65"
     .word _interpret            ; interpret has two clients, `load` and `quit`
 #include "page.i65"
-    .word blk
+    .word six
 #include "page.i65"
-    .word threerfromstore       ; restore prior `blk` `in` `span`
+    .word blk                   ;( 6 blk )
+#include "page.i65"
+    .word rtom                  ; pop `blk` `in` `lin` `span`
+#include "page.i65"
+    .word blkfetch
+#include "page.i65"
+    .word zeq
+#include "page.i65"
+    .word _qexit                ; exit if interactive session
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word _refill               ; restore earlier `sib` buffer,
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word cstore                ; without zeroing `in`
 #include "past.i65"
     .word exit
