@@ -231,55 +231,24 @@ _refill
 #include "past.i65"
     .word exit
 
+;--------------------------------------------------------------
+#if 0
+name=LIN+
+stack=( -- flag )
+tags=primitive,outer,extra,nosymbol
+Return `false` when last line of screen is reached
+
+#endif
 linplus
     ldy userlin
-    bmi linplus01               ; lin = -1 means top of screen
-    bit usercursor+5
-    bvc linplus01               ; 40
-    iny                         ; 80
+    bmi linplus01               ; lin = -1 means top of screen, +1
+    bit usercursor+5            ; V is opposite of linewrap bit for this line (0=40 true=80)
+    bvc linplus01               ; ( 40 ) lin 1+!
+    iny                         ; ( 80 ) lin 2+!
 linplus01
     iny
     sty userlin
     jmp next
-
-/*
-    {programmer} --> CHRIN --> tib
-    blkbuf  --> CHRIN --> sib
-
-    interpret
-        begin
-            ?stack
-            name
-                parse
-        while
-            found?
-                true:   interpret.cfa
-                false:  number
-        repeat ;
-
-    loading? get another line
-    interactive? print "OK" and get another line
-
-    : !buf.cursor
-
-*/
-
-;   ( 40|80 buf.line cursor -- )
-setbufcursor
-    brk
-    .byt ld | TOS
-    .byt st | N0
-    .byt set | ACC
-    .word 3
-    .byt sti | N0                       ; set DFLTN = 3 (screen)
-    .byt sub | ACC
-    .byt std | N0                       ; set PNTR, LNMX = 0 (pretend it's the top line)
-    .byt pull
-    .byt std | N0
-    .byt pull
-    .byt sti | N0
-    .byt nxt
-;[14]
 
 ;--------------------------------------------------------------
 #if 0
@@ -295,7 +264,7 @@ eoiq
     lda userlin
     cmp #LPERSCR
     bcc eolq09
-
+    ;fall through
 ;--------------------------------------------------------------
 #if 0
 name=EOL?
@@ -309,242 +278,161 @@ eolq
 eolq09
     jmp xpushc
 
+/* tiddlypettil
+created: 20191004085624546
+creator: chitselb
+
+modified: 20191004091301129
+modifier: PETTIL
+
+tags: fun seamonkeys deprecated concepts
+title: tiddlypettil documentation test
+
+[img[logo2018-05-13-22-58.png]]
+<br/>This should be fun
+
+If all goes well, I will become an actual tiddler in the generated docs.
+
+In tiddler .tid format to make exported tiddlers more usable
+
+|table|are|easy|now|h
+|such||table||
+||^ wow|table||
+||~|>| yes|
+| woot footer|<|<||f
+*/
+
 ;--------------------------------------------------------------
 #if 0
-name=MORE?
+name=EMPTY?
 stack=( -- flag )
-tags=secondary,outer,extra,nosymbol
+tags=primitive,outer,extra,nosymbol
+Did the user just hit RETURN on an empty line?
 
-```
-: more?   ( -- flag )
-    blk@ ?: eoi? eol? not ;
-```
+This relies on `n0` as a (very) temporary mailbox written by `expect`!
+
 #endif
-#include "align.i65"
-_moreq
-    jsr enter
-#include "page.i65"
-    .word blkfetch
-#include "parm.i65"
-    .word pquerycolon
-    .word eoiq
-    .word eolq
-#include "pad.i65"
-    .word not
-#include "past.i65"
-    .word exit
+emptyq
+    ldy n                       ; mailbox. if populated with $FF by `expect`, that's why.
+    iny                         ; presumably, the user will just hit return all day long
+    jmp xpushz
+;[6]
 
 ;--------------------------------------------------------------
 #if 0
-name=?REFILL
+name=REFILL?
 stack=( -- flag )
 tags=secondary,outer,extra,nosymbol
 Returns `true` then the input stream is available (not exhausted),
 after properly reloading the line buffers as needed.
 
-fill line buffer
+                    interactive         loading
+'return'            true                false               refill? returns false  name returns true
+'end of line'       true                false
+'end of screen'     n/a                 true
 
-eol? := ( in >= span )
-    false
-                there is a valid line buffer.  Return true
-
-
-eol? ?: exit
-
-
- if
-    span c@ 0= if
+eol?                in >= span          end of line
+eoi?                lin >= l/scr        end of screen
+empty?              n0 = -1             blank line
 
 
-reload when
-    prev <> blk                 ; returning from loading something else
+uservar cursor   ( -- addr )
+    uservar, 6-byte virtual cursor
+                            loading                     interactive session
+        DFLTN                   3                           0
+        PNTR                    in                          screen horiz position
+        TBLX                    0                           screen vertical line position
+        (PNT)                   blkbuf+lin*40               screen line address
+        LNMX                    40 or 80                    39 or 79, logical line length
 
+uservar in   ( -- addr )
+    uservar, horizontal position in line buffer
+    initialized by `expect`
+    updated by `skip` and `scan`
 
-?  block
+uservar lin   ( -- value )
+    upper byte of `in`, vertical line in line buffer
+    always points to start of a logical line
+    initialized by `load`
+    updated by `lin+`
 
-```
-: empty?   ( -- flag )
+code eol?   ( -- flag )
+    true when `in` reached end of line
+    true when in >= span
 
-eol? span @ blk@ or 0= if
-tib 80 query then
+code eoi?   ( -- flag )
+    true when `lin` reached end of screen
+    true when lin >= l/scr
 
-eol? blk@ if
-( loading )
-    prev @ blk@ =
-    if
-    else
-        refill
-    then
-else
-( interactive )
-    ( eol? ) span c@ 0=  and
-    if  tib 80 query  then
-then
+code empty?   ( -- flag )
+    true when `expect` received a blank line of input
 
-name returns 0 when the buffer is empty
-in an interactive session, this is the end of the line
-                                ( blk = 0 ) AND ( in >= span ) AND ( span > 0 )
-For loading, this means reaching the end of the last line from the block buffer
-                                ( blk > 0 ) AND ( in >= span ) AND ( lin >= l/scr )
-prior to throwing a 0, empty? will attempt to refill the buffer
+code lin+   ( -- )
+    add +1 (40) or +2 (80) to virtual screen pointer `lin`, based on `sib` size
+    line size from `cursor` LNMX field
 
-* return
-** false = buffer exhausted
-** true  = buffer available for `parse`
-    N6 = line input buffer (tib or sib)
-    N7 = character (usually a space)
-    tib = last line typed
-    sib = current line for `load`
-    blk = interactive=0, else screen being loaded
-    in = position
-    lin = current line on screen
-* reload current line to `sib` when `prev` <> `blk`
-* lin +1 or +2
+: refill   ( -- )
+    `expect` transforms (via CHRIN) a line from `blkbuf` into `sib`,
+    retrieve the block if `prev` <> `blk`
 
-line.size
+code expect   ( buff size -- )
+    receive up to `size` characters into `buff` via CHRIN
+    initialize `in` and `span`
+    leave a true copy of span in `n0` for `empty?`
+    called by `query` and `refill`
 
-reload
-use CHRIN to translate a line of input via `expect` from `blkbuf` to `sib`
+: query   ( -- )
+    receive a (logical) line of input from the terminal into `tib`
+    called only during interactive session
 
+code =cursor   ( addr|0 -- )
+    swap hardware cursor with `cursor`
+    called only when loading
 
-refill
+: parse   ( -- size )
+    identify next token in the input stream, returning its length
+    set `n8` = length
+    point `in` at the character following the parsed token
 
-scenario:interactive via `quit`
-blk=0
+code skip   ( -- )
+    skip to non-match of char in `n7`, in line buffer pointed to by `(n6)`
 
-scenario:loading called interactively
-blk=2
+code scan   ( -- )
+    scan to next match of char in `n7`, in line buffer pointed to by `(n6)`
 
-scenario:nested loading of screens
-blk=1
+refill?   ( -- flag )
+    load the line buffer `sib` or `tib`, if possible and necessary.
+    return true when `in` has not reached `span` (end of line)
+    ---
+    loading:
+    add +1 or +2 to `lin`
+    return true if screen is exhausted
+    otherwise, build a fake cursor
+    retrieve block `blk@`
+    refill `sib` from line `lin`
+    reset `in` to 0
+    return not `eoi?`
+    ---
+    interactive session:
+    return true if the user has already entered an empty line
+    otherwise, `query` the terminal for a line of input
+    return true
+    ---
 
-eoi?
-blk@
-if
-
-else
-
-then
-
-0
- (blk@ = 0) and (in >= span) and (span > 0)             end of line
- (blk@ > 0) and (in >= span) and (lin >= l/scr)         end of block
-
-
-
-
-blk@
-if
-
-else
-    eol?
-then
-
- or when the blkbuf is empty
-
-buffer is empty w    eol?
-
-blk@                    blk             interactive
-    in                  0 .. span       0 .. span
-    lin                 0 .. l/scr      0
-                                        span
-                                            width of line
-                                            0 = first time
-interactive
-    empty when (span <> 0) AND (in >= span)
-
-eoiq_loading
-    lda userblk
-    beq eoiq_interactive
-
-eoiq_interactive
-    lda userin
-    cmp userspan
-    bne eoiq
-    clc
-eoiq
-    jmp putc
-: empty?
-    blk@ prev @ <> if refill then
-
-: refill?   ( -- flag )
-    blk@ ?: eoi? eol? not ;
-
-: refill
-    \ build the cursor
-    \
-
-inputs
-    blk                     0 = interactive                 +u = loading
-    in                      position on line
-    lin
-    span
-    prev
-
-
-    N6                      line buffer pointer for `found?`                    set by `name`
-    N7                      search character                                    set by `name`
-    N8                      name.len                                            set by `parse`
-
-processes & outputs
-
-    cursor                      interactive                 loading
-        DFLTN                   Kernel screen               3
-        PNTR                    editor values               0
-        TBLX                                                0
-        PNT                                                 (blkbuf + lin * 40)
-        LNMX                                                40|80  <-- this line's linewrap bit
-    tib                         x
-    sib                                                     x
-
-eoi?                flag: end of input?
-eol?                flag: end of line?
-lin+                get linewrap bit for `lin` and add +1 or +2
-refill              `expect` current line into `sib` from `blkbuf`
-query               `expect` a line into `tib` from the terminal
-expect              zeroes `in`
-=cursor             switches hardware cursor with `cursor`
-expect              sets `in` = 0; `span` = line.len
-parse               sets N8 = name.len; adds +1 to `in`
-skip                skip to non-match of character N7 in line buffer (N6)
-scan                scan to next match of character N7 in line buffer (N6)
-
-buffloadedq
-    lda userspan
-    beq blq01
-    lda userin
-    cmp userspan
-
-
-
-
-
-: ?refill   ( -- )
-    blk@ ?: eoi? eol? span c@ and ?exit
-    blk@
-    if  eol?  if  lin+  then
-        eoi? ?exit  refill
-    else  query
-    then ;
-
-
-: ?refill
-    eol?
-    if
+    : refill?   ( -- flag )
+        eol? 0= dup ?exit
         blk@
-        if \ loading?
-            lin+ eoi? ?exit
-            refill
-        else \ interactive?
-            span c@ ?: \ query
-        then
-    then
-    loading?
-
+        if
+            lin+  eoi?  ?dup ?exit
+            reflll eoi? 0=
+        else
+            true  empty? ?exit
+            query
+        then ;
 ```
 #endif
 #include "align.i65"
-_qrefill
+_refillq
     jsr enter
 #include "page.i65"
     .word eolq
@@ -561,24 +449,43 @@ _qrefill
 #include "page.i65"
     .word eoiq
 #include "page.i65"
+    .word qdup
+#include "page.i65"
     .word _qexit
 #include "page.i65"
     .word _refill
+#include "page.i65"
+    .word eoiq
+#include "page.i65"
+    .word zeq
 #include "parm.i65"
     .word branch
     .byt <(qrefill02-*+1)
 #include "pad.i65"
 qrefill01
-    .word span
+    .word true
 #include "page.i65"
-    .word cfetch
-#include "parm.i65"
-    .word pquerycolon
-    .word backslash
+    .word emptyq
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
     .word _query
 #include "past.i65"
 qrefill02
     .word exit
+/*
+tags:
+uservar                         system variable
+constant                        value
+variable                        address
+vocabulary                      add vocabid to `vocabs`
+subroutine
+primitive
+secondary
+data                            messages, initialization values, BASIC loader
+table                           data containing addresses
+
+*/
 
 ;--------------------------------------------------------------
 #if 0
@@ -594,7 +501,7 @@ tags=secondary,outer,extra,nosymbol
 * move `in` past trailing space
 
 ```
-: name.parse   ( -- length )
+: parse   ( -- length )
     skip dup 1- <n6 +
     scan rot -
     dup !nfa ;
@@ -644,41 +551,20 @@ _parse
 ;--------------------------------------------------------------
 #if 0
 name=NAME
-stack=( char -- nfa|0 )
+stack=( char -- nfa|false )
 tags=outer,extra
-Return the address of a counted string in the input stream, or 0 if the input stream is exhausted
-
-`name` is the name of the word formerly known as `word`, which is not present.  Absence of `word` is a variance from the Forth-83 standard, and the new and improved `name` fulfills all the original purposes of `word`.
-
-PETTIL uses a lazy loading design pattern
-
-|What is a WORD?|<|<|h
-|1|word|entry in the Forth dictionary|
-|2|word|16 bits of memory|
-|3|word|an English word|
-|4|word|//required// reserved Forth-83 standard word to parse the input stream|
-|5|word|things Cameo say before `up`|
-
-* set `n6` to `tib`(interactive) or `sib`(loading)
-* set `n7` to delimiter char ' '
-* `refill?` will refill the line buffer, if needed
-
-* test if line buffer (and screen buffer, if loading) exhausted
-* set `n8` length
-* return `false` or `nfa`
-* Advance `in` past the parsed `word`.
-
-`eoi` true when skip/scan reached end of line last time through
+    return address of next token in the line buffer, or
+    return false when the input stream is exhausted.
+    ---
+    `name` is the name of the word formerly known as `word`, which is not
+    present.  Absence of `word` is a variance from the Forth-83 standard, and
+    the new and improved `name` fulfills all the original purposes of `word`.
 
 ```
-
-: name
-\ set N6 = buffer addr, N6 = search char
-\ (maybe) refill line buffer?
-
-: name   ( char -- nfa|0 )
-    blk@ ?: sib tib  N6 2!
-    empty? ?: false parse  ;
+: name   ( char -- nfa|false )
+    blk@ ?: sib tib  n6 2!
+    begin  refill?  until
+    eoi? ?: false parse ;
 ```
 #endif
 #include "align.i65"
@@ -696,8 +582,12 @@ _name
 #include "pad.i65"
     .word twostore              ; set n6=lib; n7=char
 #include "page.i65"
-    .word _qrefill
-#include "page.i65"
+name01
+    .word _refillq
+#include "parm.i65"
+    .word qbranch
+    .byt <(name01-*+1)
+#include "pad.i65"
     .word eolq
 #include "parm.i65"
     .word pquerycolon

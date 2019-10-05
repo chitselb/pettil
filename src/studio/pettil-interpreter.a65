@@ -40,20 +40,19 @@ _errormsg
 
 ;--------------------------------------------------------------
 #if 0
-name=INTERPRET.CFA
+name=GROK
 stack=( cfa -1|+1 -- )
 tags=secondary,interpreter,nosymbol
-Either compile an execution token or `execute` the CFA
-
+'to understand' -- process `cfa` in the context of compilation or execution
 
 ```
-: interpret.cfa   ( cfa flag -- )
+: grok   ( cfa flag -- )
     compiling? <>
     ?: execute xt, ;
 ```
 #endif
 #include "align.i65"
-_interpretcfa
+_grok
     jsr enter
 #include "page.i65"
     .word compilingq
@@ -89,60 +88,27 @@ backslash
 name=INTERPRET
 stack=( -- )
 tags=secondary,fig,forth-79,forth-83,interpreter
-The Forth interpreter loop in PETTIL uses a lazy-loading approach.  The traditional approach preloads a line buffer and sends it to `interpret`, which scans through the space-delimited tokens on the line and decides what to do with each one.  PETTIL merely asks `interpret` to do a line or screen of input, and `interpret` itself takes care of loading the line buffer (or the screen).
-
-`span` off triggers `name` to refill either the `tib` (from the keyboard) or
-`sib` (when loading) buffer with the next line of input.  When `name` returns
-`0`, `interpret` exits (to `quit` or `load`).
-
-* at the end of a line in interactive mode
-* at the end of a screen when loading
-
-If `name` returns an `nfa`, then `found?` will search the dictionary or try
-parse it as a `number` if it is not found. Depending on `compiling?` state,
-`cfa`s and numbers are either compiled or executed.
-
-|^condition|^exit|^mode|^buffer|h
-|^blk = 0|^end of line|^interactive|^tib|
-|^blk > 0|^end of screen|^loading|^sib|
-
-`name` semaphore pattern will return 0 when the previous token ended the line.
-
-interactive session
-quit --> interpret --> name --> refill? -->
-query
-
-loading
-quit --> interpret --> name --> refill? --> refill.loading --> block -->
-sib line.size  expect
+    process a unit of source code in the input stream, which is either:
+        an entire line (interactive)
+        an entire screen (loading)
+    each space-delimited token is parsed, then searched for `symtab`, then
+    possibly executed, turned into a number, or added to the dictionary as
+    per the rules of the interpreter and compiler.
+    ---
+    interactive sessions will exit `interpret` after a blank line of input,
+    or after processing the entire line.
+    loading will exit `interpret` at the end of the entire screen.
+    ---
+    PETTIL's outer interpreter uses a lazy-loading design, taken from an idea
+    by Albert van der Hoerst on comp.lang.forth.  Traditional approaches
+    first load the buffer before calling `interpret` but in our design,
+    retrieving source text is postponed until the last possible moment.
 
 ```
-: interpret   ( -- )           begin
-    ?stack eol?               if
-      blk@                if
-      refill lin+       else
-      query             then
-                            then
-    more?                      while
-    bl name ?dup               until
-    found? ?dup ?: interpret.cfa number
-                              repeat   ;
-
-: interpret   ( -- )
-    begin
-        ?stack  more?
-    while
-        bl name ?dup
-        if
-            found? ?dup
-            ?: interpret.cfa number
-        then
-    repeat ;
-
 : interpret   ( -- )
     begin   ?stack  bl name ?dup
     while   found? ?dup
-            ?: interpret.cfa number
+            ?: grok number
     repeat ;
 ```
 #endif
@@ -167,7 +133,7 @@ interpret01
     .word qdup
 #include "page.i65"
     .word pquerycolon
-    .word _interpretcfa         ; ( cfa -- )
+    .word _grok                 ; ( cfa -- )
     .word _number               ; ( nfa -- )
 #include "parm.i65"
     .word branch
