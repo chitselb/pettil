@@ -372,7 +372,7 @@ _exhaustedq
 
 ;--------------------------------------------------------------
 #if 0
-name=?QUERY?
+name=?QUERY
 stack=( -- )
 tags=primitive,outer,extra,nosymbol
 `?query?` receives a line of input from the user if they didn't hit return
@@ -398,20 +398,20 @@ _maybequery
 
 ;--------------------------------------------------------------
 #if 0
-name=?RELOAD
+name=?REFILL
 stack=( -- )
 tags=secondary,outer,extra,nosymbol
-receive a line of input to `sib` from virtual screen, unless eoi?
+receive a line of input to `sib` from virtual screen, unless `eoi?`
 
 //maybe-reload//
 
 ```
-: reload   ( -- )
+: ?refill   ( -- )
     lin+  eoi? ?exit  refill ;
 ```
 #endif
 #include "align.i65"
-_maybereload
+_mayberefill
     jsr enter
 #include "page.i65"
     .word linplus
@@ -422,737 +422,6 @@ _maybereload
 #include "page.i65"
     .word _refill
 #include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?REFILL
-stack=( -- )
-tags=secondary,outer,extra,nosymbol
-eturns `true` then the input stream is available (not exhausted),
-reload line buffer as needed.
-
-
-code empty?   ( -- flag )
-    true when `expect` received a blank line of input
-
-code lin+   ( -- )
-    add +1 (40) or +2 (80) to virtual screen pointer `lin`, based on `sib` size
-    line size from `cursor` LNMX field
-
-: refill   ( -- )
-    `expect` transforms (via CHRIN) a line from `blkbuf` into `sib`,
-    retrieve the block if `prev` <> `blk`
-
-code expect   ( buff size -- )
-    receive up to `size` characters into `buff` via CHRIN
-    initialize `in` and `span`
-    leave a true copy of span in `n0` for `empty?`
-    called by `query` and `refill`
-
-: query   ( -- )
-    receive a (logical) line of input from the terminal into `tib`
-    called only during interactive session
-
-code =cursor   ( addr|0 -- )
-    swap hardware cursor with `cursor`
-    called only when loading
-
-: parse   ( -- size )
-    identify next token in the input stream, returning its length
-    set `n8` = length
-    point `in` at the character following the parsed token
-
-code skip   ( -- )
-    skip to non-match of char in `n7`, in line buffer pointed to by `(n6)`
-
-code scan   ( -- )
-    scan to next match of char in `n7`, in line buffer pointed to by `(n6)`
-
-refill?   ( -- flag )
-    is the line buffer available?
-    ---
-    load the line buffer `sib` or `tib`, if possible and necessary.
-    return true when `in` has not reached `span` (end of line)
-    ---
-    loading:
-    add +1 or +2 to `lin`
-    return true if screen is exhausted
-    otherwise, build a fake cursor
-    retrieve block `blk@`
-    refill `sib` from line `lin`
-    reset `in` to 0
-    return not `eoi?`
-    ---
-    interactive session:
-    return true if the user has already entered an empty line
-    otherwise, `query` the terminal for a line of input
-    return true
-    ---
-
-maybequery
-
-    : ?query   ( true -- true )
-        empty? ?exit query ;
-
-    : refill?   ( -- flag true | -- false )
-
-    begin
-        eol? 0=
-               dup ?exit         ( true when already stuff in buffer )
-        lin+         eoi? ?exit         ( false at end of screen )
-        ( false )
-if we get here, EOI? is false and EOL? is true. LIN is pointing to the next line
-
-        blk@ ?: refill ?query?
-    repeat ( flag ) ;
-
-    begin
-        eol? 0=       dup ?exit         ( true when already stuff in buffer )
-        lin+         eoi? ?exit         ( false at end of screen )
-        ( false )
-if we get here, EOI? is false and EOL? is true. LIN is pointing to the next line
-
-        blk@ ?: refill ?query?
-    repeat ( flag ) ;
-
-
-
-
-        blk@
-        if
-            lin+  eoi?  ?dup ?exit
-            reflll eoi? 0=
-        else
-            empty? ?exit                ( false at end of line )
-                                        ( false at empty line )
-            query
-        then ;
-
-
-        get lines until
-
-
-begin
-
-        interactive and we got a blank line, exit with "true"
-
-                blk@ 0= empty? and ?dup ?exit
-
-
-        loading and eoi? reached, exit with "true"
-
-                eoi? ?dup ?exit
-
-
-
-        eol? 0= dup ?exit         ( true when already stuff in buffer )
-
-: refill?   ( -- flag )
-    blk@ 0=
-    if
-
-    if
-
-    else
-        empty? ?dup ?exit
-    then ;
-
-    begin
-        lin+         eoi? ?exit         ( false at end of screen )
-        ( false )
-if we get here, EOI? is false and EOL? is true. LIN is pointing to the next line
-
-        blk@ ?: refill ?query?
-    repeat ( flag ) ;
-
-    begin
-        eol? 0=       dup ?exit         ( true when already stuff in buffer )
-        lin+         eoi? ?exit         ( false at end of screen )
-        ( false )
-if we get here, EOI? is false and EOL? is true. LIN is pointing to the next line
-
-        blk@ ?: refill ?query?
-    repeat ( flag ) ;
-
-
-: 'stream   ( -- nfa|0 )
-
-: reload?   ( -- flag )
-
-
-                eol? dup 0= ?exit
-                eol? ?dup ?exit         \ better with inverted flag
-
-: ?query?   ( -- flag )
-    empty? ?exit  true query ;
-
-: refill?   ( -- flag )
-    eol? dup 0= ?exit ( false )         \ stuff in the buffer
-    ( true )
-    blk@ ?: ?reload ?query ;
-
-: ?refill
-    blk@ ?: ?reload ?query ;
-
-: exhausted?   ( -- false ) | ( -- flag true )
-    blk@ ?: eoi?
-
-    eol? 0= ?dup ?exit ( true true )
-
-    eol?  0=
-
-: name
-    setup
-    begin
-        do we need a line?
-    while
-        get a line
-    until
-    is buffer exhausted?
-    if
-        false
-    else
-        parse                           \ the sought-after treasure!
-    then ;
-
-: name   ( char -- nfa|false )
-    blk@ ?: sib tib  n6 2!  \ setup
-    begin                   \ hungry?
-        eol?                \ probably not hungry
-        if                  \ me so hungry! give me cookie! nom nom nom!
-            blk@            \ well what am I hungry for?
-            if              \ loading?
-
-            else            \ interactive?
-            then
-        else                \ wasn't hungry
-            false
-        then
-    while
-        ?refill
-    repeat
-    exhausted?
-
-: reload?   ( -- )
-
-: hungry?   ( -- flag )
-    blk@ empty? xor
-
-an interactive seesion first brings us here after startup
-/* script
-who are you?  I am `name`
-what is my purpose? hand me a character, and I scan ahead in the input stream for it
-what do you tell us? I either provide a token address, or say "there was nothing"
-*/
- a character
-
-
-empty?        interactive         loading
-false           query
-true            no query          +refill
-
--- fun zone --
-empty?        interactive       loading
-false           true
-true            false             true
-
-eol?          interactive       loading
-false           true
-true            false             true
-
-eoi?          interactive       loading
-false           true
-true            false             true
--- end fun zone --
-
-: exhausted?   ( -- flag )
-        blk@ 0= empty? or eoi? or ;
-                       \
-: ?query   ( -- )
-    empty? ?exit  query ;
-
-: name   ( char -- nfa|false )
-    blk@ ?: sib tib  n6 2!  \ setup
-    begin                   \ hungry?
-        eol?                \ probably not hungry
-        if                  \ me so hungry! give me cookie! nom nom nom!
-            blk@            \ well what am I hungry for?
-            if              \ loading?
-
-            else            \ interactive?
-            then
-        else                \ wasn't hungry
-            false
-        then
-    while
-        ?refill
-    repeat
-    exhausted?
-
-
-
-        |
-        ( eol? and not )
-        ( interactive? AND eol? -- we will later find out, AND not empty? )
-        ( loading? AND eol? )
-    while
-        blk@ ?: ?reload ?query
-    repeat
-    exhausted? ?: false parse ;
-        blk@ if
-            eoi?  if  1+under  then
-        else
-            empty?  if 1+under then
-        then
-
-         ?: eoi? empty? xor
-
-        \ true first time when interacive
-        \ true until eoi? when loading
-    while
-        refill?
-
-\ hits return                           ( false true )
-\ end of interactive line               ( false true )
-\ end of screen                         ( false true )
-        ?dup until
-    until ( flag )
-    ?: parse false ;
-
-: refill?  ( -- exhausted? )
-    begin
-        hungry?
-    while
-        ?refill
-    until
-    exhausted? ;
-
-: ?reload ( -- )
-
-
-code empty?
-    N0        inc,
-    'xpushz   jmp,
-end-code
-
-code eoi?
-    blk       lda,
-    'eol?     beq,
-    'lin      lda,
-    l/scr #   cmp,
-    'eolq09   bcc,
-end-code
-    \ fall through
-              here &eol?
-code eol?
-    in        lda,
-    span      cmp,
-here &eolq09
-    'xpushc   jmp,
-end-code
-
-: exhausted?   ( -- flag )
-    blk@ ?: eoi? eol? ;
-: reload   ( -- )
-    lin+  eoi? ?exit  refill ;
-: ?refill   ( -- )
-    begin  hungry?  while
-    blk@ ?: ?reload ?query  until ;
-```
-#endif
-#include "align.i65"
-_qrefill
-    jsr enter
-#include "page.i65"
-_qrefill01
-    .word _hungryq
-#include "parm.i65"
-    .word qbranch
-    .byt <(qrefill02-*+1)
-#include "pad.i65"
-    .word blkfetch
-#include "parm.i65"
-    .word pquerycolon
-    .word _maybereload
-    .word _maybequery
-#include "parm.i65"
-    .word branch
-    .byt <(qrefill01-*+1)
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=REFILL?
-stack=( -- flag )
-tags=secondary,outer,extra,nosymbol
-Returns `true` then the input stream is available (not exhausted),
-after properly reloading the line buffers as needed.
-
-                    interactive         loading
-'return'            true                false               refill? returns false  name returns true
-'end of line'       true                false
-'end of screen'     n/a                 true
-
-eol?                in >= span          end of line
-eoi?                lin >= l/scr        end of screen
-empty?              n0 = -1             blank line
-
-
-uservar cursor   ( -- addr )
-    uservar, 6-byte virtual cursor
-                            loading                     interactive session
-        DFLTN                   3                           0
-        PNTR                    in                          screen horiz position
-        TBLX                    0                           screen vertical line position
-        (PNT)                   blkbuf+lin*40               screen line address
-        LNMX                    40 or 80                    39 or 79, logical line length
-
-uservar in   ( -- addr )
-    uservar, horizontal position in line buffer
-    initialized by `expect`
-    updated by `skip` and `scan`
-
-uservar lin   ( -- value )
-    upper byte of `in`, vertical line in line buffer
-    always points to start of a logical line
-    initialized by `load`
-    updated by `lin+`
-
-code eol?   ( -- flag )
-    true when `in` reached end of line
-    true when in >= span
-
-code eoi?   ( -- flag )
-    true when `lin` reached end of screen
-    true when lin >= l/scr
-
-code empty?   ( -- flag )
-    true when `expect` received a blank line of input
-
-code lin+   ( -- )
-    add +1 (40) or +2 (80) to virtual screen pointer `lin`, based on `sib` size
-    line size from `cursor` LNMX field
-
-: refill   ( -- )
-    `expect` transforms (via CHRIN) a line from `blkbuf` into `sib`,
-    retrieve the block if `prev` <> `blk`
-
-: query   ( -- )
-    receive a (logical) line of input from the terminal into `tib`
-    called only during interactive session
-
-code =cursor   ( addr|0 -- )
-    swap hardware cursor with `cursor`
-    called only when loading
-
-: parse   ( -- size )
-    identify next token in the input stream, returning its length
-    set `n8` = length
-    point `in` at the character following the parsed token
-
-refill?   ( -- flag )
-    is the line buffer available?
-    ---
-    load the line buffer `sib` or `tib`, if possible and necessary.
-    return true when `in` has not reached `span` (end of line)
-    ---
-    loading:
-    add +1 or +2 to `lin`
-    return true if screen is exhausted
-    otherwise, build a fake cursor
-    retrieve block `blk@`
-    refill `sib` from line `lin`
-    reset `in` to 0
-    return not `eoi?`
-    ---
-    interactive session:
-    return true if the user has already entered an empty line
-    otherwise, `query` the terminal for a line of input
-    return true
-    ---
-
-maybequery
-
-    : ?query   ( true -- true )
-        empty? ?exit query ;
-
-    : refill?   ( -- flag true | -- false )
-
-    begin
-        eol? 0=
-               dup ?exit         ( true when already stuff in buffer )
-        lin+         eoi? ?exit         ( false at end of screen )
-        ( false )
-if we get here, EOI? is false and EOL? is true. LIN is pointing to the next line
-
-        blk@ ?: refill ?query?
-    repeat ( flag ) ;
-
-    begin
-        eol? 0=       dup ?exit         ( true when already stuff in buffer )
-        lin+         eoi? ?exit         ( false at end of screen )
-        ( false )
-if we get here, EOI? is false and EOL? is true. LIN is pointing to the next line
-
-        blk@ ?: refill ?query?
-    repeat ( flag ) ;
-
-
-
-
-        blk@
-        if
-            lin+  eoi?  ?dup ?exit
-            reflll eoi? 0=
-        else
-            empty? ?exit                ( false at end of line )
-                                        ( false at empty line )
-            query
-        then ;
-
-
-        get lines until
-
-
-begin
-
-        interactive and we got a blank line, exit with "true"
-
-                blk@ 0= empty? and ?dup ?exit
-
-
-        loading and eoi? reached, exit with "true"
-
-                eoi? ?dup ?exit
-
-
-
-        eol? 0= dup ?exit         ( true when already stuff in buffer )
-
-: refill?   ( -- flag )
-    blk@ 0=
-    if
-
-    if
-
-    else
-        empty? ?dup ?exit
-    then ;
-
-    begin
-        lin+         eoi? ?exit         ( false at end of screen )
-        ( false )
-if we get here, EOI? is false and EOL? is true. LIN is pointing to the next line
-
-        blk@ ?: refill ?query?
-    repeat ( flag ) ;
-
-    begin
-        eol? 0=       dup ?exit         ( true when already stuff in buffer )
-        lin+         eoi? ?exit         ( false at end of screen )
-        ( false )
-if we get here, EOI? is false and EOL? is true. LIN is pointing to the next line
-
-        blk@ ?: refill ?query?
-    repeat ( flag ) ;
-
-
-: 'stream   ( -- nfa|0 )
-
-: reload?   ( -- flag )
-
-
-                eol? dup 0= ?exit
-                eol? ?dup ?exit         \ better with inverted flag
-
-: ?query?   ( -- flag )
-    empty? ?exit  true query ;
-
-: refill?   ( -- flag )
-    eol? dup 0= ?exit ( false )         \ stuff in the buffer
-    ( true )
-    blk@ ?: ?reload ?query ;
-
-: ?refill
-    blk@ ?: ?reload ?query ;
-
-: exhausted?   ( -- false ) | ( -- flag true )
-    blk@ ?: eoi?
-
-    eol? 0= ?dup ?exit ( true true )
-
-    eol?  0=
-
-: name
-    setup
-    begin
-        do we need a line?
-    while
-        get a line
-    until
-    is buffer exhausted?
-    if
-        false
-    else
-        parse                           \ the sought-after treasure!
-    then ;
-
-: reload?   ( -- )
-
-: hungry?   ( -- flag )
-    blk@ empty? xor
-
-an interactive seesion first brings us here after startup
-/* script
-who are you?  I am `name`
-what is my purpose? hand me a character, and I scan ahead in the input stream for it
-what do you tell us? I either provide a token address, or say "there was nothing"
-*/
- a character
-
-
-empty?        interactive         loading
-false           query
-true            no query          +refill
-
--- fun zone --
-empty?        interactive       loading
-false           true
-true            false             true
-
-eol?          interactive       loading
-false           true
-true            false             true
-
-eoi?          interactive       loading
-false           true
-true            false             true
--- end fun zone --
-
-: exhausted?   ( -- flag )
-        blk@ 0= empty? or eoi? or ;
-                       \
-: ?query   ( -- )
-    empty? ?exit  query ;
-
-: hungry?   ( -- flag )
-    empty? 0= eol? and ;
-
-
-
-
-        |
-        ( eol? and not )
-        ( interactive? AND eol? -- we will later find out, AND not empty? )
-        ( loading? AND eol? )
-    while
-        blk@ ?: ?reload ?query
-    repeat
-    exhausted? ?: false parse ;
-        blk@ if
-            eoi?  if  1+under  then
-        else
-            empty?  if 1+under then
-        then
-
-         ?: eoi? empty? xor
-
-        \ true first time when interacive
-        \ true until eoi? when loading
-    while
-        refill?
-
-\ hits return                           ( false true )
-\ end of interactive line               ( false true )
-\ end of screen                         ( false true )
-        ?dup until
-    until ( flag )
-    ?: parse false ;
-
-: refill?  ( -- exhausted? )
-    begin
-        hungry?
-    while
-        ?refill
-    until
-    exhausted? ;
-
-: ?reload ( -- )
-
-: ?query ( -- )
-
-code eoi?
-    blk       lda,    'eol?     beq,
-    'lin      lda,    l/scr #   cmp,
-    'eolq09   bcc,
-end-code     here &eol?  \ fall through
-code eol?
-    in        lda,    span      cmp,
-here &eolq09          'xpushc   jmp,
-end-code
-
-: hungry?   ( -- flag )
-    eol? ;
-
-: exhausted?   ( -- flag )
-    eoi? ;
-
-: ?refill   ( -- )
-    begin
-        hungry?
-    while
-        blk@ ?: ?reload ?query
-    until ;
-```
-#endif
-#include "align.i65"
-_refillq
-    jsr enter
-#include "page.i65"
-    .word eolq
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word qdup
-#include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word blkfetch
-#include "parm.i65"
-    .word qbranch
-    .byt <(qrefill01-*+1)
-#include "pad.i65"
-    .word linplus
-#include "page.i65"
-    .word eoiq
-#include "page.i65"
-    .word qdup
-#include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word _refill
-#include "page.i65"
-    .word eoiq
-#include "page.i65"
-    .word zeq
-#include "parm.i65"
-    .word branch
-    .byt <(qrefill02-*+1)
-#include "pad.i65"
-qrefill01
-    .word false
-#include "page.i65"
-    .word emptyq
-#include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word oneminus
-#include "page.i65"
-    .word _query
-#include "past.i65"
-qrefill02
     .word exit
 
 ;--------------------------------------------------------------
@@ -1231,8 +500,10 @@ return false when the input stream is exhausted.
 ```
 : name   ( char -- nfa|false )
     blk@ ?: sib tib  n6 2!
-    ?refill  exhausted? empty? or ?: false parse
-    n0 off ;
+    begin  hungry?
+    while  blk@ ?: ?refill ?query
+    repeat
+    exhausted? ?: false parse  n0 off ;
 ```
 #endif
 #include "align.i65"
@@ -1250,8 +521,22 @@ _name
 #include "pad.i65"
     .word twostore              ; set n6=lib; n7=char
 #include "page.i65"
-    .word _qrefill
-#include "page.i65"
+name01
+    .word _hungryq
+#include "parm.i65"
+    .word qbranch
+    .byt <(name02-*+1)
+#include "pad.i65"
+    .word blkfetch
+#include "parm.i65"
+    .word pquerycolon
+    .word _mayberefill
+    .word _maybequery           ; rfd
+#include "parm.i65"
+    .word branch
+    .byt <(name01-*+1)
+#include "past.i65"
+name02
     .word _exhaustedq
 #include "page.i65"
     .word emptyq
@@ -1259,14 +544,14 @@ _name
     .word orx
 #include "parm.i65"
     .word pquerycolon
-    .word false
+    .word eoiq
                                 ; "             !-!        !-!      "
                                 ; "      ->  #. ! !  -  #  ! !      "
                                 ;
     .word _parse                ; "  / #  !@!  ::  (())  !@!  //\\  " -- Infidel
 #include "parm.i65"
     .word blit
-    .byt R0L+2*N6               ; empty n0 `empty?` mailbox, if it was even set
+    .byt R0L+2*N0               ; empty mailbox
 #include "pad.i65"
     .word coff
 #include "past.i65"

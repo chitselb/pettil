@@ -621,7 +621,19 @@ end
     #calculate the @size field of each forthword
 #puts all_words
 #    puts all_words["STUDIO"].addr
-#    puts all_words.each { | word| word }
+
+#    all_words.each do |word, addr|
+#        puts addr.addr.to_s + " " + addr.name
+#    end
+    def write_xpet_monfile(outputfile,labels)
+        monfile = File.open("./tmp/"+outputfile,'w') do |file|
+            labels.each do |label, addr|
+                file.write("al C:#{hex4out addr} .#{label}\n")
+            end
+        end
+    end
+
+
     set_sizes all_words   unless all_words["STUDIO"].addr.nil?
     # output symbol table file
     write_symtab_file "pettil.sym",all_words
