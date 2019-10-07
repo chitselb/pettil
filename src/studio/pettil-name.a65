@@ -283,7 +283,7 @@ name=EOI?
 stack=( -- flag )
 tags=primitive,outer,extra,nosymbol
 ( interactive ) true when `in` reaches end of line
-( loading ) true when `lin` reaches end of screen
+( loading ) true when `lin` reaches end of screen or, (when intereactive) `eol?`
 
 #endif
 eoiq
@@ -291,7 +291,8 @@ eoiq
     beq eolq
     lda userlin
     cmp #LPERSCR
-    bcc eolq09
+    bpl eolq09
+;[12]
     ;fall through
 ;--------------------------------------------------------------
 #if 0
@@ -306,6 +307,7 @@ eolq
     cmp userspan
 eolq09
     jmp xpushc
+;[9]
 
 ;--------------------------------------------------------------
 #if 0
@@ -328,25 +330,125 @@ emptyq
 name=HUNGRY?
 stack=( -- flag )
 tags=secondary,outer,extra,nosymbol
+if at the end of line ( `eol?` ) we are probably hungry.
+interactive: if we already ate an empty line, we are not hungry
+loading:  if we reached the end of the screen, we are not hungry
 
 ```
 : hungry?   ( -- flag )
-    eol? blk@ ?exit empty? xor ;
+    blk@ ?: eoi? empty?  ?: false eol? 0= ;
+
+
+    eol? 0=
+    blk@ ?: eoi? empty?
+    or 0=
+      ?: false eol? 0= ;
+
+: hungry?   ( -- flag )
+    eol?
+    if
+        blk@
+        if
+            eoi?
+        else
+            empty?
+        then
+        0=
+    else
+        false
+    then
+
+    eol? 0= blk@ ?: eoi? empty?
+
+
+    we are only hungry when there is no line in the buffer
+    to become hungry, span off should do it
+
+interactive
+    empty line                          no (need an okay)
+    end of line & span c@               no (need an okay)
+
+    blk@ if
+
+    else
+        span c@ empty? or
+    then eol? and
+
+    span c@ empty? or blk@ 0= and
+    eol? maybe no
+
+    span c@ empty or blk@ ?: and
+
+    we are not hungry when any of these is true
+        we are still eating a line (loading, interactive)
+        we are done with this line (interactive)
+        or we have an empty line
+        or we have reached end of screen
+
+    we are hungry at the beginning of a line
+    we are hungry when eol? (loading)
+
+    at the beginning of the line? yes
+    at the end of a line?  no
+    after an empty line? yes
+
+: hungry?   ( -- flag )
+    eol?
+    if
+        blk@ ?: eoi? empty? 0=
+    else
+        false
+    then ;
+
+     dup 0= ?exit
+    span c@  blk@ 0=  and               \ the user gave us something
+    eol? and                            \ I can't believe I ate the whole thing
+    blk@ ?: eoi? empty? or              \ off the screen \ nothing to eat
+    ?: false eol? ;
+
+    blk@ if
+        span c@ ?: eol? empty?
+    else
+
+    span c@ if
+        blk@ ?: eoi? eol?
+    else
+        blk@ ?: eoi? empty?
+    then
+
+blk@ ?: eoi? empty?
+empty?
 ```
 #endif
 #include "align.i65"
 _hungryq
     jsr enter
 #include "page.i65"
-    .word eolq
+    .word span
+#include "page.i65"
+    .word cfetch
 #include "page.i65"
     .word blkfetch
 #include "page.i65"
-    .word _qexit
+    .word zeq
 #include "page.i65"
+    .word andx
+#include "page.i65"
+    .word eolq
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word blkfetch
+#include "parm.i65"
+    .word pquerycolon
+    .word eoiq
     .word emptyq
-#include "page.i65"
-    .word xor
+#include "pad.i65"
+    .word orx
+#include "parm.i65"
+    .word pquerycolon
+    .word false
+    .word eolq
 #include "past.i65"
     .word exit
 
@@ -358,10 +460,6 @@ tags=primitive,outer,extra,nosymbol
 true when input stream is exhausted
 
 ```
-: hungry?   ( -- flag )
-    eoi? blk@ ?: eoi? eol?
-    blk@ ?: false empty? or ;
-
 : exhausted?   ( -- flag )
     blk@ ?: eoi? eol?
     blk@ ?: false empty? or ;
@@ -384,34 +482,6 @@ _exhaustedq
     .word emptyq
 #include "pad.i65"
     .word orx
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?REFILL
-stack=( -- )
-tags=secondary,outer,extra,nosymbol
-receive a line of input to `sib` from virtual screen, unless `eoi?`
-
-//maybe-reload//
-
-```
-: ?refill   ( -- )
-    lin+  eoi? ?exit  refill ;
-```
-#endif
-#include "align.i65"
-_mayberefill
-    jsr enter
-#include "page.i65"
-    .word linplus
-#include "page.i65"
-    .word eoiq
-#include "page.i65"
-    .word _qexit
-#include "page.i65"
-    .word _refill
 #include "past.i65"
     .word exit
 
@@ -494,7 +564,7 @@ return false when the input stream is exhausted.
     begin  hungry?
     while  blk@ ?: ?refill ?query
     repeat
-    exhausted? ?: false parse  n0 off ;
+    exhausted? ?: false parse  n0 coff ;
 ```
 #endif
 #include "align.i65"
@@ -521,7 +591,7 @@ name01
     .word blkfetch
 #include "parm.i65"
     .word pquerycolon
-    .word _mayberefill
+    .word _refill
     .word _query
 #include "parm.i65"
     .word branch
@@ -529,16 +599,6 @@ name01
 #include "past.i65"
 name02
     .word _exhaustedq
-#include "page.i65"
-    .word emptyq
-#include "page.i65"
-    .word blkfetch
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word orx
 #include "parm.i65"
     .word pquerycolon
     .word false
