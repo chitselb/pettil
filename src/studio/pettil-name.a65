@@ -291,9 +291,9 @@ eoiq
     beq eolq
     lda userlin
     cmp #LPERSCR
-    bpl eolq09
-;[12]
-    ;fall through
+    jmp xpushc
+;[13]
+
 ;--------------------------------------------------------------
 #if 0
 name=EOL?
@@ -305,7 +305,6 @@ true when `lin` reaches end of screen
 eolq
     lda userin
     cmp userspan
-eolq09
     jmp xpushc
 ;[9]
 
@@ -324,166 +323,6 @@ emptyq
     iny                         ; presumably, the user will just hit return all day long
     jmp xpushz
 ;[6]
-
-;--------------------------------------------------------------
-#if 0
-name=HUNGRY?
-stack=( -- flag )
-tags=secondary,outer,extra,nosymbol
-if at the end of line ( `eol?` ) we are probably hungry.
-interactive: if we already ate an empty line, we are not hungry
-loading:  if we reached the end of the screen, we are not hungry
-
-```
-: hungry?   ( -- flag )
-    blk@ ?: eoi? empty?  ?: false eol? 0= ;
-
-
-    eol? 0=
-    blk@ ?: eoi? empty?
-    or 0=
-      ?: false eol? 0= ;
-
-: hungry?   ( -- flag )
-    eol?
-    if
-        blk@
-        if
-            eoi?
-        else
-            empty?
-        then
-        0=
-    else
-        false
-    then
-
-    eol? 0= blk@ ?: eoi? empty?
-
-
-    we are only hungry when there is no line in the buffer
-    to become hungry, span off should do it
-
-interactive
-    empty line                          no (need an okay)
-    end of line & span c@               no (need an okay)
-
-    blk@ if
-
-    else
-        span c@ empty? or
-    then eol? and
-
-    span c@ empty? or blk@ 0= and
-    eol? maybe no
-
-    span c@ empty or blk@ ?: and
-
-    we are not hungry when any of these is true
-        we are still eating a line (loading, interactive)
-        we are done with this line (interactive)
-        or we have an empty line
-        or we have reached end of screen
-
-    we are hungry at the beginning of a line
-    we are hungry when eol? (loading)
-
-    at the beginning of the line? yes
-    at the end of a line?  no
-    after an empty line? yes
-
-: hungry?   ( -- flag )
-    eol?
-    if
-        blk@ ?: eoi? empty? 0=
-    else
-        false
-    then ;
-
-     dup 0= ?exit
-    span c@  blk@ 0=  and               \ the user gave us something
-    eol? and                            \ I can't believe I ate the whole thing
-    blk@ ?: eoi? empty? or              \ off the screen \ nothing to eat
-    ?: false eol? ;
-
-    blk@ if
-        span c@ ?: eol? empty?
-    else
-
-    span c@ if
-        blk@ ?: eoi? eol?
-    else
-        blk@ ?: eoi? empty?
-    then
-
-blk@ ?: eoi? empty?
-empty?
-```
-#endif
-#include "align.i65"
-_hungryq
-    jsr enter
-#include "page.i65"
-    .word span
-#include "page.i65"
-    .word cfetch
-#include "page.i65"
-    .word blkfetch
-#include "page.i65"
-    .word zeq
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word eolq
-#include "page.i65"
-    .word andx
-#include "page.i65"
-    .word blkfetch
-#include "parm.i65"
-    .word pquerycolon
-    .word eoiq
-    .word emptyq
-#include "pad.i65"
-    .word orx
-#include "parm.i65"
-    .word pquerycolon
-    .word false
-    .word eolq
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EXHAUSTED?
-stack=( -- flag )
-tags=primitive,outer,extra,nosymbol
-true when input stream is exhausted
-
-```
-: exhausted?   ( -- flag )
-    blk@ ?: eoi? eol?
-    blk@ ?: false empty? or ;
-```
-#endif
-#include "align.i65"
-_exhaustedq
-    jsr enter
-#include "page.i65"
-    .word blkfetch
-#include "parm.i65"
-    .word pquerycolon
-    .word eoiq
-    .word eolq
-#include "pad.i65"
-    .word blkfetch
-#include "parm.i65"
-    .word pquerycolon
-    .word false
-    .word emptyq
-#include "pad.i65"
-    .word orx
-#include "past.i65"
-    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -548,6 +387,108 @@ _parse
 
 ;--------------------------------------------------------------
 #if 0
+name=NOMLOADING?
+stack=( -- flag )
+tags=secondary,outer,extra,nosymbol
+
+
+```
+: nomloading? ( -- flag )
+    lin+ eoi? ;
+```
+#endif
+#include "align.i65"
+_nomloadingq
+    jsr enter
+#include "page.i65"
+    .word linplus
+#include "page.i65"
+    .word eoiq
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NOMSESSION?
+stack=( -- flag )
+tags=secondary,outer,extra,nosymbol
+
+```
+: nomsession? ( -- flag )
+    span c@ empty? or ;
+```
+#endif
+#include "align.i65"
+_nomsessionq
+    jsr enter
+#include "page.i65"
+    .word span
+#include "page.i65"
+    .word cfetch
+#include "page.i65"
+    .word emptyq
+#include "page.i65"
+    .word orx
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=HUNGRY?
+stack=( -- flag )
+tags=secondary,outer,extra,nosymbol
+
+```
+: hungry?   ( -- flag )
+    blk@ ?: nomloading? nomsession? ;
+```
+#endif
+#include "align.i65"
+_hungryq
+    jsr enter
+#include "page.i65"
+    .word blkfetch
+#include "parm.i65"
+    .word pquerycolon
+    .word _nomloadingq
+    .word _nomsessionq
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=?NOMNOM
+stack=( flag -- )
+tags=secondary,outer,extra,nosymbol
+`name` is the name of the word formerly known as `word`, which is not
+present.  Absence of `word` is a variance from the Forth-83 standard, and
+the new and improved `name` fulfills all the original purposes of `word`.
+---
+return address of next token in the line buffer, or
+return false when the input stream is exhausted.
+
+```
+: ?nomnom   ( flag -- )
+    ?exit blk@ ?: refill query ;
+```
+//maybe-nom-nom//
+#endif
+#include "align.i65"
+_qnomnom
+    jsr enter
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word blkfetch
+#include "parm.i65"
+    .word pquerycolon
+    .word _refill
+    .word _query
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=NAME
 stack=( char -- nfa|false )
 tags=outer,extra
@@ -559,13 +500,23 @@ return address of next token in the line buffer, or
 return false when the input stream is exhausted.
 
 ```
+: name   ( char | nfa|0 )
+    blk@ ?: sib tib  n6 2!
+    begin
+        eol?
+    while
+        blk@ ?: ?refill ?query  eoi?
+    until
+    exhausted? ?: false parse  n0 coff ;
+
 : name   ( char -- nfa|false )
     blk@ ?: sib tib  n6 2!
-    begin  hungry?
-    while  blk@ ?: ?refill ?query
-    repeat
+    begin   eol?
+    while   hungry?  dup ?nomnom
+    until
     exhausted? ?: false parse  n0 coff ;
 ```
+
 #endif
 #include "align.i65"
 _name
@@ -583,22 +534,22 @@ _name
     .word twostore              ; set n6=lib; n7=char
 #include "page.i65"
 name01
-    .word _hungryq
+    .word eolq
 #include "parm.i65"
     .word qbranch
     .byt <(name02-*+1)
 #include "pad.i65"
-    .word blkfetch
-#include "parm.i65"
-    .word pquerycolon
-    .word _refill
-    .word _query
-#include "parm.i65"
-    .word branch
+    .word _hungryq
+#include "page.i65"
+    .word _qnomnom
+#include "page.i65"
+    .word eoiq
+#include "page.i65"
+    .word qbranch
     .byt <(name01-*+1)
 #include "past.i65"
 name02
-    .word _exhaustedq
+    .word eoiq
 #include "parm.i65"
     .word pquerycolon
     .word false
