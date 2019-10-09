@@ -73,6 +73,67 @@ skipscan05
 
 ;--------------------------------------------------------------
 #if 0
+name=PARSE
+stack=( -- nfa|0 )
+tags=secondary,outer,extra,nosymbol
+
+* set n7 delimiter char
+* refill the line buffer (if empty)
+* skip/scan move `in` past token
+* set n8 token length
+* put length before text in buffer
+* move `in` past trailing space
+
+```
+: parse   ( -- length )
+    skip dup 1- <n6 +
+    scan rot -
+    dup !nfa ;
+
+: !nfa
+    >n8 over c!  in 1+! ;
+```
+#endif
+#include "align.i65"
+_parse
+    jsr enter
+#include "page.i65"
+    .word skip                  ; start of name
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word oneminus
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N6               ; line buffer
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word scan                  ; end of name (and/or buffer)
+#include "page.i65"
+    .word rot
+#include "page.i65"
+    .word minus                 ; length
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word oneplusstore
+#include "parm.i65"
+    .word tozp
+    .byt R0L+2*N8               ; name.len
+#include "pad.i65"
+    .word tuck                  ; ( len buf len )
+#include "parm.i65"
+    .word pquerycolon
+    .word tuck                  ; ( buf len buf )
+    .word under                 ; ( 0 0 buf )
+#include "pad.i65"
+    .word cstore
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name==CURSOR
 stack=( addr|0 -- )
 tags=primitive,ext
@@ -326,67 +387,6 @@ emptyq
 
 ;--------------------------------------------------------------
 #if 0
-name=PARSE
-stack=( -- nfa|0 )
-tags=secondary,outer,extra,nosymbol
-
-* set n7 delimiter char
-* refill the line buffer (if empty)
-* skip/scan move `in` past token
-* set n8 token length
-* put length before text in buffer
-* move `in` past trailing space
-
-```
-: parse   ( -- length )
-    skip dup 1- <n6 +
-    scan rot -
-    dup !nfa ;
-
-: !nfa
-    >n8 over c!  in 1+! ;
-```
-#endif
-#include "align.i65"
-_parse
-    jsr enter
-#include "page.i65"
-    .word skip                  ; start of name
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word oneminus
-#include "parm.i65"
-    .word zpfrom
-    .byt R0L+2*N6               ; line buffer
-#include "pad.i65"
-    .word plus
-#include "page.i65"
-    .word scan                  ; end of name (and/or buffer)
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word minus                 ; length
-#include "page.i65"
-    .word in
-#include "page.i65"
-    .word oneplusstore
-#include "parm.i65"
-    .word tozp
-    .byt R0L+2*N8               ; name.len
-#include "pad.i65"
-    .word tuck                  ; ( len buf len )
-#include "parm.i65"
-    .word pquerycolon
-    .word tuck                  ; ( buf len buf )
-    .word under                 ; ( 0 0 buf )
-#include "pad.i65"
-    .word cstore
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=NOMLOADING?
 stack=( -- flag )
 tags=secondary,outer,extra,nosymbol
@@ -496,19 +496,10 @@ tags=outer,extra
 present.  Absence of `word` is a variance from the Forth-83 standard, and
 the new and improved `name` fulfills all the original purposes of `word`.
 ---
-return address of next token in the line buffer, or
-return false when the input stream is exhausted.
+return NFA of next token in the line buffer, or
+return FALSE when the input stream is exhausted.
 
 ```
-: name   ( char | nfa|0 )
-    blk@ ?: sib tib  n6 2!
-    begin
-        eol?
-    while
-        blk@ ?: ?refill ?query  eoi?
-    until
-    exhausted? ?: false parse  n0 coff ;
-
 : name   ( char -- nfa|false )
     blk@ ?: sib tib  n6 2!
     begin   eol?
@@ -547,7 +538,7 @@ name01
 #include "page.i65"
     .word qbranch
     .byt <(name01-*+1)
-#include "past.i65"
+#include "pad.i65"
 name02
     .word eoiq
 #include "parm.i65"
