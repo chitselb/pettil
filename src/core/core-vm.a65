@@ -1693,6 +1693,18 @@ stack=( -- )
 tags=vm,i/o,nosymbol
 Turn off SA# and set up for PRG file tape i/o
 
+D1                              fnlen   filename length
+D2                              0       current file number
+D3                              0       current secondary address OR'ed e.g. with #60
+D4                              drv#    current device number
+(D6)                            027A    pointer to start of tape buffer #1 or #2
+96                              0       status byte ST
+9D                              0       0=load 1=verify
+(DA)                            fname   pointer to start of filename
+(FB)                            vmbuf   start of tape address with .S
+(FD)                                    pointer for MLM, others
+
+
 * sets SA# = 0
 * sets TAPEID = 1
 * invoke [[(FILE)]]
@@ -1701,6 +1713,18 @@ Turn off SA# and set up for PRG file tape i/o
 ** copy `FILENAME` to FNADR, FNLEN
 ** set TAPEID to $01 (PRG)
 ** set TAPE1 to point to CAS1BUF (or possibly CAS2BUF on a real PET)
+
+t2t2: exchange $FB-FC with $FD-FE
+.C:d744  A2 02       LDX #$02
+.C:d746  B5 FA       LDA $FA,X
+.C:d748  48          PHA
+.C:d749  B5 FC       LDA $FC,X
+.C:d74b  95 FA       STA $FA,X
+.C:d74d  68          PLA
+.C:d74e  95 FC       STA $FC,X
+.C:d750  CA          DEX
+.C:d751  D0 F3       BNE $D746
+.C:d753  60          RTS
 
 ```
 : (prg-file)   ( -- )
@@ -1728,6 +1752,69 @@ _pprgfile
 
 ;--------------------------------------------------------------
 #if 0
+name=(SAVE-BUFFERS)
+stack=( blkbuf 'vmbuf+2 staleal -- )
+tags=primitive,i/o,const,nosymbol
+
+( blkbuf vmbuf staleal 4 )
+    n0    n1    n2    tos
+
+>C:0000  03 58 04 00  8a 06 00 51  90 06 38 04  05 00 00 00   cXd@.f@Q.f8de@@@
+>C:0010  00 02 22 00  03 00 34 d5  00 01 0d d0  0a ff 74 6a   @b"@c@4U@amPj.tj
+
+#endif
+psavebuffers
+    jsr harvests10
+    brk
+    .byt ldd | N4               ;get filename
+    .byt st | N5
+    .byt ldi | N5               ;get filename length
+    .byt std | N2               ;store that in D1, D2 off
+    .byt ld | N5                ;set filename pointer
+    .byt std | N1               ;DA
+    .byt ldd | N4               ;`sa#`
+    .byt sti | N2               ;`sa#` to D3
+    .byt ldd | N4               ;`drv#`
+    .byt sti | N2               ;`drv#` to D4
+    .byt ldd | N4               ;`vmbuf`
+    .byt st | N4                ;start address
+    .byt std | N3               ;to zpimage+28
+    .byt sub | N0               ;negated `vmbuf` size
+    .byt std | N4               ; -vmbuf.size replaces [00 00] tail marker
+    .byt ld | N0                ;`blkbuf`
+    .byt std | N3               ;to zpimage+2A
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=(SBUFSETUP)
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+
+#endif
+sbufsetup
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=>IOOPER
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+switches out PETTIL and performs an I/O subroutine, inline
+
+#endif
+doiooper
+    jsr topfas
+    jsr parmpush
+    jsr seeya
+    jsr doiooper906
+    jsr qaloha
+    jmp next
+doiooper906
+    jmp (zpbuf+tos)
+
+;--------------------------------------------------------------
+#if 0
 name=SBUFS
 stack=( -- )
 tags=vm,i/o,kernel
@@ -1737,229 +1824,132 @@ subtract `vmbuf` from `blkbuf` to get file size
 store this at `vmbuf`, replacing the null-null tail
 save it from `vmbuf` to `blkbuf`, patterned after TIM
 
+: save-buffers   ( -- )
+    vmbuf @ dup>r blkbuf - r@ !
+
+    4 'zpbuf+txttab r>m
+
+    (bsave)
+    set everything up
+
+   39  limit
+   40      jsr doconst
+   41:     .word zpbuf+MEMSIZ
+
+
+
+D4       device number
+28-2B    bottom and top address in zpimage
+(DA)     pointer to name
+D1       length of name
+D3       secondary address
+
+ioop=    SAVEPRG
+
+
+    jsr seeya
+    jsr iooper
+    jsr aloha
+iooper
+    jmp (userioop)
+
+
+MLM Load and Save
+.C:D675  A0 01       LDY #$01
+.C:D677  84 D4       STY $D4
+.C:D679  88          DEY
+.C:D67A  84 D1       STY $D1
+.C:D67C  84 96       STY $96
+.C:D67E  84 9D       STY $9D
+.C:D680  A9 02       LDA #$02
+.C:D682  85 DB       STA $DB
+.C:D684  A9 09       LDA #$09
+.C:D686  85 DA       STA $DA
+.C:D688  20 15 F2    JSR $F215          ; CHRIN
+.C:D68B  C9 20       CMP #$20
+.C:D68D  F0 F9       BEQ $D688
+.C:D68F  C9 0D       CMP #$0D
+.C:D691  F0 1A       BEQ $D6AD
+.C:D693  C9 22       CMP #$22
+.C:D695  D0 DB       BNE $D672
+.C:D697  20 15 F2    JSR $F215          ; CHRIN
+.C:D69A  C9 22       CMP #$22
+.C:D69C  F0 24       BEQ $D6C2
+.C:D69E  C9 0D       CMP #$0D
+.C:D6A0  F0 0B       BEQ $D6AD
+.C:D6A2  91 DA       STA ($DA),Y
+.C:D6A4  E6 D1       INC $D1
+.C:D6A6  C8          INY
+.C:D6A7  C0 10       CPY #$10
+.C:D6A9  F0 C7       BEQ $D672
+.C:D6AB  D0 EA       BNE $D697
+.C:D6AD  A5 B4       LDA $B4
+.C:D6AF  C9 06       CMP #$06
+.C:D6B1  D0 E2       BNE $D695
+.C:D6B3  20 56 F3    JSR $F356
+.C:D6B6  20 2B F9    JSR $F92B
+.C:D6B9  A5 96       LDA $96
+.C:D6BB  29 10       AND #$10
+.C:D6BD  D0 F2       BNE $D6B1
+.C:D6BF  4C BA D4    JMP $D4BA
+.C:D6C2  20 15 F2    JSR $F215          ; CHRIN
+.C:D6C5  C9 0D       CMP #$0D
+.C:D6C7  F0 E4       BEQ $D6AD
+.C:D6C9  C9 2C       CMP #$2C
+.C:D6CB  D0 F0       BNE $D6BD
+.C:D6CD  20 63 D7    JSR $D7630
+.C:D6D0  29 0F       AND #$0F
+.C:D6D2  F0 D5       BEQ $D6A9
+.C:D6D4  C9 03       CMP #$03
+.C:D6D6  F0 FA       BEQ $D6D2
+.C:D6D8  85 D4       STA $D4
+(C:$D6DA)
+
 ```
 : save-buffers   ( -- )
-    blkbuf vmbuf @ - vmbuf !
-    ;
+
+    sbufsetup
+    4 staleal 2dup m>r          ( 4 staleal )
+    vmbuf @ blkbuf 2dup -       ( 4 staleal vmbuf blkbuf -size  )
+    third !                     ( 4 staleal vmbuf blkbuf )
+    third 2!
+( -size vmbuf ) !
+( a a b b -- b b a a b b )
+    vmbuf @ dup>r               ( 4 staleal vmbuf )
+    blkbuf tuck -               ( 4 staleal blkbuf vmbuf -size )
+
+    (prgfile)
+    vmbuf @ dup>r blkbuf - r@ ! 'next =r
+    blkbuf 2>r 'SETEALSTAL
+
 ```
 #endif
 #include "align.i65"
 _sbufs
     jsr enter
 #include "page.i65"
-    .word _pprgfile             ; set up z.p. device, secondary, filename
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word duptor
+    .word sbufsetup             ; set up z.p. device, secondary, filename
 #include "page.i65"
     .word blkbuf
-#include "page.i65"
-    .word minus                 ; negative buffer size
-#include "page.i65"
-    .word rfetch
-#include "page.i65"
-    .word store
 #include "parm.i65"
-    .word blit
-    .byt <(next-1)
-#include "pad.i65"
-    .word rexchg
-#include "page.i65"
-    .word blkbuf
-#include "page.i65"
-    .word twotor
-#include "past.i65"
-    .word SETEALSTAL
-/*
-
-SETEALSTAL
-F66E  68          PLA
-F66F  85 C9       STA $C9
-F671  68          PLA
-F672  85 CA       STA $CA
-F674  68          PLA
-F675  85 FB       STA $FB
-F677  68          PLA
-F678  85 FC       STA $FC
-F67A  60          RTS
-
-    .word _pprgfile             ; set up z.p. device, secondary, filename
-    .word vmbuf
-    .word fetch
-    .word duptor
-    .word blkbuf
-    .word minus                 ; negative buffer size
-    .word rfetch
-    .word store
-    .word blit
-    .byt <(next-1)
-    .word rexchg
-    .word blkbuf
-    .word twotor
-    .word SETEALSTAL
-
-
-
-
-                  (prgfile) vmbuf  @      dup>r  blkbuf
-17E2        20 CA  10 D0 17 98  07 00 10 DE  08 EA 13 13
-       -    r@   !   'next-1    =r    blkbuf  2>r  SETEALSTAL
-17F0  09 18 12 D5  0F 2F 11 85  CB 08 EA 13  D5 08 6E F6
-      (saveprg) xyzzy ;
-1800  7B 17 08 0E  1F 11 EA 13  98 07 00 10  13 09 98 07
-1810  D5 0F 1F 11  20 CA 10 D0  17 98 07 00  10 EA 13 2F
-1820  11 85 DC 08  D5 08 6E F6  7B 17 1F 11  20 CA 10 2F
-1830  11 9D D3 0F  D0 17 80 17  EA 13 8B 09  19 14 E4 0D
-1840  DE 08 AA 13  13 09 13 09  D3 13 02 13  85 17 86 15
-(C:$1850)
-
-
-
-                          ; ( R; EAL(C9) STAL(FB) )
-C9 EAL                          Tape End Addresses/End of Program
-FB STAL                         I/O Start Address
-*/
-#include "page.i65"
-    .word psaveprg
-#include "past.i65"
-    .word xyzzy
-#include "past.i65"
-    .word exit
-
-/*
-vmbuf
-blkbuf
-
-
-blurgh
-    // start/end are on return stack
-    jmp SETEALSTAL
-
-
-
-callz
-    stx z
-    lda #>(spnext-1)
-    pha
-    lda #<(spnext-1)
-    pha
-    jmp next
-
-SETEALSTAL
-F66E  68          PLA
-F66F  85 C9       STA $C9
-F671  68          PLA
-F672  85 CA       STA $CA
-F674  68          PLA
-F675  85 FB       STA $FB
-F677  68          PLA
-F678  85 FC       STA $FC
-F67A  60          RTS
-
-set up file channel to device `(prgfile)`
-call SETEALSTAL
-
-: save-buffers   ( -- )
-    (prg-file)
-    (vmbuf) next-1
-    >r 2>r
-    [ SETEALSTAL , ]
-    (saveprg) ;
-```
-_savebuffers
-    jsr enter
-    .word _pprgfile             ; set up z.p. device, secondary, filename
-    .word vmbuf
-    .word fetch
-    .word blkbuf
-    .word blit
-    .byt <(next-1)
-    .word tor
-    .word twotor
-    .word SETEALSTAL            ; invoke a ROM routine, RTS to NEXT
-    .word psaveprg
-    .word exit
-
-B4 TAPEID                       Tape buffer leading character (eg 1=PRG 2=DATA 3= 4=SEQ 5=EOT)
-C7 SAL                          pointer - tape buffer/screen scrolling
-D1 FNLEN                        Length of Current File Name
-D2 LA                           Current Logical File Number
-D3 SA                           Current Secondary Address
-D4 FA                           First Address (current device number)
-DA FNADR                        File Name Address
-
-pfile
-    brk
-    .byt set | N0
-    .word userfilename
-    .byt ldd | N0               ; FILENAME
-    .byt st | N2                ; pointer to FILENAME.length (could be 0)
-    .byt bz , <(pfile01-*-2)
-    .byt ldi | N2
-pfile01
-
-    .byt set | N1               ; N1 walks through FNLEN, LA, SA, FA on a PET
-    .word FNLEN
-    .byt sti | N1               ; set FNLEN ($D1)
-
-;    .byt set | N1
-;    .word LA
-    .byt sub | ACC              ; 0
-    .byt sti | N1               ; set LA ($D2)
-
-;    .byt set | N1
-;    .word SA
-    .byt ldd | N0               ; get SA#
-    .byt sti | N1               ; set SA ($D3)
-
-;    .byt set | N1
-;    .word FA
-    .byt ldd | N0               ; DRV#
-    .byt sti | N1               ; set FA ($D4)
-
-    .byt set | N1
+    .word plits
+    .byt 5
     .word FNADR
-    .byt ld | N2
-    .byt std | N1               ; set FNADR ($da)
-    .byt nxt
-
-
-
-
-: (prgfile)
-    sa# off  1 TAPEID c! (file) ;
-
-_pprgfile
-    jsr enter
-    .word sanum
-    .word off
-    .word one
-    .word blit                  ; ~ can remove this if using $f619
-    .byt TAPEID
-    .word cstore
-    .word pfile
-    .word exit
-
-
-*/
-
-
-
-#include "page.i65"
-    .word blkbuf
+    .word FNLEN
+    .word zpbuf+TXTTAB
+    .word userfilename
+    .word 4
+#include "pad.i65"
+    .word psavebuffers
+#include "parm.i65"
+    .word doiooper
+    .word SAVEPRG
 #include "page.i65"
     .word vmbuf
-#include "page.i65"
+#include "pad.i65"
     .word fetch
 #include "page.i65"
-    .word minus
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word store
+    .word off
 #include "past.i65"
     .word exit
 

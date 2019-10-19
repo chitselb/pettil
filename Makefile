@@ -10,11 +10,15 @@ SHELL = /bin/bash
 # perform test feats on samosa
 #all: pristine disturb pet
 all: pristine disturb remote
+#all: pristine pettil0 mkd64pettil pet
 
 remote:
 	at now < ./tools/remote.disturb.at
 
 # build a fresh PETTIL from source
+pettil0:
+	./tools/mkpettil 0
+
 pettil:
 	./tools/mkpettil
 
