@@ -1510,114 +1510,6 @@ _copy
 #include "past.i65"
     .word exit
 
-
-;--------------------------------------------------------------
-#if 0
-name=>IO<
-stack=( -- )
-tags=vm,i/o,kernel,magic-number,nosymbol
-Subroutine to preserve the data stack pointer, stack, Sweet16 and
-other Forth zero page during a BASIC system call
-
-#endif
-doiooutside
-    jsr topfas
-    sta iooper+1
-    iny
-    lda (pip),y
-    sta iooper+2
-    stx iooutsidexreg
-    jsr aloha
-    lda #2                      ; set direct mode in CHRGET routine
-    sta $78                     ; so we get prompts during i/o
-iooper
-    jsr plugh
-    jsr aloha
-    ldx iooutsidexreg
-    jmp next
-
-
-iooutsidexreg
-    .byt 0
-
-
-;--------------------------------------------------------------
-#if 0
-name=STASH-FORTH
-stack=( -- )
-tags=vm,i/o,kernel,magic-number,nosymbol
-Subroutine to preserve the data stack pointer, stack, Sweet16 and
-other Forth zero page during a BASIC system call
-
-#endif
-stashforth
-    stx stashforth01
-    jsr aloha
-    lda #2                      ; set direct mode in CHRGET routine
-    sta $78                     ; so we get prompts during i/o
-/*
-tapeop
-    jsr plugh
-
-*/
-
-    rts
-stashforth01 .byt 0             ; temp storage for X register during tape I/O
-
-;--------------------------------------------------------------
-#if 0
-name=RESTORE-FORTH
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-Restore Forth stack after BASIC system call
-
-#endif
-restoreforth
-    jsr aloha
-    ldx stashforth01            ; this messes up BASIC's USR() function
-    jmp exit
-
-
-;--------------------------------------------------------------
-#if 0
-name=(SAVEPRG)
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-#endif
-psaveprg
-    jsr doiooutside
-    .word SAVEPRG
-/*
-(C:$1132) d f6e3
-.C:f6e3  A5 D4       LDA $D4
-.C:f6e5  D0 05       BNE $F6EC          ; device 0?  (the keyboard? Suuuuure, Jan)
-.C:f6e7  A0 74       LDY #$74           ; ?DEVICE NOT PRESENT, BASIC crash
-.C:f6e9  4C AF F5    JMP $F5AF
-.C:f6ec  C9 03       CMP #$03           ; device 3? (let's save to the screen!  nahhhh)
-.C:f6ee  F0 F7       BEQ $F6E7
-.C:f6f0  90 50       BCC $F742          ; whew, made it.  okay tape or disk?
-.C:f6f2  A9 61       LDA #$61
-.C:f6f4  85 D3       STA $D3            ; SA
-.C:f6f6  A4 D1       LDY $D1            ; FNLEN length of current filename
-.C:f6f8  D0 03       BNE $F6FD
-.C:f6fa  4C 00 BF    JMP $BF00          ; SAVE"",8 ?? haha good one, user.  We'll call that one "?SYNTAX ERROR"
-.C:f6fd  20 A5 F4    JSR $F4A5          ; send name string to IEEE buss
-.C:f700  20 D5 F0    JSR $F0D5          ; send "untalk" or "unlisten"
-.C:f703  A5 D3       LDA $D3            ; secondary address
-.C:f705  20 43 F1    JSR $F143          ; send one char and clear ATN
-.C:f708  A0 00       LDY #$00
-.C:f70a  20 BB FB    JSR $FBBB          ; puts (FB) into (C7) - header pointer back to start of buffer
-.C:f70d  A5 C7       LDA $C7            ; SAL pointer - tape buffer/screen scrolling
-                                ;
-#define SAL         $C7
-
-.C:f70f  20 9E F1    JSR $F19E
-.C:f712  A5 C8       LDA $C8
-.C:f714  20 9E F1    JSR $F19E
-.C:f717  20 0B FD    JSR $FD0B
-.C:f71a  F0 10       BEQ $F72C
-
-*/
 ;--------------------------------------------------------------
 #if 0
 name=(READHEAD)
@@ -1625,7 +1517,7 @@ stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
 preadhead
-    jsr doiooutside
+    jsr doiooper
     .word READHEAD
 
 ;--------------------------------------------------------------
@@ -1635,7 +1527,7 @@ stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 #endif
 preaddata
-    jsr doiooutside
+    jsr doiooper
     .word READDATA
 
 ;--------------------------------------------------------------
@@ -1688,70 +1580,6 @@ _file
 
 ;--------------------------------------------------------------
 #if 0
-name=(PRG-FILE)
-stack=( -- )
-tags=vm,i/o,nosymbol
-Turn off SA# and set up for PRG file tape i/o
-
-D1                              fnlen   filename length
-D2                              0       current file number
-D3                              0       current secondary address OR'ed e.g. with #60
-D4                              drv#    current device number
-(D6)                            027A    pointer to start of tape buffer #1 or #2
-96                              0       status byte ST
-9D                              0       0=load 1=verify
-(DA)                            fname   pointer to start of filename
-(FB)                            vmbuf   start of tape address with .S
-(FD)                                    pointer for MLM, others
-
-
-* sets SA# = 0
-* sets TAPEID = 1
-* invoke [[(FILE)]]
-** copy `SA#` to SA
-** copy `DRV#` to FA
-** copy `FILENAME` to FNADR, FNLEN
-** set TAPEID to $01 (PRG)
-** set TAPE1 to point to CAS1BUF (or possibly CAS2BUF on a real PET)
-
-t2t2: exchange $FB-FC with $FD-FE
-.C:d744  A2 02       LDX #$02
-.C:d746  B5 FA       LDA $FA,X
-.C:d748  48          PHA
-.C:d749  B5 FC       LDA $FC,X
-.C:d74b  95 FA       STA $FA,X
-.C:d74d  68          PLA
-.C:d74e  95 FC       STA $FC,X
-.C:d750  CA          DEX
-.C:d751  D0 F3       BNE $D746
-.C:d753  60          RTS
-
-```
-: (prg-file)   ( -- )
-    sa# off  1 TAPEID c!  (file) ;
-```
-#endif
-#include "align.i65"
-_pprgfile
-    jsr enter
-#include "page.i65"
-    .word sanum
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word one
-#include "parm.i65"
-    .word blit
-    .byt TAPEID
-#include "pad.i65"
-    .word cstore
-#include "page.i65"
-    .word pfile
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=(SAVE-BUFFERS)
 stack=( blkbuf 'vmbuf+2 staleal -- )
 tags=primitive,i/o,const,nosymbol
@@ -1787,16 +1615,6 @@ psavebuffers
 
 ;--------------------------------------------------------------
 #if 0
-name=(SBUFSETUP)
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-
-#endif
-sbufsetup
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
 name=>IOOPER
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
@@ -1810,33 +1628,20 @@ doiooper
     jsr doiooper906
     jsr qaloha
     jmp next
+
 doiooper906
     jmp (zpbuf+tos)
 
 ;--------------------------------------------------------------
 #if 0
-name=SBUFS
+name=SAVE-BUFFERS
 stack=( -- )
 tags=vm,i/o,kernel
 save those buffers
 
 subtract `vmbuf` from `blkbuf` to get file size
 store this at `vmbuf`, replacing the null-null tail
-save it from `vmbuf` to `blkbuf`, patterned after TIM
-
-: save-buffers   ( -- )
-    vmbuf @ dup>r blkbuf - r@ !
-
-    4 'zpbuf+txttab r>m
-
-    (bsave)
-    set everything up
-
-   39  limit
-   40      jsr doconst
-   41:     .word zpbuf+MEMSIZ
-
-
+finally save everything between `vmbuf` and `blkbuf`, patterned after TIM
 
 D4       device number
 28-2B    bottom and top address in zpimage
@@ -1844,71 +1649,8 @@ D4       device number
 D1       length of name
 D3       secondary address
 
-ioop=    SAVEPRG
-
-
-    jsr seeya
-    jsr iooper
-    jsr aloha
-iooper
-    jmp (userioop)
-
-
-MLM Load and Save
-.C:D675  A0 01       LDY #$01
-.C:D677  84 D4       STY $D4
-.C:D679  88          DEY
-.C:D67A  84 D1       STY $D1
-.C:D67C  84 96       STY $96
-.C:D67E  84 9D       STY $9D
-.C:D680  A9 02       LDA #$02
-.C:D682  85 DB       STA $DB
-.C:D684  A9 09       LDA #$09
-.C:D686  85 DA       STA $DA
-.C:D688  20 15 F2    JSR $F215          ; CHRIN
-.C:D68B  C9 20       CMP #$20
-.C:D68D  F0 F9       BEQ $D688
-.C:D68F  C9 0D       CMP #$0D
-.C:D691  F0 1A       BEQ $D6AD
-.C:D693  C9 22       CMP #$22
-.C:D695  D0 DB       BNE $D672
-.C:D697  20 15 F2    JSR $F215          ; CHRIN
-.C:D69A  C9 22       CMP #$22
-.C:D69C  F0 24       BEQ $D6C2
-.C:D69E  C9 0D       CMP #$0D
-.C:D6A0  F0 0B       BEQ $D6AD
-.C:D6A2  91 DA       STA ($DA),Y
-.C:D6A4  E6 D1       INC $D1
-.C:D6A6  C8          INY
-.C:D6A7  C0 10       CPY #$10
-.C:D6A9  F0 C7       BEQ $D672
-.C:D6AB  D0 EA       BNE $D697
-.C:D6AD  A5 B4       LDA $B4
-.C:D6AF  C9 06       CMP #$06
-.C:D6B1  D0 E2       BNE $D695
-.C:D6B3  20 56 F3    JSR $F356
-.C:D6B6  20 2B F9    JSR $F92B
-.C:D6B9  A5 96       LDA $96
-.C:D6BB  29 10       AND #$10
-.C:D6BD  D0 F2       BNE $D6B1
-.C:D6BF  4C BA D4    JMP $D4BA
-.C:D6C2  20 15 F2    JSR $F215          ; CHRIN
-.C:D6C5  C9 0D       CMP #$0D
-.C:D6C7  F0 E4       BEQ $D6AD
-.C:D6C9  C9 2C       CMP #$2C
-.C:D6CB  D0 F0       BNE $D6BD
-.C:D6CD  20 63 D7    JSR $D7630
-.C:D6D0  29 0F       AND #$0F
-.C:D6D2  F0 D5       BEQ $D6A9
-.C:D6D4  C9 03       CMP #$03
-.C:D6D6  F0 FA       BEQ $D6D2
-.C:D6D8  85 D4       STA $D4
-(C:$D6DA)
-
 ```
 : save-buffers   ( -- )
-
-    sbufsetup
     4 staleal 2dup m>r          ( 4 staleal )
     vmbuf @ blkbuf 2dup -       ( 4 staleal vmbuf blkbuf -size  )
     third !                     ( 4 staleal vmbuf blkbuf )
@@ -1925,10 +1667,8 @@ MLM Load and Save
 ```
 #endif
 #include "align.i65"
-_sbufs
+_savebuffers
     jsr enter
-#include "page.i65"
-    .word sbufsetup             ; set up z.p. device, secondary, filename
 #include "page.i65"
     .word blkbuf
 #include "parm.i65"
@@ -1944,140 +1684,12 @@ _sbufs
 #include "parm.i65"
     .word doiooper
     .word SAVEPRG
-#include "page.i65"
-    .word vmbuf
 #include "pad.i65"
+    .word vmbuf
+#include "page.i65"
     .word fetch
 #include "page.i65"
     .word off
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(FILE)
-stack=( -- )
-tags=vm,i/o,nosymbol
-Called at start of tape or disk i/o, sets up zero page variables.
-Retrieves DRV# SA# and FILENAME uservariables and stores them
-in zero page locations FA SA FNLEN FNADR.
-
-Relies on [[SA#]], [[DRV#]], and [[FILENAME]] being adjacent in uarea
-
-|zero page|<|value|set by|description|h
-|^STATUS|^96|^0|rom|^i/o status byte|
-|^VERCK|^9d|^0|(file)|^0=load; 1=verify|
-|^TAPEID|^b4|^1|(prg-file)|^01=PRG; 02=data; 04=SEQ; 05=EOT|
-|^SAL|^c7-c8|^||^start address|
-|^EAL|^c9-ca|^||^end address|
-|^FNLEN|^d1|^FILENAME[0]|(file)|^File name length|
-|^LA|^d2|^0|(file)|^logical file #|
-|^SA|^d3|^SA#|(prg-file)|Secondary address|
-|^FA|^d4|^DRV#|(file)|Device number|
-|^FNADR|^da-db|^FILENAME[1..]|(file)|^File name address|
-|^STAL|^fb-fc|^||^start address|
-
-|save|load|verify|open|name|address|description|h
-|^?|^?|^?|^?|^FNLEN|^d1|^Length of file name|
-|^?|^?|^?|^?|^FNADR|^da-db|^File name address|
-|^&nbsp;|<|<|<|<|<|<|
-|^0|^0|^0|^0|^STATUS|^96|^Status byte ST|
-|^?|^0|^1|^?|^VERCK|^9d|^Load/Verify flag (0,1)|
-|^01|^?|^?|^?|^TAPEID|^b4|^Tape buffer leading char<br/>01=PRG 05=EOT|
-|^?|^?|^?|^?|^EAL|^c9-ca|^Tape end address|
-|^?|^?|^?|^?|^LA|^d2|^logical file number|
-|^?|^?|^?|^?|^SA|^d3|^secondary address|
-|^?|^?|^?|^?|^FA|^d4|^First address (device number)|
-|^?|^?|^?|^?|^TAPE1|^d6|^Pointer - start of tape buffer|
-|^?|^?|^?|^?|^FSBLK|^de|^Cassette read/write block count|
-|^?|^?|^?|^?|^STAL|^fb-fc|^I/O start address|
-|''?'' = don't care<br/>''x'' = don't initialize|<|<|<|<|<|<|f
-
-#endif
-pfile
-    brk
-    .byt set | N0
-    .word userfilename
-    .byt ldd | N0               ; FILENAME
-    .byt st | N2                ; pointer to FILENAME[0] or 0
-    .byt bz , <(pfile01-*-2)
-    .byt ldi | N2
-pfile01
-/*
-~golf    at least on a PET, this might become a `2!`
-8   fnlen                       D1
-8   la                          D2
-8   sa                          D3
-8   fa                          D4
-16  fnadr                       DA
-
-*/
-    .byt set | N1               ; N1 walks through FNLEN, LA, SA, FA on a PET
-    .word FNLEN
-    .byt sti | N1               ; set FNLEN ($D1)
-
-;    .byt set | N1
-;    .word LA
-    .byt sub | ACC              ; 0
-    .byt sti | N1               ; set LA ($D2)
-
-;    .byt set | N1
-;    .word SA
-    .byt ldd | N0               ; get SA#
-    .byt sti | N1               ; set SA ($D3)
-
-;    .byt set | N1
-;    .word FA
-    .byt ldd | N0               ; DRV#
-    .byt sti | N1               ; set FA ($D4)
-
-    .byt set | N1
-    .word FNADR
-    .byt ld | N2
-    .byt std | N1               ; set FNADR ($DA)
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=SAVE-BUFFERS
-stack=( -- )
-tags=vm,forth-83,i/o,kernel
-Writes the virtual memory area between [[VMBUF]] and [[BLKBUF]] out
-to a PRG file on cassette or disk
-
-Also called by STOP-S in the editor
-
-```
-: save-buffers   ( -- )
-    (prg-file)
-    (vmbuf) next-1
-    >r 2>r
-    [ SETEALSTAL , ]
-    (saveprg) ;
-```
-#endif
-#include "align.i65"
-_savebuffers
-    jsr enter
-#include "page.i65"
-    .word _pprgfile             ; set up z.p. device, secondary, filename
-#include "page.i65"
-    .word vmbuf
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word blkbuf
-#include "parm.i65"
-    .word blit
-    .byt <(next-1)              ; stupid stack tricks
-#include "pad.i65"
-    .word tor
-#include "page.i65"
-    .word twotor
-#include "page.i65"
-    .word SETEALSTAL            ; invoke a ROM routine, RTS to NEXT
-#include "page.i65"
-    .word psaveprg
 #include "past.i65"
     .word exit
 
@@ -2105,7 +1717,7 @@ _ploadverify
 #include "pad.i65"
     .word cstore
 #include "page.i65"
-    .word _pprgfile
+;    .word _pprgfile
 #include "page.i65"
     .word preadhead
 #include "page.i65"
@@ -2161,19 +1773,19 @@ tags=vm,i/o,kernel,nosymbol
 _tapeloadverify
     jsr enter
 #include "page.i65"
-    .word _pprgfile
+;    .word _pprgfile
 #include "parm.i65"
     .word plits
     .byt 10
     .word 0
     .word plugh-1
     .word READHEAD-1
-    .word restoreforth-1
+;    .word restoreforth-1
     .word plugh-1
     .word calcaddr-1
-    .word stashforth-1
+;    .word stashforth-1
     .word READDATA-1
-    .word restoreforth-1
+;    .word restoreforth-1
     .word exit-1
 #include "pad.i65"
 tloadver01
@@ -2188,7 +1800,7 @@ tloadver01
     .byt <(tloadver01-*+1)
 #include "past.i65"
 tloadver02
-    .word stashforth
+;    .word stashforth
 
 ;--------------------------------------------------------------
 #if 0
@@ -2202,6 +1814,20 @@ _diskloadverify
     jsr enter
 #include "past.i65"
     .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(LOADVERIFY)
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+
+#endif
+#include "align.i65"
+ploadverify
+    jsr enter
+#include "past.i65"
+    .word exit
+
 
 ;--------------------------------------------------------------
 #if 0
@@ -2253,7 +1879,7 @@ doloadverify
     .word _diskloadverify
 #include "pad.i65"
 #include "page.i65"
-    .word _pprgfile
+;    .word _pprgfile
 #include "page.i65"
     .word preadhead
 #include "page.i65"
@@ -2285,7 +1911,7 @@ doloadverify
 
 ;--------------------------------------------------------------
 #if 0
-name=LBUFS
+name=LOAD-BUFFERS
 stack=( -- )
 tags=vm,i/o,kernel
 Load a packets PRG file from tape or disk to `vmbuf`
@@ -2296,53 +1922,19 @@ called by STOP-L in the editor
 : load-buffers   ( -- )
     0 (loadverify) ;
 ```
+
 #endif
-_lbufs
+#include "align.i65"
+_loadbuffers
     jsr doloadverify
     .byt 0
 
 ;--------------------------------------------------------------
 #if 0
-name=VBUFS
-stack=( -- )
-tags=vm,i/o,kernel
-Verify a packets PRG file from tape or disk vs. `vmbuf`
-
-#endif
-_vbufs
-    jsr doloadverify
-    .byt 1
-
-;--------------------------------------------------------------
-#if 0
-name=LOAD-BUFFERS
-stack=( -- )
-tags=vm,i/o,kernel
-Load a batch of packets from the file to [[VMBUF]]
-
-called by STOP-L in the editor
-
-```
-: load-buffers   ( -- )
-    0 (loadverify) ;
-```
-#endif
-#include "align.i65"
-_loadbuffers
-    jsr enter
-#include "page.i65"
-    .word zero                  ; LOAD
-#include "page.i65"
-    .word _ploadverify
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=VERIFY-BUFFERS
 stack=( -- )
-tags=vm
-Verifies the [[VMBUF]] area following a write
+tags=vm,i/o,kernel
+verify a packets PRG file from tape or disk vs. `vmbuf`
 
 called by `STOP-V` in the editor
 
@@ -2356,9 +1948,7 @@ called by `STOP-V` in the editor
 _verifybuffers
     jsr enter
 #include "page.i65"
-    .word one                   ; VERIFY
-#include "page.i65"
-    .word _ploadverify
+    .word pverifybuffers
 #include "parm.i65"
     .word blit
     .byt STATUS
@@ -2375,6 +1965,10 @@ verifybuffers06
 #include "past.i65"
 verifybuffers05
     .word exit
+
+pverifybuffers
+    jsr doloadverify
+    .byt 1
 
 ;--------------------------------------------------------------
 #if 0
