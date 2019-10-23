@@ -1532,26 +1532,6 @@ _copy
 
 ;--------------------------------------------------------------
 #if 0
-name=(READHEAD)
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-#endif
-preadhead
-    jsr doiooper
-    .word READHEAD
-
-;--------------------------------------------------------------
-#if 0
-name=(READDATA)
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-#endif
-preaddata
-    jsr doiooper
-    .word READDATA
-
-;--------------------------------------------------------------
-#if 0
 name=CURRNAME
 stack=( -- addr )
 tags=vm,i/o
@@ -1600,37 +1580,54 @@ _file
 
 ;--------------------------------------------------------------
 #if 0
-name=(SAVE-BUFFERS)
+name=(VMBUF-IO)
 stack=( blkbuf 'vmbuf+2 staleal -- )
 tags=primitive,i/o,const,nosymbol
 
-( blkbuf vmbuf staleal 4 )
-    n0    n1    n2    tos
+n0  blkbuf
+n1  FNADR
+n2  FNLEN
+n3  zpbuf+TXTTAB
+tos filename
 
->C:0000  03 58 04 00  8a 06 00 51  90 06 38 04  05 00 00 00   cXd@.f@Q.f8de@@@
->C:0010  00 02 22 00  03 00 34 d5  00 01 0d d0  0a ff 74 6a   @b"@c@4U@amPj.tj
+sets up the following
+$D1                             FNLEN   filename c@
+$D2                             LA      0
+$D3                             SA      0
+$D4                             FA      drv#
+($DA) to setup file I/O
+save only, on read these are ignored
+zpimage: ($28)                  start
+zpimage: ($2A)                  end (blkbuf)
+
 
 #endif
-psavebuffers
-    jsr harvests10
+vmbufio
+    jsr harvests8
     brk
-    .byt ldd | N4               ;get filename
-    .byt st | N5
-    .byt ldi | N5               ;get filename length
-    .byt std | N2               ;store that in D1, D2 off
-    .byt ld | N5                ;set filename pointer
-    .byt std | N1               ;DA
-    .byt ldd | N4               ;`sa#`
+                                ; n0  blkbuf (end)
+                                ; n1  FNADR (DA)
+                                ; n2  FNLEN D1, D2, D3, D4
+                                ; n3  zpbuf+TXTTAB
+                                ; tos filename, sa#, drv#, vmbuf
+    .byt ldd | TOS              ; get filename
+    .byt st | N4                ; temp filename
+    .byt ldi | N4               ;get filename length
+    .byt std | N2               ;store length in D1, D2 off
+    .byt ld | N4                ;set filename pointer
+    .byt std | N1               ;(DA)
+    .byt ldd | TOS              ;`sa#`
     .byt sti | N2               ;`sa#` to D3
-    .byt ldd | N4               ;`drv#`
+    .byt ldd | TOS              ;`drv#`
     .byt sti | N2               ;`drv#` to D4
-    .byt ldd | N4               ;`vmbuf`
-    .byt st | N4                ;start address
+    .byt ldd | TOS              ;`vmbuf`
+    .byt st | N1                ;start address
     .byt std | N3               ;to zpimage+28
     .byt sub | N0               ;negated `vmbuf` size
-    .byt std | N4               ; -vmbuf.size replaces [00 00] tail marker
-    .byt ld | N0                ;`blkbuf`
+    .byt std | N1               ; -vmbuf.size replaces [00 00] tail marker
+    .byt ld | N0               ;`blkbuf`
     .byt std | N3               ;to zpimage+2A
+    .byt pull
     .byt nxt
 
 ;--------------------------------------------------------------
@@ -1706,7 +1703,7 @@ _savebuffers
     .word userfilename
     .word 4
 #include "pad.i65"
-    .word psavebuffers
+    .word vmbufio
 #include "parm.i65"
     .word doiooper
     .word SAVEPRG
@@ -1716,60 +1713,6 @@ _savebuffers
     .word fetch
 #include "page.i65"
     .word off
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(LOADVERIFY)
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-Load or compare a batch of packets from tape to [[VMBUF]]
-
-```
-: (loadverify)   ( flag -- )
-    [ VERCK ] literal c!
-    (prg-file) (readhead)
-    blkbuf dup (casbuf) 1+ dup>r
-    2@ - - r> 2! ;
-```
-#endif
-#include "align.i65"
-_ploadverify
-    jsr enter
-#include "parm.i65"
-    .word blit
-    .byt VERCK
-#include "pad.i65"
-    .word cstore
-#include "page.i65"
-;    .word _pprgfile
-#include "page.i65"
-    .word preadhead
-#include "page.i65"
-    .word blkbuf
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word casbuf
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word twofetch
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word twostore
-#include "page.i65"
-    .word preaddata
-#include "page.i65"
-    .word _numblkstore
 #include "past.i65"
     .word exit
 
@@ -1790,204 +1733,70 @@ calcaddr
 
 ;--------------------------------------------------------------
 #if 0
+name=TAPELOAD
+stack=( blkbuf -- addr )
+tags=vm,i/o,subroutine,nosymbol
+
+#endif
+tapeload
+    brk
+    .byt set | N0
+    .word CAS1BUF+5             ; ~only works on tape #1
+    .byt popd | N0              ; end address
+    .byt st | N1
+    .byt ld | TOS
+    .byt std | N0
+    .byt popd | N0              ; start address
+    .byt popd | N0              ; start address
+    .byt sub | N1               ; negative size
+    .byt add | TOS
+    .byt st | TOS
+    .byt std | N0
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
 name=TAPELOADVERIFY
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
-
-_savebuffers
-    jsr enter
-    .word blkbuf
-    .word plits
-    .byt 5
-    .word FNADR
-    .word FNLEN
-    .word zpbuf+TXTTAB
-    .word userfilename
-    .word 4
-    .word psavebuffers
-    .word doiooper
-    .word SAVEPRG
-    .word vmbuf
-    .word fetch
-    .word off
-    .word exit
-.C:f3c6  A5 FB       LDA $FB
-.C:f3c8  85 C9       STA $C9
-.C:f3ca  A5 FC       LDA $FC
-.C:f3cc  85 CA       STA $CA
-.C:f3ce  20 AE F1    JSR $F1AE
-.C:f3d1  4C 2F F7    JMP $F72F
-.C:f3d4  20 95 F6    JSR $F695
-.C:f3d7  20 57 F8    JSR $F857
-.C:f3da  20 49 F4    JSR $F449
-.C:f3dd  A5 D1       LDA $D1
-.C:f3df  F0 08       BEQ $F3E9
-.C:f3e1  20 D3 F4    JSR $F4D3
-.C:f3e4  D0 08       BNE $F3EE
-.C:f3e6  4C AD F5    JMP $F5AD
-.C:f3e9  20 E5 F5    JSR $F5E5
-.C:f3ec  F0 F8       BEQ $F3E6
-.C:f3ee  E0 01       CPX #$01
-.C:f3f0  D0 EB       BNE $F3DD
-.C:f3f2  A5 96       LDA $96
-.C:f3f4  29 10       AND #$10
-.C:f3f6  D0 74       BNE $F46C
-.C:f3f8  20 7B F6    JSR $F67B
-.C:f3fb  20 6D F4    JSR $F46D
-.C:f3fe  4C A3 F8    JMP $F8A3
-.C:f401  A9 00       LDA #$00
-.C:f403  85 9D       STA $9D
-.C:f405  20 7D F4    JSR $F47D
-.C:f408  20 CC F6    JSR $F6CC
-.C:f40b  A9 FF       LDA #$FF
-.C:f40d  C5 9B       CMP $9B
-.C:f40f  D0 FC       BNE $F40D
-.C:f411  C5 9B       CMP $9B
-.C:f413  D0 F8       BNE $F40D
-.C:f415  20 56 F3    JSR $F356
-.C:f418  A5 9D       LDA $9D
-.C:f41a  D0 50       BNE $F46C
-.C:f41c  20 2B F9    JSR $F92B
-.C:f41f  A5 96       LDA $96
-.C:f421  29 10       AND #$10
-.C:f423  F0 09       BEQ $F42E
-.C:f425  A0 00       LDY #$00
-.C:f427  84 9E       STY $9E
-.C:f429  A0 60       LDY #$60
-.C:f42b  4C AF F5    JMP $F5AF
-.C:f42e  A0 AE       LDY #$AE
-.C:f430  20 49 F3    JSR $F349
-.C:f433  20 51 F3    JSR $F351
-.C:f436  D0 0B       BNE $F443
-.C:f438  A5 CA       LDA $CA
-.C:f43a  85 2B       STA $2B
-.C:f43c  A5 C9       LDA $C9
-.C:f43e  85 2A       STA $2A
-.C:f440  4C AD B4    JMP $B4AD
-.C:f443  20 22 B6    JSR $B622
-.C:f446  4C 0B B6    JMP $B60B
-.C:f449  20 51 F3    JSR $F351
-.C:f44c  D0 1E       BNE $F46C
-.C:f44e  A0 32       LDY #$32
-.C:f450  20 85 F1    JSR $F185
-.C:f453  A5 D1       LDA $D1
-.C:f455  F0 15       BEQ $F46C
-.C:f457  A0 3D       LDY #$3D
-.C:f459  20 85 F1    JSR $F185
-.C:f45c  A4 D1       LDY $D1
-.C:f45e  F0 0C       BEQ $F46C
-.C:f460  A0 00       LDY #$00
-.C:f462  B1 DA       LDA ($DA),Y
-.C:f464  20 66 F2    JSR $F266
-.C:f467  C8          INY
-.C:f468  C4 D1       CPY $D1
-.C:f46a  D0 F6       BNE $F462
-.C:f46c  60          RTS
-.C:f46d  A0 5F       LDY #$5F
-.C:f46f  A5 9D       LDA $9D
-.C:f471  F0 02       BEQ $F475
-.C:f473  A0 6D       LDY #$6D
-.C:f475  20 49 F3    JSR $F349
-.C:f478  A0 39       LDY #$39
-.C:f47a  4C 49 F3    JMP $F349
-.C:f47d  A2 00       LDX #$00
-.C:f47f  86 96       STX $96
-.C:f481  86 D1       STX $D1
-.C:f483  86 D3       STX $D3
-.C:f485  E8          INX
-.C:f486  86 D4       STX $D4
-.C:f488  20 4D F5    JSR $F54D
-.C:f48b  20 3C F5    JSR $F53C
-.C:f48e  20 4D F5    JSR $F54D
-.C:f491  20 9F F4    JSR $F49F
-.C:f494  86 D4       STX $D4
-.C:f496  20 4D F5    JSR $F54D
-.C:f499  20 9F F4    JSR $F49F
-.C:f49c  86 D3       STX $D3
-.C:f49e  60          RTS
-.C:f49f  20 55 F5    JSR $F555
-.C:f4a2  4C D4 C8    JMP $C8D4
-.C:f4a5  A5 D3       LDA $D3
-.C:f4a7  30 F5       BMI $F49E
-.C:f4a9  A4 D1       LDY $D1
-.C:f4ab  F0 F1       BEQ $F49E
-.C:f4ad  20 D5 F0    JSR $F0D5
-.C:f4b0  A5 D3       LDA $D3
-.C:f4b2  09 F0       ORA #$F0
-.C:f4b4  20 43 F1    JSR $F143
-.C:f4b7  A5 96       LDA $96
-.C:f4b9  10 05       BPL $F4C0
-.C:f4bb  A0 74       LDY #$74
-.C:f4bd  4C AF F5    JMP $F5AF
-.C:f4c0  A5 D1       LDA $D1
-.C:f4c2  F0 0C       BEQ $F4D0
-.C:f4c4  A0 00       LDY #$00
-.C:f4c6  B1 DA       LDA ($DA),Y
-.C:f4c8  20 9E F1    JSR $F19E
-.C:f4cb  C8          INY
-.C:f4cc  C4 D1       CPY $D1
-.C:f4ce  D0 F6       BNE $F4C6
-.C:f4d0  4C B9 F1    JMP $F1B9
-.C:f4d3  20 E5 F5    JSR $F5E5
-.C:f4d6  F0 1D       BEQ $F4F5
-.C:f4d8  A0 05       LDY #$05
-.C:f4da  84 B5       STY $B5
-.C:f4dc  A0 00       LDY #$00
-.C:f4de  84 B4       STY $B4
-.C:f4e0  C4 D1       CPY $D1
-.C:f4e2  F0 10       BEQ $F4F4
-.C:f4e4  B1 DA       LDA ($DA),Y
-.C:f4e6  A4 B5       LDY $B5
-.C:f4e8  D1 D6       CMP ($D6),Y
-.C:f4ea  D0 E7       BNE $F4D3
-.C:f4ec  E6 B4       INC $B4
-.C:f4ee  E6 B5       INC $B5
-.C:f4f0  A4 B4       LDY $B4
-.C:f4f2  D0 EC       BNE $F4E0
-.C:f4f4  98          TYA
-.C:f4f5  60          RTS
-.C:f4f6  A9 01       LDA #$01
-.C:f4f8  85 9D       STA $9D
-.C:f4fa  20 05 F4    JSR $F405
-.C:f4fd  A5 96       LDA $96
-.C:f4ff  29 10       AND #$10
-(C:$f501)
-
 
 #endif
 #include "align.i65"
 _tapeloadverify
     jsr enter
 #include "page.i65"
-    .word xyzzy
-;    .word _pprgfile
+    .word blkbuf
+#include "page.i65"
+    .word dup
 #include "parm.i65"
     .word plits
-    .byt 10
-    .word 0
-    .word plugh-1
-    .word READHEAD-1
-;    .word restoreforth-1
-    .word plugh-1
-    .word calcaddr-1
-;    .word stashforth-1
-    .word READDATA-1
-;    .word restoreforth-1
-    .word exit-1
+    .byt 4
+    .word FNADR
+    .word FNLEN
+    .word zpbuf+TXTTAB
+    .word userfilename
 #include "pad.i65"
-tloadver01
-    .word qdup
+    .word vmbufio
 #include "parm.i65"
-    .word qbranch
-    .byt <(tloadver02-*+1)
+    .word doiooper
+    .word READHEAD
 #include "pad.i65"
-    .word tor
+    .word tapeload
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word store
 #include "parm.i65"
-    .word branch
-    .byt <(tloadver01-*+1)
+    .word doiooper
+    .word READDATA
+#include "pad.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word off
 #include "past.i65"
-tloadver02
-;    .word stashforth
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -1995,26 +1804,42 @@ name=DISKLOADVERIFY
 stack=( -- )
 tags=vm,i/o,kernel,nosymbol
 
+
 #endif
 #include "align.i65"
 _diskloadverify
     jsr enter
+#include "page.i65"
+    .word blkbuf
+#include "parm.i65"
+    .word plits
+    .byt 4
+    .word FNADR
+    .word FNLEN
+    .word zpbuf+TXTTAB
+    .word userfilename
+#include "pad.i65"
+    .word vmbufio
+#include "parm.i65"
+    .word doiooper
+    .word READHEAD
+#include "pad.i65"
+    .word tapeload
+#include "page.i65"
+    .word vmbuf
+#include "page.i65"
+    .word store
+#include "parm.i65"
+    .word doiooper
+    .word READDATA
+#include "pad.i65"
+    .word vmbuf
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word off
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(LOADVERIFY)
-stack=( -- )
-tags=vm,i/o,kernel,nosymbol
-
-#endif
-#include "align.i65"
-ploadverify
-    jsr enter
-#include "past.i65"
-    .word exit
-
 
 ;--------------------------------------------------------------
 #if 0
@@ -2065,33 +1890,6 @@ doloadverify
     .word _tapeloadverify
     .word _diskloadverify
 #include "pad.i65"
-#include "page.i65"
-;    .word _pprgfile
-#include "page.i65"
-    .word preadhead
-#include "page.i65"
-    .word blkbuf
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word casbuf
-#include "page.i65"
-    .word oneplus
-#include "page.i65"
-    .word duptor
-#include "page.i65"
-    .word twofetch
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word minus
-#include "page.i65"
-    .word rfrom
-#include "page.i65"
-    .word twostore
-#include "page.i65"
-    .word preaddata
-#include "page.i65"
     .word _numblkstore
 #include "past.i65"
     .word exit

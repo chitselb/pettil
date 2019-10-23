@@ -9,8 +9,8 @@ SHELL = /bin/bash
 
 # perform test feats on samosa
 #all: pristine disturb pet
-#all: pristine disturb remote
-all: pristine pettil0 mkd64pettil pet
+all: pristine disturb remote
+#all: pristine pettil0 mkd64pettil pet
 
 remote:
 	at now < ./tools/remote.disturb.at
