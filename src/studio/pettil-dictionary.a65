@@ -1254,15 +1254,11 @@ _qvmmove
 name=(AUTOMEM)
 stack=( ~wut? )
 tags=ext,nosymbol
-Figure out where the new symbol table will be located, runs in between
-PASS1 and PASS2 of (FORGET)
-( start actualsize -- start actualsize studio-newsize )
-~wut? If VMBUF has buffers loaded, they are moved by (AUTOMEM)
+runs in the middle of `(forget)` to decide how much to allocate for `symtab`
+and possibly move `vmbuf`
 
 : (automem)
     user0studio @ over - $FF00 and benjamin - ;
-
-
 
 Automatically move symbol table and vmbuf to someplace that
 
@@ -1276,9 +1272,14 @@ ff00 and                        include remainder of the page
 
 `n7` points to the null at the end of the sorted-by-size symbol
 table copy at `pad`
+
+    sec
+    lda tos+1
+    sbc n7+1
+    adc userstudio+1
+
+
 * calculate `n7` - `pad`
-** pass1 symbol table size
-** 1 byte larger per entry because PEARSON#
 
 ```
 : (automem)   ( pad+3 -- pad+3 symtab )
@@ -1289,46 +1290,104 @@ table copy at `pad`
     ! (automem).phase2 ;
 
 (automem)
-studio
-inline ; brk ; ldd tos ; st n5
-pull ; sub n7 ; add n5 ; push
-sub acc ; std n7 ; sti n7 ; rtn
-lda #0 ; sta tos
-dec tos+1 ; jsr toforth
->n5 dup bl +under symtab
-#blk @ if ?vmmove then
-! ;
+    brk,                        ; Sweet16
+    studio n0 set,              ; symtab anchors below studio
+    n0 ldd,                     ; studio @
+    n0 st,                      ; studio
+
+3OS                             CFA to forget
+2OS                             16
+TOS                             pad
+N7                              end of pad
+: automem   ( -- symtab' )
+    studio
+    calculateaddresses
+( 1A4E(CFA) 0010(??) vmbuf blkbuf delta )
+    #blk @ ?: +move 3drop ;
+( 1A4E(CFA) 0010(??) )
+
+    clc
+    ldd userstudio+1
+    adc R0L+2*N7+1
+    sbc tos+1
 
 
-: (automem)
-    user0studio @ over - $FF00 and benjamin - ;
+    brk
+    ld tos
+    sub n7
+
+
+0000  4E 1A F4 1A  00 6B 08 FF  88 1A 02 65  00 00 00 00
+0010  22 57 A6 28  00 00 9B 6E  00 01 1B 00  0C 93 86 00
+0040  AA AA AA AA  AA AA AA FF  00 01 13 00  A2 10 4E 01
+0070  BB BB BB BB  BB BB BB FF  53 00 18 67  1A 00 1A 10
+0080  00 00 00 00  74 06 E6 8B  E6 8B 6C A9  6D 00 21 65
+0090  55 E4 55 06  FF B3 00 FF  00 CF 01 FF  00 00 00 00
+00A0  00 0C 00 18  0C 00 FF 01  09 20 00 00  00 00 00 00
+00B0  03 00 00 00  05 0A 00 08  00 00 00 00  00 00 00 00
+00C0  00 00 80 47  C0 83 0D 00  84 00 53 FB  04 00 C0 00
+00D0  00 05 00 00  01 27 7A 02  18 0D 0C 17  00 47 00 47
+00E0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 82
+00F0  82 82 82 82  83 83 83 83  83 34 00 21  52 FF FF 6E
+0130  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
+0140  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
+0150  20 20 20 20  20 20 20 20  FF FF FF FF  FF FF FF FF
+0160  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+0170  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+01E0  05 57 E4 00  2D 00 04 C8  00 69 57 E4  FF C7 05 68
+01F0  06 D8 2F 6E  50 E3 6E 0F  6F 47 6F 69  6F 8A 6F 06
+0410  4C 73 C3 22  00 5B 00 00  00 04 00 64  00 00 00 00
+0420  00 0D 04 16  13 00 08 12  B3 01 0D D0  02 FF 86 40
+0430  B2 E9 CE AA  AA AA AA AA  FE 52 00 53  BE 46 BE 46
+0440  00 80 AA AA  00 80 D1 07  AA AA 00 04  AA AA 00 04
+0450  AA AA AA AA  24 AA AA 08  B6 FF 00 00  00 FB 9B 00
+0460  03 4C BB 00  BB BB BB BB  BB BB 00 00  00 00 8B 00
+0470  00 04 0D 00  00 00 8B 80  C0 00 00 00  00 00 05 B3
+0480  E6 77 D0 02  E6 78 AD 0A  02 C9 3A B0  0A C9 20 F0
+0490  EF 38 E9 30  38 E9 D0 60  80 4F C7 52  7C 80 40 20
+0660  01 88 84 1F  85 1E 20 C5  04 4C 66 06  0A 00 0B 17
+0670  00 00 01 00  31 00 FE 01  00 00 78 D4  00 00 00 00
+0680  32 68 25 6F  A2 1A 4E 1A  00 57 0A 00  0B 17 00 00
+0690  01 00 21 52  02 00 00 00  01 00 00 00  0D 00 0C 00
+06A0  03 00 00 00  00 00 00 00  00 00 03 28  00 C0 56 28
+06B0  00 67 65 7F  02 00 09 00  00 00 00 00  00 00 00 00
+06C0  30 00 00 00  00 00 FB 64  00 00 00 00  00 00 00 00
+06D0  D6 64 00 65  FF 80 00 00  00 00 00 00  FF FF 00 00
+
+
 ```
 #endif
 #include "align.i65"
 _automem
     jsr enter
 #include "page.i65"
+    .word newsymtab
+#include "page.i65"
     .word studio
 #include "page.i65"
-    .word *+2                   ; `[ assembler here 2+ xt,  brk, tos ldd, ...`
-    brk                         ;( 16 0 pad+3 studio )
-    .byt ldd | TOS              ;( 16 0 pad+3 studio+2 )
-    .byt st | N5
-    .byt pull
-    .byt sub | N7               ; negated size of interim symtab
-    .byt add | N5               ; new size subtracted from studio, will round
-    .byt push                   ; down to $FF00 AND
-    .byt sub | ACC
-    .byt std | N7               ; append end-of-symbols marker
-    .byt sti | N7
-    .byt rtn
-    lda #0
-    sta tos                     ; &= $FF00
-    dec tos+1                   ; <-- ~#resizestudio startup code area here
-;    dec tos+1                   ; -= $0200 leave 'some room'
-#include "align.i65"
-    jsr toforth                 ; `>forth jsr, forth ] >n5 dup ...`
+    .word fetch
 #include "parm.i65"
+    .word zpfrom
+    .byt  R0L+2*N7+1
+#include "pad.i65"
+    .word minus
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word numblk
+#include "page.i65"
+    .word fetch
+#include "parm.i65"
+    .word pquerycolon
+    .word _plusmove
+    .word threedrop
+#include "past.i65"
+    .word exit
+
     .word tozp
     .byt R0L+2*N5
 #include "pad.i65"
@@ -1353,6 +1412,48 @@ automem01
     .word store                 ; set symtab
 #include "past.i65"
     .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NEWSYMTAB
+stack=( -- addr )
+tags=ext,nosymbol
+
+    studio
+    newsymtab
+    brk
+    ld tos
+    sub n7
+    push
+    rtn
+
+    ldd tos
+    sub N7
+    add
+#endif
+newsymtab
+    clc
+    lda userstudio+1
+    sbc R0L+2*N7+1
+    adc tos+1
+    sbc #1                      ; <-- ~#resizestudio
+    jmp pusha0
+;[13]
+    brk                         ;( 16 0 pad+3 studio )
+    .byt ldd | TOS              ;( 16 0 pad+3 studio+2 )
+    .byt st | N5
+    .byt pull
+    .byt sub | N7               ; negated size of interim symtab
+    .byt add | N5               ; new size subtracted from studio, will round
+    .byt push                   ; down to $FF00 AND
+    .byt sub | ACC
+    .byt std | N7               ; append end-of-symbols marker
+    .byt sti | N7
+    .byt rtn
+    lda #0
+    sta tos                     ; &= $FF00
+    dec tos+1                   ; <-- ~#resizestudio startup code area here
+;    dec tos+1                   ; -= $0200 leave 'some room'
 
 ;--------------------------------------------------------------
 #if 0
@@ -1895,7 +1996,7 @@ _pforget
 #include "page.i65"
     .word _automem              ; does things, returns the new targ
 #include "page.i65"
-    .word pforgetlooper         ;( do eet! again! )
+    .word pforgetlooper         ;( do it again! )
 #include "page.i65"
     .word dp
 #include "page.i65"
