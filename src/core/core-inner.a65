@@ -24,7 +24,7 @@ Sets the system number base to decimal
 decimal
     lda #10
     sta userbase
-    bne put99   ; jmp next
+    bne rpstore99   ; jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -62,6 +62,7 @@ rpstore
     ldx userrp0
     txs
     tax
+rpstore99
     jmp next
 
 ;--------------------------------------------------------------
@@ -83,6 +84,7 @@ name=DOCONST
 stack=( -- n )
 tags=nosymbol,inner,primitive
 Child runtime action of words defined by `constant`
+
 #endif
 doconst
     sec
@@ -103,8 +105,8 @@ docconst
     sta tos
     pla
     sta tos+1
-    ldy #1
-    bne fetch01
+    jsr inctos
+    jmp fetch01
 
 ;--------------------------------------------------------------
 #if 0
@@ -249,7 +251,6 @@ put
     sta tos
 puty
     sty tos+1
-put99
     jmp next
 
 ;--------------------------------------------------------------
@@ -306,7 +307,7 @@ tags=forth-79,nucleus,memory,forth-83
 #endif
 cfetch
     clc
-    .byt $29                    ; AND #
+    .byt $29
     ; fall through
 ;--------------------------------------------------------------
 #if 0
@@ -321,22 +322,138 @@ Leave the 16 bit contents of address.
 fetch
     sec
     ;
-    ldy #0
 fetch01
+    ldy #0
     lda (tos),y
-    bcc put0a
-; in     C = clear
-;        Y = offset
-; out   YA = (tos),Y+1 (tos),Y
-fetchyax
-    lda (tos),y
+    bcc put
     pha
     iny
     lda (tos),y
-    tay
+    sta tos+1
     pla
-    bcs put
-    rts
+    sta tos
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=@>R
+stack=( addr -- addr R; w )
+tags=nucleus,memory,primitive
+
+!!!pronounced: "fetch-to-r"
+#endif
+fetchtor
+    ldy #1
+fetchtor01
+    lda (tos),y
+    pha
+    dey
+    bpl fetchtor01
+    jmp next
+;[14]
+
+;--------------------------------------------------------------
+#if 0
+name=@+
+stack=( addr -- addr+2 w )
+tags=nucleus,memory,primitive
+Fetches word `w` at `addr`, increments addr by 2
+
+!!!pronounced: "fetch-plus"
+#endif
+#include "align.i65"
+_fetchplus
+    jsr enter
+#include "page.i65"
+    .word fetchtor
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word rfrom
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=R>
+stack=( -- n ) ( R; n -- )
+tags=primitive,forth-83,nucleus,stack
+Remove the top value from the return stack and leave it on the
+        computation stack. See >R and R@
+
+* it is important to note that bytes on the return stack are inverted, that is
+the high byte is at the lower address, in contravention of stack convention
+
+!!! pronounced: "r-from"
+#endif
+rfrom
+    jsr slip
+rput
+    pla
+    sta tos
+    pla
+    sta tos+1
+rput99
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=ROLL
+stack=( an ... a3 a2 a1 n -- an-1 ... a3 a2 a1 an )
+tags=primitive,forth-83,nucleus
+Remove the nth stack element (excluding n itself) to `tos`, dropping `n`
+
+ 2 roll = rot
+ 1 roll = swap
+ 0 roll has no effect
+
+
+```
+alternative code:
+r2d2
+    stx z
+    txa
+    clc
+    adc tos
+    tax
+    lda stackh,x
+    sta tos+1
+    lda stackl,x
+    sta tos
+r2d201
+    cpx z
+    beq r2d202
+    lda stackh-1,x
+    sta stackh,x
+    lda stackl-1,x
+    sta stackl,x
+    dex
+    bne r2d201
+r2d202
+    inx
+    jmp next
+```
+#endif
+roll
+    txa
+    clc
+    adc tos
+    tax
+    lda stackh,x
+    pha
+    lda stackl,x
+    pha
+roll01
+    inx
+    dec tos
+    bmi rput
+    dex
+    lda stackh-1,x
+    sta stackh,x
+    lda stackl-1,x
+    sta stackl,x
+    dex
+    bne roll01          ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -411,6 +528,57 @@ exec01
 
 ;--------------------------------------------------------------
 #if 0
+name=?STACK
+stack=( -- )
+tags=inner
+Check the  data stack pointer for sanity, abort if trouble
+#endif
+qstack
+    ldy #2                          ; 2 = stack full
+    txa
+    bmi error
+    beq error
+    dey                             ; 1 = stack empty
+    cpx usersp0
+    bcc rput99
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=SYSERR
+stack=( -- )
+tags=inner,nosymbol
+General-purpose error handler, callable from primitives, used
+to print a system error message and abort
+pass in the error # in Y
+      1 stack empty
+      2 stack full
+#endif
+error
+    sty tos
+    ldy #0
+    sty tos+1
+    ;fall through
+;--------------------------------------------------------------
+#if 0
+name=FAIL
+stack=( error -- )
+tags=inner
+Outputs an [[error message|Error messages]], then [[ABORT]]
+
+```
+: fail   ( err# -- )
+    warning @ ?dup
+    ?: execute .err
+```
+#endif
+#include "align.i65"
+fail
+    lda userwarning+1
+    beq _doterr
+    jmp (userwarning)
+
+;--------------------------------------------------------------
+#if 0
 name=?EXIT
 stack=( flag -- )
 tags=extension
@@ -470,57 +638,6 @@ _pdq
     .word tor
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=?STACK
-stack=( -- )
-tags=inner
-Check the  data stack pointer for sanity, abort if trouble
-#endif
-qstack
-    ldy #2                          ; 2 = stack full
-    txa
-    bmi error
-    beq error
-    dey                             ; 1 = stack empty
-    cpx usersp0
-    bcc put99
-    ;fall through
-;--------------------------------------------------------------
-#if 0
-name=SYSERR
-stack=( -- )
-tags=inner,nosymbol
-General-purpose error handler, callable from primitives, used
-to print a system error message and abort
-pass in the error # in Y
-      1 stack empty
-      2 stack full
-#endif
-error
-    sty tos
-    ldy #0
-    sty tos+1
-    ;fall through
-;--------------------------------------------------------------
-#if 0
-name=FAIL
-stack=( error -- )
-tags=inner
-Outputs an [[error message|Error messages]], then [[ABORT]]
-
-```
-: fail   ( err# -- )
-    warning @ ?dup
-    ?: execute .err
-```
-#endif
-#include "align.i65"
-fail
-    lda userwarning+1
-    beq _doterr
-    jmp (userwarning)
 
 ;--------------------------------------------------------------
 #if 0
@@ -1108,11 +1225,7 @@ pass YA = value to push on stack
 #endif
 pushya
     pha
-    dex
-    lda tos+1
-    sta stackh,x
-    lda tos
-    sta stackl,x
+    jsr slip
     pla
     jmp put
 
