@@ -37,6 +37,33 @@ tosyms
 
 ;--------------------------------------------------------------
 #if 0
+name=-@
+stack=( nfa -- cfa )
+tags=extra
+decrement `tos` and fetch the value
+
+#endif
+minusfetch
+;--------------------------------------------------------------
+#if 0
+name=NAME>
+stack=( nfa -- cfa )
+tags=compiler
+Returns the Code Field Address (`cfa`) of the provided Name
+Field Address (`nfa`)
+
+```
+: name>   ( nfa -- cfa )
+    2- @ ;
+```
+#endif
+namefrom
+    jsr tos2minus
+namefrom01
+    jmp fetch
+
+;--------------------------------------------------------------
+#if 0
 name=SYM.REWIND
 stack=( -- )
 tags=nfa,nosymbol
@@ -75,7 +102,7 @@ symlen
 name=SYMLENS
 effects=A:len;Y:0;C:vocab?;Z:len
 tags=nfa,nosymbol
-6502registers=A:symlen Y:0 C:vocab
+6502registers=A:symlen Y:0 C:vocab Z:symlen
 Sweet16registers=N3:nfa N8:length
 return the length of the current `nfa` stored in `n3`
 
@@ -142,14 +169,14 @@ symplus
 
 sympluss
     sta R0L+2*ACC
-    jsr symlens
+    jsr symlens                 ; A=len C=vocab
     adc R0L+2*ACC
     adc R0L+2*N3
     sta R0L+2*N3
-    bcc symplus01
-    inc R0L+2*N3+1
+    bcc symplus01               ; always nonzero
+    inc R0L+2*N3+1              ; always nonzero
 symplus01
-    rts
+    rts                         ; Z=0 or fail!
 
 ;--------------------------------------------------------------
 #if 0
@@ -177,8 +204,9 @@ bloomhash
 bloomhash01
     lda (R0L+2*N3),y
     eor #$30
-    cmp #9
+    cmp #10
     bcs bloomhash02
+    sec
     adc z
     sta z
 bloomhash02
@@ -197,7 +225,7 @@ tags=nfa,dictionary,nosymbol
 Returns a `mask`/`addr` pair suitable for `cbit!` or `cbit@`
 
 ```
-: bloom!   ( -- mask addr )
+: bloomfilter   ( -- mask addr )
     bloom# bloom >bit ;
 ```
 #endif
@@ -216,9 +244,9 @@ _bloomfilter
 ;--------------------------------------------------------------
 #if 0
 name=PEARSON#
-stack=( -- pearsonhash )
+stack=( nfa -- pearsonhash nfa )
 tags=ext,nfa,nosymbol
-Return the hash value for name field address at N3
+tuck the hash value for name field address at N3
 `pearson#` is the 4-bit thread index (0..F)
 
 This hash is used to divide the entire symbol table into
@@ -386,36 +414,6 @@ _toname
 
 ;--------------------------------------------------------------
 #if 0
-name=(FILTER).REWIND
-stack=( -- )
-tags=interpreter,nfa,nosymbol
-Rewinds to beginning of symbol table on each loop iteration
-
-```
-: (filter).rewind   ( -- )
-    <n6 >n3 drop ;
-    <n4 0=
-    if  <n5 <n7 2+ !+ >n5 drop
-    then ;
-```
-
-
-#endif
-pfilterrewind
-    brk
-    .byt ld | N6                ; get `sym0`
-    .byt st | N3                ; rewind the symbol list
-    .byt ld | N4                ; contains either `newdp`(pass1) or `0`(pass2)
-    .byt bnz , <(pfilterrewind02-*-2) ; check 'pass' flag
-    .byt ld | N7
-    .byt inr | ACC
-    .byt inr | ACC              ; thread points to 1st NFA of each thread
-    .byt std | N5               ; write thread start addresses on pass2
-pfilterrewind02
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
 name=SWAP.73
 stack=( -- )
 tags=interpreter,nfa,nosymbol
@@ -440,53 +438,25 @@ swap73s
 
 ;--------------------------------------------------------------
 #if 0
-name=EXT-UNTIL
-stack=( -- )
-tags=ext,immediate,compiler,nosymbol
-This (poorly named) word wraps a BEGIN-UNTIL loop around a `cfa` called
-via the `r11` register, like PETTIL Sweet16's `ext` instruction.  The
-injected function needs a stack signature of ( -- flag ) that is
-`true` when finished.
-
-1. write your filter function to do what it needs to do to each of the things
-2. set up registers the filter function needs
-3. set R11 to point to your filter function
-4. `ext-until`
-5. profit!
-
-#endif
-#include "align.i65"
-_extuntil
-    jsr enter
-#include "page.i65"
-extuntil01                      ; begin
-    .word extuntil02
-#include "parm.i65"             ;  ( flag )
-    .word qbranch               ; until
-    .byt <(extuntil01-*+1)
-#include "past.i65"
-    .word exit
-
-extuntil02
-    jmp (R0L+2*R11)             ;[3]{5 {=5}}
-
-;--------------------------------------------------------------
-#if 0
 name=(SEEK)
-stack=( thread -- flag )
+stack=( nfa -- xfa )
 tags=interpreter,primitive,nosymbol
-Search a segment of the dictionary
-
+search a segment of the dictionary
+                                        n2
+search exits when:
 end of list
-    nfa 0 true
-found
-    cfa -1|1 true
-not found
-    vocabs+ false
+    reach `symtail` (symlen = 0)        false
 
+    found                               -1|1
+        also replace nfa with cfa
+
+    not found
+    searching sorted list AND mismatched thread.id
+                                        false
+
+`n3` current nfa
 `n4l` seek length
 `n4h` sorted thread flag:  sorted by size (0) or unsorted ($FF)
-`n3` current nfa
 `n5` seek vocab
 `n6` next vocab address
 `n7` seek nfa
@@ -494,24 +464,19 @@ not found
 
 #endif
 pseek
-    brk
-    .byt ldd | TOS
-    .byt st | N3                ; `n3` is start of thread
-    .byt rtn
-pseekb
     lda R0L+2*N4+1              ; toggle sorted/unsorted flag in `n4h`
     eor #$FF
     sta R0L+2*N4+1              ; sorted = 0; unsorted = $FF
 pseek00
     jsr symlens
-    beq pseek08                 ; reached `symtail`? not found!
+    beq pseek09                 ; reached `symtail`? not found!
     eor R0L+2*N4
     beq pseekok1                ; same length? consider further...
     bit R0L+2*N4+1
     bmi pseek01                 ; unsorted list? next!
     lda R0L+2*N8
     cmp R0L+2*N4                ; length.current > length.seeking?
-    bcs pseek08                 ; not found on sorted list!
+    bcs pseek09                 ; not found on sorted list!
 pseek01
     lda #3
     jsr sympluss                ; next!
@@ -522,40 +487,31 @@ pseekok1
     bmi pseek01                 ; smudged? next!
     ldy R0L+2*N4
     iny
-    lda R0L+2*N5                ; compare vocabularies
-    bcc pseek04b
-    .byt $2C
+    lda R0L+2*N5
+    bcs pseek04                 ; compare vocabularies
 pseekok2
-    lda (R0L+2*N7),y            ; `n7` name we are looking for
+    dey
+    beq pseek07
+    lda (tos),y                 ; name we are looking for
 pseek04
     eor (R0L+2*N3),y            ; `n3` current name under consideration
 pseek04b
     bne pseek01                 ; different symbol? next!
-pseek05
-    dey
-    bne pseekok2
+    beq pseekok2
 pseek07
-    clc                         ; found, false (inverted flag)
-    .byt $29                    ; AND imm opcode
-pseek08
-    sec                         ; not found, true
+    lda (R0L+2*N3),y            ; reget
+    and #$20                    ; IMMEDIATE bit
+    lsr
+    lsr
+    lsr
+    lsr
+    sta R0L+2*N2
+    brk
+    .byt popd | N3
+    .byt st   | TOS
+    .byt dcr  | N2
+    .byt nxt
 pseek09
-    ;
-    jmp putc
-
-;--------------------------------------------------------------
-#if 0
-name=>THREAD
-stack=( symtab -- thread )
-tags=interpreter,forth-83,nosymbol
-Returns `true` if there is a next vocabulary
-#endif
-tothread
-    ldy #1
-    lda (R0L+2*N7),y            ; use `nfa` in `n7`, get first character
-    and #$0F                    ; simplified replacement for Pearson hash
-    asl                         ; *2
-    sta tos                     ; `symtab` always at a page boundary
     jmp next
 
 ;--------------------------------------------------------------
@@ -610,18 +566,51 @@ set up Sweet16 registers for `found?`
 #endif
 pfoundq
     brk
+    .byt ld | TOS
+    .byt st | N6
+    .byt inr | N6
+    .byt pull
+    .byt st | N3
+    .byt st | N7
+    .byt ext
+    .word symlens
     .byt ld | N8                ; `n4` `n8` len
     .byt st | N4
-    .byt ld | TOS
-    .byt st | N6                ; vocabs
-    .byt inr | N6
-    .byt ldi | N6
-    .byt st | N5                ; first vocab
-    .byt pull
-    .byt st | N7                ; name
-    .byt st | N3                ; name
-    .byt pull
+    .byt sub | ACC
+    .byt st | N2
     .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=NOT.IN.THREAD?
+stack=( cfa -- nfa|0 )
+tags=compiler
+
+```
+: not.in.thread?   ( nfa addr -- xfa flag )
+    @ n3 !                      ( nfa )
+    (seek) <n2 0= ;             ( xfa flag )
+```
+#endif
+#include "align.i65"
+_notinthreadq
+    jsr enter
+#include "page.i65"
+    .word fetch
+#include "parm.i65"
+    .word blit
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word store
+#include "page.i65"
+    .word pseek
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N2
+#include "pad.i65"
+    .word zeq
+#include "past.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -674,97 +663,136 @@ ignored (not a match) by `found?`
 
 ```
 : found?   ( name -- xfa flag )
+    vocabs (found?)
+    begin
+        <n6 c@+ >n5 drop n6 !
+        ldi | N6
+        st | N5
+        nxt
+
+: nextvocab   ( vocab nfa -- vocab' nfa )
+    swap c@+ n5 ! swap ;
+
+: nextvoc
+
+: (found?)    ( nfa vocabs -- nfa )
+    ;
+code (found?)
+    brk
+    ldd | TOS
+    st | N6
+    inr | N6
+    pull
+    st | N3
+    nxt
 
 
-        for the nfa(n7) in `symnew` list (ordered by age)
-    calculate pearson hash for word if it were in this vocabulary
-    get thread start
-    search for the nfa(n7) in `symtab` list (ordered by length)
-    search for the nfa(n7) in `sym
-
-: found?   ( nfa -- xfa flag )
-    vocabs (found?) bloomfilter cbit@
-    if
-        symnew (seek)
-        if
-            symtab @ >thread (seek)
-        if
-            nextvocab
-        repeat
-        '(seek) init.411
-    bloomfilter cbit@
-    if  vocabs c@+ symnew @
-        set.76 swap73
-        ext-until ?exit
-        1- c@+
+true = found
+false = not found
 : found?   ( name -- xfa flag )
-    vocabs (found?) bloomfilter cbit@
+    n2 off                      \ result
+    vocabs @ 1+ n6 !  >n3       ( nfa )
+    bloomfilter cbit@           ( nfa flag )
     if
-        symnew (seek)
-        if
-            symtab @ >thread (seek)
+        begin
+            <n6 c@+ n5 2!       ( nfa ) \ next vocab
+            symnew              ( nfa addr )
+            not.in.thread?      ( xfa  flag )
+        while
+            =n3 pearson# 2* symtab @ +
+            >r =n3 r>           ( nfa addr )
+            not.in.thread?      ( xfa flag )
+        while
+            <n5 0=
+        until
+    then <n2 ;
 
+
+```
+: found?   ( nfa -- xfa flag )
+    n2 off  >n3
+    bloomfilter cbit@ dup 0= ?exit drop
+    vocabs (found?)
+    begin
+        <n6 c@+ n5 2!
+        symnew not.in.thread?
+    while
+        =n3 pearson# 2* symtab @ +
+        >r =n3 r> not.in.thread?
+    while
+        <n5 0=
+    until ;
 ```
 #endif
 #include "align.i65"
 _foundq
     jsr enter
-#include "page.i65"
+#include "pad.i65"
     .word vocabs
 #include "page.i65"
     .word pfoundq
-#include "page.i65"
+#include "pad.i65"
     .word _bloomfilter          ; sum of decimal digits in name % 64
 #include "page.i65"
     .word cbitfetch
 #include "parm.i65"
-    .word qbranch               ; if
-    .byt <(found04-*+1)
-#include "pad.i65"
+    .word qbranch               ;     if
+    .byt <(foundq03-*+1)
+#include "parm.i65"
 foundq01                        ;     begin (loop through vocabs)
+    .word zpfrom
+    .byt R0L+2*N6
+#include "pad.i65"
+    .word cfetchplus
+#include "parm.i65"
+    .word blit
+    .byt R0L+2*N5
+#include "pad.i65"
+    .word twostore
+#include "page.i65"
     .word symnew
 #include "page.i65"
-    .word pseek                 ; returns inverted found? flag
+    .word _notinthreadq
 #include "parm.i65"
-    .word qbranch               ;     while (branches if found)
+    .word qbranch               ;     while
     .byt <(foundq03-*+1)
+#include "parm.i65"
+    .word zpex
+    .byt R0L+2*N3
 #include "pad.i65"
+    .word pearsonhash
+#include "page.i65"
+    .word twostar
+#include "page.i65"
     .word symtab
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word tothread
+    .word plus
 #include "page.i65"
-    .word pseek
+    .word tor
 #include "parm.i65"
-    .word qbranch               ; inverted flag, so branch if found
-    .byt <(foundq03-*+1)
+    .word zpex
+    .byt R0L+2*N3
 #include "pad.i65"
-    .word nextvocabq
+    .word rfrom
 #include "page.i65"
+    .word _notinthreadq
+#include "parm.i65"
+    .word qbranch               ;     while
+    .byt <(foundq03-*+1)
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N5
+#include "pad.i65"
     .word zeq
 #include "parm.i65"
-    .word qbranch               ; loop if more vocabs
+    .word qbranch               ;     until then
     .byt <(foundq01-*+1)
 #include "parm.i65"
-found04                         ; then
+foundq03
     .word zpfrom
-    .byt R0L+2*N7               ; original `nfa`
-#include "pad.i65"
-    .word false                 ; and nope, this name was not found
-#include "past.i65"
-    .word exit
-
-#include "parm.i65"
-foundq03                        ; found it
-    .word zpfrom
-    .byt R0L+2*N3               ; the CFA
-#include "pad.i65"
-    .word namefrom
-#include "page.i65"
-    .word true                  ; assume it's a normie -1
-#include "page.i65"
-    .word immedornot            ; maybe add 2 if it's immediate
+    .byt R0L+2*N2
 #include "past.i65"
     .word exit
 
@@ -837,161 +865,6 @@ stack=( cfa -- )
 tags=compiler,nosymbol
 Create a new symbol in the symbol table
 
-= BEFORE =
-
-.C:6b0e   .bloom:
-.C:6b0e  20 46 07    JSR .uservar
-.C:6b11  5E 20 46    LSR $4620,X
-
-0000  00 00 f9 10  86 07 05 ff  04 40 d2 5f  03 00 00 00
-0010  b7 06 01 02  04 00 34 d5  00 01 0d d0  0e 83 86 00
-0040  aa aa aa aa  aa aa aa 08  88 6c 07 ae  00 01 f9 01
-0070  bb bb bb bb  bb bb bb 00  06 06 00 06  00 02 10 10
-0080  00 00 00 00  74 06 e6 8b  e6 8b 6c 0f  6d 00 1a 91
-01e0  65 e3 01 30  0d c9 10 9a  0f c7 05 68  06 a2 2e 57
-01f0  03 ea 2e 6c  20 68 11 50  70 de 6e 28  6f 48 6f 01
-
-0200  3a 03 46 4f  4f 54 55 52  42 2d 56 2e  30 22 2c 39
-
-0660  01 88 84 1f  85 1e 20 c5  04 4c 66 06  0a 00 7d 17
-0670  00 00 01 00  31 00 fe 01  fb 1a 78 d4  00 00 32 68
-0680  bc 6e 49 1a  49 1a 00 57  0a 00 7d 17  00 00 01 00
-0690  fe 52 00 00  00 00 ff ff  00 00 06 00  05 01 00 00
-06a0  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 67
-06b0  ee 7e 02 00  09 00 00 00  00 00 00 00  00 00 00 00
-06c0  00 00 00 00  00 00 00 00  00 00 00 00  00 00 d0 64
-06d0  ce 64 ff 80  00 00 00 00  00 00 cc cc  cc cc cc cc
-06e0  01 a0 0a 2c  a0 08 2c a0  06 2c a0 04  2c a0 02 b5
-
-6480  4f 44 85 09  04 3f 44 55  50 44 18 04  3f 4b 45 59
-6490  43 09 04 4f  56 45 52 7f  7e 44 4f 52  41 2c 01 40
-64a0  10 05 3f 45  58 49 54 39  0e 06 3f 50  41 55 53 45
-64b0  81 10 06 3f  53 54 41 43  4b 5d 73 26  3f 4c 45 41
-64c0  56 45 3f 0a  09 3f 54 45  52 4d 49 4e  41 4c 00 00
-64d0  00 aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa
-64e0  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa
-64f0  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa
-6500  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa
-
-.usersymnew .utend
-06ce  d0 64 ce 64  ff 80 00 00  00 00 00 00  cc cc cc cc
-06de  cc
-
-
-check for missing name
-dup ?exists ?duo
-if \ name is already in dictionary (before this creates it)
-    set redefined = matching NFA
-    smudge that one too
-    .name "  exists"
-then  ( nfa )
-dup newest !
-copy name to symtail
-place `here` in before symtail as CFA
-move symtail
-write a tail
-
-
-* check for missing name after ":"
-* see if it exists in the dictionary (search path)
-    - issue a warning message:  .name ." exists"
-    - `redefined` set to NFA of existing name
-    ~ don't smudge it yet
-~ make sure to search the `current` vocabulary too!
-*
-
->C:0000  00 00 49 1a  01 10 f9 10  d2 06 c0 06  22 57 00 00   @@Izap.pRf.f"W@@
->C:0010  b7 06 01 02  04 00 34 d5  00 01 0d d0  0e 83 86 00   .fabd@4U@amPn..@
->C:0040  aa aa aa aa  aa aa aa 08  88 6c 01 22  c0 d2 f9 01   .......h.la".R.a
->C:0070  bb bb bb bb  bb bb bb 00  06 06 00 57  06 06 10 10   .......@ff@Wffpp
->C:0080  00 00 00 00  74 06 e6 8b  e6 8b 6c 1d  6d 00 26 29   @@@@tf....l]m@&)
->C:01e0  65 e3 01 30  0d c9 10 9a  0f c7 05 68  06 a2 2e 7e   e.a0mIp.oGehf..~
->C:01f0  82 a2 6f ba  6f 21 6d 4b  70 d9 6e 23  6f 43 6f 01   ..o.o!mKpYn#oCoa
->C:0200  3a 03 46 4f  4f 54 55 52  42 2d 56 2e  30 22 2c 39   :cFOOTURB-V.0",9
-.C:6d22  00          BRK            - A:01 X:30 Y:00 SP:f6 ..-...ZC  244462976
-(C:$6d22)
-
-
-= AFTER =
-
-.C:6b0e   .bloom:
-.C:6b0e  20 46 07    JSR .uservar
-.C:6b11  5E 20 46    LSR $4620,X
-
-0000  00 00 f9 10  86 07 05 ff  04 40 d2 5f  03 00 00 00
-0010  b7 06 01 02  04 00 34 d5  00 01 0d d0  0e 83 86 00
-0040  aa aa aa aa  aa aa aa 08  88 6c 07 ae  00 01 f9 01
-0070  bb bb bb bb  bb bb bb 00  06 06 00 06  00 02 10 10
-0080  00 00 00 00  74 06 e6 8b  e6 8b 6c 0f  6d 00 1a 91
-01e0  65 e3 01 30  0d c9 10 9a  0f c7 05 68  06 a2 2e 57
-01f0  03 ea 2e 6c  20 68 11 50  70 de 6e 28  6f 48 6f 01
-
-0200  3a 03 46 4f  4f 54 55 52  42 2d 56 2e  30 22 2c 39
-
-0660  01 88 84 1f  85 1e 20 c5  04 4c 66 06  0a 00 7d 17
-0670  00 00 01 00  31 00 fe 01  fb 1a 78 d4  00 00 32 68
-0680  bc 6e 49 1a  49 1a 00 57  0a 00 7d 17  00 00 01 00
-0690  fe 52 00 00  00 00 ff ff  00 00 06 00  05 01 00 00
-06a0  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 67
-06b0  ee 7e 02 00  09 00 00 00  00 00 00 00  00 00 00 00
-06c0  00 00 00 00  00 00 00 00  00 00 00 00  00 00 d0 64
-06d0  ce 64 ff 80  00 00 00 00  00 00 cc cc  cc cc cc cc
-                                                          update symtail
-06d0  D6 64                                                 (was 64CE)
-            ff 80  00 00 00 00  00 00 cc cc  cc cc cc cc
-            ^^^^^^^^^^^                                    set bloom bit
-06e0  01 a0 0a 2c  a0 08 2c a0  06 2c a0 04  2c a0 02 b5
-
-.usersymnew .utend
-06ce  d0 64 ce 64  ff 80 00 00  00 00 00 00  cc cc cc cc
-
-6480  4f 44 85 09  04 3f 44 55  50 44 18 04  3f 4b 45 59
-6490  43 09 04 4f  56 45 52 7f  7e 44 4f 52  41 2c 01 40
-64a0  10 05 3f 45  58 49 54 39  0e 06 3f 50  41 55 53 45
-64b0  81 10 06 3f  53 54 41 43  4b 5d 73 26  3f 4c 45 41
-64c0  56 45 3f 0a  09 3f 54 45  52 4d 49 4e  41 4c
-                                                   00 00  CFA = here
-64d0  03 46 4F 4F                                           len/flags "FOO"
-                   00 00 00                               move symtail
-                            aa  aa aa aa aa  aa aa aa aa
-
-
-
-64d0  00 aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa
-64e0  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa
-64f0  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa
-6500  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa
----
-
-64d0  00 aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa
-
-
-* eol? 4 ?error \ check "MISSING NAME"
-
-    search `current` vocab
-    search vocabs list in order
-    search core
-
-
-* if it exists
-
-emit a warning
-[rvs]`name` exists[off]
-smudge the original
-set `redefined`
-* create the symbol
-set bloom filter bit from nfa !bloom
-tack on a new copy at symtail
-update symtail
-cfa, len/flag, "symbol", vocab
-set `newest` = nfa
-if `current` is nonzero, join this to the vocabulary
-    append `current` vocabid @ symtail+
-    set vocab bit
-
-||found|not found|h
-|`redefined`|prior|0|
-|unsmudged?|prior|`newest`|
 ```
 : (create)   ( cfa -- )
     eol? 4 ?error               \ "MISSING NAME"
@@ -1251,114 +1124,19 @@ _qvmmove
 
 ;--------------------------------------------------------------
 #if 0
-name=(AUTOMEM)
-stack=( ~wut? )
+name=!SYMTAB
+stack=( cfa --  )
 tags=ext,nosymbol
 runs in the middle of `(forget)` to decide how much to allocate for `symtab`
 and possibly move `vmbuf`
-
-: (automem)
-    user0studio @ over - $FF00 and benjamin - ;
-
-Automatically move symbol table and vmbuf to someplace that
-
-pad pass1end -                  negative size of symbol table
-studio +                        new `symtab` is `size` bytes below studio
-ff00 and                        include remainder of the page
-256 -                           include one more page
---------------
-'some room'                     `symtab`
-
-
-`n7` points to the null at the end of the sorted-by-size symbol
-table copy at `pad`
-
-    sec
-    lda tos+1
-    sbc n7+1
-    adc userstudio+1
-
-
-* calculate `n7` - `pad`
-
-```
-: (automem)   ( pad+3 -- pad+3 symtab )
-    (automem).init              \ set `dp`, calculate new `symtab`
-    dup 32 +under
-    symtab #blk @
-    if ?movevmbuf then
-    ! (automem).phase2 ;
-
-(automem)
-    brk,                        ; Sweet16
-    studio n0 set,              ; symtab anchors below studio
-    n0 ldd,                     ; studio @
-    n0 st,                      ; studio
-
-3OS                             CFA to forget
-2OS                             16
-TOS                             pad
-N7                              end of pad
-: automem   ( -- symtab' )
-    studio
-    calculateaddresses
-( 1A4E(CFA) 0010(??) vmbuf blkbuf delta )
-    #blk @ ?: +move 3drop ;
-( 1A4E(CFA) 0010(??) )
-
-    clc
-    ldd userstudio+1
-    adc R0L+2*N7+1
-    sbc tos+1
-
 
     brk
     ld tos
     sub n7
 
-
-0000  4E 1A F4 1A  00 6B 08 FF  88 1A 02 65  00 00 00 00
-0010  22 57 A6 28  00 00 9B 6E  00 01 1B 00  0C 93 86 00
-0040  AA AA AA AA  AA AA AA FF  00 01 13 00  A2 10 4E 01
-0070  BB BB BB BB  BB BB BB FF  53 00 18 67  1A 00 1A 10
-0080  00 00 00 00  74 06 E6 8B  E6 8B 6C A9  6D 00 21 65
-0090  55 E4 55 06  FF B3 00 FF  00 CF 01 FF  00 00 00 00
-00A0  00 0C 00 18  0C 00 FF 01  09 20 00 00  00 00 00 00
-00B0  03 00 00 00  05 0A 00 08  00 00 00 00  00 00 00 00
-00C0  00 00 80 47  C0 83 0D 00  84 00 53 FB  04 00 C0 00
-00D0  00 05 00 00  01 27 7A 02  18 0D 0C 17  00 47 00 47
-00E0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 82
-00F0  82 82 82 82  83 83 83 83  83 34 00 21  52 FF FF 6E
-0130  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
-0140  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
-0150  20 20 20 20  20 20 20 20  FF FF FF FF  FF FF FF FF
-0160  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
-0170  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
-01E0  05 57 E4 00  2D 00 04 C8  00 69 57 E4  FF C7 05 68
-01F0  06 D8 2F 6E  50 E3 6E 0F  6F 47 6F 69  6F 8A 6F 06
-0410  4C 73 C3 22  00 5B 00 00  00 04 00 64  00 00 00 00
-0420  00 0D 04 16  13 00 08 12  B3 01 0D D0  02 FF 86 40
-0430  B2 E9 CE AA  AA AA AA AA  FE 52 00 53  BE 46 BE 46
-0440  00 80 AA AA  00 80 D1 07  AA AA 00 04  AA AA 00 04
-0450  AA AA AA AA  24 AA AA 08  B6 FF 00 00  00 FB 9B 00
-0460  03 4C BB 00  BB BB BB BB  BB BB 00 00  00 00 8B 00
-0470  00 04 0D 00  00 00 8B 80  C0 00 00 00  00 00 05 B3
-0480  E6 77 D0 02  E6 78 AD 0A  02 C9 3A B0  0A C9 20 F0
-0490  EF 38 E9 30  38 E9 D0 60  80 4F C7 52  7C 80 40 20
-0660  01 88 84 1F  85 1E 20 C5  04 4C 66 06  0A 00 0B 17
-0670  00 00 01 00  31 00 FE 01  00 00 78 D4  00 00 00 00
-0680  32 68 25 6F  A2 1A 4E 1A  00 57 0A 00  0B 17 00 00
-0690  01 00 21 52  02 00 00 00  01 00 00 00  0D 00 0C 00
-06A0  03 00 00 00  00 00 00 00  00 00 03 28  00 C0 56 28
-06B0  00 67 65 7F  02 00 09 00  00 00 00 00  00 00 00 00
-06C0  30 00 00 00  00 00 FB 64  00 00 00 00  00 00 00 00
-06D0  D6 64 00 65  FF 80 00 00  00 00 00 00  FF FF 00 00
-
-
-```
 #endif
 #include "align.i65"
-_automem
+_setsymtab
     jsr enter
 #include "page.i65"
     .word newsymtab
@@ -1545,9 +1323,9 @@ pforgetlooper01
     .word qbranch
     .byt <(pforgetlooper02-*+1)
 #include "pad.i65"
-    .word pfilterrewind         ; rewind symbol list, copies N6 to N3
+;    .word pfilterrewind         ; rewind symbol list, copies N6 to N3
 #include "page.i65"
-    .word _extuntil             ; filterpass
+;    .word _extuntil             ; filterpass
 #include "parm.i65"
 pforgetlooper02
     .word ploop
@@ -1925,11 +1703,126 @@ making it the active one.
 [SYMTAB ... SYMTAIL] is also a long continuous chain of symbols, beginning at
 SYMTAB+32 and ending at the triple null where SYMTAIL points.
 
+    pad >syms
+    migrate
+
+code copy?
+    doextreg
+    jmp (R11)
+
+_qvmmove
+
+: migrate   ( cfa to from -- )
+    going up or down?
+        vector R11 (for speed)
+        going down?
+            initial length=1
+            stash cfa in a register
+        going up?
+            initial hash=0
+    begin
+        copy?
+            this word's address is < cfa
+            it is the correct length
+
+        ?copy
+copy them down
+    filter anything >= `cfa`
+    set bloom filter bit for each `bloom#`
+    set pass bit for each length
+
+automem
+    `cfa` dp !
+    three nulls at end of pad area
+    calculate new symtab location
+    symtab !
+    calculate new symnew location
+    symnew !
+    calculate new symtail location
+    symtail !
+    write three nulls at new symtail location also
+
+passbit 0 off
+copy them all up
+    set thread pointers
+
+
 ```
 : (forget)   ( cfa -- )
-    bloom 8 erase
+    plits 6
 
-    passbits $80 !+ off
+    passbits
+    $80
+    bloom
+    8
+    erase !+ off
+    pad >syms
+    migrate
+    !symtab                     ( -- symtab )
+    ?vmmove
+    pad 2+
+    migrate
+
+b a do rewind begin cfa execute while copy? repeat loop`
+
+: (forget).keep
+    (forget).postcfa
+    symcopy swap73 1 sym+ swap73 ;
+
+pforgetpostcfa
+    brk
+    .byt ld | TOS
+    .byt std | N7
+    .byt pull
+    .byt nxt
+
+erase bloom filter
+    bloom
+    00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+passbit 0 only (all lengths)
+    passbits
+    10000000 00000000 00000000 00000000
+
+tos                             sym0
+n0                              cfa
+n1                              target
+n2
+n3
+n7                              target
+n8                              sym.len (visible, no vocab)
+
+0000  DC 64 22 57  4E 1A 00.00  88 1A 22.57  05 FF 00 00
+0010  B8 06 F2.1A  05 00 .cfa.  00 01 1B 00  0A 93 67 6C
+
+: keeper?   ( -- flag )
+    <n3 name> <n0 < ;
+
+
+: southerly
+    i symlen <> ?exit
+    <
+    keeper? if (forget).keep then
+    sym+
+
+
+: (forget)   ( cfa -- )
+    n0 !   pad n7 !             ( )
+    bloom 12 erase
+    16 0 do
+        symtab @ i 2* + @       ( thread )
+        begin
+            i symlen =
+            if
+                southerly
+            then
+        until
+    loop
+    !symtab ?vmmove
+    32 1 do
+        northerly
+    loop ;
+
+
     (forget).pass1 (filter)!
     32 0  >syms pad
     (forget).looper             \ does `ext-until` 32x, completing pass1
@@ -1944,73 +1837,228 @@ SYMTAB+32 and ending at the triple null where SYMTAIL points.
 _pforget
     jsr enter
 #include "page.i65"
+    .word _gosouth
+#include "page.i65"
+    .word _setsymtab
+#include "page.i65"
+    .word _qvmmove
+#include "page.i65"
+    .word _gonorth
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SOUTHERLY
+stack=( )
+tags=interpreter,extension,nosymbol
+
+: southerly
+
+    <n1 ?exit
+    <n8 passbits >bit cbit! ;
+
+: pforgetpass1
+    i
+    .word qbranch
+    .byt <(pforgetpass1b-*+1)
+    .word i
+    .word symlen
+    .word eq
+    .word qbranch
+    .byt <(symnext01-*+1)       ; next!
+;#refactor
+    .word zpfrom                ; nfa
+    .byt R0L+2*N3
+    .word namefrom              ; nfa>cfa
+    .word twodup
+    .word studio
+    .word fetch
+    .word swap
+    .word oneplus
+    .word betweenq
+pforgetpass1a
+    .word pquerycolon
+    .word drop
+    .word _pforgetkeep
+    .word branch
+    .byt <(symnext01-*+1)       ; next!
+pforgetpass1b                   ; pass 0 only, set passbits and bloomfilter
+    .word symlen
+    .word _passbitsstore         ; if ((i-1) = 0) set `passbits` for all lengths
+    .word _bloomfilter          ; doing this here speeds things up slightly,
+#include "page.i65"             ; with a low risk of setting (inconsequential)
+    .word cbitstore             ; false positives in `bloom#` for forgotten words
+    .word branch
+    .byt <(symnext01-*+1)       ; next!
+
+
+southerly
+    jsr symlens
+    iny
+    lda (n3),y
+    and #$0F
+    eor n1
+    bne nextsymbol
+
+nextsymbol
+    beq lastone
+    lda n1
+    bne
+
+lastone
+    inc n1                      ; counter
+
+    lda R0L+2*N1                ; counter 0..31
+
+    i
+
+
+
+#endif
+#include "align.i65"
+_southerly
+    jsr enter
+#include "page.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=GOSOUTH
+stack=( cfa -- targetend )
+tags=interpreter,extension,nosymbol
+
+: gosouth
+    bloom 12 erase
+    pad >syms 0
+    callz
+    harvests6
+    (gosouth)
+
+
+
+
+
+#endif
+#include "align.i65"
+_gosouth
+    jsr enter
+#include "page.i65"
     .word bloom                 ; cfa bloom )
-#include "page.i65"
-    .word eight                 ; cfa bloom 8 )
-#include "page.i65"
-    .word erase                 ; reset the Bloom filter
-#include "page.i65"
-    .word passbits              ; cfa passbits )
 #include "parm.i65"
-    .word blit                  ; cfa passbits %1000_0000 )
-    .byt $80
+    .word blit                 ; cfa bloom 12 )
+    .byt <(userpassbits+4-userbloom)
 #include "pad.i65"
-    .word _storeplus            ; cfa passbits+2 )
-#include "page.i65"
-    .word off                   ; passbits = %1000 0000 0000 0000
-#include "parm.i65"
-    .word dlit
-    .word $FFFF
-    .word _pforgetpass1         ; >r11
-#include "pad.i65"
-    .word init411
-#include "page.i65"
-    .word bl                    ; 32 )
-;#include "page.i65"
-;    .word zero                 ; 32 0 ) \ factored into `(forget).looper`
-#include "page.i65"
-    .word tosyms
+    .word erase                 ; reset bloom filter, passbits
 #include "page.i65"
     .word _pad
 #include "page.i65"
-    .word pforgetlooper         ; this is it. performs all of pass1
+    .word tosyms
 #include "page.i65"
-    .word passbits
+    .word pgosouth
 #include "page.i65"
-    .word on                    ; passbits = %1111 1111 1111 1111
-#include "parm.i65"
-    .word dlit
-    .word 0                     ; pass2 flag
-    .word _pforgetpass2         ; >r11
-#include "pad.i65"
-    .word init411
-#include "parm.i65"
-    .word blit
-    .byt 16
-;#include "pad.i65"
-;    .word zero
-#include "page.i65"
-    .word _pad                  ; the new sym0
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word _automem              ; does things, returns the new targ
-#include "page.i65"
-    .word pforgetlooper         ;( do it again! )
-#include "page.i65"
-    .word dp
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word symtail
-#include "page.i65"
-    .word symtailstore
-#include "page.i65"
-    .word symnew
-#include "page.i65"
-    .word symtailstore
+gosouth01                       ; begin
+    .word doextreg
+#include "parm.i65"             ;  ( flag )
+    .word qbranch               ; until
+    .byt <(gosouth01-*+1)
 #include "past.i65"
     .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(GOSOUTH)
+stack=( -- flag )
+tags=interpreter,extension,nosymbol
+6EBE   .pgosouth:
+6EBE  20 EF 06    jsr .harvests4
+6EC1  00          brk
+0000  DC 64 22 57  4E 1A F2 1A  88 1A DC 64  05 FF 00 00
+0000  DC 64 22 57  4E 1A 00.00  88 1A 22.57  05 FF 00 00
+
+0010  B8 06 06 02  05 00 34 D5  00 01 1B 00  0A 93 67 6C
+0010  B8 06 F2.1A  05 00 .cfa.  00 01 1B 00  0A 93 67 6C
+
+0040  AA AA AA AA  AA AA AA FF  00 01 AD 00  0C F2 4E 01
+0070  BB BB BB BB  BB BB BB FF  53 00 24 00  00 1A 1A 10
+0080  00 00 00 00  74 06 E6 8B  E6 8B 6C B5  6E 00 2E 5C
+0090  55 E4 55 06  FF B3 00 1B  00 32 00 FF  00 00 00 00
+00A0  00 0C 00 18  0C 00 1B 01  0C 20 00 00  00 00 00 00
+00B0  03 00 00 00  05 0A 00 08  00 00 00 00  00 00 00 00
+00C0  00 00 80 47  C0 83 0D 00  84 00 53 FC  18 00 C0 00
+00D0  00 05 00 00  01 27 7A 02  18 0D 0E 17  00 47 00 47
+00E0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 82
+00F0  82 82 82 82  83 83 83 83  83 34 00 21  52 FF FF 6E
+0130  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
+0140  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
+0150  20 20 20 20  20 20 20 20  FF FF FF FF  FF FF FF FF
+0160  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+0170  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+01E0  57 57 E4 57  03 00 0E 00  22 CF 05 68  06 06 2F 0F
+01F0  26 12 26 C0  6E 9F 6E F2  6E 2A 6F 4C  6F 6D 6F 06
+0410  4C 73 C3 22  00 5B 00 00  00 04 00 64  00 00 00 00
+0420  00 0D 04 16  13 00 08 12  B3 01 0D D0  02 FF 86 40
+0430  B2 E9 CE AA  AA AA AA AA  FE 52 00 53  A5 46 A5 46
+0440  00 80 AA AA  00 80 D1 07  AA AA 00 04  AA AA 00 04
+0450  AA AA AA AA  24 AA AA 08  B6 FF 00 00  00 FB 7B 00
+0460  03 4C BB 00  BB BB BB BB  BB BB 00 00  00 00 8B 00
+0470  00 04 0D 00  00 00 8B 80  C0 00 00 00  00 00 05 B3
+0480  E6 77 D0 02  E6 78 AD 0A  02 C9 3A B0  0A C9 20 F0
+0490  EF 38 E9 30  38 E9 D0 60  80 4F C7 52  7B 80 40 20
+0660  01 88 84 1F  85 1E 20 C5  04 4C 66 06  0A 00 0D 17
+0670  00 00 01 00  31 00 FE 01  00 00 78 D4  00 00 00 00
+0680  32 68 08 6F  A2 1A 4E 1A  00 57 0A 00  0D 17 00 00
+0690  01 00 21 52  02 00 00 00  01 00 00 00  0D 00 0C 00
+06A0  02 00 00 00  00 00 00 00  00 00 03 28  00 C0 56 28
+06B0  00 67 46 7F  02 00 09 00  00 00 00 00  00 00 00 00
+06C0  30 00 00 00  00 00 01 65  00 00 00 00  00 00 00 00
+06D0  DC 64 06 65  00 00 00 00  00 00 00 00  00 00 00 00
+
+
+#endif
+pgosouth
+    jsr harvests4
+    brk
+    .byt set | R11
+    .word _southerly
+    .byt ld | TOS
+    .byt st | N3
+    .byt ld | N1
+    .byt st | N7
+    .byt sub | ACC
+    .byt st | N1
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=GONORTH
+stack=( -- )
+tags=interpreter,extension,nosymbol
+
+#endif
+#include "align.i65"
+_gonorth
+    jsr enter
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=PASSBIT?
+stack=( -- flag )
+tags=dictionary,nosymbol
+
+#endif
+passbitq
+    stx z
+    ldx #3
+    clc
+passbitq01
+    rol userpassbits,x
+    dex
+    bpl passbitq01
+    ldx z
+    jmp xpushc
 
 ;--------------------------------------------------------------
 #if 0
