@@ -101,25 +101,30 @@ symlen
 #if 0
 name=SYMLENS
 effects=A:len;Y:0;C:vocab?;Z:len
-tags=nfa,nosymbol
+tags=subroutine,nfa,nosymbol
 6502registers=A:symlen Y:0 C:vocab Z:symlen
 Sweet16registers=N3:nfa N8:length
 return the length of the current `nfa` stored in `n3`
 
+(N3) nfa
+
+A len
+Y 0
+C vocab?
+Z core
+N8L len
+
 #endif
 symlens
-    ldy #0              ;{2 {=23}}
-    lda R0L+2*N3+1              ; length = 0 if `n3` is 0
-    beq symlens01
-    lda (R0L+2*N3),y    ;{5}    ; length/flags
-symlens01
-    pha                 ;{3}    ; not using tay/tya preserves Y=0
-    asl                 ;{2}
-    asl                 ;{2}    ; Vocab bit to C flag
-    pla                 ;{4}
-    and #$1F            ;{2}    ; length
-    sta R0L+2*N8        ;{3}    ; N8L = visible length (omit vocab +1)
+    ldy #0
+    lda (R0L+2*N3),y            ; length/flags
+    asl
+    asl                         ; Vocab bit to C flag
+    lda (R0L+2*N3),y            ; length/flags
+    and #$1F                    ; length
+    sta R0L+2*N8                ; N8L = visible length (omit vocab +1)
     rts
+;{27}
 
 ;--------------------------------------------------------------
 #if 0
@@ -485,6 +490,8 @@ pseekok1
     ;ldy #0                     ; thanks, symlens
     lda (R0L+2*N3),y
     bmi pseek01                 ; smudged? next!
+zeep
+    bit _foundq                 ; has a $20 opcode here
     ldy R0L+2*N4
     iny
     lda R0L+2*N5
@@ -807,8 +814,8 @@ field address of the word and -1 for normal, +1 for immediate
 words
 
 ```
-: exists?
-   bl word ?dup ?: found? 0 and ;
+: exists?   ( -- addr flag )
+   bl name ?dup ?: found? false  0<> and ;
 ```
 #endif
 #include "align.i65"
@@ -817,14 +824,16 @@ _existsq
 #include "page.i65"
     .word bl
 #include "page.i65"
-    .word _name            ; ~~2
+    .word _name
 #include "page.i65"
     .word qdup
 #include "parm.i65"
     .word pquerycolon
     .word _foundq
-    .word zero
+    .word false
 #include "pad.i65"
+    .word zne
+#include "page.i65"
     .word andx
 #include "past.i65"
     .word exit
@@ -865,6 +874,11 @@ stack=( cfa -- )
 tags=compiler,nosymbol
 Create a new symbol in the symbol table
 
+`(create)` should (and does!) smudge the previous definition's NFA, if found.
+Pairs like `:` will need to unsmudge the prior word and smudge this newly
+defined word.  Finally `;` will smudge the prior word and unsmudge this
+new one
+
 ```
 : (create)   ( cfa -- )
     eol? 4 ?error               \ "MISSING NAME"
@@ -888,79 +902,23 @@ Create a new symbol in the symbol table
         RVSON emit
         id. ." exists{OFF}"
     then ;
-```
-#endif
-#include "align.i65"
-_pcreate
-    jsr enter
-#include "page.i65"
-    .word eolq
-#include "parm.i65"
-    .word qerror
-    .byt 4                      ; MISSING NAME
-// check for end of line
-#include "pad.i65"
-    .word redefined
-#include "page.i65"
-    .word off
-#include "page.i65"
-    .word _existsq
-#include "parm.i65"
-    .word qbranch
-    .byt <(pcreate02-*+1)
-#include "parm.i65"
-    .word zpfrom
-    .byt R0L+2*N3
-#include "pad.i65"
-    .word redefined
-#include "page.i65"
-    .word store
-#include "parm.i65"
-    .word zpfrom
-    .byt R0L+2*N7
-#include "pad.i65"
-    .word dotrvs
-#include "page.i65"
-    .word _stringdot
-#include "parm.i65"
-    .word _pdq
-    .byt <(pcreate01-*-1)
-    .asc RVSOFF," EXISTS"
-pcreate01
-#include "pad.i65"
-pcreate02
-    .word bloom                 ; aka `symtail` +2
-#include "page.i65"
-    .word current
-#include "page.i65"
-    .word rot
-#include "page.i65"
-    .word _qalign
-#include "page.i65"
-    .word _cfacomma
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word threeminus
-#include "page.i65"
-    .word newest
-// CFA may move up one byte if $EA was enclosed (for paging)
-//
-#include "past.i65"
-    .word *+2
+
+: (create)   ( cfa -- )
+    eol? [ 4 ] ?error \ MISSING NAME
+    redefined off
+    exists?
+    if
+        redefined ((redefine))
+        .rvs $. ." [OFF]EXISTS"
+    then
+    bloom current rot ?align cfa,
+    here 3- newest ((create)) ;
+
+
+code ((create))
     jsr harvests6
-// tos=newest n0=symtail+2 n1=current n2=here
-// * copy symbol @n7 to symtail
-// * enclose 'here' as new CFA
-// * current nonzero?
-//      - set vocabulary bit
-//      - append `current` at symtail
-// * drop out a 00 00 00    symtail `3coff`
-// * update symtail
-// * set newest
     brk
     .byt popd | N0               ; symtail @
-// N0 = usersymtail ACC = symtail
     .byt st | N3
     .byt ld | N2                ; cfa'
     .byt std | N3               ; write CFA to symtab, +2 N5 pointer
@@ -996,6 +954,388 @@ ppcreate02
     .byt pull
     .byt rtn
     jmp exit
+
+code ((redefine))
+    brk
+    .byt ldd | N3
+    .byt ld | N3
+    .byt std | TOS
+    .byt st | TOS
+    .byt nxt
+```
+#endif
+#include "align.i65"
+_pcreate
+    jsr enter                   ; ( cfa )
+#include "page.i65"
+    .word eolq
+#include "parm.i65"
+    .word qerror
+    .byt 4                      ; MISSING NAME
+#include "pad.i65"
+    .word redefined
+#include "page.i65"
+    .word off
+#include "page.i65"
+    .word _existsq              ; ( cfa|nfa )
+#include "parm.i65"
+    .word qbranch
+    .byt <(pcreate02-*+1)
+#include "pad.i65"
+    .word dotrvs
+#include "page.i65"
+    .word redefined
+#include "page.i65"
+    .word ppredefine
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word _stringdot
+#include "page.i65"
+    .word smudge
+#include "parm.i65"
+    .word _pdq
+    .byt <(pcreate01-*-1)
+    .asc RVSOFF," EXISTS"
+pcreate01
+#include "pad.i65"
+pcreate02
+    .word _qalign
+#include "page.i65"
+    .word _cfacomma
+#include "page.i65"
+    .word bloom                 ; aka `symtail` +2
+#include "page.i65"
+    .word current
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word threeminus            ; first enclose, then rewind to cfa
+#include "page.i65"
+    .word newest                ; ( symtail+2 current cfa newest )
+#include "page.i65"
+    .word ppcreate
+#include "past.i65"
+    .word exit
+
+/*
+.C:6D86  00          BRK            - A:D4 X:2F Y:00 SP:F6 ..-B..Z.   93608252
+$6D86) m 0 1f;m 40 4f;m 70 ff;m 130 17f;m 1e0 1ff;m 410 49f;m 660 6df
+
+0000  03 00 C6 06  D4 06 C2 06  43 1A C9 5F  03 00 00 00
+0010  B8 06 06 02  04 00 9C 6B  00 01 0D D0  08 0F 86 00
+0040  AA AA AA AA  AA AA AA 08  8A 6C 1E 00  43 C2 D4 01
+0070  BB BB BB BB  BB BB BB 00  06 06 00 00  1A 06 06 10
+0080  00 00 00 00  74 06 E6 8B  E6 8B 6C 7F  6D 00 08 58
+0090  55 E4 55 06  FF B3 00 1B  00 0E 01 FF  00 00 00 00
+00A0  00 0A 00 14  0A 00 1B 01  08 20 00 00  00 00 00 00
+00B0  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00
+00C0  00 00 00 00  20 83 0B 01  04 E8 46 00  00 00 00 00
+00D0  00 00 00 00  00 27 00 00  14 0D 00 00  00 00 00 00
+00E0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 82
+00F0  82 82 82 82  83 83 83 83  83 00 00 09  48 FF FF 70
+0130  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00
+0140  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+0150  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+0160  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+0170  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+01E0  57 35 99 66  57 C7 57 E4  03 C7 05 68  42 CE 26 12
+01F0  84 04 70 1C  26 85 6D B2  70 58 6F 7A  6F 9B 6F 06
+0200  43 52 45 41  54 45 03 46  4F 4F 56 2E  30 22 2C 39   CREATEcFOOV.0",9
+0210  00 2C 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @,@@@@@@@@@@@@@@
+0220  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+0230  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+0240  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF   ................
+0250  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF   ................
+0410  4C 73 C3 22  00 5B 00 00  00 04 00 64  00 00 00 00
+0420  00 0D 04 16  13 00 08 12  B3 01 0D D0  02 FF 86 40
+0430  B2 E9 CE AA  AA AA AA AA  01 04 E8 46  E8 46 E8 46
+0440  00 80 AA AA  00 80 D1 07  AA AA 00 04  AA AA 00 04
+0450  AA AA AA AA  24 AA AA 08  B6 FF 00 00  00 FB AB 00
+0460  03 4C BB 00  BB BB BB BB  BB BB 00 00  00 00 8B 00
+0470  00 04 0D 00  00 00 8B 80  C0 00 00 00  00 00 05 B3
+0480  E6 77 D0 02  E6 78 AD 0A  04 C9 3A B0  0A C9 20 F0
+0490  EF 38 E9 30  38 E9 D0 60  80 4F C7 52  7C 80 40 20
+0660  01 88 84 1F  85 1E 20 C5  04 4C 66 06  0A 00 07 17
+0670  00 00 01 00  31 00 FE 01  00 00 78 D4  00 00 00 00
+0680  32 68 36 6F  46 1A 43 1A  00 57 0A 00  07 17 00 00
+0690  01 00 FE 52  00 00 00 00  FF FF 00 00  0B 00 0A 00
+06A0  01 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00
+06B0  00 67 80 7F  02 00 09 00  00 00 00 00  00 00 00 00
+06C0  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00
+06D0  ED 64 EB 64  FF E0 00 00  00 00 00 00  CC CC CC CC
+1A00  90 00 99 78  06 78 68 99  90 00 68 99  91 00 58 60   .@.xfxh..@h..@X`
+1A10  20 EE 10 19  1A ED 19 3D  11 86 FF A9  0F 48 A9 31    .pyz.y=q...oH.1
+1A20  48 4C 86 00  4E E2 06 EE  E2 06 B0 16  20 E1 19 86   HL.@N.f..f.v .y.
+1A30  FF A2 8D B5  FF BC 0F 04  94 FF 9D 0F  04 CA D0 F3   ......od...odJP.
+1A40  A6 FF 60 20  CF 0D EF EF  DE AD BE EF  DE AD BE EF   ..` Om..........
+1A50  DE AD BE EF  DE AD BE EF  DE AD BE EF  DE AD BE EF   ................
+1A60  DE AD BE EF  DE AD BE EF  DE AD BE EF  DE AD BE EF   ................
+1A70  DE AD BE EF  DE AD BE EF  DE AD BE EF  DE AD BE EF   ................
+1A80  DE AD BE EF  DE AD BE EF  DE AD BE EF  DE AD BE EF   ................
+64C0  41 55 53 45  67 10 06 3F  53 54 41 43  4B F1 70 26   AUSEgpf?STACK.p&
+64D0  3F 45 52 52  4F 52 CE 73  26 3F 4C 45  41 56 45 33   ?ERRORNs&?LEAVE3
+64E0  0A 09 3F 54  45 52 4D 49  4E 41 4C 00  00 00 AA AA   ji?TERMINAL@@@..
+64F0  AA AA AA AA  AA AA AA AA  AA AA AA AA  AA AA AA AA   ................
+6500  AA AA AA AA  AA AA AA AA  AA AA AA AA  AA AA AA AA   ................
+6510  AA AA AA AA  AA AA AA AA  AA AA AA AA  AA AA AA AA   ................
+6520  AA AA AA AA  AA AA AA AA  AA AA AA AA  AA AA AA AA   ................
+6530  AA AA AA AA  AA AA AA AA  AA AA AA AA  AA AA AA AA   ................
+6540  AA AA AA AA  AA AA AA AA  AA AA AA AA  AA AA AA AA   ................
+
+0000  03 00 C6 06  D4 06 C2 06  43 1A C9 5F  03 00 00 00
+0010  B8 06 06 02  04 00 9C 6B  00 01 0D D0  08 0F 86 00
+0040  AA AA AA AA  AA AA AA 08  8A 6C 1E 00  43 C2 D4 01
+0070  BB BB BB BB  BB BB BB 00  06 06 00 00  1A 06 06 10
+0080  00 00 00 00  74 06 E6 8B  E6 8B 6C 7F  6D 00 08 58
+0090  55 E4 55 06  FF B3 00 1B  00 0E 01 FF  00 00 00 00
+00A0  00 0A 00 14  0A 00 1B 01  08 20 00 00  00 00 00 00
+00B0  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00
+00C0  00 00 00 00  20 83 0B 01  04 E8 46 00  00 00 00 00
+00D0  00 00 00 00  00 27 00 00  14 0D 00 00  00 00 00 00
+00E0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 82
+00F0  82 82 82 82  83 83 83 83  83 00 00 09  48 FF FF 70
+0130  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00
+0140  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+0150  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+0160  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+0170  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+01E0  57 35 99 66  57 C7 57 E4  03 C7 05 68  42 CE 26 12
+01F0  84 04 70 1C  26 85 6D B2  70 58 6F 7A  6F 9B 6F 06
+0200  43 52 45 41  54 45 03 46  4F 4F 56 2E  30 22 2C 39   CREATEcFOOV.0",9
+0210  00 2C 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @,@@@@@@@@@@@@@@
+0220  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+0230  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+0240  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF   ................
+0250  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF   ................
+0410  4C 73 C3 22  00 5B 00 00  00 04 00 64  00 00 00 00
+0420  00 0D 04 16  13 00 08 12  B3 01 0D D0  02 FF 86 40
+0430  B2 E9 CE AA  AA AA AA AA  01 04 E8 46  E8 46 E8 46
+0440  00 80 AA AA  00 80 D1 07  AA AA 00 04  AA AA 00 04
+0450  AA AA AA AA  24 AA AA 08  B6 FF 00 00  00 FB AB 00
+0460  03 4C BB 00  BB BB BB BB  BB BB 00 00  00 00 8B 00
+0470  00 04 0D 00  00 00 8B 80  C0 00 00 00  00 00 05 B3
+0480  E6 77 D0 02  E6 78 AD 0A  04 C9 3A B0  0A C9 20 F0
+0490  EF 38 E9 30  38 E9 D0 60  80 4F C7 52  7C 80 40 20
+0660  01 88 84 1F  85 1E 20 C5  04 4C 66 06  0A 00 07 17
+0670  00 00 01 00  31 00 FE 01  00 00 78 D4  00 00 00 00
+0680  32 68 36 6F  46 1A 43 1A  00 57 0A 00  07 17 00 00
+0690  01 00 FE 52  00 00 00 00  FF FF 00 00  0B 00 0A 00
+06A0  01 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00
+06B0  00 67 80 7F  02 00 09 00  00 00 00 00  00 00 00 00
+06C0  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00
+06D0  ED 64 EB 64  FF E0 00 00  00 00 00 00  CC CC CC CC
+1A00  90 00 99 78  06 78 68 99  90 00 68 99  91 00 58 60   .@.xfxh..@h..@X`
+1A10  20 EE 10 19  1A ED 19 3D  11 86 FF A9  0F 48 A9 31    .pyz.y=q...oH.1
+1A20  48 4C 86 00  4E E2 06 EE  E2 06 B0 16  20 E1 19 86   HL.@N.f..f.v .y.
+1A30  FF A2 8D B5  FF BC 0F 04  94 FF 9D 0F  04 CA D0 F3   ......od...odJP.
+1A40  A6 FF 60 20  CF 0D EF EF  DE AD BE EF  DE AD BE EF   ..` Om..........
+1A50  DE AD BE EF  DE AD BE EF  DE AD BE EF  DE AD BE EF   ................
+1A60  DE AD BE EF  DE AD BE EF  DE AD BE EF  DE AD BE EF   ................
+1A70  DE AD BE EF  DE AD BE EF  DE AD BE EF  DE AD BE EF   ................
+1A80  DE AD BE EF  DE AD BE EF  DE AD BE EF  DE AD BE EF   ................
+64C0  41 55 53 45  67 10 06 3F  53 54 41 43  4B F1 70 26   AUSEgpf?STACK.p&
+64D0  3F 45 52 52  4F 52 CE 73  26 3F 4C 45  41 56 45 33   ?ERRORNs&?LEAVE3
+64E0  0A 09 3F 54  45 52 4D 49  4E 41 4C 00  00 00 AA AA   ji?TERMINAL@@@..
+64F0  AA AA AA AA  AA AA AA AA  AA AA AA AA  AA AA AA AA   ................
+6500  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................
+6510  AA AA AA AA  AA AA AA AA  AA AA AA AA  AA AA AA AA   ................
+6520  AA AA AA AA  AA AA AA AA  AA AA AA AA  AA AA AA AA   ................
+6530  AA AA AA AA  AA AA AA AA  AA AA AA AA  AA AA AA AA   ................
+6540  AA AA AA AA  AA AA AA AA  AA AA AA AA  AA AA AA AA   ................
+
+>C:0000  00 00 50 00  00 02 c2 06  49 1a 1c 02  03 ff 03 00   @@P@@bBfIz\bc.c@
+>C:0010  00 02 20 00  03 00 34 d5  00 01 0d d0  00 73 86 00   @b @c@4U@amP@s.@
+>C:0020  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................
+>C:0030  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................
+>C:0040  aa aa aa aa  aa aa aa 08  8a 6c 1e 69  85 00 00 01   .......h.l^i.@@a
+>C:0050  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ................
+>C:0060  bb bb bb bb  bb bb bb bb  bb bb bb bb  bb bb bb bb   ................
+>C:0070  bb bb bb bb  bb bb bb 00  06 06 00 6d  6f 02 02 10   .......@ff@mobbp
+>C:0080  00 00 00 00  74 06 e6 8b  e6 8b 6c bd  68 00 0d 9b   @@@@tf....l.h@m.
+>C:0090  55 e4 55 06  ff b3 00 ff  00 75 01 ff  00 00 00 00   U.Uf..@.@ua.@@@@
+>C:00a0  00 20 00 16  00 00 ff 00  05 20 01 00  00 00 00 00   @ @v@@.@e a@@@@@
+>C:00b0  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   c@@@@@@@@@@@@@@@
+>C:00c0  00 00 00 00  70 83 00 01  04 e8 46 00  00 00 00 00   @@@@p.@ad.F@@@@@
+>C:00d0  00 00 00 00  00 27 00 00  16 0d 00 00  00 00 00 00   @@@@@'@@vm@@@@@@
+>C:00e0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 82   ................
+>C:00f0  82 82 82 82  83 03 83 83  83 00 00 09  48 ff ff 69   .....c...@@iH..i
+>C:0100  20 33 31 37  34 33 00 30  30 30 30 00  00 00 00 00    31743@0000@@@@@
+>C:0110  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+>C:0120  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+>C:0130  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+>C:0140  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................
+>C:0150  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................
+>C:0160  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................
+>C:0170  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................
+>C:0180  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+>C:0190  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+>C:01a0  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+>C:01b0  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+>C:01c0  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................
+>C:01d0  ff ff ff ff  ff ff ff ff  ff 34 99 66  57 34 99 66   .........4.fW4.f
+>C:01e0  57 35 99 66  57 57 e4 c7  05 68 03 57  e4 00 2f 00   W5.fWW.GehcW.@/@
+>C:01f0  23 bf e0 2f  00 5e 18 5e  69 79 69 6b  6f 9b 6f 06   #. /@^x^iyiko.of
+>C:0200  43 52 45 41  54 45 03 46  4f 4f 06 43  52 45 41 54   CREATEcFOOfCREAT
+>C:0210  45 03 46 4f  4f 06 43 52  45 41 54 45  03 46 4f 4f   EcFOOfCREATEcFOO
+>C:0220  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+>C:0230  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+>C:0240  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................
+>C:0660  01 88 84 1f  85 1e 20 c5  04 4c 66 06  0a 00 07 17   a.._.^ EdLffj@gw
+>C:0670  00 00 01 00  31 00 fe 01  00 00 78 d4  00 00 00 00   @@a@1@.a@@xT@@@@
+>C:0680  32 68 36 6f  4c 1a 43 1a  00 57 0a 00  07 17 00 00   2h6oLzCz@Wj@gw@@
+>C:0690  01 00 fe 52  00 00 00 00  ff ff 00 00  00 00 00 00   a@.R@@@@..@@@@@@
+>C:06a0  02 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   b@@@@@@@@@@@@@@@
+>C:06b0  00 67 80 7f  02 00 09 00  00 00 00 00  00 00 00 00   @g..b@i@@@@@@@@@
+>C:06c0  00 00 00 00  f3 64 f9 64  00 00 00 00  00 00 00 00   @@@@.d.d@@@@@@@@
+>C:06d0  ed 64 fd 64  ff e0 00 00  00 00 00 00  cc cc cc cc   .d.d. @@@@@@LLLL
+>C:1a00  90 00 99 78  06 78 68 99  90 00 68 99  91 00 58 60   .@.xfxh..@h..@X`
+>C:1a10  20 ee 10 19  1a ed 19 3d  11 86 ff a9  0f 48 a9 31    .pyz.y=q...oH.1
+>C:1a20  48 4c 86 00  4e e2 06 ee  e2 06 b0 16  20 e1 19 86   HL.@N.f..f.v .y.
+>C:1a30  ff a2 8d b5  ff bc 0f 04  94 ff 9d 0f  04 ca d0 f3   ......od...odJP.
+>C:1a40  a6 ff 60 20  cf 0d 20 cf  0d 20 cf 0d  de ad be ef   ..` Om Om Om....
+>C:1a50  de ad be ef  de ad be ef  de ad be ef  de ad be ef   ................
+>C:1a60  de ad be ef  de ad be ef  de ad be ef  de ad be ef   ................
+>C:1a70  de ad be ef  de ad be ef  de ad be ef  de ad be ef   ................
+>C:1a80  de ad be ef  de ad be ef  de ad be ef  de ad be ef   ................
+>C:64c0  41 55 53 45  67 10 06 3f  53 54 41 43  4b f1 70 26   AUSEgpf?STACK.p&
+>C:64d0  3f 45 52 52  4f 52 ce 73  26 3f 4c 45  41 56 45 33   ?ERRORNs&?LEAVE3
+>C:64e0  0a 09 3f 54  45 52 4d 49  4e 41 4c 43  1a 83 46 4f   ji?TERMINALCz.FO
+>C:64f0  4f 46 1a 83  46 4f 4f 49  1a 03 46 4f  4f 00 00 00   OFz.FOOIzcFOO@@@
+>C:6500  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................
+>C:6510  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................
+>C:6520  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................
+>C:6530  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................
+>C:6540  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................
+
+tos=newest n0=symtail+2 n1=current n2=here
+* copy symbol @n7 to symtail
+* enclose 'here' as new CFA
+* current nonzero?
+     - set vocabulary bit
+     - append `current` at symtail
+* drop out a 00 00 00    symtail `3coff`
+* update symtail
+* set newest
+
+tos newest
+n0  symtail+2
+n1  current
+n2  here
+n3  symtail
+n7
+
+((create))
+    jsr harvests6
+    brk
+    .byt popd | N0               ; symtail @
+// N0 = usersymtail ACC = symtail
+    .byt st | N3
+    .byt ld | N2                ; cfa'
+    .byt std | N3               ; write CFA to symtab
+    .byt ld | N3                ; nfa'
+    .byt std | TOS              ; populate `newest`
+    .byt ext
+    .word pppcreate
+    .word swap73s
+    .byt ext
+    .word symcopys              ; copy the symbol/length
+
+(((create)))
+    jsr swap73s
+    jsr symcopys
+    ldy #0
+    lda R0L+2*N1                ; vocab
+
+    .byt ldi | N1               ; vocab
+    .byt bz , <(ppcreate01-*-2)
+    .byt set | ACC
+    .word $40
+ppcreate01
+    .byt st | TOS               ; TOS = $00 or $40 if vocab
+    .byt inr | N7
+    .byt pop | N7               ; reget length
+    .byt st | N5
+    .byt add | TOS              ; ora #$40 if vocab bit
+    .byt sti | N7               ; output symbol length with a proper vocab bit
+
+    .byt ld | N7
+    .byt add | N5
+    .byt st | N7
+    .byt pop | N1
+    .byt bz , <(ppcreate02-*-2)
+    .byt sti | N7
+ppcreate02
+    .byt ld | N7
+    .byt std | N0               ; symtail !
+    .byt sub | ACC
+    .byt sti | N7               ; write three nulls at symtail
+    .byt std | N7
+    .byt pull
+    .byt nxt
+
+
+*/
+ppcreate
+    jsr harvests6
+    brk
+    .byt popd | N0               ; symtail @
+// N0 = usersymtail ACC = symtail
+    .byt st | N3
+    .byt ld | N2                ; cfa'
+    .byt std | N3               ; write CFA to symtab
+    .byt ld | N3                ; nfa'
+    .byt std | TOS              ; populate `newest`
+    .byt ext
+    .word swap73s
+    .byt ext
+    .word symcopys              ; copy the symbol/length
+    .byt ldi | N1               ; vocab
+    .byt bz , <(ppcreate01-*-2)
+    .byt set | ACC
+    .word $40
+ppcreate01
+    .byt st | TOS               ; TOS = $00 or $40 if vocab
+    .byt inr | N7
+    .byt pop | N7
+    .byt st | N5
+    .byt add | TOS              ; ora #$40 if vocab bit
+    .byt sti | N7               ; symbol length with a proper vocab bit
+    .byt ld | N7
+    .byt add | N5
+    .byt st | N7
+    .byt pop | N1
+    .byt bz , <(ppcreate02-*-2)
+    .byt sti | N7
+ppcreate02
+    .byt ld | N7
+    .byt std | N0               ; symtail !
+    .byt sub | ACC
+    .byt sti | N7               ; write three nulls at symtail
+    .byt std | N7
+    .byt pull
+    .byt nxt
+
+/*
+code ((redefine))   ( redefined -- nfa )
+    brk,
+    n3 ldd,
+    n3 ld,
+    tos std,
+    tos st,
+    nxt,
+end-code
+
+`redefined` = `nfa` of found word
+return `nfa` of found word for `$.` to display
+*/
+ppredefine
+    brk
+    .byt ldd | N3
+    .byt ld | N3
+    .byt std | TOS
+    .byt st | TOS
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -1353,8 +1693,11 @@ tags=interpreter,nfa,nosymbol
 #include "align.i65"
 _pforgetkeep
     jsr enter
-#include "page.i65"
-    .word pforgetpostcfa
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N7
+#include "pad.i65"
+    .word store
 #include "page.i65"
     .word symcopy
 #include "page.i65"
@@ -1366,13 +1709,6 @@ _pforgetkeep
     .word swap73
 #include "past.i65"
     .word exit
-
-pforgetpostcfa
-    brk
-    .byt ld | TOS
-    .byt std | N7
-    .byt pull
-    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
