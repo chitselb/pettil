@@ -1,39 +1,319 @@
 ; pettil-dictionary.a65
 ;#echo .       pettil-dictionary.a65     Dictionary
 
+/* tiddlypettil
+tags: source code
+title: pettil-dictionary.a65
+
+What's in a word?
+
+!!4 parts
+* CFA and PFA in the dictionary
+* LFA and NFA in the symbol table
+
+!!DICTIONARY
+* Code Field Address (CFA)
+** always points to executable 6502 code
+** grows dictionary at `here`
+** e.g. for a secondary, the CFA contains ` jsr enter`
+* Parameter Field Address (PFA)
+** data following code field
+** grows dictionary at `here`
+** e.g. for `constant` the PFA be where the value is stored
+
+!!SYMBOL TABLE
+* Link Field Address (LFA)
+** located at NFA-2
+** contains CFA
+* Name Field Address (NFA)
+** 1 byte flags and name length
+** length bytes of name
+** optional 1 byte vocabulary id
+
+```
+symbol table entry
++---------------+
+|   CFA[low]    |  LFA     contains Code Field Address
+|   CFA[high]   |
++-+-+-+-+-+-+-+-+
+[S]             |  NFA     Smudge flag
+| [V]           |          Vocabulary flag
+|   [I]         |          Immediate flag
+|     [   len   ]          Length field 0..31
++-+-+-+-+-+-+-+-+
+|   name[1]     |  +1      Name field
+|           ... |
+|   name[len]   |  +len
++---------------+
+?   vocabid     ?  +len+1  vocabulary id (if flag set)
++---------------+
+```
+
+The symbol table is initialized at cold start and later repacked by `forget`
+or its do-nothing equivalent `rehash`.  Either of these provides a CFA to
+`(forget)` which merges any new symbols that have recently been appended
+into a rebuilt `symtab`.  One page of memory plus the remainder of the last
+page is allocated for future growth, becoming the new `symtail`.  Future
+searches of `symnew` will begin at this address.
+
+All the symbols are copied to `pad` at the bottom of memory, then memory
+requirements are calculated.  If there is data in `vmbuf` it will be moved
+at this time. Finally, all symbols are copied back up to the new `symtab` area.
+
+
+
+|symtab|table of threads|
+|symtab+32|thread 0|
+|symtab 2+ @|thread 1|
+|symtab 4 + @|thread 2|
+|symtab 6 + @|thread 3|
+|symtab 8 + @|thread 4|
+
+(seek)
+tos                             seek nfa
+n3                              current nfa
+n4l                             seek length
+n4h                             sorted by size (0) or unsorted ($FF)
+n5                              seek vocab
+n6                              vocab'
+n8l current length
+
+(create)
+*/
+
 ;--------------------------------------------------------------
 #if 0
-name=SYMTAB!
-stack=( studio start size -- studio start symtab size )
-tags=system,startup,nosymbol
-Calculate `symtab` memory requirements, given a size
+name=SYMTHREAD
+stack=( n -- thread )
+tags=interpreter,ext,nosymbol
+Returns thread address for the given ersatz Pearson hash value
 
+```
+: symthread   ( n -- thread )
+    2* symtab @ + ;
+```
 #endif
-symtabset
-    dex
-    lda stackh+2,x
-    clc
-    sbc tos+1
-    sta stackh,x
-    sta usersymtab+1
-    lda #32
-    sta stackl,x
-symtabset99
-    jmp next
+#include "align.i65"
+symthread
+    asl tos
+    ldy usersymtab+1
+    jmp puty
 
 ;--------------------------------------------------------------
 #if 0
-name=>SYMS
-stack=( -- nfa )
+name=>THREAD
+stack=( n -- nfa )
 tags=interpreter,ext,nosymbol
 Returns `nfa` of first symbol in the `symbol table`
 
+: >thread   ( n -- nfa )
+    dup 0< ?: symnew symthread  @ ;
+
 #endif
 #include "align.i65"
-tosyms
-    lda #34
-    ldy usersymtab+1
-    jmp pushya
+_tothread
+    jsr enter
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word zlt
+#include "parm.i65"
+    .word pquerycolon
+    .word symnew
+    .word symthread
+#include "pad.i65"
+    .word fetch
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=SYMLEN
+stack=( -- len )
+tags=nfa,nosymbol
+Return length information about the `nfa`  `n3`
+
+`visible length` means the length of the name when you type it.
+The carry flag indicates whether a `vocabid` follows the `name`
+
+C = vocabid?
+A,N8L = visible length
+Y = 0
+#endif
+symlen
+    lda #>(pushya-1)
+    pha
+    lda #<(pushya-1)
+    pha
+;--------------------------------------------------------------
+#if 0
+name=SYMLENS
+effects=A:len;Y:0;C:vocab?;Z:len
+tags=subroutine,nfa,nosymbol
+6502registers=A:symlen Y:0 C:vocab Z:symlen
+Sweet16registers=N3:nfa N8:length
+return the length of the current `nfa` stored in `n3`
+
+input
+(N3)                            nfa
+
+outputs
+N8L, A                          len
+Y                               0
+C                               vocab?
+Z                               last?
+
+#endif
+symlens
+    ldy #0
+    lda (R0L+2*N3),y            ; length/flags
+    asl
+    asl                         ; Vocab bit to C flag
+    lda (R0L+2*N3),y            ; length/flags
+    and #$1F                    ; length
+    sta R0L+2*N8                ; N8L = visible length (omit vocab +1)
+    rts
+;{27}
+
+;--------------------------------------------------------------
+#if 0
+name=SYMCOPYS
+stack=( target -- target )
+tags=subroutine,nfa,nosymbol
+
+* N3 (curr) symbol to tos (targ) symbol
+* copy `name` text
+* copy length/flags byte
+* copy `vocabid` byte
+* does not move N7, does not move N3 either
+    ~maybe it should?
+
+#endif
+symcopys
+    jsr symlens
+    adc #0
+    tay
+symcopy01
+    lda (R0L+2*N3),y
+    sta (tos),y
+    dey
+    bpl symcopy01
+    rts
+
+;--------------------------------------------------------------
+#if 0
+name=SYM+S
+stack=( -- )
+tags=subroutine,ext,primitive,nfa,nosymbol
+registers=Z:false
+* move N3 to the next symbol
+compiled with an inline value following the CFA
+to specify a constant per-symbol offset
+
+#endif
+sympluss
+    jsr symlens                 ; A=len C=vocab
+    adc #3
+    adc R0L+2*N3
+    bcc sympluss01
+    inc R0L+2*N3+1
+sympluss01
+    rts                         ; Z=0 or fail!
+
+;--------------------------------------------------------------
+#if 0
+name=!SYMTAB
+stack=( cfa --  )
+tags=ext,nosymbol
+runs in the middle of `(forget)` to decide how much to allocate for `symtab`
+and possibly move `vmbuf`
+
+
+* calculate new symtab `size`
+* subtract `size` from `studio`
+* round down, and go another page
+* `symtab !`
+* `symtab size + dup 3coff dup symtail ! 2+ symnew !
+* ?vmmove
+* ( to from ) gonorth
+
+    brk
+    ld tos
+    sub n7
+
+#endif
+#include "align.i65"
+_setsymtab
+    jsr enter
+#include "page.i65"
+    .word newsymtab
+#include "page.i65"
+    .word studio
+#include "page.i65"
+    .word fetch
+#include "parm.i65"
+    .word zpfrom
+    .byt  R0L+2*N7+1
+#include "pad.i65"
+    .word minus
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word numblk
+#include "page.i65"
+    .word fetch
+#include "parm.i65"
+    .word pquerycolon
+    .word _plusmove
+    .word threedrop
+#include "past.i65"
+    .word exit
+
+    .word tozp
+    .byt R0L+2*N5
+#include "pad.i65"
+    .word dup
+#include "page.i65"
+    .word bl                    ; 32
+#include "page.i65"
+    .word plusunder             ;( 16 0 pad+3 $5920 $5900 )
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word numblk
+#include "page.i65"
+    .word fetch                 ;( 16 0 pad+3 $5920 $5900 symtab #blk )
+#include "parm.i65"
+    .word qbranch
+    .byt <(automem01-*+1)
+#include "pad.i65"
+    .word _qvmmove              ; need to move vm buffer before symtab !
+#include "page.i65"
+automem01
+    .word store                 ; set symtab
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=NEWSYMTAB
+stack=( from to -- from addr )
+tags=ext,nosymbol
+
+
+#endif
+newsymtab
+    clc
+    lda userstudio+1
+    adc tos+1
+    sbc stackh,x
+    sbc #1                      ; <-- ~#resizestudio
+    jmp pusha0
+;[13]
 
 ;--------------------------------------------------------------
 #if 0
@@ -61,127 +341,6 @@ namefrom
     jsr tos2minus
 namefrom01
     jmp fetch
-
-;--------------------------------------------------------------
-#if 0
-name=SYM.REWIND
-stack=( -- )
-tags=nfa,nosymbol
-set `n3` to the first symbol in the (sequential) `symtab`
-
-#endif
-#include "align.i65"
-symrewind
-    lda usersymtab+1
-    sta R0L+2*N3+1
-    lda #34
-    sta R0L+2*N3
-    bne symtabset99
-
-;--------------------------------------------------------------
-#if 0
-name=SYM.LEN
-stack=( -- len )
-tags=nfa,nosymbol
-Return length information about the `nfa`  `n3`
-
-`visible length` means the length of the name when you type it.
-The carry flag indicates whether a `vocabid` follows the `name`
-
-C = vocabid?
-A,N8L = visible length
-Y = 0
-#endif
-symlen
-    lda #>(pushya-1)
-    pha
-    lda #<(pushya-1)
-    pha
-;--------------------------------------------------------------
-#if 0
-name=SYMLENS
-effects=A:len;Y:0;C:vocab?;Z:len
-tags=subroutine,nfa,nosymbol
-6502registers=A:symlen Y:0 C:vocab Z:symlen
-Sweet16registers=N3:nfa N8:length
-return the length of the current `nfa` stored in `n3`
-
-(N3) nfa
-
-A len
-Y 0
-C vocab?
-Z core
-N8L len
-
-#endif
-symlens
-    ldy #0
-    lda (R0L+2*N3),y            ; length/flags
-    asl
-    asl                         ; Vocab bit to C flag
-    lda (R0L+2*N3),y            ; length/flags
-    and #$1F                    ; length
-    sta R0L+2*N8                ; N8L = visible length (omit vocab +1)
-    rts
-;{27}
-
-;--------------------------------------------------------------
-#if 0
-name=SYMCOPY
-stack=( -- )
-tags=ext,primitive,nfa,nosymbol
-
-* N3 (curr) symbol to N7 (targ) symbol
-* copy vocab byte
-* copy text
-* copy length/flags
-* does not move N7, does not move N3 either
-
-~evaluate
-#endif
-symcopy
-    lda #>(next-1)
-    pha
-    lda #<(next-1)
-    pha
-symcopys
-    jsr symlens
-    adc #0
-    tay
-symcopy01
-    lda (R0L+2*N3),y
-    sta (R0L+2*N7),y
-    dey
-    bpl symcopy01
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=SYM+
-stack=( -- )
-tags=ext,primitive,nfa,nosymbol
-registers=Z:false
-* move N3 to the next symbol
-compiled with an inline value following the CFA
-to specify a constant per-symbol offset
-
-#endif
-symplus
-    jsr topfas
-    jsr sympluss
-    jmp pad0
-
-sympluss
-    sta R0L+2*ACC
-    jsr symlens                 ; A=len C=vocab
-    adc R0L+2*ACC
-    adc R0L+2*N3
-    sta R0L+2*N3
-    bcc symplus01               ; always nonzero
-    inc R0L+2*N3+1              ; always nonzero
-symplus01
-    rts                         ; Z=0 or fail!
 
 ;--------------------------------------------------------------
 #if 0
@@ -304,24 +463,6 @@ Turn off the smudge bit so it can be found by [[FIND]].  In
 PETTIL, the smudge bit does double duty, also deactivating any
 words that have been [[REDEFINED]].
 
-```
-symbol table entry
-+---------------+
-|   CFA[low]    |  -2      Code field address
-|   CFA[high]   |
-+-+-+-+-+-+-+-+-+
-[S]             |  NFA     Smudge bit
-| [V]           |          Vocabulary bit
-|   [I]         |          Immediate bit
-|     [   len   ]          Length field
-+-+-+-+-+-+-+-+-+
-|   name[1]     |  +1      Name field
-|           ... |
-|   name[len]   |  +len
-+---------------+
-?   vocabid     ?  +len+1  Vocabulary token (if Vocab bit set)
-+---------------+
-```
 #endif
 unsmudge
     clc
@@ -380,9 +521,8 @@ ptoname05
     ldy #0
     lda (R0L+2*N3),y
     beq ptoname04
-    lda #3
     jsr sympluss                ; next!
-    bne ptoname                 ; bra
+    jmp ptoname                 ; bra
 
 ;--------------------------------------------------------------
 #if 0
@@ -411,115 +551,11 @@ Populates `n3` with the current `nfa`
 _toname
     jsr enter
 #include "page.i65"
-    .word symrewind
+;    .word symrewind
 #include "page.i65"
     .word ptoname
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=SWAP.73
-stack=( -- )
-tags=interpreter,nfa,nosymbol
-Switches contents of N7 <--> N3
-#endif
-#include "align.i65"
-swap73
-    lda #>(next-1)
-    pha
-    lda #<(next-1)
-    pha
-swap73s
-    lda R0L+2*N7
-    ldy R0L+2*N3
-    sta R0L+2*N3
-    sty R0L+2*N7
-    lda R0L+2*N7+1
-    ldy R0L+2*N3+1
-    sta R0L+2*N3+1
-    sty R0L+2*N7+1
-    rts
-
-;--------------------------------------------------------------
-#if 0
-name=(SEEK)
-stack=( nfa -- xfa )
-tags=interpreter,primitive,nosymbol
-search a segment of the dictionary
-                                        n2
-search exits when:
-end of list
-    reach `symtail` (symlen = 0)        false
-
-    found                               -1|1
-        also replace nfa with cfa
-
-    not found
-    searching sorted list AND mismatched thread.id
-                                        false
-
-`n3` current nfa
-`n4l` seek length
-`n4h` sorted thread flag:  sorted by size (0) or unsorted ($FF)
-`n5` seek vocab
-`n6` next vocab address
-`n7` seek nfa
-`n8l` current length
-
-#endif
-pseek
-    lda R0L+2*N4+1              ; toggle sorted/unsorted flag in `n4h`
-    eor #$FF
-    sta R0L+2*N4+1              ; sorted = 0; unsorted = $FF
-pseek00
-    jsr symlens
-    beq pseek09                 ; reached `symtail`? not found!
-    eor R0L+2*N4
-    beq pseekok1                ; same length? consider further...
-    bit R0L+2*N4+1
-    bmi pseek01                 ; unsorted list? next!
-    lda R0L+2*N8
-    cmp R0L+2*N4                ; length.current > length.seeking?
-    bcs pseek09                 ; not found on sorted list!
-pseek01
-    lda #3
-    jsr sympluss                ; next!
-    bne pseek00                 ; bra
-pseekok1
-    ;ldy #0                     ; thanks, symlens
-    lda (R0L+2*N3),y
-    bmi pseek01                 ; smudged? next!
-zeep
-    bit _foundq                 ; has a $20 opcode here
-    ldy R0L+2*N4
-    iny
-    lda R0L+2*N5
-    bcs pseek04                 ; compare vocabularies
-pseekok2
-    dey
-    beq pseek07
-    lda (tos),y                 ; name we are looking for
-pseek04
-    eor (R0L+2*N3),y            ; `n3` current name under consideration
-pseek04b
-    bne pseek01                 ; different symbol? next!
-    beq pseekok2
-pseek07
-    lda (R0L+2*N3),y            ; reget
-    and #$20                    ; IMMEDIATE bit
-    lsr
-    lsr
-    lsr
-    lsr
-    sta R0L+2*N2
-    brk
-    .byt popd | N3
-    .byt st   | TOS
-    .byt dcr  | N2
-    .byt nxt
-pseek09
-    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -541,19 +577,84 @@ immedornot
 
 ;--------------------------------------------------------------
 #if 0
-name=NEXTVOCAB?
-stack=( -- flag )
-tags=interpreter,forth-83,nosymbol
-Return `true` if there is a next vocabulary
+name=(SEEK)
+stack=( nfa -- xfa )
+tags=interpreter,primitive,nosymbol
+search a segment of the dictionary
+                                        n2
+search exits when:
+end of list
+    reach `symtail` (symlen = 0)        false
+
+    found                               -1|1
+        also replace nfa with cfa
+
+    not found
+    searching sorted list AND mismatched thread.id
+                                        false
+
+`tos` seek nfa
+`n3` current nfa
+`n4l` seek length
+`n4h` sorted thread flag:  sorted by size (0) or unsorted ($FF)
+`n5` seek vocab
+`n6` next vocab address
+`n8l` current length
 
 #endif
-nextvocabq
+pseek
+    lda R0L+2*N4+1              ; toggle sorted/unsorted flag in `n4h`
+    eor #$FF
+    sta R0L+2*N4+1              ; sorted = 0; unsorted = $FF
+pseek00
+    jsr symlens
+    beq pseek09           ; reached `symtail`? not found!
+    eor R0L+2*N4
+    beq pseekok1                ; same length? consider further...
+    bit R0L+2*N4+1
+    bmi pseek01                 ; unsorted list? next!
+    lda R0L+2*N8
+    cmp R0L+2*N4                ; length.current > length.seeking?
+    bcs pseek09                 ; not found on sorted list!
+pseek01
+    jsr sympluss                ; next!
+    jmp pseek00                 ; bra
+pseekok1
+    ;ldy #0                     ; thanks, symlens
+    lda (R0L+2*N3),y
+    bmi pseek01                 ; smudged? next!
+zeep
+    bit _foundq                 ; has a $20 opcode here
+    ldy R0L+2*N4
+    iny
+    lda R0L+2*N5
+    bcs pseek04                 ; compare vocabularies
+pseekok2
+    dey
+    beq pseek07
+    lda (tos),y                 ; name we are looking for
+pseek04
+    eor (R0L+2*N3),y            ; `n3` current name under consideration
+pseek04b
+    bne pseek01                 ; different symbol? next!
+    beq pseekok2
+
+pseek07
+    lda (R0L+2*N3),y            ; reget
+    bit _toname                 ; any JSR opcode
+    bne pseek08
+    dey
+    sty R0L+2*N2+1
+    dey
+pseek08
+    iny
+    sty R0L+2*N2
     brk
-    .byt ld | N5
-    .byt push
-    .byt ldi | N6
-    .byt st | N5
+    .byt popd | N3              ; get CFA
+    .byt st   | TOS
     .byt nxt
+pseek09
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
@@ -562,7 +663,6 @@ stack=( name vocabs -- )
 tags=interpreter,forth-83,nosymbol
 set up Sweet16 registers for `found?`
 
-
 |register|contents|h
 |n3|name|
 |n4|len|
@@ -570,6 +670,7 @@ set up Sweet16 registers for `found?`
 |n6|vocabs|
 |n7|name|
 |n8|len|
+
 #endif
 pfoundq
     brk
@@ -578,7 +679,7 @@ pfoundq
     .byt inr | N6
     .byt pull
     .byt st | N3
-    .byt st | N7
+;~    .byt st | N7
     .byt ext
     .word symlens
     .byt ld | N8                ; `n4` `n8` len
@@ -729,6 +830,22 @@ false = not found
     while
         <n5 0=
     until ;
+pfoundq
+    brk
+    .byt ld | TOS
+    .byt st | N6
+    .byt inr | N6
+    .byt pull
+    .byt st | N3
+;~    .byt st | N7
+    .byt ext
+    .word symlens
+    .byt ld | N8                ; `n4` `n8` len
+    .byt st | N4
+    .byt sub | ACC
+    .byt st | N2                ; n2 off
+    .byt nxt
+
 ```
 #endif
 #include "align.i65"
@@ -800,6 +917,47 @@ foundq01                        ;     begin (loop through vocabs)
 foundq03
     .word zpfrom
     .byt R0L+2*N2
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DEFINITIONS
+stack=( -- )
+tags=forth-83
+Sets the compilation vocabulary by copying the first vocabulary in
+the [[VOCABS]] search order to [[CURRENT]].
+
+#endif
+#include "align.i65"
+definitions
+    lda uservocabs+1
+    sta usercurrent
+definitions99
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=FORTH
+stack=( -- )
+tags=vocabulary,forth-83
+Reset the vocabulary search order to just CORE.  Equivalent to
+`ONLY FORTH` in ANS Forth
+
+```
+: forth   ( -- )
+    vocabs 12 erase ;
+```
+#endif
+#include "align.i65"
+_forth
+    jsr enter
+#include "page.i65"
+    .word vocabs
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word erase
 #include "past.i65"
     .word exit
 
@@ -925,7 +1083,7 @@ code ((create))
     .byt ld | N3
     .byt std | TOS              ; populate `newest`
     .byt ext
-    .word swap73s
+;    .word swap73s
     .byt ext
     .word symcopys              ; copy the symbol/length
     .byt ldi | N1
@@ -955,6 +1113,9 @@ ppcreate02
     .byt rtn
     jmp exit
 
+: ((redefine))
+    <n3 @ dup rot ! ;
+\ [16]
 code ((redefine))
     brk
     .byt ldd | N3
@@ -962,6 +1123,7 @@ code ((redefine))
     .byt std | TOS
     .byt st | TOS
     .byt nxt
+;[6]
 ```
 #endif
 #include "align.i65"
@@ -976,7 +1138,7 @@ _pcreate
     .word redefined
 #include "page.i65"
     .word off
-#include "page.i65"
+#include "pad.i65"
     .word _existsq              ; ( cfa|nfa )
 #include "parm.i65"
     .word qbranch
@@ -1209,22 +1371,6 @@ $6D86) m 0 1f;m 40 4f;m 70 ff;m 130 17f;m 1e0 1ff;m 410 49f;m 660 6df
 >C:6540  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................
 
 tos=newest n0=symtail+2 n1=current n2=here
-* copy symbol @n7 to symtail
-* enclose 'here' as new CFA
-* current nonzero?
-     - set vocabulary bit
-     - append `current` at symtail
-* drop out a 00 00 00    symtail `3coff`
-* update symtail
-* set newest
-
-tos newest
-n0  symtail+2
-n1  current
-n2  here
-n3  symtail
-n7
-
 ((create))
     jsr harvests6
     brk
@@ -1237,12 +1383,12 @@ n7
     .byt std | TOS              ; populate `newest`
     .byt ext
     .word pppcreate
-    .word swap73s
+;    .word swap73s
     .byt ext
     .word symcopys              ; copy the symbol/length
 
 (((create)))
-    jsr swap73s
+;    jsr swap73s
     jsr symcopys
     ldy #0
     lda R0L+2*N1                ; vocab
@@ -1275,6 +1421,22 @@ ppcreate02
     .byt nxt
 
 
+* copy symbol @n7 to symtail
+* enclose 'here' as new CFA
+* current nonzero?
+     - set vocabulary bit
+     - append `current` at symtail
+* drop out a 00 00 00    symtail `3coff`
+* update symtail
+* set newest
+
+tos newest
+n0  symtail+2
+n1  current
+n2  here
+n3  symtail
+n7
+
 */
 ppcreate
     jsr harvests6
@@ -1287,7 +1449,7 @@ ppcreate
     .byt ld | N3                ; nfa'
     .byt std | TOS              ; populate `newest`
     .byt ext
-    .word swap73s
+;    .word swap73s
     .byt ext
     .word symcopys              ; copy the symbol/length
     .byt ldi | N1               ; vocab
@@ -1328,6 +1490,16 @@ end-code
 
 `redefined` = `nfa` of found word
 return `nfa` of found word for `$.` to display
+
+TOS                             redefined
+N0
+N1
+N2
+N3                              NFA
+
+TOS                             nfa
+N3                              NFA+2
+
 */
 ppredefine
     brk
@@ -1379,9 +1551,6 @@ tags=ext,nosymbol
                                 ; not much to do either, really
 qvmmovemagic01
     .byt rtn
-plant4
-    ldy #4
-    jmp plant
 
 
 
@@ -1464,227 +1633,6 @@ _qvmmove
 
 ;--------------------------------------------------------------
 #if 0
-name=!SYMTAB
-stack=( cfa --  )
-tags=ext,nosymbol
-runs in the middle of `(forget)` to decide how much to allocate for `symtab`
-and possibly move `vmbuf`
-
-    brk
-    ld tos
-    sub n7
-
-#endif
-#include "align.i65"
-_setsymtab
-    jsr enter
-#include "page.i65"
-    .word newsymtab
-#include "page.i65"
-    .word studio
-#include "page.i65"
-    .word fetch
-#include "parm.i65"
-    .word zpfrom
-    .byt  R0L+2*N7+1
-#include "pad.i65"
-    .word minus
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word symtab
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word numblk
-#include "page.i65"
-    .word fetch
-#include "parm.i65"
-    .word pquerycolon
-    .word _plusmove
-    .word threedrop
-#include "past.i65"
-    .word exit
-
-    .word tozp
-    .byt R0L+2*N5
-#include "pad.i65"
-    .word dup
-#include "page.i65"
-    .word bl                    ; 32
-#include "page.i65"
-    .word plusunder             ;( 16 0 pad+3 $5920 $5900 )
-#include "page.i65"
-    .word symtab
-#include "page.i65"
-    .word numblk
-#include "page.i65"
-    .word fetch                 ;( 16 0 pad+3 $5920 $5900 symtab #blk )
-#include "parm.i65"
-    .word qbranch
-    .byt <(automem01-*+1)
-#include "pad.i65"
-    .word _qvmmove              ; need to move vm buffer before symtab !
-#include "page.i65"
-automem01
-    .word store                 ; set symtab
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=NEWSYMTAB
-stack=( -- addr )
-tags=ext,nosymbol
-
-    studio
-    newsymtab
-    brk
-    ld tos
-    sub n7
-    push
-    rtn
-
-    ldd tos
-    sub N7
-    add
-#endif
-newsymtab
-    clc
-    lda userstudio+1
-    sbc R0L+2*N7+1
-    adc tos+1
-    sbc #1                      ; <-- ~#resizestudio
-    jmp pusha0
-;[13]
-    brk                         ;( 16 0 pad+3 studio )
-    .byt ldd | TOS              ;( 16 0 pad+3 studio+2 )
-    .byt st | N5
-    .byt pull
-    .byt sub | N7               ; negated size of interim symtab
-    .byt add | N5               ; new size subtracted from studio, will round
-    .byt push                   ; down to $FF00 AND
-    .byt sub | ACC
-    .byt std | N7               ; append end-of-symbols marker
-    .byt sti | N7
-    .byt rtn
-    lda #0
-    sta tos                     ; &= $FF00
-    dec tos+1                   ; <-- ~#resizestudio startup code area here
-;    dec tos+1                   ; -= $0200 leave 'some room'
-
-;--------------------------------------------------------------
-#if 0
-name=>PASSBIT
-stack=( index -- flag )
-tags=interpreter,nfa,nosymbol
-
-```
-: >passbit   ( index -- addr mask )
-    passbits >bit ;
-```
-#endif
-#include "align.i65"
-_topassbit
-    jsr enter
-#include "page.i65"
-    .word passbits
-#include "page.i65"
-    .word tobit
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=PASSBITS?
-stack=( index -- flag )
-tags=interpreter,nfa,nosymbol
-
-```
-: passbits?   ( index -- flag )
-    passbits >bit cbit@ ;
-```
-#endif
-#include "align.i65"
-_passbitsq
-    jsr enter
-#include "page.i65"
-    .word _topassbit
-#include "page.i65"
-    .word cbitfetch
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=PASSBITS!
-stack=( index -- )
-tags=interpreter,nfa,nosymbol
-
-```
-: passbits?   ( index -- flag )
-    passbits >bit cbit@ ;
-```
-#endif
-#include "align.i65"
-_passbitsstore
-    jsr enter
-#include "page.i65"
-    .word _topassbit
-#include "page.i65"
-    .word cbitstore
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(FORGET).LOOPER
-stack=( b a from to -- )
-tags=interpreter,nfa,nosymbol
-inner word, `b a do rewind begin cfa execute while copy? repeat loop`
-
-#endif
-#include "align.i65"
-pforgetlooper
-    jsr enter
-#include "page.i65"
-    .word set76                 ;( b a ) set `sym0 targ filter
-#include "page.i65"
-    .word zero
-#include "parm.i65"
-    .word pdo
-    .byt <(pforgetlooper03-*+1)
-#include "pad.i65"
-pforgetlooper01
-    .word i
-#include "page.i65"
-    .word _passbitsq
-#include "parm.i65"
-    .word qbranch
-    .byt <(pforgetlooper02-*+1)
-#include "pad.i65"
-;    .word pfilterrewind         ; rewind symbol list, copies N6 to N3
-#include "page.i65"
-;    .word _extuntil             ; filterpass
-#include "parm.i65"
-pforgetlooper02
-    .word ploop
-    .byt <(pforgetlooper01-*+1)
-#include "past.i65"
-pforgetlooper03
-    .word exit
-
-set76
-    brk
-    .byt ld | TOS
-    .byt st | N7                ; targ
-    .byt pull
-    .byt st | N6                ; sym0
-    .byt pull
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
 name=(FORGET).KEEP
 stack=( cfa -- flag )
 tags=interpreter,nfa,nosymbol
@@ -1698,57 +1646,18 @@ _pforgetkeep
     .byt R0L+2*N7
 #include "pad.i65"
     .word store
-#include "page.i65"
-    .word symcopy
-#include "page.i65"
-    .word swap73
 #include "parm.i65"
-    .word symplus
-    .byt 1                      ; only include flag/len byte + symbol + vocabid
+    .word callz
+    .word symcopys
 #include "pad.i65"
-    .word swap73
+;    .word swap73
+#include "parm.i65"
+    .word callz
+    .word sympluss
+#include "pad.i65"
+;    .word swap73
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=SYM.NEXT
-stack=( -- flag )
-tags=interpreter,nfa,nosymbol
-no `jsr enter` -- code fragment,
-tail of the word that branches here
-
-#endif
-symnext01
-    .word symplus
-    .byt 3
-#include "page.i65"
-    .word symlen
-#include "page.i65"             ; ( i )
-    .word zeq
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=INIT.411
-stack=( value 'filter -- )
-tags=interpreter,nfa,nosymbol
-Sweet16 primitive, sets `n4` to `value` and `r11` to `'filter`
-
-```
-: init.411    ( flag(r4) `filter(r11) -- )
-    >r11 drop >n4 drop ;
-```
-#endif
-init411
-    brk
-    .byt ld | TOS
-    .byt st | R11
-    .byt pull
-    .byt st | N4
-    .byt pull
-    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -1760,236 +1669,254 @@ tags=dictionary,nosymbol
 * Ordering of the input addresses is important.
 * 2nd value of `n7` stored is +2 more than 1st `n7` value
 
-`symnew` is where the indexed symbol table ends and the sequential list begins.
-`symnew` doesn't change until the next `rehash`.  This is the word that changes
-it.   It always points to the 3rd byte in the symbol, the `nfa`
-
-`symtail` is where new symbols are appended.  Like the 6502 stack pointer, it
-points to where the next byte (the `lsb` of a `cfa`) is to be written when the
-next symbol is created.
-
-
-```
-: (forget)    ...  symtail symnew symtail! ;     \ reset symnew & symtail
-: (create)    ... symtail symtail symtail! ;    \ only move symtail
-```
-(FORGET) sends `symnew` `symtail` to reset `symnew` & `symtail`
-(CREATE) sends `symtail` `symtail` to append a new symbol
-
-```
-: symtail!   (  symtail symnew -- )
-    <n7 dup dup 3off 2+ rot ! swap ! ;
-
-; same size, even runs faster
-[12]
-symtailstore
-    brk
-    .byt ld | N7
-    .byt std | TOS
-    .byt pull
-    .byt sub | ACC
-    .byt std | N7
-    .byt ld | N7
-    .byt std | TOS
-    .byt pull
-    .byt sub | ACC
-    .byt sti | N7
-    .byt nxt
-;
-; slightly slower, uses BS/RS opcodes
-[12]
-symtailstore
-    brk
-    .byt bs , <(symtailstores-*-2)
-    .byt nxt
-symtailstores
-    .byt bs , <(symtailstores1-*-2)
-    ;fall through
-symtailstores1
-    .byt ld | N7
-    .byt std | TOS
-    .byt pull
-    .byt sub | ACC
-    .byt std | N7
-    .byt rs
-```
 #endif
 #include "align.i65"
-symtailstore
-    brk                         ;[7+2] (+2 for extra call from `(forget)`
-    .byt ld | N7
-    .byt std | TOS
+setsymtail
+    brk
+    .byt set | N0
+    .word usersymtail
+    .byt bs , <(setsymtail2-*-2)
     .byt pull
-    .byt sub | ACC
-    .byt std | N7
     .byt nxt
+;~ is this reusable elsewhere?
+setsymtail2
+    .byt ld | TOS
+    .byt std | N0
+    .byt sub | ACC
+    .byt std | TOS
+    .byt rs
 
 ;--------------------------------------------------------------
 #if 0
-name=(FORGET).PASS1
-stack=( -- )
-tags=interpreter,nfa,nosymbol
+name=SOUTHERLY
+stack=( )
+tags=interpreter,extension,nosymbol
 
-* This is the first pass filter.
-* It copies the symbol table from SYMTAB @ to PAD,
-**    sorted by (visible) length of symbol
-**    ignoring words above a given address (NEWDP)
-**    ignoring smudged words
-**    keeping all words in TDICT
+: southerly
 
-It assumes that the programmer won't attempt `forget` while creating
-a definition.
+    <n1 ?exit
+    <n8 passbits >bit cbit! ;
 
-    `: newdefinition [ forget newdefinition ] ;   \ doh!`
-
-In the origin dictionary at cold start, there are no clones.  There are no
-smudged words.
-
-This means that any smudged words have been redefined.  How do we figure out
-the most recently redefined word, that is still inside NEWDP?  The active
-word is the clone with the highest (in-bounds) CFA.  It would be unlikely
-for an unsmudged clone with code at a lower address to exist, as (CREATE)
-does not allow it.
-
-Once the system is up, the dictionary remains sorted and indexed.
-Clones have the same name, PEARSON# value, and length, and will be
-adjacent in a sorted symbol table, in ascending CFA order, with all
-of them smudged but the one with the highest CFA.  These existing
-well-established clones from Philadelphia will be encountered first.
-
-Newly arrived clones from SYMNEW on up will also be sorted ascending
-by CFA but may not be adjacent. All will certainly have higher CFAs
-than their clone(s) in Philadelphia.
-
-When encountering a smudged word
-    store CFA in N2
-    search upward in current thread (Philadelphians) for clones
-    search upward in SYMNEW (Noobs) for clones
-    is the CFA of the clone in-bounds?
-    As soon as we find the first newer clone with an in-bounds CFA, we are done.
-    We this is NOT the active clone.
-    yes:    we are done.  Copy this older clone with smudge bit set
-    no: we got to the end of the list without finding a twin
-    regardless of whether that newer clone is smudged or not
-    if we didn't find any juniors, this is the most recent.
-        Unsmudge it.  Welcome to Philadelphia, brother.
-    append CFA to PAD (N7++)
-
-when a smudged word is found,
-    compare its CFA to NEWDP.  If >= NEWDP, it is skipped (out of bounds)
-    compare its CFA to N2.  If >N2, it replaces N2
-
-The rule here is that the highest CFA that is less than NEWDP is saved, and
-the word is copied to PAD as is, smudged.
-
-```
-: (forget).pass1   ( cfa -- )
-    i if
-        i symlen =
-        if
-            <n3 name>           ( cfa curr )
-            2dup studio @ swap   ( cfa curr cfa studio curr )
-            between? 0=         ( cfa curr flag )
-            ?: drop (forget).keep
-        then
-    else
-        passbits! bloomfilter cbit!
-    then
-    sym.next ;
-```
-#endif
-#include "align.i65"
-_pforgetpass1
-    jsr enter
-#include "page.i65"
-    .word i
-#include "parm.i65"
+: pforgetpass1
+    i
     .word qbranch
     .byt <(pforgetpass1b-*+1)
-#include "pad.i65"
     .word i
-#include "page.i65"
     .word symlen
-#include "page.i65"
     .word eq
-#include "parm.i65"
     .word qbranch
     .byt <(symnext01-*+1)       ; next!
 ;#refactor
-#include "parm.i65"
     .word zpfrom                ; nfa
     .byt R0L+2*N3
-#include "pad.i65"
     .word namefrom              ; nfa>cfa
-#include "page.i65"
     .word twodup
-#include "page.i65"
     .word studio
-#include "page.i65"
     .word fetch
-#include "page.i65"
     .word swap
-#include "page.i65"
     .word oneplus
-#include "page.i65"
     .word betweenq
-#include "parm.i65"
 pforgetpass1a
     .word pquerycolon
     .word drop
     .word _pforgetkeep
-#include "parm.i65"
     .word branch
     .byt <(symnext01-*+1)       ; next!
-#include "pad.i65"
 pforgetpass1b                   ; pass 0 only, set passbits and bloomfilter
     .word symlen
-#include "page.i65"
     .word _passbitsstore         ; if ((i-1) = 0) set `passbits` for all lengths
-#include "page.i65"
     .word _bloomfilter          ; doing this here speeds things up slightly,
 #include "page.i65"             ; with a low risk of setting (inconsequential)
-    .word cbitstore             ; false positives in `bloom#` for forgotten
-#include "past.i65"             ; words.
+    .word cbitstore             ; false positives in `bloom#` for forgotten words
     .word branch
     .byt <(symnext01-*+1)       ; next!
+
+
+southerly
+    jsr symlens
+    iny
+    lda (n3),y
+    and #$0F
+    eor n1
+    bne nextsymbol
+
+nextsymbol
+    beq lastone
+    lda n1
+    bne
+
+lastone
+    inc n1                      ; counter
+
+    lda R0L+2*N1                ; counter 0..31
+
+    i
+
+
+
+#endif
+#include "align.i65"
+_southerly
+    jsr enter
+#include "page.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
-name=(FORGET).PASS2
-stack=( -- )
-tags=interpreter,nfa,nosymbol
-* This is the second pass filter.
-* It copies the symbol t
-able from PAD to the new SYMTAB
-**    sorted by pearson hash
+name=GOSOUTH
+stack=( cfa -- targetend )
+tags=interpreter,extension,nosymbol
+Copy names from `symtab` to `pad`
+exclude names where:  tos <= CFA <= studio
 
-Retrieves the pearson hash value for this word, stored on pass 1
+tos                             0
+n0                              cfa
+n1                              src
+n2                              dest
+n3                              fence
+n4                              studio
 
-```
-: (forget)pass2   ( -- )
-    pearson# i =
-    ?: (forget).keep next
-    sym.next ;
-```
+: gosouth   ( cfa -- addr )
+    bloom 12 erase
+    pad 0 thread 0
+    fence
+    (gosouth)
+    begin
+        southerly
+    until
+
+tos                             0
+n0                              cfa
+n1                              src
+n2                              dest
+n3                              fence
+n4                              studio
+code (gosouth)
+    jsr harvests10
+
+
+
+
 #endif
 #include "align.i65"
-_pforgetpass2
+_gosouth
     jsr enter
+#include "page.i65"
+    .word bloom                 ; cfa bloom )
 #include "parm.i65"
-    .word zpfrom                ; nfa
-    .byt R0L+2*N3
+    .word blit                 ; cfa bloom 12 )
+    .byt <(userpassbits+4-userbloom)
 #include "pad.i65"
-    .word namefrom              ; nfa>cfa
+    .word erase                 ; reset bloom filter, passbits
 #include "page.i65"
-    .word pearsonhash
+    .word _pad
 #include "page.i65"
-    .word i
+;    .word tosyms
 #include "page.i65"
-    .word ne
+    .word pgosouth
+#include "page.i65"
+gosouth01                       ; begin
+    .word doextreg
+#include "parm.i65"             ;  ( flag )
+    .word qbranch               ; until
+    .byt <(gosouth01-*+1)
 #include "past.i65"
-    .word branch
-    .byt <(pforgetpass1a-*+1)
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(GOSOUTH)
+stack=( -- flag )
+tags=interpreter,extension,nosymbol
+6EBE   .pgosouth:
+6EBE  20 EF 06    jsr .harvests4
+6EC1  00          brk
+0000  DC 64 22 57  4E 1A F2 1A  88 1A DC 64  05 FF 00 00
+0000  DC 64 22 57  4E 1A 00.00  88 1A 22.57  05 FF 00 00
+
+0010  B8 06 06 02  05 00 34 D5  00 01 1B 00  0A 93 67 6C
+0010  B8 06 F2.1A  05 00 .cfa.  00 01 1B 00  0A 93 67 6C
+
+0040  AA AA AA AA  AA AA AA FF  00 01 AD 00  0C F2 4E 01
+0070  BB BB BB BB  BB BB BB FF  53 00 24 00  00 1A 1A 10
+0080  00 00 00 00  74 06 E6 8B  E6 8B 6C B5  6E 00 2E 5C
+0090  55 E4 55 06  FF B3 00 1B  00 32 00 FF  00 00 00 00
+00A0  00 0C 00 18  0C 00 1B 01  0C 20 00 00  00 00 00 00
+00B0  03 00 00 00  05 0A 00 08  00 00 00 00  00 00 00 00
+00C0  00 00 80 47  C0 83 0D 00  84 00 53 FC  18 00 C0 00
+00D0  00 05 00 00  01 27 7A 02  18 0D 0E 17  00 47 00 47
+00E0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 82
+00F0  82 82 82 82  83 83 83 83  83 34 00 21  52 FF FF 6E
+0130  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
+0140  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
+0150  20 20 20 20  20 20 20 20  FF FF FF FF  FF FF FF FF
+0160  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+0170  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
+01E0  57 57 E4 57  03 00 0E 00  22 CF 05 68  06 06 2F 0F
+01F0  26 12 26 C0  6E 9F 6E F2  6E 2A 6F 4C  6F 6D 6F 06
+0410  4C 73 C3 22  00 5B 00 00  00 04 00 64  00 00 00 00
+0420  00 0D 04 16  13 00 08 12  B3 01 0D D0  02 FF 86 40
+0430  B2 E9 CE AA  AA AA AA AA  FE 52 00 53  A5 46 A5 46
+0440  00 80 AA AA  00 80 D1 07  AA AA 00 04  AA AA 00 04
+0450  AA AA AA AA  24 AA AA 08  B6 FF 00 00  00 FB 7B 00
+0460  03 4C BB 00  BB BB BB BB  BB BB 00 00  00 00 8B 00
+0470  00 04 0D 00  00 00 8B 80  C0 00 00 00  00 00 05 B3
+0480  E6 77 D0 02  E6 78 AD 0A  02 C9 3A B0  0A C9 20 F0
+0490  EF 38 E9 30  38 E9 D0 60  80 4F C7 52  7B 80 40 20
+0660  01 88 84 1F  85 1E 20 C5  04 4C 66 06  0A 00 0D 17
+0670  00 00 01 00  31 00 FE 01  00 00 78 D4  00 00 00 00
+0680  32 68 08 6F  A2 1A 4E 1A  00 57 0A 00  0D 17 00 00
+0690  01 00 21 52  02 00 00 00  01 00 00 00  0D 00 0C 00
+06A0  02 00 00 00  00 00 00 00  00 00 03 28  00 C0 56 28
+06B0  00 67 46 7F  02 00 09 00  00 00 00 00  00 00 00 00
+06C0  30 00 00 00  00 00 01 65  00 00 00 00  00 00 00 00
+06D0  DC 64 06 65  00 00 00 00  00 00 00 00  00 00 00 00
+
+
+#endif
+pgosouth
+    jsr harvests4
+    brk
+    .byt set | R11
+    .word _southerly
+    .byt ld | TOS
+    .byt st | N3
+    .byt ld | N1
+    .byt st | N7
+    .byt sub | ACC
+    .byt st | N1
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=GONORTH
+stack=( -- )
+tags=interpreter,extension,nosymbol
+
+#endif
+#include "align.i65"
+_gonorth
+    jsr enter
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=PASSBIT?
+stack=( -- flag )
+tags=dictionary,nosymbol
+
+#endif
+passbitq
+    stx z
+    ldx #3
+    clc
+passbitq01
+    rol userpassbits,x
+    dex
+    bpl passbitq01
+    ldx z
+    jmp xpushc
 
 ;--------------------------------------------------------------
 #if 0
@@ -2046,7 +1973,6 @@ code copy?
     doextreg
     jmp (R11)
 
-_qvmmove
 
 : migrate   ( cfa to from -- )
     going up or down?
@@ -2185,219 +2111,6 @@ _pforget
 
 ;--------------------------------------------------------------
 #if 0
-name=SOUTHERLY
-stack=( )
-tags=interpreter,extension,nosymbol
-
-: southerly
-
-    <n1 ?exit
-    <n8 passbits >bit cbit! ;
-
-: pforgetpass1
-    i
-    .word qbranch
-    .byt <(pforgetpass1b-*+1)
-    .word i
-    .word symlen
-    .word eq
-    .word qbranch
-    .byt <(symnext01-*+1)       ; next!
-;#refactor
-    .word zpfrom                ; nfa
-    .byt R0L+2*N3
-    .word namefrom              ; nfa>cfa
-    .word twodup
-    .word studio
-    .word fetch
-    .word swap
-    .word oneplus
-    .word betweenq
-pforgetpass1a
-    .word pquerycolon
-    .word drop
-    .word _pforgetkeep
-    .word branch
-    .byt <(symnext01-*+1)       ; next!
-pforgetpass1b                   ; pass 0 only, set passbits and bloomfilter
-    .word symlen
-    .word _passbitsstore         ; if ((i-1) = 0) set `passbits` for all lengths
-    .word _bloomfilter          ; doing this here speeds things up slightly,
-#include "page.i65"             ; with a low risk of setting (inconsequential)
-    .word cbitstore             ; false positives in `bloom#` for forgotten words
-    .word branch
-    .byt <(symnext01-*+1)       ; next!
-
-
-southerly
-    jsr symlens
-    iny
-    lda (n3),y
-    and #$0F
-    eor n1
-    bne nextsymbol
-
-nextsymbol
-    beq lastone
-    lda n1
-    bne
-
-lastone
-    inc n1                      ; counter
-
-    lda R0L+2*N1                ; counter 0..31
-
-    i
-
-
-
-#endif
-#include "align.i65"
-_southerly
-    jsr enter
-#include "page.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=GOSOUTH
-stack=( cfa -- targetend )
-tags=interpreter,extension,nosymbol
-
-: gosouth
-    bloom 12 erase
-    pad >syms 0
-    callz
-    harvests6
-    (gosouth)
-
-
-
-
-
-#endif
-#include "align.i65"
-_gosouth
-    jsr enter
-#include "page.i65"
-    .word bloom                 ; cfa bloom )
-#include "parm.i65"
-    .word blit                 ; cfa bloom 12 )
-    .byt <(userpassbits+4-userbloom)
-#include "pad.i65"
-    .word erase                 ; reset bloom filter, passbits
-#include "page.i65"
-    .word _pad
-#include "page.i65"
-    .word tosyms
-#include "page.i65"
-    .word pgosouth
-#include "page.i65"
-gosouth01                       ; begin
-    .word doextreg
-#include "parm.i65"             ;  ( flag )
-    .word qbranch               ; until
-    .byt <(gosouth01-*+1)
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(GOSOUTH)
-stack=( -- flag )
-tags=interpreter,extension,nosymbol
-6EBE   .pgosouth:
-6EBE  20 EF 06    jsr .harvests4
-6EC1  00          brk
-0000  DC 64 22 57  4E 1A F2 1A  88 1A DC 64  05 FF 00 00
-0000  DC 64 22 57  4E 1A 00.00  88 1A 22.57  05 FF 00 00
-
-0010  B8 06 06 02  05 00 34 D5  00 01 1B 00  0A 93 67 6C
-0010  B8 06 F2.1A  05 00 .cfa.  00 01 1B 00  0A 93 67 6C
-
-0040  AA AA AA AA  AA AA AA FF  00 01 AD 00  0C F2 4E 01
-0070  BB BB BB BB  BB BB BB FF  53 00 24 00  00 1A 1A 10
-0080  00 00 00 00  74 06 E6 8B  E6 8B 6C B5  6E 00 2E 5C
-0090  55 E4 55 06  FF B3 00 1B  00 32 00 FF  00 00 00 00
-00A0  00 0C 00 18  0C 00 1B 01  0C 20 00 00  00 00 00 00
-00B0  03 00 00 00  05 0A 00 08  00 00 00 00  00 00 00 00
-00C0  00 00 80 47  C0 83 0D 00  84 00 53 FC  18 00 C0 00
-00D0  00 05 00 00  01 27 7A 02  18 0D 0E 17  00 47 00 47
-00E0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 82
-00F0  82 82 82 82  83 83 83 83  83 34 00 21  52 FF FF 6E
-0130  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
-0140  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
-0150  20 20 20 20  20 20 20 20  FF FF FF FF  FF FF FF FF
-0160  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
-0170  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
-01E0  57 57 E4 57  03 00 0E 00  22 CF 05 68  06 06 2F 0F
-01F0  26 12 26 C0  6E 9F 6E F2  6E 2A 6F 4C  6F 6D 6F 06
-0410  4C 73 C3 22  00 5B 00 00  00 04 00 64  00 00 00 00
-0420  00 0D 04 16  13 00 08 12  B3 01 0D D0  02 FF 86 40
-0430  B2 E9 CE AA  AA AA AA AA  FE 52 00 53  A5 46 A5 46
-0440  00 80 AA AA  00 80 D1 07  AA AA 00 04  AA AA 00 04
-0450  AA AA AA AA  24 AA AA 08  B6 FF 00 00  00 FB 7B 00
-0460  03 4C BB 00  BB BB BB BB  BB BB 00 00  00 00 8B 00
-0470  00 04 0D 00  00 00 8B 80  C0 00 00 00  00 00 05 B3
-0480  E6 77 D0 02  E6 78 AD 0A  02 C9 3A B0  0A C9 20 F0
-0490  EF 38 E9 30  38 E9 D0 60  80 4F C7 52  7B 80 40 20
-0660  01 88 84 1F  85 1E 20 C5  04 4C 66 06  0A 00 0D 17
-0670  00 00 01 00  31 00 FE 01  00 00 78 D4  00 00 00 00
-0680  32 68 08 6F  A2 1A 4E 1A  00 57 0A 00  0D 17 00 00
-0690  01 00 21 52  02 00 00 00  01 00 00 00  0D 00 0C 00
-06A0  02 00 00 00  00 00 00 00  00 00 03 28  00 C0 56 28
-06B0  00 67 46 7F  02 00 09 00  00 00 00 00  00 00 00 00
-06C0  30 00 00 00  00 00 01 65  00 00 00 00  00 00 00 00
-06D0  DC 64 06 65  00 00 00 00  00 00 00 00  00 00 00 00
-
-
-#endif
-pgosouth
-    jsr harvests4
-    brk
-    .byt set | R11
-    .word _southerly
-    .byt ld | TOS
-    .byt st | N3
-    .byt ld | N1
-    .byt st | N7
-    .byt sub | ACC
-    .byt st | N1
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=GONORTH
-stack=( -- )
-tags=interpreter,extension,nosymbol
-
-#endif
-#include "align.i65"
-_gonorth
-    jsr enter
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=PASSBIT?
-stack=( -- flag )
-tags=dictionary,nosymbol
-
-#endif
-passbitq
-    stx z
-    ldx #3
-    clc
-passbitq01
-    rol userpassbits,x
-    dex
-    bpl passbitq01
-    ldx z
-    jmp xpushc
-
-;--------------------------------------------------------------
-#if 0
 name=REHASH
 stack=( -- )
 tags=interpreter,extension
@@ -2456,43 +2169,3 @@ _forget
     .word _pforget
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=FORTH
-stack=( -- )
-tags=vocabulary,forth-83
-Reset the vocabulary search order to just CORE.  Equivalent to
-`ONLY FORTH` in ANS Forth
-
-```
-: forth   ( -- )
-    vocabs 12 erase ;
-```
-#endif
-#include "align.i65"
-_forth
-    jsr enter
-#include "page.i65"
-    .word vocabs
-#include "page.i65"
-    .word count
-#include "page.i65"
-    .word erase
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=DEFINITIONS
-stack=( -- )
-tags=forth-83
-Sets the compilation vocabulary by copying the first vocabulary in
-the [[VOCABS]] search order to [[CURRENT]].
-
-#endif
-#include "align.i65"
-definitions
-    lda uservocabs+1
-    sta usercurrent
-    jmp next
