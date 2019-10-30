@@ -5,6 +5,68 @@
 tags: source code
 title: pettil-dictionary.a65
 
+SYMNEW                          symnew ( -- 'thread )
+SYMTHREAD                       symtab ( t -- 'thread )
+>THREAD                         ( n -- 'thread )
+SYMLEN                          n3 ( -- len ) n8
+SYMLENS                         n3 ( -- len ) A=len C=vocab? Y=0
+SYMCOPYS                        n3 ( target -- target )
+SYM+S                           n3 ( -- ) n3
+SYMTAIL!                        ( symtail -- ) symtail symnew [000000 @symtail]
+NEWSYMTAB                       studio ( size -- symtab )
+
+-@                              ( addr -- value )
+NAME>                           ( nfa -- cfa )
+(>NAME)                         ( cfa -- nfa|0 )
+>NAME                           ( cfa -- nfa|0 )
+
+BLOOM#                          n3 ( -- bloom# )
+BLOOMFILTER                     n3 ( -- mask addr )
+PEARSON#                        n3 ( -- pearson# )
+UNSMUDGE                        ( nfa -- )
+SMUDGE                          ( nfa -- )
+IMMEDORNOT                      n3 ( -- flag )
+(SEEK)                          ( -- xfa ) n2
+(FOUND?)                        ( -- flag )
+NOT.IN.THREAD?                  ( -- flag )
+FOUND?                          ( name -- nfa 0 | cfa +1|-1 )
+
+DEFINITIONS                     ( -- ) current
+FORTH                           ( -- ) vocabs
+
+EXISTS?                         "name" ( -- flag )
+'                               "name" ( -- cfa ) ?error "NOT FOUND"
+(CREATE)                        "name" ( cfa -- )
+
+?VMMOVE                         ( symtab -- )
+(FORGET).KEEP
+SOUTHERLY
+GOSOUTH
+(GOSOUTH)
+GONORTH
+PASSBIT?                        ( -- flag )
+(FORGET)
+REHASH                          ( -- )
+FORGET                          "name" ( -- )
+
+cold
+( from to howmany )
+    move studio
+( from to howmany )
+    move symtab
+( symtab )
+    !symtab
+        update bloom
+        update threads
+
+forget
+    gosouth
+    ?vmmem
+    gonorth
+(create)
+found?
+>name name>
+
 What's in a word?
 
 !!4 parts
@@ -223,45 +285,24 @@ sympluss01
 ;--------------------------------------------------------------
 #if 0
 name=!SYMTAB
-stack=( cfa --  )
+stack=( symtab -- )
 tags=ext,nosymbol
 runs in the middle of `(forget)` to decide how much to allocate for `symtab`
 and possibly move `vmbuf`
 
-
-* calculate new symtab `size`
-* subtract `size` from `studio`
-* round down, and go another page
 * `symtab !`
 * `symtab size + dup 3coff dup symtail ! 2+ symnew !
 * ?vmmove
 * ( to from ) gonorth
-
-    brk
-    ld tos
-    sub n7
 
 #endif
 #include "align.i65"
 _setsymtab
     jsr enter
 #include "page.i65"
-    .word newsymtab
-#include "page.i65"
-    .word studio
-#include "page.i65"
-    .word fetch
-#include "parm.i65"
-    .word zpfrom
-    .byt  R0L+2*N7+1
-#include "pad.i65"
-    .word minus
-#include "page.i65"
-    .word plus
-#include "page.i65"
     .word symtab
 #include "page.i65"
-    .word fetch
+    .word store
 #include "page.i65"
     .word numblk
 #include "page.i65"
@@ -301,19 +342,27 @@ automem01
 ;--------------------------------------------------------------
 #if 0
 name=NEWSYMTAB
-stack=( from to -- from addr )
+stack=( sym.start sym.end -- addr )
 tags=ext,nosymbol
-
+Given `studio` and the starting and ending addresses of `symtab`, return
+a new page-aligned `symtab` address.  `cold` will allocate an additional
+2 pages (512 bytes) for `symtab` growth, but `rehash` leaves only 1 extra
+page, plus any remaining space in the final page of `symtab`
 
 #endif
 newsymtab
-    clc
-    lda userstudio+1
-    adc tos+1
-    sbc stackh,x
-    sbc #1                      ; <-- ~#resizestudio
-    jmp pusha0
-;[13]
+    brk
+    .byt set | N0
+    .word userstudio
+    .byt ldd | N0
+    .byt sub | TOS
+    .byt st | N0
+    .byt pull
+    .byt add | N0
+    .byt st | TOS
+    .byt rtn
+    dec tos+1
+    jmp ff00and
 
 ;--------------------------------------------------------------
 #if 0
@@ -1661,30 +1710,33 @@ _pforgetkeep
 
 ;--------------------------------------------------------------
 #if 0
-name=SYMTAIL!
-stack=( symx -- )
+name=!SYMTAIL
+stack=( tail -- symnew )
 tags=dictionary,nosymbol
-* Append a triple null end marker to symbol table
-* Set SYMTAIL/SYMNEW after (FORGET) and (CREATE)
-* Ordering of the input addresses is important.
-* 2nd value of `n7` stored is +2 more than 1st `n7` value
+* Append three nulls as an end marker to symbol table
+* Set uservar `symtail`
+* used by `(cold)`, `(forget)` and `(create)`
 
+|n0|`symtail`|
+|n1|`studio`|
+|n2|`studio.size`|
+|n3|temp addr|
+|n4|`symtab`|
+|stack|`sym.start sym.end from to howmany`|
 #endif
 #include "align.i65"
 setsymtail
     brk
     .byt set | N0
     .word usersymtail
-    .byt bs , <(setsymtail2-*-2)
-    .byt pull
-    .byt nxt
-;~ is this reusable elsewhere?
-setsymtail2
-    .byt ld | TOS
-    .byt std | N0
+    .byt ld | TOS                       ; tail
+    .byt std | N0                       ; `symtail !`
     .byt sub | ACC
     .byt std | TOS
-    .byt rs
+    .byt sti | TOS                      ; put three nulls at tail
+    .byt ld | N0
+    .byt st | TOS                       ; here's `symnew`, if needed
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -2100,6 +2152,8 @@ _pforget
     jsr enter
 #include "page.i65"
     .word _gosouth
+#include "page.i65"
+    .word newsymtab
 #include "page.i65"
     .word _setsymtab
 #include "page.i65"

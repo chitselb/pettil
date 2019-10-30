@@ -7,228 +7,76 @@
 name=(COLD)
 stack=( -- )
 tags=system,startup,throwaway,nosymbol,secondary
-
-|^`(cold)` startup tasks|<|h
-|^`?aloha`|^swap zeropage <--> zpbuf<br/>$00-$8C|
-|^`sp!`|^initialize data stack|
-|^`=irq`|^set up IRQ vector<br/>$90-$91|
-|^`!sw16`|^connect Sweet16 to BRK vector<br/>$92-$93|
-|^`diagfill`|^fill screen (entertainment)|
-|^`studio cmove`|^copy `studio` to top of memory|
-|^`splash`|^(entertainment)|
-|^`symtab cmove`||
-|^`!symtab`<br/>( start end -- symtab size ) |^set symbol table size|
-|^`symdex`|^build symtab index|
-|^`deadbeef`|^fill memory with a pattern|
-|^`warm`|^drop the user to a blinking cursor|
-
-A primitive relocator to move already-linked code to upper memory
-
-Gets us from `pettil-core` to module LAUNCH
-
-Setting the `size` of the transient dictionary to 0 will prevent
-moving anything; control still transfers to `loadaddr+2`.
-
-|task|description|h
-|^`?aloha`|^swap lower half of zero page<br/>if it isn't already|
-|^`sp!`|^reset data stack|
-|^`=irq`|^exchange IRQ vector<br/>with `userirq`|
-|^`!sw16`|^exchange BRK vector<br/>with `userirq`<br/>if it isn't already|
-|^`diagfill`|fill screen with '\' pattern|
-|^``there @+ tuck over @ 2+ cmove`|^copy `studio` to `hitop` area|
-|^`2+ startup !|^set `startup` to `studio`|
-|^cold variables<br/>`cmove erase`|^reset `cold` uservars|
-|^`restart`|launch `studio`|
-
-* swap out bottom of zeropage for PETTIL
-* initialize stack pointer
-* move studio into place
-* ~? set `studio`
-* set `startup`
-* copy/erase initialize `cold` uservariables
-* initialize `symtab`
-    calculate size requirement
-    !symtab
-    begin at (mysterious location)
-    for each symbol
-        add the bloom bit
-        copy it to symtab
-* `!symtail`
-
-setsymtail
-    brk
-    .byt set | N0
-    .word usersymtail
-    .byt bs , <(setsymtail2-*-2)
-    .byt pull
-    .byt nxt
-;~ is this reusable elsewhere?
-setsymtail2
-    .byt ld | TOS
-    .byt std | N0
-    .byt sub | ACC
-    .byt std | TOS
-    .byt rs
-
-* ?aloha
-* >forth sp! rp!
-* pass `there` `EAL` to `coldmagic`
-     ( EAL there+4+howmany studio there+4 @(there)+2=studio @(there+2)=howmany )
-coldmagic
-    jsr harvests2
-    ldd TOS
-    st N1
-    st N0
-
-* launch PETTIL
-** ?aloha \ exchange BASIC zero page with PETTIL `zpimage`
-** sp!
-** rp!
-* set up a bunch of stuff on the stack
-EA
-there
-* move studio
-** ( from to howmany ) cmove            there+4 (@there)+2 @(there+2)
-* migrate symtab
-** newsymtab  ( from to -- addr )
-** symtab !  ( addr -- )
-** symtab.init   ( from to -- final )
-    from = there+size
-    to = studio-newsymtab&$FF00-$200+$20
-    filter
-        bloom cbit!
-
-sym.keep   ( target -- target' )
-
-
-        ( to )
-        <n3 name> !+               \ set LFA = CFA
-        ( to+2 )
-        callz symcopys
-        =n3
-        callz sympluss
-        =n3
-        callz sympluss
-
-symcopys
-    jsr symlens
-    adc #0
-    tay
-symcopy01
-    lda (R0L+2*N3),y
-    sta (tos),y
-    dey
-    bpl symcopy01
-    rts
-
-        ( to+2 )
-        callz sympluss
-
-sympluss
-    jsr symlens                 ; A=len C=vocab
-    adc #3
-    adc R0L+2*N3
-    bcc sympluss01
-    inc R0L+2*N3+1
-sympluss01
-    rts                         ; Z=0 or fail!
-
-        symcopy from (n3) to (tos)
-
-** !symtail  ( symtail [00 00 00] symnew  )
-    draw
-
-newsymtab
-    clc
-    lda userstudio+1
-    adc tos+1
-    sbc stackh,x
-    sbc #1                      ; <-- ~#resizestudio
-    jmp pusha0
-
-FORGET
-** symtab.south
-** newsymtab  ( )
-** symtab.north
-
-** move studio
-* copy studio:
-     cmove  studio !
-     ( there+4+howmany studio )
-     sym.init   ( end )
-     bloom cbit!
-     symtab !
-     16 threads @symtab
-     symnew !
-     symtail !
-* symtab: ( to from ) symfilter
-*
-* restart
+!!!!These are the results of `(cold)`:
+* show the user some entertainment because this takes a while
+* move `symtab` into place
+* move `studio` into place
+* initialize several `uservar` values
+* fill free memory with `deadbeef`
+* `warm` start
+|What happens in `(cold)`?|<|<|h
+||^`jsr ?aloha`|swap out bottom half of zeropage for PETTIL|
+||~| `alive` is true|
+||`jsr >forth`|^jump into PETTIL code here|
+||`rp!`|^init data stack|
+||`sp!`|^init return stack|
+||^`callz`<br/>`!sw16`|^exchange BRK vector<br/>with `Sweet16`<br/>if it isn't already|
+||`diagfill`|^fill screen with `\` characters|
+||`(coldstack)`|^use Sweet16 to set things up|
+||~|^ set `studio`|
+||~|^ set `startup`|
+||^`cmove`|^copy `studio` into place|
+||^`'splashirq`<br/>`cinv !`|^address of startup entertainment interrupt routine|
+||^`=irq`|safely set the `irq` vector|
+||^`newsymtab`|given where `studio` lives and the new size of `symtab`, calculate the new `symtab` address|
+||^`benjamin 2* -`|subtract $200 (hex).  Initialization leaves more `symtab` elbow room|
+||^`!symtab`||
+||^`(coldstack2)`|further stack setup and initialization|
+||~|^ set `symtab`|
+||~|^ set `symtail`|
+||~|^ set `symnew`|
+||^`cmove`|copy `symtab` into place|
+||^`!symtail`|set `symtail` `symnew` and append three nulls at the end of `symtab`|
+||^`blank`|erase the bottom half of the screen|
+||^`symdex`|pass through all names,<br/>update `bloom` filter<br/>update `>thread` index|
+||~|^add the `bloom` bit|
+||~|^update `symtab`'s 16 `>thread` pointers|
+||^`cmove`|copy initial values for `base` |
+||^`erase`|zero `copy` `cheese` `whiz`|
+||^`deadbeef`|fill free RAM with a tasty pattern<br/>overwrites one-time startup code|
 
 ```
-code cold   ( -- )
-    '?aloha jsr,
-    >forth,
-    sp! 'there @+ tuck over @ 2+ cmove 2+ startup !
+code (cold)   ( -- )
+    '?aloha jsr,  '>forth jsr, ]
+    sp! rp!  callz !sw16        \ init forth
+    diagfill                    \ fill screen with \\\ pattern
+    (coldstack)                 \ Sweet16, perform calculations
+( from to howmany )
+    cmove                       \ move `studio`, a short pause
+    'splashirq cinv ! =irq      \ start entertainment
+( start end )
+    newsymtab                   \ figure out size of `symtab`
+( symtab )
+    benjamin 2* -               \ first time, more room
+( symtab' )
+    !symtab                     \ init `symtab` `symnew` and tail
+( from to howmany )
+    cmove                       \ move `symtab`, a short pause
+( VIDRAM+11*40 14*40 )
+    blank                       \ erase the bottom of the screen
+    symdex                      \ init threads and bloom filter, a longer pause
+( 'userarea 'ucore 'uarea-'userarea )
+    cmove                       \ copy some `cold` uservariables
+( 'ustart 'uendcore-'ustart )
+    erase                       \ zero some `cold` uservariables
+    deadbeef                    \ fill RAM with a pattern
+    'there @+ tuck over @ 2+ cmove 2+ startup !
     (lits) 5 'ustart 'uendcore 'ustart - 'userarea 'ucore 'uarea 'userarea -
     cmove erase restart \ ;
-```
-#endif
-pcold
-    jsr qaloha
-#include "align.i65"
-    jsr toforth                 ; transition from 6502 Assembly to Forth
-#include "page.i65"
-    .word spstore
-#include "page.i65"
-    .word rpstore
-#include "page.i65"
-    .word _diagfill             ; fill the screen with '/' graphic
-#include "parm.i65"
-    .word callz
-    .word setsw16               ; after which, BRK invokes Sweet16
-#include "pad.i65"
-    .word xyzzy
-/*
-tos
-n0                              there
-n1                              userstudio
-n2
 
-    ldd there
-    st studio
-
-*/
-#include "parm.i65"
-    .word plits
-    .byt 4
-    .word userstartup
-    .word userstudio
-    .word there
-    .word EAL
-    .word there
-#include "page.i65"
-    .word coldmagic
-#include "page.i65"
-; ( from to howmany )
-; there+4 (@there)+2 (@there+4)
-    .word cmove                 ; but first, make an upper dictionary
-#include "parm.i65"
-    .word plit
-    .word splashirq
-#include "page.i65"
-    .word cinv
-#include "page.i65"
-    .word store
-#include "page.i65"
-    .word _swapirq
-#include "page.i65"
-; ( to from )
-    .word _symtabinit
-#include "page.i65"
-/*
-: (cold)
-    jsr ?aloha >forth sp!               \ switch in zeropage and start PETTIL
+code (cold)
+    '?aloha jsr,  '>forth jsr, ]
+    sp! rp! callz !sw16                 \ init PETTIL
     diagfill                            \ fill screen with entertaining pattern
     [ '!sw16 ] callz                    \ initialize Sweet16 BRK vector
     [ 'there ] literal  @+              \ start of piggyback code
@@ -240,30 +88,105 @@ n2
     symtab.init
     deadbeef                            \ PERTURB patches `feat v` here
 
-name=SYMTAB!
-stack=( studio start size -- studio start symtab size )
-tags=system,startup,nosymbol
-Calculate `symtab` memory requirements, given a size
 
-symtabset
-    dex
-    lda stackh+2,x
-    clc
-    sbc tos+1
-    sta stackh,x
-    sta usersymtab+1
-    lda #32
-    sta stackl,x
-symtabset99
-    jmp next
-
-
-*/
-;    .word symtabset
+code (cold)
+    ?aloha jsr,
+    >forth jsr, ]
+    sp! rp!  callz !sw16
+    diagfill
+    (coldstack)
+( sym.end sym.start   from to howmany )
+    cmove \ studio
+    'splashirq cinv ! =irq
+( sym.end sym.start )
+    tuck 2dup - -rot
+( symtab.start symtab.size symtab.end symtab.start )
+    newsymtab
+( symtab.start symtab.size symtab' )
+    benjamin 2* -  dup symtab !
+( symtab.start symtab.size symtab' )
+    bl + swap
+( symtab.start symtab+32 symtab.size )
+    2dup + !symtail  symnew !
+    cmove
+    vidram 12 40* + 12 40*  blank
+    symdex
+    'userarea 'ucore 'uarea third -
+    cmove copy some `cold` uservars
+    'ustart 'uendcore over -
+    erase \ zero some `cold` uservars
+    deadbeef \ fill RAM with a pattern
+```
+#endif
+pcold
+    jsr qaloha
+#include "align.i65"
+    jsr toforth                 ; transition from 6502 Assembly to Forth
 #include "page.i65"
-    .word cmovegt
+    .word spstore
 #include "page.i65"
-    .word drop
+    .word rpstore
+#include "parm.i65"
+    .word callz
+    .word setsw16               ; after which, BRK invokes Sweet16
+#include "pad.i65"
+    .word _diagfill             ; fill the screen with '/' graphic
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word pcoldstack            ; ( sym.end sym.start   from to howmany )
+#include "page.i65"             ; ( from to howmany )
+    .word cmove                 ; move studio
+#include "parm.i65"
+    .word plit
+    .word splashirq
+#include "page.i65"
+    .word cinv
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word _swapirq
+#include "page.i65"
+( sym.end sym.start )
+    .word tuck
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word dashrot               ; ( symtab.start symtab.size symtab.end symtab.start )
+#include "page.i65"
+    .word newsymtab             ; ( symtab.start symtab.size symtab' )
+#include "page.i65"
+    .word benjamin
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word minus
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word store                 ; ( symtab.start symtab.size symtab' )
+#include "page.i65"
+    .word twodup
+#include "page.i65"
+    .word plus                  ; ( symtab.start symtab.size symtab' tail )
+#include "page.i65"
+    .word setsymtail
+#include "page.i65"
+    .word symnew
+#include "page.i65"
+    .word store                 ; ( symtab.start symtab.size symtab' )
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word swap                  ; ( from to howmany )
+#include "page.i65"
+    .word cmove                 ; move symtab, a short pause
 #include "parm.i65"
     .word dlit
 #ifdef IS_VIC20
@@ -274,28 +197,232 @@ symtabset99
     .word 14*40
 #endif
 #include "pad.i65"
-    .word blank
+    .word blank                 ; erase the bottom of the screen
 #include "page.i65"
-    .word _initsymtab            ; `!symtab`
-#include "past.i65"
+    .word _symdex               ; init threads and bloom filter, a longer pause
+    'userarea 'ucore 'uarea third -
+    cmove copy some `cold` uservars
+    'ustart 'uendcore over -
+    erase \ zero some `cold` uservars
+    deadbeef \ fill RAM with a pattern
+
+;( 'userarea 'ucore 'uarea-'userarea )
+#include "page.i65"
+    .word cmove                 ; copy some `cold` uservariables
+;( 'ustart 'uendcore-'ustart )
+#include "page.i65"
+    .word erase                 ; zero some `cold` uservariables
+#include "past.i65"             ; PERTURB patches `feat v` in here
 perturbpreserve
-    .word _deadbeef
+    .word _deadbeef             ; fill RAM with a pattern
 
-studiomove
+;--------------------------------------------------------------
+#if 0
+name=(COLDSTACK)
+stack=( -- )
+tags=system,startup,nosymbol
+!!!Pile many things on the stack to help `cold` with initialization
+* ( from to howmany ) cmove studio
+* ( from to howmany ) cmove symtab
+!!!Additionally
+* set `studio`
 
-coldmagic
-    jsr harvests8
+!!!!in the PETTIL load image, there are three main sections:
+|section|start|<|end|<|h
+|^PETTIL core dictionary|^0400|^BASIC|^1A80|^`here`|
+|^STUDIO dictionary|^1A81<br/>65FE<br/>|^`there`<br/>`studio`-2<br/>`studio.size`|^1A84|^`there`+3|
+|^STUDIO dictionary|^1A85|^`there`+4||^`there`+`studio.size`|
+|^SYMTAB<br/>(symbol table) |^1A85|^`there`+4||^`there`+`studio.size`|
+
+code (cold)
+    ?aloha jsr,
+    >forth jsr, ]
+    sp! rp!  callz !sw16
+    diagfill
+    (coldstack)
+( sym.end sym.start   from to howmany )
+    cmove \ studio
+    'splashirq cinv ! =irq
+( sym.end sym.start )
+    tuck 2dup - -rot
+( symtab.start symtab.size symtab.end symtab.start )
+    newsymtab
+( symtab.start symtab.size symtab' )
+    benjamin 2* -  dup symtab !
+( symtab.start symtab.size symtab' )
+    bl + swap
+( symtab.start symtab+32 symtab.size )
+    2dup + !symtail  symnew !
+    cmove
+    vidram 12 40* + 12 40*  blank
+    symdex
+    'userarea 'ucore 'uarea third -
+    cmove copy some `cold` uservars
+    'ustart 'uendcore over -
+    erase \ zero some `cold` uservars
+    deadbeef \ fill RAM with a pattern
+
+|n0|`there`|
+|n1|`studio`|
+|n2|`studio.size`|
+|n3|temp addr|
+|n4|`symtab`|
+|stack|`sym.start sym.end from to howmany`|
+#endif
+pcoldstack
     brk
+; calculations
     .byt set | N0
     .word there
-    .byt ldd | N0               ; 65FE
+    .byt ldd | N0
+    .byt st | N1                ; `studio`-2
+    .byt ldd | N1               ; 2+
+    .byt ldd | N0
+    .byt st | N2                ; `studio.size`
+; for `symtab`
+    .byt ld | N0
     .byt push
-    .byt ldd | TOS              ; 2+
-    .byt ldd | N0               ; 65FE
+; for `newsymtab`
+    .byt add | N0               ; +`there`+4
+    .byt st | N4                ; PETTIL load-image copy of `symtab`
+    .byt push
+    .byt set | N3
+    .word EAL
+    .byt ldd | N3               ; `EAL`
+    .byt push
+; for `studio`
+    .byt ld | N0                ; from= `there`+4
+    .byt push
+    .byt ld | N1                ; to= `studio`
+    .byt push
+    .byt set | N0
+    .word userstudio
+    .byt std | N0               ; `studio !`
+    .byt ld | N2                ; howmany= `studio.size`
+    .byt push
+    .byt nxt
 
+;--------------------------------------------------------------
+#if 0
+name=(COLDSTACK2)
+stack=( -- )
+tags=system,startup,nosymbol
+!!!Pile even more things on the stack
+* ( from to howmany ) for `symtab cmove`
+* ( start end ) for `newsymtab`
+!!!Additionally
+* set `symtab`
+* set `symnew`
+* set `symtail`
+
+|n0|`there`|
+|n1|`studio`|
+|n2|`studio.size`|
+|n3||
+|n4||
+
+#endif
+pcoldstack2
+    brk
+; symtab
+    .byt ld | N4
+    .byt push                   ; symtab
+    .byt popd | N3
+    .byt push                   ; EAL
+    .byt sub | N4
+    .byt push                   ; symtab.size
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=SYMDEX
+stack=( ?? )
+tags=system,startup,nosymbol
+Scan `symtab`
+
+n2                              thread pointer (symtab+$00..1F)
+n3                              nfa
+n8                              length
+
+
+: !symtab   ( -- )
+    bloom 8 erase  sym.rewind
+    symtab @ bl
+    begin
+        sym.len <
+        if
+            n3> !+
+        then
+        bloomfilter cbit!
+        sym.len
+        3 sym+
+        sym.len 0=
+    until (!symtab) ;
+
+
+```
+: symdex
+    bloom 8 erase
+    symtab @ >n2
+    34 over !
+    0 dup >thread
+    >n3 ( thread nfa )
+    begin
+
+        pearson#
+        bloom# bloom >bit cbit!
+        0=
+    until ;
+```
+#endif
 #include "align.i65"
-_symtabinit
+_symdex
     jsr enter
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word eight
+#include "page.i65"
+    .word erase
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "parm.i65"
+    .word tozp
+    .byt R0L+2*N2
+#include "parm.i65"
+    .word blit
+    .byt 34
+#include "pad.i65"
+    .word plus
+#include "page.i65"
+    .word over
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word zero
+#include "page.i65"
+    .word _tothread
+#include "parm.i65"
+    .word tozp
+    .byt R0L+2*N3
+#include "pad.i65"
+symdex01
+    .word pearsonhash
+#include "page.i65"
+    .word bloomhash
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word cbitstore
+#include "page.i65"
+    .word zeq
+#include "parm.i65"
+    .word qbranch
+    .byt <(symdex01-*+1)
 #include "past.i65"
     .word exit
 
