@@ -7,17 +7,23 @@ SHELL = /bin/bash
 # work locally on tarabuza
 #all: pristine perturb pet
 
-# perform test feats on samosa
-#all: pristine disturb pet
-all: pristine disturb remote
+# minimal build for quicker iterations on target 0
+all: pettil0 mkd64pettil pet
+
+# build all targets, all tests, launch remote PERTURB
+#all: pristine disturb remote
+
 #all: pristine pettil0 mkd64pettil pet
 
 remote:
 	at now < ./tools/remote.disturb.at
 
 # build a fresh PETTIL from source
-pettil0:
+pettil0: pristine
 	./tools/mkpettil 0
+	cp -v tmp/pettil.mon 								obj/perturb/perturb-v.mon0
+	cat src/perturb/bkpt.dbg    				     >> obj/perturb/perturb-v.mon0
+	echo "keybuf load\"pettil.prg0\",9\\x0drun\\x0d" >> obj/perturb/perturb-v.mon0
 
 pettil:
 	./tools/mkpettil
