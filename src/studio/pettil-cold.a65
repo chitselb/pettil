@@ -83,8 +83,6 @@ pcold
 #include "pad.i65"
     .word _diagfill             ; fill the screen with '/' graphic
 #include "page.i65"
-    .word xyzzy
-#include "page.i65"
     .word pcoldstack            ; ( sym.end sym.start  studio.start studio studio.size )
 #include "page.i65"
     .word over
@@ -120,29 +118,33 @@ pcold
 #include "page.i65"
     .word benjamin
 #include "page.i65"
-    .word twostar
+    .word twostar               ; ( symtab.start symtab.size symtab' $0200 )
 #include "page.i65"
-    .word minus
+    .word minus                 ; ( symtab.start symtab.size symtab' )
 #include "page.i65"
     .word dup
 #include "page.i65"
     .word symtab
 #include "page.i65"
-    .word store                 ; ( symtab.start symtab.size symtab' )
+    .word store                 ; ( symtab.start symtab.size symtab )
 #include "page.i65"
-    .word plus                  ; ( symtab.start symtab.size symtab' tail )
+    .word bl
 #include "page.i65"
-    .word setsymtail
+    .word plus                  ; leave 32 bytes for `symdex`
+#include "page.i65"
+    .word twodup                ; ( symtab.start symtab.size symtab+32 symtab.size symtab+32 )
+#include "page.i65"
+    .word plus                  ; ( symtab.start symtab.size symtab+32 symtail )
+#include "page.i65"
+    .word threeminus            ; ( symtab.start symtab.size symtab+32 symtail )
+#include "page.i65"
+    .word setsymtail            ; ( symtab.start symtab.size symtab' symnew )
 #include "page.i65"
     .word symnew
 #include "page.i65"
     .word store                 ; ( symtab.start symtab.size symtab' )
 #include "page.i65"
-    .word bl
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word swap                  ; ( from to howmany )
+    .word swap                  ; ( symtab.start symtab+32 symtab.size )
 #include "page.i65"
     .word cmovegt               ; move symtab, a short pause
 #include "parm.i65"
@@ -156,6 +158,8 @@ pcold
 #endif
 #include "pad.i65"
     .word blank                 ; erase the bottom of the screen
+#include "page.i65"
+    .word xyzzy
 #include "page.i65"
     .word _symdex               ; init threads and bloom filter, a longer pause
 #include "past.i65"             ; PERTURB patches `feat v` in here
@@ -192,7 +196,6 @@ pcoldstack
     .word EAL
     .byt ldd | N3               ; `symtab.end` = `EAL @`
     .byt push                   ; ( symtab.end )
-
     .byt ldd | N0
     .byt st | N2                ; `studio.size`
     .byt add | N0               ; +`there`+4
@@ -218,33 +221,20 @@ n2                              thread pointer (symtab+$00..1F)
 n3                              nfa
 n8                              length
 
-
-: !symtab   ( -- )
-    bloom 8 erase  sym.rewind
-    symtab @ bl
-    begin
-        sym.len <
-        if
-            n3> !+
-        then
-        bloomfilter cbit!
-        sym.len
-        3 sym+
-        sym.len 0=
-    until (!symtab) ;
-
-
 ```
-: symdex
+: symdex   ( -- )
     bloom 8 erase
-    symtab @ >n2
-    34 +
-    >n3 ( thread nfa )
+    34 + n3 !                   ( )
+    -1                          ( current )
     begin
-        pearson# <> if +thread then
+        pearson# under <>       ( current flag )
+        if
+            1+ <n3 symtab @
+            pearson# 2* + !     \ write start of each thread to index
+        then
         bloom# bloom >bit cbit!
-        sym+ symlen
-        0=
+        sym+
+        symlen 0=
     until ;
 ```
 #endif
@@ -262,28 +252,46 @@ _symdex
 #include "page.i65"
     .word fetch
 #include "parm.i65"
-    .word tozp
-    .byt R0L+2*N2
-#include "parm.i65"
     .word blit
     .byt 34
 #include "pad.i65"
     .word plus
-#include "page.i65"
-    .word over
-#include "page.i65"
+#include "parm.i65"
+    .word blit
+    .byt R0L+2*N3
+#include "pad.i65"
     .word store
 #include "page.i65"
-    .word zero
-#include "page.i65"
-    .word _tothread
-#include "parm.i65"
-    .word tozp
-    .byt R0L+2*N3
+    .word minusone
 #include "pad.i65"
 symdex01
     .word pearsonhash
 #include "page.i65"
+    .word under
+#include "page.i65"
+    .word ne
+#include "parm.i65"
+    .word qbranch
+    .byt <(symdex02-*+1)
+#include "pad.i65"
+    .word oneplus
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word store
+#include "page.i65"
+symdex02
     .word bloomhash
 #include "page.i65"
     .word bloom
@@ -291,11 +299,18 @@ symdex01
     .word tobit
 #include "page.i65"
     .word cbitstore
+#include "parm.i65"
+    .word callz
+    .word sympluss
+#include "page.i65"
+    .word symlen
 #include "page.i65"
     .word zeq
 #include "parm.i65"
     .word qbranch
     .byt <(symdex01-*+1)
+#include "pad.i65"
+    .word drop
 #include "past.i65"
     .word exit
 
