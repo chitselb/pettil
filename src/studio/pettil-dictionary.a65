@@ -1,148 +1,6 @@
 ; pettil-dictionary.a65
 ;#echo .       pettil-dictionary.a65     Dictionary
 
-/* tiddlypettil
-tags: source code
-title: pettil-dictionary.a65
-
-SYMNEW                          symnew ( -- 'thread )
-SYMTHREAD                       symtab ( t -- 'thread )
->THREAD                         ( n -- 'thread )
-SYMLEN                          n3 ( -- len ) n8
-SYMLENS                         n3 ( -- len ) A=len C=vocab? Y=0
-SYMCOPYS                        n3 ( target -- target )
-SYM+S                           n3 ( -- ) n3
-SYMTAIL!                        ( symtail -- ) symtail symnew [000000 @symtail]
-NEWSYMTAB                       studio ( size -- symtab )
-
--@                              ( addr -- value )
-NAME>                           ( nfa -- cfa )
-(>NAME)                         ( cfa -- nfa|0 )
->NAME                           ( cfa -- nfa|0 )
-
-BLOOM#                          n3 ( -- bloom# )
-BLOOMFILTER                     n3 ( -- mask addr )
-PEARSON#                        n3 ( -- pearson# )
-UNSMUDGE                        ( nfa -- )
-SMUDGE                          ( nfa -- )
-IMMEDORNOT                      n3 ( -- flag )
-(SEEK)                          ( -- xfa ) n2
-(FOUND?)                        ( -- flag )
-NOT.IN.THREAD?                  ( -- flag )
-FOUND?                          ( name -- nfa 0 | cfa +1|-1 )
-
-DEFINITIONS                     ( -- ) current
-FORTH                           ( -- ) vocabs
-
-EXISTS?                         "name" ( -- flag )
-'                               "name" ( -- cfa ) ?error "NOT FOUND"
-(CREATE)                        "name" ( cfa -- )
-
-?VMMOVE                         ( symtab -- )
-(FORGET).KEEP
-SOUTHERLY
-GOSOUTH
-(GOSOUTH)
-GONORTH
-PASSBIT?                        ( -- flag )
-(FORGET)
-REHASH                          ( -- )
-FORGET                          "name" ( -- )
-
-cold
-( from to howmany )
-    move studio
-( from to howmany )
-    move symtab
-( symtab )
-    !symtab
-        update bloom
-        update threads
-
-forget
-    gosouth
-    ?vmmem
-    gonorth
-(create)
-found?
->name name>
-
-What's in a word?
-
-!!4 parts
-* CFA and PFA in the dictionary
-* LFA and NFA in the symbol table
-
-!!DICTIONARY
-* Code Field Address (CFA)
-** always points to executable 6502 code
-** grows dictionary at `here`
-** e.g. for a secondary, the CFA contains ` jsr enter`
-* Parameter Field Address (PFA)
-** data following code field
-** grows dictionary at `here`
-** e.g. for `constant` the PFA be where the value is stored
-
-!!SYMBOL TABLE
-* Link Field Address (LFA)
-** located at NFA-2
-** contains CFA
-* Name Field Address (NFA)
-** 1 byte flags and name length
-** length bytes of name
-** optional 1 byte vocabulary id
-
-```
-symbol table entry
-+---------------+
-|   CFA[low]    |  LFA     contains Code Field Address
-|   CFA[high]   |
-+-+-+-+-+-+-+-+-+
-[S]             |  NFA     Smudge flag
-| [V]           |          Vocabulary flag
-|   [I]         |          Immediate flag
-|     [   len   ]          Length field 0..31
-+-+-+-+-+-+-+-+-+
-|   name[1]     |  +1      Name field
-|           ... |
-|   name[len]   |  +len
-+---------------+
-?   vocabid     ?  +len+1  vocabulary id (if flag set)
-+---------------+
-```
-
-The symbol table is initialized at cold start and later repacked by `forget`
-or its do-nothing equivalent `rehash`.  Either of these provides a CFA to
-`(forget)` which merges any new symbols that have recently been appended
-into a rebuilt `symtab`.  One page of memory plus the remainder of the last
-page is allocated for future growth, becoming the new `symtail`.  Future
-searches of `symnew` will begin at this address.
-
-All the symbols are copied to `pad` at the bottom of memory, then memory
-requirements are calculated.  If there is data in `vmbuf` it will be moved
-at this time. Finally, all symbols are copied back up to the new `symtab` area.
-
-
-
-|symtab|table of threads|
-|symtab+32|thread 0|
-|symtab 2+ @|thread 1|
-|symtab 4 + @|thread 2|
-|symtab 6 + @|thread 3|
-|symtab 8 + @|thread 4|
-
-(seek)
-tos                             seek nfa
-n3                              current nfa
-n4l                             seek length
-n4h                             sorted by size (0) or unsorted ($FF)
-n5                              seek vocab
-n6                              vocab'
-n8l current length
-
-(create)
-*/
-
 ;--------------------------------------------------------------
 #if 0
 name=SYMTHREAD
@@ -152,41 +10,25 @@ Returns thread address for the given ersatz Pearson hash value
 
 ```
 : symthread   ( n -- thread )
-    2* symtab @ + ;
+    dup 0<
+    if
+        drop
+        symnew
+    else
+        2* symtab @ +
+    then ;
 ```
 #endif
 #include "align.i65"
 symthread
-    asl tos
     ldy usersymtab+1
+    asl tos
+    bcc symthread09
+    lda usersymnew
+    sta tos
+    ldy usersymnew+1
+symthread09
     jmp puty
-
-;--------------------------------------------------------------
-#if 0
-name=>THREAD
-stack=( n -- nfa )
-tags=interpreter,ext,nosymbol
-Returns `nfa` of first symbol in the `symbol table`
-
-: >thread   ( n -- nfa )
-    dup 0< ?: symnew symthread  @ ;
-
-#endif
-#include "align.i65"
-_tothread
-    jsr enter
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word zlt
-#include "parm.i65"
-    .word pquerycolon
-    .word symnew
-    .word symthread
-#include "pad.i65"
-    .word fetch
-#include "past.i65"
-    .word exit
 
 ;--------------------------------------------------------------
 #if 0
@@ -553,6 +395,30 @@ Compare the provided CFA(N4) vs. CFA of current NFA in (N3)
 ```
 : (>name)   ( cfa -- nfa|0 )
 
+
+ptoname
+    ldy #$FE
+    dec R0L+2*N3+1
+ptoname02
+    lda (R0L+2*N3),y
+    eor tos-$FE,y
+    bne ptoname05
+    iny
+    bne ptoname02               ; ~todo: blergh!
+    inc R0L+2*N3+1
+    lda R0L+2*N3
+    ldy R0L+2*N3+1
+ptoname04
+    jmp put
+ptoname05
+    inc R0L+2*N3+1
+    ldy #0
+    lda (R0L+2*N3),y
+    beq ptoname04
+    jsr sympluss                ; next!
+    jmp ptoname                 ; bra
+
+
 ```
 #endif
 #include "align.i65"
@@ -565,7 +431,7 @@ ptoname02
     eor tos-$FE,y
     bne ptoname05
     iny
-    bne ptoname02
+    bne ptoname02               ; ~todo  fix this blerghy code!
     lda R0L+2*N3
     ldy R0L+2*N3+1
 ptoname04
@@ -604,7 +470,14 @@ Populates `n3` with the current `nfa`
 _toname
     jsr enter
 #include "page.i65"
-;    .word symrewind
+    .word zero
+#include "page.i65"
+    .word symthread
+#include "parm.i65"
+    .word blit
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word store
 #include "page.i65"
     .word ptoname
 #include "past.i65"
