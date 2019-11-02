@@ -212,6 +212,111 @@ newsymtab
 
 ;--------------------------------------------------------------
 #if 0
+name=SYMDEX
+stack=( -- )
+tags=system,startup,nosymbol
+Scan `symtab`
+
+n2                              thread pointer (symtab+$00..1F)
+n3                              nfa
+n8                              length
+
+```
+: symdex   ( -- )
+    bloom 8 erase
+    symtab @ n2 !
+    34 + n3 !                   ( )
+    -1                          ( current )
+    begin
+        pearson# under <>       ( current flag )
+        if  1+ <n3 symtab @
+            pearson# 2* + !     \ write start of each thread to index
+        then
+        bloom# bloom >bit cbit!
+        sym+
+        symlen 0=
+    until ;
+```
+#endif
+#include "align.i65"
+_symdex
+    jsr enter
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word eight
+#include "page.i65"
+    .word erase
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "parm.i65"
+    .word blit
+    .byt 34
+#include "pad.i65"
+    .word plus
+#include "parm.i65"
+    .word blit
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word store
+#include "page.i65"
+    .word minusone
+#include "pad.i65"
+symdex01
+    .word pearsonhash
+#include "page.i65"
+    .word under
+#include "page.i65"
+    .word ne
+#include "parm.i65"
+    .word qbranch
+    .byt <(symdex02-*+1)
+#include "pad.i65"
+    .word oneplus
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word store
+#include "page.i65"
+symdex02
+    .word bloomhash
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word cbitstore
+#include "parm.i65"
+plover
+    .word callz
+    .word sympluss
+#include "pad.i65"
+    .word symlen
+#include "page.i65"
+    .word zeq
+#include "parm.i65"
+    .word qbranch
+    .byt <(symdex01-*+1)
+#include "pad.i65"
+    .word drop
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=-@
 stack=( nfa -- cfa )
 tags=extra
@@ -394,7 +499,13 @@ Compare the provided CFA(N4) vs. CFA of current NFA in (N3)
 
 ```
 : (>name)   ( cfa -- nfa|0 )
-
+    0 symthread n3 !
+    begin
+        symlen
+    while
+        <n3 under -@ =
+    until
+    <n3 symlen 0<> and nip ;
 
 ptoname
     ldy #$FE
@@ -421,7 +532,6 @@ ptoname05
 
 ```
 #endif
-#include "align.i65"
 ptoname
     ldy #$FE
 ptoname02
@@ -431,7 +541,7 @@ ptoname02
     eor tos-$FE,y
     bne ptoname05
     iny
-    bne ptoname02               ; ~todo  fix this blerghy code!
+    bne ptoname02
     lda R0L+2*N3
     ldy R0L+2*N3+1
 ptoname04
@@ -454,6 +564,8 @@ symbol table.  This word honors the smudge bit
 
 Populates `n3` with the current `nfa`
 
+~todo: handle smudged names
+
 ```
 : >name   ( cfa -- nfa|0 )
     >syms >n3 drop
@@ -470,16 +582,51 @@ Populates `n3` with the current `nfa`
 _toname
     jsr enter
 #include "page.i65"
+    .word xyzzy
+#include "page.i65"
     .word zero
 #include "page.i65"
     .word symthread
+#include "page.i65"
+    .word fetch
 #include "parm.i65"
     .word blit
     .byt R0L+2*N3
 #include "pad.i65"
     .word store
+#include "parm.i65"
+toname01
+    .word callz
+    .word sympluss
+#include "pad.i65"
+    .word symlen
+#include "parm.i65"
+    .word qbranch
+    .byt <(toname02-*+1)
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word namefrom
 #include "page.i65"
-    .word ptoname
+    .word under
+#include "page.i65"
+    .word eq
+#include "parm.i65"
+    .word qbranch
+    .byt <(toname01-*+1)
+#include "parm.i65"
+toname02
+    .word zpfrom
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word symlen
+#include "page.i65"
+    .word zne
+#include "page.i65"
+    .word andx
+#include "page.i65"
+    .word nip
 #include "past.i65"
     .word exit
 
@@ -1559,13 +1706,13 @@ _qvmmove
 
 ;--------------------------------------------------------------
 #if 0
-name=(FORGET).KEEP
+name=?KEEP
 stack=( cfa -- flag )
 tags=interpreter,nfa,nosymbol
 
 #endif
 #include "align.i65"
-_pforgetkeep
+_qkeep
     jsr enter
 #include "parm.i65"
     .word zpfrom
@@ -1697,6 +1844,24 @@ tags=interpreter,extension,nosymbol
 Copy names from `symtab` to `pad`
 exclude names where:  tos <= CFA <= studio
 
+    start at thread 0, len 1
+
+    thread=0
+    begin
+        thread
+        begin
+            len=1
+            begin
+                if                      \ subsequent pass
+
+                else                    \ first pass
+
+                then
+                symlen 0=
+            until
+        until
+    until
+
 tos                             0
 n0                              cfa
 n1                              src
@@ -1704,8 +1869,86 @@ n2                              dest
 n3                              fence
 n4                              studio
 
-: gosouth   ( cfa -- addr )
-    bloom 12 erase
+: !passbits
+
+for each thread
+    thread
+    if
+    else
+    then
+
+    for each size
+        copy symtab
+        copy symnew
+
+
+: next.available.size   ( border -- size )
+    passbits 2@
+    symnew @ n3 !
+    begin
+( border studio n3 )
+        @- 1+ between?
+    begin at thread 0
+        cfa < forget.cfa?
+        copy it
+        symlen > currsize
+    until
+
+    or the next thread
+
+    copy everything downward
+
+    look at each thread 0..15
+        ( border studio cfa ) between?
+
+
+
+: ?keep   ( flag -- )
+    if
+
+    then
+
+
+
+
+: (forget)   ( cfa -- addr )
+    bloom 8 erase  passbits 2off
+    symnew @ n3 !
+    begin
+        symlen passbits >bit cbit!
+        sym+ symlen 0=
+    until  n5 off
+    pad    ( cfa target )
+    16 0  do
+        i symthread n3 !
+        32 1  do
+            begin
+                symlen i =
+            while
+                ?keep  sym+
+            repeat
+            i passbits >bit cbit@
+            if
+                j
+                -1 symthread =n3 >r
+                begin
+                    symlen i =
+                    over pearson# = and
+                    if
+                        ?keep
+                    then
+                    sym+ symlen 0=
+                until
+                r> n3 !  drop
+            then
+        loop
+    loop
+    pad
+    pad  newsymtab  dup symtab !  bl +
+    <n7 third -  cmove>
+
+    0 symthread
+
     pad 0 thread 0
     fence
     (gosouth)
@@ -1719,12 +1962,6 @@ n1                              src
 n2                              dest
 n3                              fence
 n4                              studio
-code (gosouth)
-    jsr harvests10
-
-
-
-
 #endif
 #include "align.i65"
 _gosouth
@@ -1737,9 +1974,11 @@ _gosouth
 #include "pad.i65"
     .word erase                 ; reset bloom filter, passbits
 #include "page.i65"
-    .word _pad
+    .word zero
 #include "page.i65"
-;    .word tosyms
+    .word symthread
+#include "page.i65"
+    .word _pad
 #include "page.i65"
     .word pgosouth
 #include "page.i65"
@@ -1756,50 +1995,6 @@ gosouth01                       ; begin
 name=(GOSOUTH)
 stack=( -- flag )
 tags=interpreter,extension,nosymbol
-6EBE   .pgosouth:
-6EBE  20 EF 06    jsr .harvests4
-6EC1  00          brk
-0000  DC 64 22 57  4E 1A F2 1A  88 1A DC 64  05 FF 00 00
-0000  DC 64 22 57  4E 1A 00.00  88 1A 22.57  05 FF 00 00
-
-0010  B8 06 06 02  05 00 34 D5  00 01 1B 00  0A 93 67 6C
-0010  B8 06 F2.1A  05 00 .cfa.  00 01 1B 00  0A 93 67 6C
-
-0040  AA AA AA AA  AA AA AA FF  00 01 AD 00  0C F2 4E 01
-0070  BB BB BB BB  BB BB BB FF  53 00 24 00  00 1A 1A 10
-0080  00 00 00 00  74 06 E6 8B  E6 8B 6C B5  6E 00 2E 5C
-0090  55 E4 55 06  FF B3 00 1B  00 32 00 FF  00 00 00 00
-00A0  00 0C 00 18  0C 00 1B 01  0C 20 00 00  00 00 00 00
-00B0  03 00 00 00  05 0A 00 08  00 00 00 00  00 00 00 00
-00C0  00 00 80 47  C0 83 0D 00  84 00 53 FC  18 00 C0 00
-00D0  00 05 00 00  01 27 7A 02  18 0D 0E 17  00 47 00 47
-00E0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 82
-00F0  82 82 82 82  83 83 83 83  83 34 00 21  52 FF FF 6E
-0130  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
-0140  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20
-0150  20 20 20 20  20 20 20 20  FF FF FF FF  FF FF FF FF
-0160  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
-0170  FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF
-01E0  57 57 E4 57  03 00 0E 00  22 CF 05 68  06 06 2F 0F
-01F0  26 12 26 C0  6E 9F 6E F2  6E 2A 6F 4C  6F 6D 6F 06
-0410  4C 73 C3 22  00 5B 00 00  00 04 00 64  00 00 00 00
-0420  00 0D 04 16  13 00 08 12  B3 01 0D D0  02 FF 86 40
-0430  B2 E9 CE AA  AA AA AA AA  FE 52 00 53  A5 46 A5 46
-0440  00 80 AA AA  00 80 D1 07  AA AA 00 04  AA AA 00 04
-0450  AA AA AA AA  24 AA AA 08  B6 FF 00 00  00 FB 7B 00
-0460  03 4C BB 00  BB BB BB BB  BB BB 00 00  00 00 8B 00
-0470  00 04 0D 00  00 00 8B 80  C0 00 00 00  00 00 05 B3
-0480  E6 77 D0 02  E6 78 AD 0A  02 C9 3A B0  0A C9 20 F0
-0490  EF 38 E9 30  38 E9 D0 60  80 4F C7 52  7B 80 40 20
-0660  01 88 84 1F  85 1E 20 C5  04 4C 66 06  0A 00 0D 17
-0670  00 00 01 00  31 00 FE 01  00 00 78 D4  00 00 00 00
-0680  32 68 08 6F  A2 1A 4E 1A  00 57 0A 00  0D 17 00 00
-0690  01 00 21 52  02 00 00 00  01 00 00 00  0D 00 0C 00
-06A0  02 00 00 00  00 00 00 00  00 00 03 28  00 C0 56 28
-06B0  00 67 46 7F  02 00 09 00  00 00 00 00  00 00 00 00
-06C0  30 00 00 00  00 00 01 65  00 00 00 00  00 00 00 00
-06D0  DC 64 06 65  00 00 00 00  00 00 00 00  00 00 00 00
-
 
 #endif
 pgosouth
@@ -1990,16 +2185,31 @@ n8                              sym.len (visible, no vocab)
 
 : southerly
     i symlen <> ?exit
-    <
     keeper? if (forget).keep then
     sym+
 
+
+: forget.next
+    sym+ 'foo =r11
+: symdex.next
+    sym+ 'bar =r11
+
+: symdex   ( -- )
+    bloom 8 erase
+    0 symthread  symtab @  n2 2!        ( )
+    -1                                  ( current )
+    begin
+        bloom# bloom >bit cbit!
+        pearson# under <>               ( current flag )
+        if  1+ <n2 <n3 !+ n2 !          \ write start of each thread to index
+        then  sym+  symlen 0=
+    until ;
 
 : (forget)   ( cfa -- )
     n0 !   pad n7 !             ( )
     bloom 12 erase
     16 0 do
-        symtab @ i 2* + @       ( thread )
+        i symthread
         begin
             i symlen =
             if
