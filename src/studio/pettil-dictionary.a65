@@ -503,14 +503,14 @@ Populates `n3` with the current `nfa`
 
 ```
 : >name   ( cfa -- nfa|0 )
-    >syms >n3 drop
+    0 symthread @ n3 !
     begin
-        name> over <>
-        sym.len and
+        symlen
     while
-        3 sym+
-    repeat
-    name> nip ;
+        name> under =
+        sym+
+    until
+    <n3 symlen 0<> and nip ;
 ```
 #endif
 #include "align.i65"
@@ -527,11 +527,8 @@ _toname
     .byt R0L+2*N3
 #include "pad.i65"
     .word store
-#include "parm.i65"
+#include "page.i65"
 toname01
-    .word callz
-    .word sympluss
-#include "pad.i65"
     .word symlen
 #include "parm.i65"
     .word qbranch
@@ -545,6 +542,9 @@ toname01
     .word under
 #include "page.i65"
     .word eq
+#include "parm.i65"
+    .word callz
+    .word sympluss
 #include "parm.i65"
     .word qbranch
     .byt <(toname01-*+1)
@@ -584,7 +584,7 @@ immedornot
 ;--------------------------------------------------------------
 #if 0
 name=(SEEK)
-stack=( nfa -- xfa )
+stack=( n3=nfa n4=sorted/unsorted ; nfa -- xfa ; n2=flag )
 tags=interpreter,primitive,nosymbol
 search a segment of the dictionary
                                         n2
@@ -600,66 +600,62 @@ end of list
                                         false
 
 `tos` seek nfa
+`n2` result flag ( -1 = found; 0 = not found; 1 = found, immediate )
 `n3` current nfa
 `n4l` seek length
 `n4h` sorted thread flag:  sorted by size (0) or unsorted ($FF)
-`n5` seek vocab
+`n5` seek vocab (works like FIG `context`)
 `n6` next vocab address
 `n8l` current length
 
 #endif
 pseek
-    lda R0L+2*N4+1              ; toggle sorted/unsorted flag in `n4h`
-    eor #$FF
-    sta R0L+2*N4+1              ; sorted = 0; unsorted = $FF
-pseek00
+    inc R0L+2*N4+1              ; stupid flag tricks
     jsr symlens
-    beq pseek09           ; reached `symtail`? not found!
+    beq pseeknotfound           ; reached `symtail`? not found!
     eor R0L+2*N4
-    beq pseekok1                ; same length? consider further...
-    bit R0L+2*N4+1
-    bmi pseek01                 ; unsorted list? next!
-    lda R0L+2*N8
-    cmp R0L+2*N4                ; length.current > length.seeking?
-    bcs pseek09                 ; not found on sorted list!
-pseek01
-    jsr sympluss                ; next!
-    jmp pseek00                 ; bra
-pseekok1
-    ;ldy #0                     ; thanks, symlens
+    bne pseekkeeplook           ; different lengths?
+    lda (R0L+2*N3),y            ; reget symbol flags
+    bmi pseeknext               ; smudged? next!
+    ldy R0L+2*N8                ; length (n4 == n8)
+    bcc pseekscanname
+    iny                         ; point to vocab id byte after `name`
+    lda R0L+2*N5                ; context vocab
+    .byt $2C                    ; BIT abs opcode, skip 2 bytes
+pseekscanname
+    lda (tos),y
+    ;
+    eor (R0L+2*N3),y
+    bne pseekkeeplook
+    dey
+    bne pseekscanname
+; found!
     lda (R0L+2*N3),y
-    bmi pseek01                 ; smudged? next!
-zeep
-    bit _foundq                 ; has a $20 opcode here
-    ldy R0L+2*N4
-    iny
-    lda R0L+2*N5
-    bcs pseek04                 ; compare vocabularies
-pseekok2
-    dey
-    beq pseek07
-    lda (tos),y                 ; name we are looking for
-pseek04
-    eor (R0L+2*N3),y            ; `n3` current name under consideration
-pseek04b
-    bne pseek01                 ; different symbol? next!
-    beq pseekok2
-
-pseek07
-    lda (R0L+2*N3),y            ; reget
-    bit _toname                 ; any JSR opcode
-    bne pseek08
-    dey
-    sty R0L+2*N2+1
-    dey
-pseek08
-    iny
-    sty R0L+2*N2
+    and #$20                    ; check immediate bit
+    bne pseeknotimmed
+    inc R0L+2*N2                ; +1
+pseeknotimmed
     brk
     .byt popd | N3              ; get CFA
     .byt st   | TOS
+    .byt ld | N2
+    .byt bnz , <(pseekfoundimmed-*-2) ; return +1, immediate
+    .byt dcr | N2               ; -return 1,  not immediate
+pseekfoundimmed
     .byt nxt
-pseek09
+pseekkeeplook
+    lsr R0L+2*N4+1              ; stupid flag tricks
+    bcc pseeksorted             ; unsorted list? next!
+    inc R0L+2*N4+1              ; stupid flag tricks
+pseeknext
+    jsr sympluss                ; next!
+    bne pseek                   ; bra
+pseeksorted
+    lda R0L+2*N8
+    cmp R0L+2*N4                ; length.current > length.seeking?
+    bcc pseeknext               ; not found on sorted list!
+pseeknotfound
+    dec R0L+2*N4+1              ; stupid flag tricks
     jmp next
 
 ;--------------------------------------------------------------
@@ -680,18 +676,20 @@ set up Sweet16 registers for `found?`
 #endif
 pfoundq
     brk
+            ; ( nfa vocabs )
     .byt ld | TOS
-    .byt st | N6
-    .byt inr | N6
+    .byt st | N6                ; `vocabs`
+    .byt inr | N6               ; skip vocabs length byte
     .byt pull
-    .byt st | N3
-;~    .byt st | N7
+            ; ( nfa )
+    .byt st | N3                ; nfa
     .byt ext
     .word symlens
     .byt ld | N8                ; `n4` `n8` len
-    .byt st | N4
+    .byt st | N4                ; we shall seek words of this length
     .byt sub | ACC
     .byt st | N2
+            ; ( nfa )
     .byt nxt
 
 ;--------------------------------------------------------------
@@ -835,23 +833,7 @@ false = not found
         >r =n3 r> not.in.thread?
     while
         <n5 0=
-    until ;
-pfoundq
-    brk
-    .byt ld | TOS
-    .byt st | N6
-    .byt inr | N6
-    .byt pull
-    .byt st | N3
-;~    .byt st | N7
-    .byt ext
-    .word symlens
-    .byt ld | N8                ; `n4` `n8` len
-    .byt st | N4
-    .byt sub | ACC
-    .byt st | N2                ; n2 off
-    .byt nxt
-
+    until <n2 ;
 ```
 #endif
 #include "align.i65"
@@ -1033,84 +1015,18 @@ _tick
 
 ;--------------------------------------------------------------
 #if 0
-name=(CREATE)
-stack=( cfa -- )
+name=((REDEFINE))
+stack=(  -- f )
 tags=compiler,nosymbol
-Create a new symbol in the symbol table
-
-* if duplicate `found?`
-** `smudge` previously existing name
-** issue warning message " [rvs]" .name ." [off] exists"
-** set `redefined` to NFA of existing word
-* enclose 3-byte CFA in the dictionary (page-adjusted)
-* set Bloom Filter bit
-* set `newest` to `here 3-` (page-adjusted CFA)
-* `((create))` does these things in Sweet16
-**
-
-`(create)` smudges the existing NFA, if found.  Words like `:` will need to
-switch the smudginess of the existing and newly created definition, and `;`
-will undo this, smudging the prior word and unsmudging the new one.  Only one
-unsmudged NFA (the most recent) should ever exist for any given `name(vocab)`.
-
-
 
 #endif
-#include "align.i65"
-_pcreate
-    jsr enter                   ; ( cfa )
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word eolq
-#include "parm.i65"
-    .word qerror
-    .byt 4                      ; MISSING NAME
-#include "pad.i65"
-    .word redefined
-#include "page.i65"
-    .word off
-#include "pad.i65"
-    .word _existsq
-#include "parm.i65"
-    .word qbranch
-    .byt <(pcreate02-*+1)
-#include "pad.i65"
-    .word dotrvs
-#include "page.i65"
-    .word redefined
-#include "page.i65"
-    .word ppredefine
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word _stringdot
-#include "page.i65"
-    .word smudge
-#include "parm.i65"
-    .word _pdq
-    .byt <(pcreate01-*-1)
-    .asc RVSOFF," EXISTS"
-pcreate01
-#include "pad.i65"
-pcreate02
-    .word _qalign
-#include "page.i65"
-    .word _cfacomma
-#include "page.i65"
-    .word bloom                 ; aka `symtail` +2
-#include "page.i65"
-    .word current
-#include "page.i65"
-    .word here
-#include "page.i65"
-    .word threeminus            ; first enclose, then rewind to cfa
-#include "page.i65"
-    .word newest                ; ( symtail+2 current cfa newest )
-#include "page.i65"
-    .word ppcreate
-#include "past.i65"
-    .word exit
+ppredefine
+    brk
+    .byt ldd | N3
+    .byt ld | N3
+    .byt std | TOS
+    .byt st | TOS
+    .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
@@ -1126,7 +1042,12 @@ Create a new symbol in the symbol table
 * enclose 3-byte CFA in the dictionary (page-adjusted)
 * set Bloom Filter bit
 * set `newest` to `here 3-` (page-adjusted CFA)
-
+* is `current` nonzero?
+** set NFA vocab flag bit $40
+** append `current` vocab to symtail
+* append CFA to `symtail`
+* `symcopy` NFA to `symtail`
+* move `symtail`
 
 #endif
 ppcreate
@@ -1166,36 +1087,98 @@ ppcreate02
     .byt pull
     .byt nxt
 
-/*
-code ((redefine))   ( redefined -- nfa )
-    brk,
-    n3 ldd,
-    n3 ld,
-    tos std,
-    tos st,
-    nxt,
-end-code
+;--------------------------------------------------------------
+#if 0
+name=(CREATE)
+stack=( "name" ; cfa -- )
+tags=compiler,nosymbol
+`(create)` adds a code field address to the dictionary and creates a new name
+in `symtab` to point to it, called by `create`
 
-`redefined` = `nfa` of found word
-return `nfa` of found word for `$.` to display
+smudges the existing NFA, if found.  Words like `:` will need to
+switch the smudginess of the existing and newly created definition, and `;`
+will undo this, smudging the prior word and unsmudging the new one.  Only one
+unsmudged NFA (the most recent) should ever exist for any given `name(vocab)`.
 
-TOS                             redefined
-N0
-N1
-N2
-N3                              NFA
 
-TOS                             nfa
-N3                              NFA+2
 
-*/
-ppredefine
-    brk
-    .byt ldd | N3
-    .byt ld | N3
-    .byt std | TOS
-    .byt st | TOS
-    .byt nxt
+* if duplicate `found?`
+** `smudge` previously existing name
+** issue warning message " [rvs]" .name ." [off] exists"
+** set `redefined` to NFA of existing word
+* enclose 3-byte CFA in the dictionary (page-adjusted)
+* set Bloom Filter bit
+* set `newest` to `here 3-` (page-adjusted CFA)
+* `((create))` does these things in Sweet16
+**
+
+
+```
+: (create)   ( "name" ; cfa -- )
+    eol? [ 4 ] ?error
+    redefined off  exists?
+    if  .rvs  redefined ((redefine))
+        dup smudge  $. ." [off] exists"
+    then
+    ?align cfa,  here 3-  ((create)) ;
+    bloom ( symtail 2+ )
+    current here 3- newest      ( symtail+2 current cfa' newest )
+        ((create)) ;
+```
+#endif
+#include "align.i65"
+_pcreate
+    jsr enter                   ; ( cfa )
+#include "page.i65"
+    .word eolq
+#include "parm.i65"
+    .word qerror
+    .byt 4                      ; MISSING NAME
+#include "pad.i65"
+    .word redefined
+#include "page.i65"
+    .word off
+#include "pad.i65"
+    .word _existsq
+#include "parm.i65"
+    .word qbranch
+    .byt <(pcreate02-*+1)
+#include "pad.i65"
+    .word dotrvs
+#include "page.i65"
+    .word redefined
+#include "page.i65"
+    .word ppredefine
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word smudge
+#include "page.i65"
+    .word _stringdot
+#include "parm.i65"
+    .word _pdq
+    .byt <(pcreate01-*-1)
+    .asc RVSOFF," EXISTS"
+pcreate01
+#include "pad.i65"
+pcreate02
+    .word _qalign               ; enclose a NOP where `dp` is $xxFC
+#include "page.i65"
+    .word _cfacomma
+#include "page.i65"
+    .word bloom                 ; aka `symtail` +2
+#include "page.i65"
+    .word current
+#include "page.i65"
+    .word here
+#include "page.i65"
+    .word threeminus            ; first enclose, then rewind to cfa
+#include "page.i65"
+    .word newest                ; ( symtail+2 current cfa newest )
+#include "page.i65"
+    .word ppcreate
+#include "past.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
