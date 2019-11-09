@@ -89,8 +89,6 @@ tags=subroutine,nfa,nosymbol
 * copy `name` text
 * copy length/flags byte
 * copy `vocabid` byte
-* does not move N7, does not move N3 either
-    ~maybe it should?
 
 #endif
 symcopys
@@ -316,33 +314,6 @@ symdex02
 
 ;--------------------------------------------------------------
 #if 0
-name=-@
-stack=( nfa -- cfa )
-tags=extra
-decrement `tos` and fetch the value
-
-#endif
-minusfetch
-;--------------------------------------------------------------
-#if 0
-name=NAME>
-stack=( nfa -- cfa )
-tags=compiler
-Returns the Code Field Address (`cfa`) of the provided Name
-Field Address (`nfa`)
-
-```
-: name>   ( nfa -- cfa )
-    2- @ ;
-```
-#endif
-namefrom
-    jsr tos2minus
-namefrom01
-    jmp fetch
-
-;--------------------------------------------------------------
-#if 0
 name=BLOOM#
 stack=( -- n )
 tags=ext,nosymbol
@@ -407,7 +378,7 @@ _bloomfilter
 ;--------------------------------------------------------------
 #if 0
 name=PEARSON#
-stack=( nfa -- pearsonhash nfa )
+stack=( nfa -- nfa pearson# )
 tags=ext,nfa,nosymbol
 tuck the hash value for name field address at N3
 `pearson#` is the 4-bit thread index (0..F)
@@ -490,6 +461,33 @@ smudge
 
 ;--------------------------------------------------------------
 #if 0
+name=-@
+stack=( nfa -- cfa )
+tags=extra
+decrement `tos` and fetch the value
+
+#endif
+minusfetch
+;--------------------------------------------------------------
+#if 0
+name=NAME>
+stack=( nfa -- cfa )
+tags=compiler
+Returns the Code Field Address (`cfa`) of the provided Name
+Field Address (`nfa`)
+
+```
+: name>   ( nfa -- cfa )
+    2- @ ;
+```
+#endif
+namefrom
+    jsr tos2minus
+namefrom01
+    jmp fetch
+
+;--------------------------------------------------------------
+#if 0
 name=>NAME
 stack=( cfa -- nfa|0 )
 tags=compiler
@@ -505,10 +503,9 @@ Populates `n3` with the current `nfa`
 : >name   ( cfa -- nfa|0 )
     0 symthread @ n3 !
     begin
-        symlen
+        name> under <>
     while
-        name> under =
-        sym+
+        sym+ symlen 0=
     until
     <n3 symlen 0<> and nip ;
 ```
@@ -527,13 +524,8 @@ _toname
     .byt R0L+2*N3
 #include "pad.i65"
     .word store
-#include "page.i65"
+#include "parm.i65"
 toname01
-    .word symlen
-#include "parm.i65"
-    .word qbranch
-    .byt <(toname02-*+1)
-#include "parm.i65"
     .word zpfrom
     .byt R0L+2*N3
 #include "pad.i65"
@@ -541,10 +533,17 @@ toname01
 #include "page.i65"
     .word under
 #include "page.i65"
-    .word eq
+    .word ne
+#include "parm.i65"
+    .word qbranch
+    .byt <(toname02-*+1)
 #include "parm.i65"
     .word callz
     .word sympluss
+#include "parm.i65"
+    .word symlen
+#include "page.i65"
+    .word zeq
 #include "parm.i65"
     .word qbranch
     .byt <(toname01-*+1)
@@ -610,7 +609,6 @@ end of list
 
 #endif
 pseek
-    inc R0L+2*N4+1              ; stupid flag tricks
     jsr symlens
     beq pseeknotfound           ; reached `symtail`? not found!
     eor R0L+2*N4
@@ -632,30 +630,29 @@ pseekscanname
 ; found!
     lda (R0L+2*N3),y
     and #$20                    ; check immediate bit
-    bne pseeknotimmed
+    beq pseeknotimmed
     inc R0L+2*N2                ; +1
 pseeknotimmed
     brk
     .byt popd | N3              ; get CFA
-    .byt st   | TOS
+    .byt st | TOS
     .byt ld | N2
     .byt bnz , <(pseekfoundimmed-*-2) ; return +1, immediate
     .byt dcr | N2               ; -return 1,  not immediate
 pseekfoundimmed
     .byt nxt
 pseekkeeplook
-    lsr R0L+2*N4+1              ; stupid flag tricks
-    bcc pseeksorted             ; unsorted list? next!
-    inc R0L+2*N4+1              ; stupid flag tricks
-pseeknext
-    jsr sympluss                ; next!
-    bne pseek                   ; bra
+    bit R0L+2*N6+1              ; stupid flag tricks
+    bmi pseeknext               ; unsorted list? next!
 pseeksorted
     lda R0L+2*N8
     cmp R0L+2*N4                ; length.current > length.seeking?
-    bcc pseeknext               ; not found on sorted list!
+    bcs pseeknotfound               ; not found on sorted list!
+pseeknext
+    jsr sympluss                ; next!
+    bne pseek                   ; bra
 pseeknotfound
-    dec R0L+2*N4+1              ; stupid flag tricks
+    inc R0L+2*N6+1              ; stupid flag tricks
     jmp next
 
 ;--------------------------------------------------------------
@@ -666,36 +663,32 @@ tags=interpreter,forth-83,nosymbol
 set up Sweet16 registers for `found?`
 
 |register|contents|h
-|n3|name|
+|tos|seek nfa|
+|n3|nfa|
 |n4|len|
-|n5|vocabid|
-|n6|vocabs|
-|n7|name|
+|n5|vocabs|
+|n6|sorted/unsorted|
+|n7|vocabid|
 |n8|len|
 
 #endif
 pfoundq
     brk
-            ; ( nfa vocabs )
     .byt ld | TOS
-    .byt st | N6                ; `vocabs`
-    .byt inr | N6               ; skip vocabs length byte
+    .byt st | N4                ; seek N4L=`symlen` and N4H=`pearson#`
     .byt pull
-            ; ( nfa )
-    .byt st | N3                ; nfa
-    .byt ext
-    .word symlens
-    .byt ld | N8                ; `n4` `n8` len
-    .byt st | N4                ; we shall seek words of this length
+    .byt inr | TOS
+    .byt ld | TOS
+    .byt st | N6                ; first context vocab addr, `vocabs`+1
+    .byt pull
     .byt sub | ACC
-    .byt st | N2
-            ; ( nfa )
+    .byt st | N2                ; result 0="not found"
     .byt nxt
 
 ;--------------------------------------------------------------
 #if 0
 name=NOT.IN.THREAD?
-stack=( cfa -- nfa|0 )
+stack=( name thread -- nfa|0 )
 tags=compiler
 
 ```
@@ -726,123 +719,83 @@ _notinthreadq
 
 ;--------------------------------------------------------------
 #if 0
+name=VOCAB+
+stack=( -- ; N7 = @N5++ )
+tags=sweet16,nosymbol
+
+#endif
+vocabnext
+    brk
+    .byt ldi | N5
+    .byt st | N7
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
 name=FOUND?
 stack=( nfa -- xfa flag )
 tags=interpreter,forth-83,nosymbol
 This replaces the Forth-83 standard word `find`, idea from Albert van der Horst
-in comp.lang.forth
+in comp.lang.forth ~locate link~
 
-starting with the most recently added to `vocabs`
-for each vocabulary
-    try searches in this order
-        word+trialvocabid `symnew`
-        word+trialvocabid `symtab`
-until vocabulary was (0)forth
-if still not found, 0
+`core` is always the last vocabulary searched.
 
-* search order
-** begin
-** each vocab
-** symnew .. symtail, unsized
-** while not found
-** symtab thread, sized
-** while not found
-** until vocab was 0
-** exit
-
-|^`nfa`|^the `name` we are looking for<br/>(e.g. counted string in `tib` buffer)|<|
-|^`xfa`|^`flag`|<|
-|nfa|0|not found|
-|cfa|-1|found normal word|
-|cfa|+1|found immediate word|
-
-|^`forth editor assembler`<br/>`vocabulary tools`<br/>`tools definitions`<br/>|<|<|<|
-|>|Search order example|<|<|h
-|1|`tools` vocabulary|`symtail`|unsorted|
-|2|`tools` vocabulary|`thread`|sorted|
-|3|`assembler` vocabulary|`symtail`|unsorted|
-|4|`assembler` vocabulary|`thread`|sorted|
-|5|`editor` vocabulary|`symtail`|unsorted|
-|6|`editor` vocabulary|`thread`|sorted|
-|7|`core` vocabulary|`symtail`|unsorted|
-|8|`core` vocabulary|`thread`|sorted|
-|9|not found|<|<|
-
-`core` is always the last vocabulary searched.  A name/vocabulary combination
-is `unique` meaning it has at most one active symbol.  Prior copies of
-redefined symbols remain in the symbol table, smudged. Smudged words are
-ignored (not a match) by `found?`
+~`only` a word to ignore core in searches~
 
 ```
-: found?   ( name -- xfa flag )
-    vocabs (found?)
-    begin
-        <n6 c@+ >n5 drop n6 !
-        ldi | N6
-        st | N5
-        nxt
+n2  0
+n3  01FF nfa
+n4  0004 len
+n5  0000 vocabs
+n6  FFFF sorted/unsorted flag
+n7  0000 vocabid
 
-: nextvocab   ( vocab nfa -- vocab' nfa )
-    swap c@+ n5 ! swap ;
-
-: nextvoc
-
-: (found?)    ( nfa vocabs -- nfa )
-    ;
-code (found?)
-    brk
-    ldd | TOS
-    st | N6
-    inr | N6
-    pull
-    st | N3
-    nxt
-
-
-true = found
-false = not found
-: found?   ( name -- xfa flag )
-    n2 off                      \ result
-    vocabs @ 1+ n6 !  >n3       ( nfa )
-    bloomfilter cbit@           ( nfa flag )
+: found?   ( nfa -- xfa flag )
+    n2 off  n3 over !+
+    symlen !+  vocabs 1+ !+  on
+    bloomfilter cbit@
     if
         begin
-            <n6 c@+ n5 2!       ( nfa ) \ next vocab
-            symnew              ( nfa addr )
-            not.in.thread?      ( xfa  flag )
+            vocab+  symnew
+            not.in.thread?
         while
-            =n3 pearson# 2* symtab @ +
-            >r =n3 r>           ( nfa addr )
-            not.in.thread?      ( xfa flag )
+            >n3 pearson# 2*
+            symtab @ +
+            not.in.thread?
         while
-            <n5 0=
+            <n7 0=
         until
-    then <n2 ;
+    then  <n2 ;
 
-
-```
-: found?   ( nfa -- xfa flag )
-    n2 off  >n3
-    bloomfilter cbit@ dup 0= ?exit drop
-    vocabs (found?)
-    begin
-        <n6 c@+ n5 2!
-        symnew not.in.thread?
-    while
-        =n3 pearson# 2* symtab @ +
-        >r =n3 r> not.in.thread?
-    while
-        <n5 0=
-    until <n2 ;
 ```
 #endif
 #include "align.i65"
 _foundq
     jsr enter
-#include "pad.i65"
+#include "parm.i65"
+    .word blit
+    .byt R0L+2*N2
+#include "parm.i65"
+    .word off                   ; N2=0 (`found?` result)
+#include "parm.i65"
+    .word blit
+    .byt R0L+2*N3
+#include "parm.i65"
+    .word over
+#include "page.i65"
+    .word _storeplus            ; N3=seek nfa
+#include "page.i65"
+    .word symlen                ; (so we can get length)
+#include "page.i65"
+    .word _storeplus            ; N4=seek length
+#include "page.i65"
     .word vocabs
 #include "page.i65"
-    .word pfoundq
+    .word oneplus
+#include "parm.i65"
+    .word _storeplus            ; N5=vocabs+1
+#include "page.i65"
+    .word on                    ; N6=$FFFF (sorted/unsorted)
 #include "pad.i65"
     .word _bloomfilter          ; sum of decimal digits in name % 64
 #include "page.i65"
@@ -850,17 +803,9 @@ _foundq
 #include "parm.i65"
     .word qbranch               ;     if
     .byt <(foundq03-*+1)
-#include "parm.i65"
+#include "page.i65"
 foundq01                        ;     begin (loop through vocabs)
-    .word zpfrom
-    .byt R0L+2*N6
-#include "pad.i65"
-    .word cfetchplus
-#include "parm.i65"
-    .word blit
-    .byt R0L+2*N5
-#include "pad.i65"
-    .word twostore
+    .word vocabnext
 #include "page.i65"
     .word symnew
 #include "page.i65"
@@ -869,7 +814,7 @@ foundq01                        ;     begin (loop through vocabs)
     .word qbranch               ;     while
     .byt <(foundq03-*+1)
 #include "parm.i65"
-    .word zpex
+    .word tozp
     .byt R0L+2*N3
 #include "pad.i65"
     .word pearsonhash
@@ -882,20 +827,13 @@ foundq01                        ;     begin (loop through vocabs)
 #include "page.i65"
     .word plus
 #include "page.i65"
-    .word tor
-#include "parm.i65"
-    .word zpex
-    .byt R0L+2*N3
-#include "pad.i65"
-    .word rfrom
-#include "page.i65"
     .word _notinthreadq
 #include "parm.i65"
     .word qbranch               ;     while
     .byt <(foundq03-*+1)
 #include "parm.i65"
     .word zpfrom
-    .byt R0L+2*N5
+    .byt R0L+2*N6
 #include "pad.i65"
     .word zeq
 #include "parm.i65"
@@ -905,47 +843,6 @@ foundq01                        ;     begin (loop through vocabs)
 foundq03
     .word zpfrom
     .byt R0L+2*N2
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=DEFINITIONS
-stack=( -- )
-tags=forth-83
-Sets the compilation vocabulary by copying the first vocabulary in
-the [[VOCABS]] search order to [[CURRENT]].
-
-#endif
-#include "align.i65"
-definitions
-    lda uservocabs+1
-    sta usercurrent
-definitions99
-    jmp next
-
-;--------------------------------------------------------------
-#if 0
-name=FORTH
-stack=( -- )
-tags=vocabulary,forth-83
-Reset the vocabulary search order to just CORE.  Equivalent to
-`ONLY FORTH` in ANS Forth
-
-```
-: forth   ( -- )
-    vocabs 12 erase ;
-```
-#endif
-#include "align.i65"
-_forth
-    jsr enter
-#include "page.i65"
-    .word vocabs
-#include "page.i65"
-    .word count
-#include "page.i65"
-    .word erase
 #include "past.i65"
     .word exit
 
@@ -1215,11 +1112,6 @@ tags=ext,nosymbol
     .byt pull                   ; newsymtab
     .byt st | N2                ; put it somewhere safe, for now
     .byt sub | N6               ; old `symtab`
-
-    ;~wut? more to do here, to support moving `vmbuf`
-
-                                ; no blocks in VM buffer to worry about here
-                                ; not much to do either, really
 qvmmovemagic01
     .byt rtn
 
@@ -1905,5 +1797,46 @@ _forget
     .byt 7                      ; CAN'T FORGET BELOW FENCE
 #include "pad.i65"
     .word _pforget
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=DEFINITIONS
+stack=( -- )
+tags=forth-83
+Sets the compilation vocabulary by copying the first vocabulary in
+the [[VOCABS]] search order to [[CURRENT]].
+
+#endif
+#include "align.i65"
+definitions
+    lda uservocabs+1
+    sta usercurrent
+definitions99
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=FORTH
+stack=( -- )
+tags=vocabulary,forth-83
+Reset the vocabulary search order to just CORE.  Equivalent to
+`ONLY FORTH` in ANS Forth
+
+```
+: forth   ( -- )
+    vocabs 12 erase ;
+```
+#endif
+#include "align.i65"
+_forth
+    jsr enter
+#include "page.i65"
+    .word vocabs
+#include "page.i65"
+    .word count
+#include "page.i65"
+    .word erase
 #include "past.i65"
     .word exit
