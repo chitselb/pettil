@@ -5,10 +5,10 @@
 SHELL = /bin/bash
 
 # minimal build for quicker iterations on target 0
-all: pristine pettil0 mkd64pettil pet doc
+#all: pristine pettil0 mkd64pettil pet doc
 
 # build all targets, all tests, launch remote PERTURB
-#all: pristine disturb remote
+all: pristine disturb
 
 #all: pristine pettil0 mkd64pettil pet
 
