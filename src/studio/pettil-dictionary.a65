@@ -21,8 +21,8 @@ stack=( n -- thread )
 tags=interpreter,ext,nosymbol
 Returns thread address for the given input hash
 
-0..F    @(symtab+2*n)
--1      symnew
+0..F    @(@symtab+2*n)  (low four bits of first character)
+-1      @symnew         (unsorted insertion area)
 
 ```
 : symthread   ( n -- thread )
@@ -35,7 +35,6 @@ Returns thread address for the given input hash
     then ;
 ```
 #endif
-#include "align.i65"
 symthread
     ldy usersymtab+1
     asl tos
@@ -45,21 +44,14 @@ symthread
     ldy usersymnew+1
 symthread09
     jmp puty
-;[18]
 
 ;--------------------------------------------------------------
 #if 0
 name=SYMLEN
 stack=( -- len )
 tags=nfa,nosymbol
-Return length information about the `nfa`  `n3`
+visible length of `nfa` in `n3`
 
-`visible length` means the length of the name when you type it.
-The carry flag indicates whether a `vocabid` follows the `name`
-
-C = vocabid?
-A,N8L = visible length
-Y = 0
 #endif
 symlen
     lda #>(pushya-1)
@@ -70,17 +62,16 @@ symlen
 #if 0
 name=SYMLENS
 tags=subroutine,nfa,nosymbol
-return the length of the current `nfa` stored in `n3`
+return visible length of `nfa` in `n3`
 
-input
-(N3)                            nfa
-
-outputs
-N8L, A                          len
-Y                               0
-C                               vocab?
-Z                               last?
-
+```
+N3      nfa             .
+N8L     .               len
+A       .               len
+Y       .               0
+C       .               vocab?
+Z       .               last?
+```
 #endif
 symlens
     ldy #0
@@ -99,11 +90,20 @@ name=SYMCOPYS
 stack=( target -- target )
 tags=subroutine,nfa,nosymbol
 
-* N3 (curr) symbol to tos (targ) symbol
 * copy `name` text
 * copy length/flags byte
 * copy `vocabid` byte
 
+```
+TOS     target          .
+N3      nfa             .
+N8L     .               len
+A       .               len
+Y       .               FF
+N       .               true
+C       .               false
+Z       .               false
+```
 #endif
 symcopys
     jsr symlens
@@ -121,34 +121,38 @@ symcopy01
 name=SYM+S
 stack=( -- )
 tags=subroutine,ext,primitive,nfa,nosymbol
-registers=Z:false
-* move N3 to the next symbol
-compiled with an inline value following the CFA
-to specify a constant per-symbol offset
+hop `n3` to next `nfa`
 
+```
+N3      nfa             nfa+
+N8L     .               len
+Y       .               0
+Z       .               false
+```
 #endif
 sympluss
-    jsr symlens                 ; A=len C=vocab
+    jsr symlens
     adc #3
     adc R0L+2*N3
     sta R0L+2*N3
     bcc sympluss01
     inc R0L+2*N3+1
 sympluss01
-    rts                         ; Z=0 or fail!
+    rts
 
 ;--------------------------------------------------------------
 #if 0
 name=NEWSYMTAB
 stack=( symtab.end symtab.start -- addr )
 tags=ext,nosymbol
-Given `studio` and the start/end addresses of `symtab`, return the page where
-`symtab` should relocate, to make room for growth.
+Calculate a new `symtab` address
 
-`cold` will take this return value and allocate an additional two pages of
-memory (512 bytes) for `future` growth, but `rehash` is less generous, leaving
-only one extra page, plus any leftover space on the last page of `symtab`
-
+```
+TOS     symtab.start    symtab'
+TOS.L   .               0
+N0      symtab.end      symtab.size
+N1      .               tdp
+```
 #endif
 newsymtab
     jsr harvests2
@@ -160,114 +164,10 @@ newsymtab
     .word userstudio
     .byt ldd | N1               ; `studio`
     .byt sub | N0
-    .byt st | TOS               ; symtab'
+    .byt st | TOS               ; `symtab`
     .byt rtn
-    dec tos+1
+    dec tos+1                   ; another page for growth, please
     jmp ff00and
-
-;--------------------------------------------------------------
-#if 0
-name=SYMDEX
-stack=( -- )
-tags=system,startup,nosymbol
-Scan `symtab`
-
-n2                              thread pointer (symtab+$00..1F)
-n3                              nfa
-n8                              length
-
-```
-: symdex   ( -- )
-    bloom 8 erase
-    symtab @ n2 !
-    34 + n3 !                   ( )
-    -1                          ( current )
-    begin
-        pearson# under <>       ( current flag )
-        if  1+ <n3 symtab @
-            pearson# 2* + !     \ write start of each thread to index
-        then
-        bloom# bloom >bit cbit!
-        sym+
-        symlen 0=
-    until ;
-```
-#endif
-#include "align.i65"
-_symdex
-    jsr enter
-#include "page.i65"
-    .word bloom
-#include "page.i65"
-    .word eight
-#include "page.i65"
-    .word erase
-#include "page.i65"
-    .word symtab
-#include "page.i65"
-    .word fetch
-#include "parm.i65"
-    .word blit
-    .byt 34
-#include "pad.i65"
-    .word plus
-#include "parm.i65"
-    .word blit
-    .byt R0L+2*N3
-#include "pad.i65"
-    .word store
-#include "page.i65"
-    .word minusone
-#include "pad.i65"
-symdex01
-    .word pearsonhash
-#include "page.i65"
-    .word under
-#include "page.i65"
-    .word ne
-#include "parm.i65"
-    .word qbranch
-    .byt <(symdex02-*+1)
-#include "pad.i65"
-    .word oneplus
-#include "parm.i65"
-    .word zpfrom
-    .byt R0L+2*N3
-#include "pad.i65"
-    .word symtab
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word third
-#include "page.i65"
-    .word twostar
-#include "page.i65"
-    .word plus
-#include "page.i65"
-    .word store
-#include "page.i65"
-symdex02
-    .word bloomhash
-#include "page.i65"
-    .word bloom
-#include "page.i65"
-    .word tobit
-#include "page.i65"
-    .word cbitstore
-#include "parm.i65"
-    .word callz
-    .word sympluss
-#include "pad.i65"
-    .word symlen
-#include "page.i65"
-    .word zeq
-#include "parm.i65"
-    .word qbranch
-    .byt <(symdex01-*+1)
-#include "pad.i65"
-    .word drop
-#include "past.i65"
-    .word exit
 
 ;--------------------------------------------------------------
 #if 0

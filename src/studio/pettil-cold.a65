@@ -7,67 +7,7 @@
 name=(COLD)
 stack=( -- )
 tags=system,startup,throwaway,nosymbol,secondary
-!!!!These are the results of `(cold)`:
-* show the user some entertainment because this takes a while
-* move `symtab` into place
-* move `studio` into place
-* initialize several `uservar` values
-* fill free memory with `deadbeef`
-* `warm` start
-|What happens in `(cold)`?|<|<|h
-||^`jsr ?aloha`|swap out bottom half of zeropage for PETTIL|
-||~| `alive` is true|
-||`jsr >forth`|^jump into PETTIL code here|
-||`rp!`|^init data stack|
-||`sp!`|^init return stack|
-||^`callz`<br/>`!sw16`|^exchange BRK vector<br/>with `Sweet16`<br/>if it isn't already|
-||`diagfill`|^fill screen with `\` characters|
-||`(coldstack)`|^use Sweet16 to set things up|
-||~|^ set `studio`|
-||~|^ set `startup`|
-||^`cmove`|^copy `studio` into place|
-||^`'splashirq`<br/>`cinv !`|^address of startup entertainment interrupt routine|
-||^`=irq`|safely set the `irq` vector|
-||^`newsymtab`|given where `studio` lives and the new size of `symtab`, calculate the new `symtab` address|
-||^`benjamin 2* -`|subtract $200 (hex).  Initialization leaves more `symtab` elbow room|
-||^`!symtab`||
-||^`(coldstack2)`|further stack setup and initialization|
-||~|^ set `symtab`|
-||~|^ set `symtail`|
-||~|^ set `symnew`|
-||^`cmove`|copy `symtab` into place|
-||^`!symtail`|set `symtail` `symnew` and append three nulls at the end of `symtab`|
-||^`blank`|erase the bottom half of the screen|
-||^`symdex`|pass through all names,<br/>update `bloom` filter<br/>update `>thread` index|
-||~|^add the `bloom` bit|
-||~|^update `symtab`'s 16 `>thread` pointers|
-||^`deadbeef`|fill free RAM with a tasty pattern<br/>overwrites one-time startup code|
 
-```
-code (cold)
-    ?aloha jsr,
-    >forth jsr, ]
-    sp! rp!  callz !sw16
-    diagfill
-    (coldstack)
-( symtab.end symtab.start   studio.start studio studio.size )
-    over studio !
-    cmove \ studio
-    'splashirq cinv ! =irq
-( symtab.end symtab.start )
-    tuck 2dup - -rot
-( symtab.start symtab.size symtab.end symtab.start )
-    newsymtab
-( symtab.start symtab.size symtab' )
-    benjamin 2* -  dup symtab !
-( symtab.start symtab.size symtab' )
-    bl + swap
-( symtab.start symtab+32 symtab.size )
-    2dup + !symtail  symnew !
-    cmove
-    vidram 12 40* + 12 40*  blank
-    symdex  deadbeef \ fill RAM with a pattern
-```
 #endif
 pcold
     jsr qaloha
@@ -104,7 +44,7 @@ pcold
 #include "page.i65"
     .word store
 #include "page.i65"
-    .word _swapirq              ; ( sym.end sym.start )
+    .word _swapirq
 #include "page.i65"
     .word tuck
 #include "page.i65"
@@ -112,41 +52,41 @@ pcold
 #include "page.i65"
     .word minus
 #include "page.i65"
-    .word dashrot               ; ( symtab.start symtab.size symtab.end symtab.start )
+    .word dashrot
 #include "page.i65"
-    .word newsymtab             ; ( symtab.start symtab.size symtab' )
+    .word newsymtab
 #include "page.i65"
     .word benjamin
 #include "page.i65"
-    .word twostar               ; ( symtab.start symtab.size symtab' $0200 )
+    .word twostar
 #include "page.i65"
-    .word minus                 ; ( symtab.start symtab.size symtab' )
+    .word minus
 #include "page.i65"
     .word dup
 #include "page.i65"
     .word symtab
 #include "page.i65"
-    .word store                 ; ( symtab.start symtab.size symtab )
+    .word store
 #include "page.i65"
     .word bl
 #include "page.i65"
-    .word plus                  ; leave 32 bytes for `symdex`
+    .word plus
 #include "page.i65"
-    .word twodup                ; ( symtab.start symtab.size symtab+32 symtab.size symtab+32 )
+    .word twodup
 #include "page.i65"
-    .word plus                  ; ( symtab.start symtab.size symtab+32 symtail )
+    .word plus
 #include "page.i65"
-    .word threeminus            ; ( symtab.start symtab.size symtab+32 symtail )
+    .word threeminus
 #include "page.i65"
-    .word setsymtail            ; ( symtab.start symtab.size symtab' symnew )
+    .word setsymtail
 #include "page.i65"
     .word symnew
 #include "page.i65"
-    .word store                 ; ( symtab.start symtab.size symtab' )
+    .word store
 #include "page.i65"
-    .word swap                  ; ( symtab.start symtab+32 symtab.size )
+    .word swap
 #include "page.i65"
-    .word cmovegt               ; move symtab, a short pause
+    .word cmovegt
 #include "parm.i65"
     .word dlit
 #ifdef IS_VIC20
@@ -159,7 +99,7 @@ pcold
 #include "pad.i65"
     .word blank                 ; erase the bottom of the screen
 #include "page.i65"
-    .word _symdex               ; init threads and bloom filter, a longer pause
+    .word _symdex
 #include "parm.i65"
     .word plits
     .byt 8
@@ -190,6 +130,96 @@ perturbpatch
     .word _emptybuffers
 perturbpreserve
     .word _deadbeef             ; fill RAM with a pattern then restart
+
+;--------------------------------------------------------------
+#if 0
+name=SYMDEX
+stack=( -- )
+tags=system,startup,nosymbol
+* scan `symtab`
+* setup `bloom` filter
+
+```
+N2      .               thread
+N3      .               nfa
+N8      .               len
+```
+#endif
+#include "align.i65"
+_symdex
+    jsr enter
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word eight
+#include "page.i65"
+    .word erase
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "parm.i65"
+    .word blit
+    .byt QUOTE
+#include "pad.i65"
+    .word plus
+#include "parm.i65"
+    .word blit
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word store
+#include "page.i65"
+    .word minusone
+#include "pad.i65"
+symdex01
+    .word pearsonhash
+#include "page.i65"
+    .word under
+#include "page.i65"
+    .word ne
+#include "parm.i65"
+    .word qbranch
+    .byt <(symdex02-*+1)
+#include "pad.i65"
+    .word oneplus
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word third
+#include "page.i65"
+    .word twostar
+#include "page.i65"
+    .word plus
+#include "page.i65"
+    .word store
+#include "page.i65"
+symdex02
+    .word bloomhash
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word tobit
+#include "page.i65"
+    .word cbitstore
+#include "parm.i65"
+    .word callz
+    .word sympluss
+#include "pad.i65"
+    .word symlen
+#include "page.i65"
+    .word zeq
+#include "parm.i65"
+    .word qbranch
+    .byt <(symdex01-*+1)
+#include "pad.i65"
+    .word drop
+#include "past.i65"
+    .word exit
 
 ;--------------------------------------------------------------
 #if 0
