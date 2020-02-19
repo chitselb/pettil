@@ -1910,14 +1910,162 @@ _pforget
 
 ;--------------------------------------------------------------
 #if 0
+name=(UNREMEMBER)
+stack=( cfa -- )
+tags=nfa,ext,nosymbol
+`(unremember)` rebuilds and reindexes the entire dictionary, balancing it
+into 16 roughly equal-sized threads.  `(unremember)` merges in symbols
+from `symnew` that were created since the last `(unremember)`.  Now they
+will join the other words in their thread, those that have a matching lowest
+four bits in the first character of the `name`. Words from above `cfa` are
+discarded during the first phase.
+
+The `bloom` filter will be reset and rebuilt by this operation.  A new `symtab`
+address will be calculated at halftime.  After the second phase, the `symnew`
+ list will be empty once again.
+
+```
+: (forget)   ( cfa -- )
+    bloom 8 erase
+
+    passbits $80 !+ off
+    (forget).pass1 (filter)!
+    32 0  >syms pad
+    (forget).looper             \ does `ext-until` 32x, completing pass1
+
+    passbits on
+    (forget).pass2 (filter)!
+    16 0  pad 3+ (automem)
+    (forget).looper             \ does `ext-until` 16x, completing pass2
+```
+#endif
+#include "align.i65"
+_punremember
+    jsr enter
+#include "page.i65"
+    .word bloom                 ; cfa bloom )
+#include "page.i65"
+    .word eight                 ; cfa bloom 8 )
+#include "page.i65"
+    .word erase                 ; reset the Bloom filter
+#include "page.i65"
+    .word passbits              ; cfa passbits )
+#include "parm.i65"
+    .word blit                  ; cfa passbits %1000_0000 )
+    .byt $80
+#include "pad.i65"
+    .word _storeplus            ; cfa passbits+2 )
+#include "page.i65"
+    .word off                   ; passbits = %1000 0000 0000 0000
+#include "parm.i65"
+    .word dlit
+    .word $FFFF
+    .word _pforgetpass1         ; >r11
+#include "pad.i65"
+    .word init411
+#include "page.i65"
+    .word bl                    ; 32 )
+;#include "page.i65"
+;    .word zero                 ; 32 0 ) \ factored into `(forget).looper`
+#include "page.i65"
+    .word tosyms
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word pforgetlooper         ; this is it. performs all of pass1
+#include "page.i65"
+    .word passbits
+#include "page.i65"
+    .word on                    ; passbits = %1111 1111 1111 1111
+#include "parm.i65"
+    .word dlit
+    .word 0                     ; pass2 flag
+    .word _pforgetpass2         ; >r11
+#include "pad.i65"
+    .word init411
+#include "parm.i65"
+    .word blit
+    .byt 16
+;#include "pad.i65"
+;    .word zero
+#include "page.i65"
+    .word _pad                  ; the new sym0
+#include "page.i65"
+    .word twoplus
+#include "page.i65"
+    .word _automem              ; does things, returns the new targ
+#include "page.i65"
+    .word pforgetlooper         ;( do eet! again! )
+#include "page.i65"
+    .word dp
+#include "page.i65"
+    .word store
+#include "page.i65"
+    .word symtail
+#include "page.i65"
+    .word symtailstore
+#include "page.i65"
+    .word symnew
+#include "page.i65"
+    .word symtailstore
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=UNREMEMBER
+stack=( "name" -- )
+tags=interpreter,dictionary,forth-83,forth-79,fig
+checks FENCE, sorts symbol table, keeping only words below the CFA of the named word
+
+```
+: forget   ( "name" -- )
+    '  dup  fence @  u<  7 ?error
+    (forget) ;
+
+~wut?  maybe new and improved 2017-09-04
+: forget   ( "name" -- )
+    '  dup  fence @ studio @ between 0=
+    7 ?error (forget) ;
+```
+#endif
+#include "align.i65"
+_unremember
+    jsr enter
+#include "page.i65"
+    .word _tick
+#include "page.i65"
+    .word dup
+#include "page.i65"
+    .word fence
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word ult
+#include "parm.i65"
+    .word qerror
+    .byt 7                      ; CAN'T FORGET BELOW FENCE
+#include "pad.i65"
+    .word _punremember
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=REHASH
 stack=( -- )
 tags=interpreter,extension
-Rebuilds the PETTIL [[symbol table ~]].
+Rebuilds the PETTIL [[symbol table ~]].  This may be necessary during long
+code builds that overgrow the available memory between `symnew` and `studio`
+
+`symtab` always aligns on a page boundary, so after `rehash` finishes, there
+will be a page plus the remainder of the last page of the rebuilt table,
+between 256 and 511 bytes available for creating new words in the dictionary
+before another `rehash` is required
 
 ```
 : rehash  ( -- )
-    here (forget) ;   \ effectively a FORGET nil
+    here (unremember) ;   \ effectively a `forget nothing` command
 ```
 #endif
 #include "align.i65"
@@ -1926,7 +2074,7 @@ _rehash
 #include "page.i65"
     .word here
 #include "page.i65"
-    .word _pforget
+    .word _punremember
 #include "past.i65"
     .word exit
 
