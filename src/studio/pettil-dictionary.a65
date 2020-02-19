@@ -1913,19 +1913,34 @@ _pforget
 name=(UNREMEMBER)
 stack=( cfa -- )
 tags=nfa,ext,nosymbol
-`(unremember)` rebuilds and reindexes the entire dictionary, balancing it
-into 16 roughly equal-sized threads.  `(unremember)` merges in symbols
-from `symnew` that were created since the last `(unremember)`.  Now they
-will join the other words in their thread, those that have a matching lowest
-four bits in the first character of the `name`. Words from above `cfa` are
-discarded during the first phase.
+* rebuild and reindex the entire dictionary
+* rebalance it into 16 roughly equal-sized threads
+** thread key is the low four bits of the first character in the name.
+* Merge in newly created names from `symnew .. symtail`
+** that have been defined since startup
+** or the last `(unremember)`.
+* `bloom` filter will be repopulated
+!!!!PASS1
+* initialize output pointer to `pad`
+* for each of 16 threads:
+*   for each of 31 lengths:
+*     copy from `j symthread` to output until `i <> symlen`
+*
+* scan & copy
+* for each word < `cfa` stack parameter
+* copy smudged words too
+* Words with a CFA >= `cfa` stack parameter are discarded
+** when a word is discarded, if a predecessor (with the smudge bit set) exists:
+** AND the CFA of the predecessor is < `cfa` stack parameter
+*** unsmudge it
+!!!!PASS2
 
-The `bloom` filter will be reset and rebuilt by this operation.  A new `symtab`
+A new `symtab`
 address will be calculated at halftime.  After the second phase, the `symnew`
  list will be empty once again.
 
 ```
-: (forget)   ( cfa -- )
+: (unremember)   ( cfa -- )
     bloom 8 erase
 
     passbits $80 !+ off
@@ -1962,8 +1977,8 @@ _punremember
     .word $FFFF
     .word _pforgetpass1         ; >r11
 #include "pad.i65"
-    .word init411
-#include "page.i65"
+;    .word init411
+;#include "page.i65"
     .word bl                    ; 32 )
 ;#include "page.i65"
 ;    .word zero                 ; 32 0 ) \ factored into `(forget).looper`
@@ -1981,8 +1996,8 @@ _punremember
     .word dlit
     .word 0                     ; pass2 flag
     .word _pforgetpass2         ; >r11
-#include "pad.i65"
-    .word init411
+;#include "pad.i65"
+;    .word init411
 #include "parm.i65"
     .word blit
     .byt 16
@@ -2055,13 +2070,15 @@ _unremember
 name=REHASH
 stack=( -- )
 tags=interpreter,extension
-Rebuilds the PETTIL [[symbol table ~]].  This may be necessary during long
-code builds that overgrow the available memory between `symnew` and `studio`
+Rebuild the [[dictionary]].  This may be necessary during long code builds
+as the dictionary eventually overgrows the region of memory between `symnew`
+and `studio`
 
-`symtab` always aligns on a page boundary, so after `rehash` finishes, there
-will be a page plus the remainder of the last page of the rebuilt table,
-between 256 and 511 bytes available for creating new words in the dictionary
-before another `rehash` is required
+Since `symtab` always aligns on a page boundary, after `rehash` completes,
+there will be one page plus whatever space is available on the final page
+of the rebuilt symbol table.  This dictionary expansion space is less generous
+than the initial helping after `cold` start, before another `rehash` is
+required.
 
 ```
 : rehash  ( -- )
