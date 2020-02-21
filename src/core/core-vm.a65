@@ -733,6 +733,7 @@ wrapfetch01
     jsr wraprolls
     beq wrapfetch01
     ldx z
+pushn0
     ldy R0L+2*N0+1
     lda R0L+2*N0
     jmp pushya
@@ -939,52 +940,6 @@ _pktplus
     .word cmove
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=SCREDIDX
-stack=( -- index )
-tags=vm,ext,nosymbol
-return `index`:
-0 interpret data
-2 interpret isscr?
-4 editing? data
-6 editing? isscr?
-
-    ldy #1
-    bit userediting
-    lda (R0L+2*N8),y
-    php
-    pla
-    rol
-    rol
-    rol
-    and #3
-    jmp push0a
-
-    ldy #1
-    lda (R0L+2*N8),y            ; pkt header msb
-    asl                         ; isscr? bit to carry flag
-    tya
-    and userediting
-    rol
-    asl                         ; 00|02|04|06
-    jmp push0a
-
-    editing? 2* isscr? xor 2+ 2*
-
-~wut unused code [14]
-#endif
-scredidx
-    ldy #1
-    lda (R0L+2*N8),y            ; pkt header msb
-    asl                         ; isscr? bit to carry flag
-    tya
-    and userediting
-    rol
-    asl                         ; 00|02|04|06
-    jmp push0a
-;[14]
 
 ;--------------------------------------------------------------
 #if 0
@@ -1353,6 +1308,23 @@ tests:
  fill blkbuf all with '!'
  fill blkbuf all with '!'
 
+```
+: update   ( -- )
+    pkt.cur editing? isscr? 0= and ?exit
+    vmbuf @ b/buf -
+    editing? ?: vidram blkbuf
+    tuck
+    isscr? ?: b/scr b/buf
+    isscr? ?: -trailing -nulls
+    nip rlencode
+    isscr?
+    if
+        vidram +under <n2
+        editing? ?: wrap@ bufwrap@ rot 3c! 3+
+    then
+    2+ pkt.this 2over or updmojodojo
+    vmbuf +! +move cmove <n8 ! ;
+```
 #endif
 #include "align.i65"
 _update
