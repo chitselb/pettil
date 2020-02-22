@@ -124,7 +124,7 @@ symplus
     jmp pad0
 
 sympluss
-    sta R0L+2*ACC
+    sta R0L+2*ACC               ; ~todo this is probably always 3.  If so, remove this and use immediate mode ADC #3
     jsr symlens
     adc R0L+2*ACC
     adc R0L+2*N3
@@ -304,14 +304,8 @@ name=(>NAME)
 stack=( cfa -- nfa|0 )
 tags=compiler,nosymbol
 
-Compare the provided CFA(N4) vs. CFA of current NFA in (N3)
-
-```
-: (>name)   ( cfa -- nfa|0 )
-
-```
+~ deprecate
 #endif
-#include "align.i65"
 ptoname
     ldy #$FE
 ptoname02
@@ -339,15 +333,13 @@ ptoname05
 name=>NAME
 stack=( cfa -- nfa|0 )
 tags=compiler
-Returns the Name Field Address (`nfa`) of a given word, or 0
-if the provided Code Field Address (`cfa`) wasn't found in the
-symbol table.  This word honors the smudge bit
-
-Populates `n3` with the current `nfa`
+* search the dictionary for a given `cfa` and
+* return the `nfa` if found, else `0`
+* honors the smudge bit
 
 ```
 : >name   ( cfa -- nfa|0 )
-    sym0 >n3 drop
+    sym0
     begin
         name> over <>
         sym.len and
@@ -402,6 +394,8 @@ pfilterrewind02
 name=SWAP.73
 stack=( -- )
 tags=interpreter,nfa,nosymbol
+
+~deprecate
 Switches contents of N7 <--> N3
 #endif
 #include "align.i65"
@@ -769,7 +763,7 @@ _existsq
 #include "page.i65"
     .word bl
 #include "page.i65"
-    .word _name            ; ~~2
+    .word _name
 #include "page.i65"
     .word qdup
 #include "parm.i65"
@@ -1450,6 +1444,7 @@ name=(FORGET).KEEP
 stack=( cfa -- flag )
 tags=interpreter,nfa,nosymbol
 
+~deprecate
 #endif
 #include "align.i65"
 _pforgetkeep
@@ -1499,12 +1494,8 @@ symnext01
 name=INIT.411
 stack=( value 'filter -- )
 tags=interpreter,nfa,nosymbol
-Sweet16 primitive, sets `n4` to `value` and `r11` to `'filter`
 
-```
-: init.411    ( flag(r4) `filter(r11) -- )
-    >r11 drop >n4 drop ;
-```
+~deprecate
 #endif
 init411
     brk
@@ -1894,9 +1885,177 @@ _pforget
 
 ;--------------------------------------------------------------
 #if 0
+name=?GOSOUTH?
+stack=( -- )
+tags=primitive,dictionary,ext,nosymbol
+
+* `forget forget` works just like `rehash`
+** forgetting any other word in `studio` region) is same as
+
+passbits not required
+
+: southerly-filter   ( newdp -- newdp flag )
+    false
+    over ( newdp @ ) studio @
+    <n3 name> between?             ?exit
+    i <n8 <>                       ?exit
+    j <n3 1+ c@ 15 and <>          ?exit
+    1- ;
+
+```
+code ?gosouth?
+
+end-code
+```
+#endif
+gosouth
+    jmp next
+
+;--------------------------------------------------------------
+#if 0
+name=(SOUTHERLY)
+stack=( cfa -- )
+tags=secondary,dictionary,nosymbol
+
+```
+: (southerly)   ( cfa -- cfa )
+    sym0                                ( cfa )
+    \ symbols are copied to pad, sort
+    \ by thread 0..F,  by length 1..31
+    16 0 do
+        31 1 do
+            begin
+                <n3 @ csplit
+                msb $0F and
+                j =
+            while
+                i j  ?gosouth?
+```
+
+* these are synonymous:
+** `rehash`
+** `forget forget`
+** `forget :` (or any word `studio`)
+** `here (unremember)`
+
+passbits not required
+
+: southerly-filter   ( newdp -- newdp flag )
+    false
+    over ( newdp @ ) studio @
+    <n3 name> between?             ?exit
+    i <n8 <>                       ?exit
+    j <n3 1+ c@ 15 and <>          ?exit
+    1- ;
+
+
+: southerly ( cfa -- cfa )
+    sym0
+                                        ( cfa )
+    \ symbols are copied to pad, sort
+    \ by thread 0..F,  by length 1..31
+    16 0 do
+        31 1 do
+            i j ?gosouth?
+
+            newdp @ studio @  <n3 name> between?  0=
+
+
+            symnew @ =n3
+
+            check-symnew
+        loop
+    loop
+
+            if keepit then
+
+            \ cfa < studio?  no: keep it
+            <n3 name> studio @ <  0=
+            \ cfa < newdp?  yes: keep it
+            <n3 name> newdp @ <
+* rebuild and reindex the entire dictionary
+* rebalance it into 16 roughly equal-sized threads
+** thread key is the low four bits of the first character in the name.
+* Merge in newly created names from `symnew .. symtail`
+** that have been defined since startup
+** or the last `(unremember)`.
+* `bloom` filter will be repopulated
+!!!!PASS1
+* initialize output pointer to `pad`
+* for each of 16 threads:
+*   for each of 31 lengths:
+*     when `cfa` qualifies this:
+*       copy name when cfa<newdp | cfa >= studio
+*      scan every name in `symnew` area
+*         copy name when: J=thread & I=length & cfa<newdp
+* scan & copy
+* for each word < `cfa` stack parameter
+* copy smudged words too
+* Words with a CFA >= `cfa` stack parameter are discarded
+** when a word is discarded, if a predecessor (with the smudge bit set) exists:
+** AND the CFA of the predecessor is < `cfa` stack parameter
+*** unsmudge it
+!!!!PASS2
+
+A new `symtab`
+address will be calculated at halftime.  After the second phase, the `symnew`
+ list will be empty once again.
+
+```
+#endif
+#include "align.i65"
+_psoutherly
+    jsr enter
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=(UNREMEMBER)
 stack=( cfa -- )
 tags=nfa,ext,nosymbol
+
+* `forget forget` works exactly like `rehash`
+** forgetting any other word in `studio` region) is same as
+
+passbits not required
+
+: southerly-filter   ( newdp -- newdp flag )
+    false
+    over ( newdp @ ) studio @
+    <n3 name> between?             ?exit
+    i <n8 <>                       ?exit
+    j <n3 1+ c@ 15 and <>          ?exit
+    1- ;
+
+code ?gosouth?
+
+end-code
+
+: southerly ( cfa -- cfa )
+    sym0
+                                        ( cfa )
+    \ symbols are copied to pad, sort
+    \ by thread 0..F,  by length 1..31
+    16 0 do
+        31 1 do
+            i j ?gosouth?
+
+            newdp @ studio @  <n3 name> between?  0=
+
+
+            symnew @ =n3
+
+            check-symnew
+        loop
+    loop
+
+            if keepit then
+
+            \ cfa < studio?  no: keep it
+            <n3 name> studio @ <  0=
+            \ cfa < newdp?  yes: keep it
+            <n3 name> newdp @ <
 * rebuild and reindex the entire dictionary
 * rebalance it into 16 roughly equal-sized threads
 ** thread key is the low four bits of the first character in the name.
@@ -1947,27 +2106,21 @@ _punremember
     .word eight                 ; cfa bloom 8 )
 #include "page.i65"
     .word erase                 ; reset the Bloom filter
-#include "page.i65"
-    .word passbits              ; cfa passbits )
-#include "parm.i65"
-    .word blit                  ; cfa passbits %1000_0000 )
-    .byt $80
-#include "pad.i65"
-    .word _storeplus            ; cfa passbits+2 )
-#include "page.i65"
-    .word off                   ; passbits = %1000 0000 0000 0000
-#include "parm.i65"
-    .word dlit
-    .word $FFFF
-    .word _pforgetpass1         ; >r11
-#include "pad.i65"
+;    .word passbits              ; cfa passbits )
+;    .word blit                  ; cfa passbits %1000_0000 )
+;    .byt $80
+;    .word _storeplus            ; cfa passbits+2 )
+;    .word off                   ; passbits = %1000 0000 0000 0000
+;    .word dlit
+;    .word $FFFF
+;    .word _pforgetpass1         ; >r11
 ;    .word init411
-;#include "page.i65"
-    .word bl                    ; 32 )
-;#include "page.i65"
-;    .word zero                 ; 32 0 ) \ factored into `(forget).looper`
 #include "page.i65"
     .word sym0
+#include "page.i65"
+    .word bl                    ; 32 )
+#include "page.i65"
+    .word zero                 ; 32 0 ) \ factored into `(forget).looper`
 #include "page.i65"
     .word _pad
 #include "page.i65"
