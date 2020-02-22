@@ -3,6 +3,63 @@
 
 ;--------------------------------------------------------------
 #if 0
+name=!SYMDEX
+stack=( studio start size -- studio start symtab size )
+tags=system,startup,nosymbol
+* establish dictionary at cold start
+* does the second half of `(unremember)`
+* is the business end of `forget`
+
+Calculate `symtab` memory requirements, given a size
+
+```
+: !symdex   ( pad size -- )
+    \ sorted names (thread, length) start at pad
+    \ calculate new symtab address
+    \ `symtab !`
+    \ `pad symtab bl + size cmove>`
+    \ establish symtab thread boundaries
+    \ set bloom bit for each name
+    \ write three nulls at symtail
+    \ `symnew !`
+    \ `symtail !`
+
+    bloom 8 erase  sym0
+    symtab @ bl
+    begin
+        sym.len <
+        if
+            n3> !+
+        then
+        bloomfilter cbit!
+        sym.len
+        3 sym+
+        sym.len 0=
+    until (!symtab) ;
+```
+#endif
+#include "align.i65"
+_setsymdex
+    jsr enter
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word eight
+#include "page.i65"
+    .word erase
+#include "page.i65"
+    .word sym0
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word bl
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
 name=SYMTAB!
 stack=( studio start size -- studio start symtab size )
 tags=system,startup,nosymbol
@@ -1932,12 +1989,6 @@ tags=secondary,dictionary,nosymbol
                 i j  ?gosouth?
 ```
 
-* these are synonymous:
-** `rehash`
-** `forget forget`
-** `forget :` (or any word `studio`)
-** `here (unremember)`
-
 passbits not required
 
 : southerly-filter   ( newdp -- newdp flag )
@@ -2015,22 +2066,6 @@ name=(UNREMEMBER)
 stack=( cfa -- )
 tags=nfa,ext,nosymbol
 
-* `forget forget` works exactly like `rehash`
-** forgetting any other word in `studio` region) is same as
-
-passbits not required
-
-: southerly-filter   ( newdp -- newdp flag )
-    false
-    over ( newdp @ ) studio @
-    <n3 name> between?             ?exit
-    i <n8 <>                       ?exit
-    j <n3 1+ c@ 15 and <>          ?exit
-    1- ;
-
-code ?gosouth?
-
-end-code
 
 : southerly ( cfa -- cfa )
     sym0
@@ -2082,8 +2117,25 @@ A new `symtab`
 address will be calculated at halftime.  After the second phase, the `symnew`
  list will be empty once again.
 
+
+;    .word bloom                 ; cfa bloom )
+;    .word eight                 ; cfa bloom 8 )
+;    .word erase                 ; reset the Bloom filter
+;    .word passbits              ; cfa passbits )
+;    .word blit                  ; cfa passbits %1000_0000 )
+;    .byt $80
+;    .word _storeplus            ; cfa passbits+2 )
+;    .word off                   ; passbits = %1000 0000 0000 0000
+;    .word dlit
+;    .word $FFFF
+;    .word _pforgetpass1         ; >r11
+;    .word init411
+
+
 ```
 : (unremember)   ( cfa -- )
+    sym0 bl 0 pad
+
     bloom 8 erase
 
     passbits $80 !+ off
@@ -2100,21 +2152,6 @@ address will be calculated at halftime.  After the second phase, the `symnew`
 #include "align.i65"
 _punremember
     jsr enter
-#include "page.i65"
-    .word bloom                 ; cfa bloom )
-#include "page.i65"
-    .word eight                 ; cfa bloom 8 )
-#include "page.i65"
-    .word erase                 ; reset the Bloom filter
-;    .word passbits              ; cfa passbits )
-;    .word blit                  ; cfa passbits %1000_0000 )
-;    .byt $80
-;    .word _storeplus            ; cfa passbits+2 )
-;    .word off                   ; passbits = %1000 0000 0000 0000
-;    .word dlit
-;    .word $FFFF
-;    .word _pforgetpass1         ; >r11
-;    .word init411
 #include "page.i65"
     .word sym0
 #include "page.i65"
@@ -2173,12 +2210,7 @@ checks FENCE, sorts symbol table, keeping only words below the CFA of the named 
 ```
 : forget   ( "name" -- )
     '  dup  fence @  u<  7 ?error
-    (forget) ;
-
-~wut?  maybe new and improved 2017-09-04
-: forget   ( "name" -- )
-    '  dup  fence @ studio @ between 0=
-    7 ?error (forget) ;
+    (unremember) ;
 ```
 #endif
 #include "align.i65"
@@ -2217,6 +2249,12 @@ of the rebuilt symbol table.  This dictionary expansion space is less generous
 than the initial helping after `cold` start, before another `rehash` is
 required.
 
+* these are synonymous:
+** `rehash`
+** `forget forget`
+** `forget :` (or any word with a CFA in the `studio` region)
+** `here (unremember)`
+
 ```
 : rehash  ( -- )
     here (unremember) ;   \ effectively a `forget nothing` command
@@ -2231,45 +2269,6 @@ _rehash
     .word _punremember
 #include "past.i65"
     .word exit
-
-/**************************************************************
-name=FORGET
-stack=( "name" -- )
-tags=interpreter,dictionary,forth-83,forth-79,fig
-checks FENCE, sorts symbol table, keeping only words below the CFA of the named word
-
-```
-: forget   ( "name" -- )
-    '  dup  fence @  u<  7 ?error
-    (forget) ;
-
-~wut?  maybe new and improved 2017-09-04
-: forget   ( "name" -- )
-    '  dup  fence @ studio @ between 0=
-    7 ?error (forget) ;
-```
-
-#include "align.i65"
-_forget
-    jsr enter
-#include "page.i65"
-    .word _tick
-#include "page.i65"
-    .word dup
-#include "page.i65"
-    .word fence
-#include "page.i65"
-    .word fetch
-#include "page.i65"
-    .word ult
-#include "parm.i65"
-    .word qerror
-    .byt 7                      ; CAN'T FORGET BELOW FENCE
-#include "pad.i65"
-    .word _pforget
-#include "past.i65"
-    .word exit
- **************************************************************/
 
 ;--------------------------------------------------------------
 #if 0
