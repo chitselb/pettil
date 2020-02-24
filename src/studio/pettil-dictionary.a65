@@ -4,38 +4,44 @@
 ;--------------------------------------------------------------
 #if 0
 name=!SYMDEX
-stack=( studio start size -- studio start symtab size )
+stack=( start size -- )
 tags=system,startup,nosymbol
-* establish dictionary at cold start
-* does the second half of `(unremember)`
-* is the business end of `forget`
-
-Calculate `symtab` memory requirements, given a size
 
 ```
-: !symdex   ( pad size -- )
-    \ sorted names (thread, length) start at pad
-    \ calculate new symtab address
-    \ `symtab !`
-    \ `pad symtab bl + size cmove>`
-    \ establish symtab thread boundaries
-    \ set bloom bit for each name
-    \ write three nulls at symtail
-    \ `symnew !`
-    \ `symtail !`
-
-    bloom 8 erase  sym0
-    symtab @ bl
+\ establish new symbol table from a memory region containing names
+: symdex   ( start size -- )            \ set up a fresh dictionary
+    studio @  over -                    \ calculate memory requirements
+    $ff00 and benjamin -                \ (studio - size) & $FF00  - $100
+( start size symtab )
+    dup symtab !  bl +                  \ set symtab
+( start size symtab+32 )
+    2dup + dup 3coff                    \ set tail = 00 00 00
+    dup symtail !                       \ set symtail
+    2+ symnew !                         \ set symnew
+( start size symtab+32 )
+    swap cmove>                         \ copy names from start to symtab+32
+( -- )
+    bloom 8 erase  sym0                 \ set bloom filter & threads
+    symtab @  bl
+( symtab 32 )
     begin
         sym.len <
         if
-            n3> !+
+           n3> !+
         then
         bloomfilter cbit!
         sym.len
         3 sym+
         sym.len 0=
-    until (!symtab) ;
+    until ;
+
+    etc ...
+
+    ;
+```
+
+    bloom 8 erase  sym0
+    symtab @ bl
 ```
 #endif
 #include "align.i65"

@@ -6,39 +6,11 @@
 #if 0
 name=(COLD)
 stack=( -- )
-tags=system,startup,throwaway,nosymbol,secondary
-
-|^`(cold)` startup tasks|<|h
-|^`?aloha`|^swap zeropage <--> zpbuf<br/>$00-$8C|
-|^`sp!`|^initialize data stack|
-|^`=irq`|^set up IRQ vector<br/>$90-$91|
-|^`!sw16`|^connect Sweet16 to BRK vector<br/>$92-$93|
-|^`diagfill`|^fill screen (entertainment)|
-|^`studio cmove`|^copy `studio` to top of memory|
-|^`splash`|^(entertainment)|
-|^`symtab cmove`||
-|^`!symtab`<br/>( start end -- symtab size ) |^set symbol table size|
-|^`symdex`|^build symtab index|
-|^`deadbeef`|^fill memory with a pattern|
-|^`warm`|^drop the user to a blinking cursor|
-
-A primitive relocator to move already-linked code to upper memory
-
-Gets us from `pettil-core` to module LAUNCH
+tags=system,startup,secondary,throwaway,nosymbol
+PETTIL cold start
 
 Setting the `size` of the transient dictionary to 0 will prevent
 moving anything; control still transfers to `loadaddr+2`.
-
-|task|description|h
-|^`?aloha`|^swap lower half of zero page<br/>if it isn't already|
-|^`sp!`|^reset data stack|
-|^`=irq`|^exchange IRQ vector<br/>with `userirq`|
-|^`!sw16`|^exchange BRK vector<br/>with `userirq`<br/>if it isn't already|
-|^`diagfill`|fill screen with '\' pattern|
-|^``there @+ tuck over @ 2+ cmove`|^copy `studio` to `hitop` area|
-|^`2+ startup !|^set `startup` to `studio`|
-|^cold variables<br/>`cmove erase`|^reset `cold` uservars|
-|^`restart`|launch `studio`|
 
 ```
 code (cold)   ( -- )
@@ -53,10 +25,19 @@ code (cold)   ( -- )
     2+ startup !                        \ set startup to studio
     'splashirq cinv !                   \ irq vector -> entertainment
     =irq                                ( stack empty )
+    vidram+11*40 14*40 blank
     'EAL 'there
+@+
+dup 2+ studio !
+-rot @+ + swap @ over - symtab!
+cmove> drop
+
     @+ -rot                             ( EAL studio-2 there+2 )
     @+ +                                ( EAL studio-2 there+4+size )
-    !symdex                             \ bazinga
+
+    swap @ over - symtab!
+    cmove> drop
+    !symtab deadbeef
 
 ```
 \ copy symbols to `symtab`, build index
@@ -144,6 +125,9 @@ pcold
     .word over
 #include "page.i65"
     .word minus
+#include "page.i65"
+    .word xyzzy
+
 #include "page.i65"
     .word symtabset
 #include "page.i65"
