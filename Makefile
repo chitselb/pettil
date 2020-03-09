@@ -9,7 +9,8 @@ SHELL = /bin/bash
 
 # perform test feats on samosa
 #all: pristine disturb pet
-all: pristine disturb pet
+all: pristine pettil0 perturb0 mkd64perturb pet
+#all: pristine pettil0 pettil4 perturb0 mkd64perturb vic20
 
 remote:
 	at now < ./tools/remote.disturb.at
@@ -17,6 +18,13 @@ remote:
 # build a fresh PETTIL from source
 pettil:
 	./tools/mkpettil
+
+# build a fresh PETTIL from source
+pettil0:
+	./tools/mkpettil 0
+# build a fresh PETTIL from source
+pettil4:
+	./tools/mkpettil 4
 
 #sh ./tools/buildpettil.sh 0     5       6500  0401  # my pet #700251
 #sh ./tools/buildpettil.sh 4     32      6500  1201 # VIC20 +01235(all) RAM
@@ -127,6 +135,9 @@ pristine: clean
 
 # build and perform all feats of testing
 perturb: pettil
+	./tools/mkperturb
+
+perturb0:
 	./tools/mkperturb
 
 #		c1541                                                                   \
