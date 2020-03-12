@@ -4,7 +4,7 @@
 
 ;--------------------------------------------------------------
 #if 0
-name=(COLD)
+name=COLD
 stack=( -- )
 tags=system,startup,secondary,throwaway,nosymbol
 PETTIL cold start
@@ -13,23 +13,152 @@ Setting the `size` of the transient dictionary to 0 will prevent
 moving anything; control still transfers to `loadaddr+2`.
 
 ```
+code (cold.pointers)
+    brk
+    .byt set | N0
+    .word there
+    .byt ldd | N0                       ; studio-2
+    .byt st  | N1
+    .byt ldd | N0                       ; studio.size
+    .byt st  | N2
+    .byt ld  | N0
+    .byt push
+( from=there+4 to@(there) size@(there+2) )
+( symbols symsize )
+    .byt add | N0
+    .byt push                           ; ( symbols )
 code (cold)   ( -- )
     '?aloha jsr,                        \ swap BASIC zeropage with PETTIL
     '>forth jsr,                        \ start inner interpreter
+end-code ]
     sp!                                 \ reset data stack
     diagfill                            \ splash screen
     'FA c@  'user0drvnum !              \ set drv# to last device used
     callz !sw16                         \ brk vector -> sweet16
-    'there @+ tuck over @ 2+
-    cmove ( studio-2 )                  \ move studio
+    cold.pointers
+( symbols symsize )
+\ initialize symtab
+    !symtab
+( from=there+4 to@(there) size@(there+2) )
+    cmove
+( )
+    'there
+    (coldstack)
+    @+ 2+ tuck
+( studio there+2 studio )
+    over @ cmove
+
+    'splashirq cinv !  =irq             \ irq vector -> entertainment
+( )
+    dup studio ! dup startup !
+     over @ 2+  cmove     \ move studio
+
+( )
+    dup>r studio !
+( there+2 R; studio )
+    @+
+( there+4 size R; studio )
+     2>r @
+    'EAL
+
+( from to howmany )
+\ move studio
+
+
+( there+@(there+2)+4 eal-there+@(there+2)+4 )
+
+( )
+    'EAL 'there @+ 2+ >r @+ 2>r @
+( eal R; size there+4 studio )
+
+    'EAL there @+ 2+ >r @+ >r
+( eal there+4 ;R size studio )
+    dup 2r@ cmove
+( eal there+4 ;R size studio )
+
+cold
+
+
+( @(there)+2 )
+( studio     )
+    dup startup !
+    studio !
+
+
+( eal there+4 ;R size studio )
+    r> + 'EAL @ over -
+( symbols symsize ;R studio )
+    r@ studio !
+( symbols symsize ;R studio )
+    r> startup !
+( symbols symsize )
+    !symtab
+( )
+    deadbeef [
+
+
+
+
+    'there @+ tuck over @ 2+  cmove     \ move studio
+
+
+    'there @+ tuck over @ 2+  cmove     \ move studio
     2+ startup !                        \ set startup to studio
-    'splashirq cinv !                   \ irq vector -> entertainment
-    =irq                                ( stack empty )
+
+    'there @+ 2+
+    dup startup !
+    studio !
+     @+
+
+( there+4 studiosize ;R studio )
+    2dup + 'EAL @ over -
+( there+4 studiosize symstart symtabsize ;R studio )
+    !symtab
+    studio ! startup !
+
+    'EAL 'there @+                      \ studio address -2
+( eal there+2 63FE )
+    2+ dup studio ! startup !           \ where to start in upper dictionary
+( eal there+2 )
+    @+ +                                \ add size
+( eal there+4+188E )
+    swap @ over -
+( there+4+188E size )
     vidram+11*40 14*40 blank
-    'EAL 'there
+( symbols size )
+    !symtab
+( stack empty )
 
 
 
+    .word dashrot               ; ( studio-2 EAL there+2 )
+    .word fetchplus             ; ( studio-2 EAL there+4 size )
+    .word plus                  ; ( studio-2 EAL there+4+size )
+    .word swap                  ; ( studio-2 there+4+size EAL )
+    .word fetch
+    .word over
+    .word minus
+    .word xyzzy
+
+    .word symtabset
+    .word cmovegt
+    .word drop
+    .word dlit
+    .word VIDRAM+11*40
+    .word 14*40
+    .word blank
+    .word five
+    .word _jiffies
+    .word _setsymtab            ; `!symtab`
+perturbpreserve
+    .word _deadbeef
+
+
+
+
+
+
+.......
 
 
 
@@ -129,15 +258,19 @@ pcold
     .word swap                  ; ( studio-2 there+4+size EAL )
 #include "page.i65"
     .word fetch
+                  ; ( studio-2 there+4+size EAL )
 #include "page.i65"
     .word over
+                  ; ( studio-2 there+4+size EAL )
 #include "page.i65"
     .word minus
+                  ; ( studio-2 there+4+size EAL )
 #include "page.i65"
     .word xyzzy
-
+                  ; ( studio-2 there+4+size EAL )
 #include "page.i65"
     .word symtabset
+                  ; ( studio-2 there+4+size EAL )
 #include "page.i65"
     .word cmovegt
 #include "page.i65"
