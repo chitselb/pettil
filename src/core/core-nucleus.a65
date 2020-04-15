@@ -11,7 +11,6 @@ arithmetic are unsigned.
 
 check http://6502.org/source/ for multiply and divide and stuff
 
-
 ```
 umstar
     lda stackl,x
@@ -308,10 +307,11 @@ rexchg
     pla
     tay
     pla
+toray
     dex
-    sty stackl,x
+    sty stackl,x                ; ay
     sta stackh,x
-    bne tor
+    bne tor                     ; >r
 
 ;--------------------------------------------------------------
 #if 0
@@ -521,13 +521,11 @@ negate
 donegate
     sec
 neg2
-    lda tos
-    eor #$FF
-    adc #0
+    lda #0
+    sbc tos
     sta tos
-    lda tos+1
-    eor #$FF
-    adc #0
+    lda #0
+    sbc tos+1
     sta tos+1
     rts
 
@@ -713,6 +711,26 @@ cfetchplus
     lda (tos),y
     jsr inctos
     jmp pushya
+
+;--------------------------------------------------------------
+#if 0
+name=@+
+stack=( addr -- addr+2 w )
+tags=nucleus,memory,primitive
+Fetches word `w` at `addr`, increments addr by 2
+
+!!!pronounced: "c-fetch-plus"
+#endif
+fetchplus
+    ldy #1
+fetchplus01
+    lda (tos),y
+    pha
+    dey
+    bpl fetchplus01
+    jsr inctos
+    jsr inctos
+    jmp rfrom
 
 ;--------------------------------------------------------------
 #if 0
@@ -992,6 +1010,8 @@ xpushz
 name=ACC
 stack=( -- 00|02 )
 tags=assembler,vocabulary,extension
+vocab=1
+
 !!!Assembler constant
 zero page scratch location
 
@@ -2147,18 +2167,26 @@ sign-extends a single into a double
 ```
 : s>d   ( s -- d )
     dup 0< ;
-```
-#endif
-#include "align.i65"
+
 stod
     lda tos+1
     eor #$80
     asl
     lda #0
-stod01
     sbc #0
     tay
     jmp pushya
+;[13 bytes, 16 cycles] chitselb OG
+```
+#endif
+stod
+    lda #$7f
+    cmp tos+1    ; clear carry if negative
+    sbc #$7f     ; $00 for +, $ff for -
+    tay
+    jmp pushya
+;~~~code golf~~~
+;[-3 bytes, -4 cycles] barrym95838 2020-03-30
 
 ;--------------------------------------------------------------
 #if 0

@@ -19,6 +19,11 @@ name=B/SCR
 stack=( -- 1000 )
 tags=const,vm
 !!!Constant
+bytes per screen.  Not what it usually means in other Forths,
+
+
+
+!!!Constant
 bytes per screen.  In other Forths, this word often has a different meaning of blocks per screen
 
 |^model|^b/scr|h
@@ -33,32 +38,6 @@ bytes per screen.  In other Forths, this word often has a different meaning of b
 bperscr
     jsr doconst
     .word BPERSCR
-
-;--------------------------------------------------------------
-#if 0
-name=CAS1BUF
-stack=( -- $027A )
-tags=const,vm
-!!!Constant
-bytes per screen.  In other Forths, this word often has a different meaning of blocks per screen
-
-;--------------------------------------------------------------
-#if 0
-name=CAS2BUF
-stack=( -- $033A )
-tags=const,vm
-!!!Constant
-Address of the second tape buffer (device #2)
-base address of cassette buffer #2, used (for now) as a line buffer
-to unpack screens and blocks into lines
-#endif
- cas2buf
-    jsr doconst
- #ifdef IS_PET
-    .word CAS2BUF
-#else
-    .word CAS1BUF
-#endif
 
 ;--------------------------------------------------------------
 #if 0
@@ -699,6 +678,7 @@ wrapfetch01
     jsr wraprolls
     beq wrapfetch01
     ldx z
+pushn0
     ldy R0L+2*N0+1
     lda R0L+2*N0
     jmp pushya
@@ -908,52 +888,6 @@ _pktplus
 
 ;--------------------------------------------------------------
 #if 0
-name=SCREDIDX
-stack=( -- index )
-tags=vm,ext,nosymbol
-return `index`:
-0 interpret data
-2 interpret isscr?
-4 editing? data
-6 editing? isscr?
-
-    ldy #1
-    bit userediting
-    lda (R0L+2*N8),y
-    php
-    pla
-    rol
-    rol
-    rol
-    and #3
-    jmp push0a
-
-    ldy #1
-    lda (R0L+2*N8),y            ; pkt header msb
-    asl                         ; isscr? bit to carry flag
-    tya
-    and userediting
-    rol
-    asl                         ; 00|02|04|06
-    jmp push0a
-
-    editing? 2* isscr? xor 2+ 2*
-
-~wut unused code [14]
-#endif
-scredidx
-    ldy #1
-    lda (R0L+2*N8),y            ; pkt header msb
-    asl                         ; isscr? bit to carry flag
-    tya
-    and userediting
-    rol
-    asl                         ; 00|02|04|06
-    jmp push0a
-;[14]
-
-;--------------------------------------------------------------
-#if 0
 name=DWRAP@
 stack=( -- wrapd  )
 tags=vm,ext,nosymbol
@@ -1105,6 +1039,27 @@ _emptybuffers
     .word off
 #include "page.i65"
     .word _numblkstore
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=FLUSH
+stack=( -- )
+tags=vm,forth-83,i/o
+
+```
+: flush   ( -- )
+    save-buffers empty-buffers ;
+```
+#endif
+#include "align.i65"
+_flush
+    jsr enter
+#include "page.i65"
+    .word _savebuffers
+#include "page.i65"
+    .word _emptybuffers
 #include "past.i65"
     .word exit
 
@@ -1319,6 +1274,23 @@ tests:
  fill blkbuf all with '!'
  fill blkbuf all with '!'
 
+```
+: update   ( -- )
+    pkt.cur editing? isscr? 0= and ?exit
+    vmbuf @ b/buf -
+    editing? ?: vidram blkbuf
+    tuck
+    isscr? ?: b/scr b/buf
+    isscr? ?: -trailing -nulls
+    nip rlencode
+    isscr?
+    if
+        vidram +under <n2
+        editing? ?: wrap@ bufwrap@ rot 3c! 3+
+    then
+    2+ pkt.this 2over or updmojodojo
+    vmbuf +! +move cmove <n8 ! ;
+```
 #endif
 #include "align.i65"
 _update
@@ -1499,6 +1471,133 @@ _copy
     .word _update
 #include "past.i65"
     .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=>IO<
+stack=( -- )
+tags=vm,i/o,kernel,magic-number,nosymbol
+Subroutine to preserve the data stack pointer, stack, Sweet16 and
+other Forth zero page during a BASIC system call
+
+#endif
+doiooutside
+    jsr topfas
+    sta iooper+1
+    iny
+    lda (pip),y
+    sta iooper+2
+    stx iooutsidexreg
+    jsr aloha
+    lda #2                      ; set direct mode in CHRGET routine
+    sta $78                     ; so we get prompts during i/o
+iooper
+    jsr plugh
+    jsr aloha
+    ldx iooutsidexreg
+    jmp next
+
+
+iooutsidexreg
+    .byt 0
+
+
+;--------------------------------------------------------------
+#if 0
+name=STASH-FORTH
+stack=( -- )
+tags=vm,i/o,kernel,magic-number,nosymbol
+Subroutine to preserve the data stack pointer, stack, Sweet16 and
+other Forth zero page during a BASIC system call
+
+#endif
+stashforth
+    stx stashforth01
+    jsr aloha
+    lda #2                      ; set direct mode in CHRGET routine
+    sta $78                     ; so we get prompts during i/o
+/*
+tapeop
+    jsr plugh
+
+*/
+
+    rts
+stashforth01 .byt 0             ; temp storage for X register during tape I/O
+
+;--------------------------------------------------------------
+#if 0
+name=RESTORE-FORTH
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+Restore Forth stack after BASIC system call
+
+#endif
+restoreforth
+    jsr aloha
+    ldx stashforth01            ; this messes up BASIC's USR() function
+    jmp exit
+
+
+;--------------------------------------------------------------
+#if 0
+name=(SAVEPRG)
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+#endif
+psaveprg
+    jsr doiooutside
+    .word SAVEPRG
+/*
+(C:$1132) d f6e3
+.C:f6e3  A5 D4       LDA $D4
+.C:f6e5  D0 05       BNE $F6EC          ; device 0?  (the keyboard? Suuuuure, Jan)
+.C:f6e7  A0 74       LDY #$74           ; ?DEVICE NOT PRESENT, BASIC crash
+.C:f6e9  4C AF F5    JMP $F5AF
+.C:f6ec  C9 03       CMP #$03           ; device 3? (let's save to the screen!  nahhhh)
+.C:f6ee  F0 F7       BEQ $F6E7
+.C:f6f0  90 50       BCC $F742          ; whew, made it.  okay tape or disk?
+.C:f6f2  A9 61       LDA #$61
+.C:f6f4  85 D3       STA $D3            ; SA
+.C:f6f6  A4 D1       LDY $D1            ; FNLEN length of current filename
+.C:f6f8  D0 03       BNE $F6FD
+.C:f6fa  4C 00 BF    JMP $BF00          ; SAVE"",8 ?? haha good one, user.  We'll call that one "?SYNTAX ERROR"
+.C:f6fd  20 A5 F4    JSR $F4A5          ; send name string to IEEE buss
+.C:f700  20 D5 F0    JSR $F0D5          ; send "untalk" or "unlisten"
+.C:f703  A5 D3       LDA $D3            ; secondary address
+.C:f705  20 43 F1    JSR $F143          ; send one char and clear ATN
+.C:f708  A0 00       LDY #$00
+.C:f70a  20 BB FB    JSR $FBBB          ; puts (FB) into (C7) - header pointer back to start of buffer
+.C:f70d  A5 C7       LDA $C7            ; SAL pointer - tape buffer/screen scrolling
+                                ;
+#define SAL         $C7
+
+.C:f70f  20 9E F1    JSR $F19E
+.C:f712  A5 C8       LDA $C8
+.C:f714  20 9E F1    JSR $F19E
+.C:f717  20 0B FD    JSR $FD0B
+.C:f71a  F0 10       BEQ $F72C
+
+*/
+;--------------------------------------------------------------
+#if 0
+name=(READHEAD)
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+#endif
+preadhead
+    jsr doiooutside
+    .word READHEAD
+
+;--------------------------------------------------------------
+#if 0
+name=(READDATA)
+stack=( -- )
+tags=vm,i/o,kernel,nosymbol
+#endif
+preaddata
+    jsr doiooutside
+    .word READDATA
 
 ;--------------------------------------------------------------
 #if 0
