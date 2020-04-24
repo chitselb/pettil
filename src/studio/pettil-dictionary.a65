@@ -3,6 +3,52 @@
 
 /* dictionary conspiracy
 
+~todo
+
+labels are a special temporary type of symbol.
+label redefinition overwrites value, is not a duplicate label
+all labels are dropped by rehash
+labels may have any arbitrary 2-byte value
+labels are immediate by default
+label %smudge bit ... what does it do?  always false
+label %vocab bit is always true, vocabid is always 00
+labels belong to vocabulary 00 by default
+labels %immed bit is true by default, may be set false after label created
+    immediate -- turns on %immed bit of most recently added word
+    dawdle -- antonym of immediate
+
+symbols must have a code field address
+    which must point to executable 6502 code
+
+|label  |2 bytes |value                    |
+|~      |1 byte  |%smudge                  |
+|~      |~       |%vocab        true       |
+|~      |~       |%immed                   |
+|~      |~       |len                      |
+|       |len     |`label`                  |
+|~      |1 byte  |vocabid       00         |
+|~      |~       |~                        |
+|symbol |2 bytes |Code Field Address (CFA) |
+|~      |1 byte  |%smudge                  |
+|~      |~       |%vocab                   |
+|~      |~       |%immed                   |
+|~      |~       |len                      |
+|       |len     |`symbol`                 |
+
+|symbol |2 bytes|code field address |1 byte|%smudge %vocab %immed length |length bytes|
+
+!!label
+* a label will not survive `rehash`.
+* a label has no code
+* executing a label puts its value on the stack
+* labels may be reassigned with the syntax: ( value ) IS label
+!!symbol
+** symbol must have a code field address in the link field
+** label has a label field, which may or may not be an address
+** if label field is an address, then it need not point to 6502 code,
+** a code field address must point to 6502 code
+
+** although labels associate to a value which is usually an address, no similar constraint that the value must be a code field address exists with labels
 n3      nfa                             sym0 !symdex (seek) >name (unremember) word-list
 n4l     seek symlen
 n4h     sorted/unsorted flag
@@ -20,18 +66,31 @@ n8h
 name=!SYMDEX
 stack=( start size -- )
 tags=system,startup,nosymbol
+\ set up a fresh symbols dictionary
+
+This word performs several tasks, all related to creating a symbol table for
+`interpret` to use for name lookups.  The symbol table connects the common,
+pronounceable name of a word to it's code field.  Invoking `words` will show
+only symbols in the active vocabularies, or show all the symbols in core when
+no vocabulary is active.
+
+The symbol table is located below the `studio` region and grows upward as new
+words are added to the dictionary.  If it overwrites `studio`, well, you know
+what will happen.  When it gets close, `rehash` will rebuild the symbol table.
+
+inputs:
+studio                          uservar, address of `studio` dictionary
+start                           start of region containing sorted symbols
+size                            size of region, in bytes
+
+outputs:
+symtab                          studio - size pages, an extra page, and keep the change
+symtail                         address where new symbols are appended
+symnew                          address of first unsorted symbol
+bloom                           helps PETTIL (hopefully) search less often for numbers
+[symtab..symtail]               symbols, terminated by three nulls
 
 ```
-\ set up a fresh dictionary from a long string of symbols
-
-inputs:                 studio
-                        [start..(start+size)]
-
-outputs:                symtab symtail symnew
-                        bloom
-                        [symtab..symtail]
-
-
 get memory requirements                 symtab
     1 harvests
 
@@ -97,13 +156,36 @@ _setsymdex
     .word exit
 
 ;--------------------------------------------------------------
-#if 0
-name=SYMTAB!
-stack=( studio start size -- studio start symtab size )
-tags=system,startup,nosymbol
+/* SYMTAB!
+
+Using the formula: (size + 2 pages + keep the change),
+reallocate memory during `rehash` or `(cold)`.
+
+|change  |in          |out       |<|h
+|symtab  |.           |symtab    |<|
+|tos     |size        |.         |<|
+|2os     |+           |symtab+32 |inserted value |
+|3os     |start       |.         |pad|
+
 Calculate `symtab` memory requirements, given a size
 
-#endif
+```
+\ determine size of new symbol table
+noname code symtab!
+( studio start size -- studio start symtab+32 size )
+tiny
+  1 harvests jsr,  brk,
+
+  2 plants ext,  nxt,
+fast
+  dex,  stackh 1+ ,x lda,
+  clc,  tos 1+ sbc,  stackh ,x sta,
+  symtab 1+ sta,  #32 # lda,
+  stackl ,x sta,
+label symtabset99
+    next jmp,  end-code
+```
+*/
 symtabset
     dex
     lda stackh+2,x
@@ -115,7 +197,6 @@ symtabset
     sta stackl,x
 symtabset99
     jmp next
-;[18]
 
 ;--------------------------------------------------------------
 #if 0
@@ -133,33 +214,34 @@ sym0
     bne symtabset99             ; bra
 
 ;--------------------------------------------------------------
-#if 0
-name=SYM.LEN
-stack=( -- len )
-tags=nfa,nosymbol
-Return length information about the `nfa`  `n3`
+/* SYM.LEN
 
-`visible length` means the length of the name when you type it.
-The carry flag indicates whether a `vocabid` follows the `name`
+|change  |in          |out    |<|h
+|a       |.           |len    |<|
+|y       |.           |0      |<|
+|c       |.           |vocab? |<|
+|z       |.           |tail?  |true when symtail is reached |
+|tos     |+           |len    |<|
+|n3      |nfa         |.      |<|
+|n8l     |.           |len    |<|
 
-C = vocabid?
-A,N8L = visible length
-Y = 0
-#endif
+```
+\ get a name's length information
+noname code sym.len   ( -- len )
+  'pushya csplit
+  # lda, pha,  #lda, pha,  end-code
+noname code symlens
+  0 # ldy,  n3 1+ lda,  0= not if,
+                   n3 ,y lda,  then,
+  pha,  asl, asl,  pla,  $1f # and,
+  n8 sta,  rts,  end-code
+```
+*/
 symlen
     lda #>(pushya-1)
     pha
     lda #<(pushya-1)
     pha
-;--------------------------------------------------------------
-#if 0
-name=SYMLENS
-effects=A:len;Y:0;C:vocab?;Z:len
-tags=nfa,nosymbol
-6502registers=A:symlen Y:0 C:vocab
-Sweet16registers=N3:nfa N8:length
-
-#endif
 symlens
     ldy #0              ;{2 {=23}}
     lda R0L+2*N3+1              ; length = 0 if `n3` is 0
@@ -484,32 +566,6 @@ pfilterrewind02
 
 ;--------------------------------------------------------------
 #if 0
-name=SWAP.73
-stack=( -- )
-tags=interpreter,nfa,nosymbol
-
-~deprecate
-Switches contents of N7 <--> N3
-#endif
-#include "align.i65"
-swap73
-    lda #>(next-1)
-    pha
-    lda #<(next-1)
-    pha
-swap73s
-    lda R0L+2*N7
-    ldy R0L+2*N3
-    sta R0L+2*N3
-    sty R0L+2*N7
-    lda R0L+2*N7+1
-    ldy R0L+2*N3+1
-    sta R0L+2*N3+1
-    sty R0L+2*N7+1
-    rts
-
-;--------------------------------------------------------------
-#if 0
 name=EXT-UNTIL
 stack=( -- )
 tags=ext,immediate,compiler,nosymbol
@@ -732,30 +788,6 @@ redefined symbols remain in the symbol table, smudged. Smudged words are
 ignored (not a match) by `found?`
 
 ```
-: found?   ( name -- xfa flag )
-
-
-        for the nfa(n7) in `symnew` list (ordered by age)
-    calculate pearson hash for word if it were in this vocabulary
-    get thread start
-    search for the nfa(n7) in `symtab` list (ordered by length)
-    search for the nfa(n7) in `sym
-
-: found?   ( nfa -- xfa flag )
-    vocabs (found?) bloomfilter cbit@
-    if
-        symnew (seek)
-        if
-            symtab @ >thread (seek)
-        if
-            nextvocab
-        repeat
-        '(seek) init.411
-    bloomfilter cbit@
-    if  vocabs c@+ symnew @
-        set.76 swap73
-        ext-until ?exit
-        1- c@+
 : found?   ( name -- xfa flag )
     vocabs (found?) bloomfilter cbit@
     if
@@ -995,8 +1027,14 @@ pcreate02
     .byt std | N3               ; write CFA to symtab, +2 N5 pointer
     .byt ld | N3
     .byt std | TOS              ; populate `newest`
-    .byt ext
-    .word swap73s
+
+    .byt ld | N7
+    .byt st | N3
+    .byt popd | TOS
+    .byt st | N7
+;    .byt ext
+;    .word swap73s
+
     .byt ext
     .word symcopys              ; copy the symbol/length
     .byt ldi | N1
@@ -1258,74 +1296,123 @@ automem01
 
 ;--------------------------------------------------------------
 #if 0
-name=>PASSBIT
-stack=( index -- flag )
-tags=interpreter,nfa,nosymbol
-
-```
-: >passbit   ( index -- addr mask )
-    passbits >bit ;
-```
-#endif
-#include "align.i65"
-_topassbit
-    jsr enter
-#include "page.i65"
-    .word passbits
-#include "page.i65"
-    .word tobit
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=PASSBITS?
-stack=( index -- flag )
-tags=interpreter,nfa,nosymbol
-
-```
-: passbits?   ( index -- flag )
-    passbits >bit cbit@ ;
-```
-#endif
-#include "align.i65"
-_passbitsq
-    jsr enter
-#include "page.i65"
-    .word _topassbit
-#include "page.i65"
-    .word cbitfetch
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=PASSBITS!
-stack=( index -- )
-tags=interpreter,nfa,nosymbol
-
-```
-: passbits?   ( index -- flag )
-    passbits >bit cbit@ ;
-```
-#endif
-#include "align.i65"
-_passbitsstore
-    jsr enter
-#include "page.i65"
-    .word _topassbit
-#include "page.i65"
-    .word cbitstore
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=(UNREMEMBER)
 stack=( cfa -- )
-tags=nfa,ext,nosymbol
+tags=nosymbol
+Merge symnew into symtab and reallocate
+
+/* effect
+
+|sweet16|<|<|<|<|<|<|<|<|<|h
+|N0 |N1 |N2 |N3 |N4 |N5 |N6 |N7 |N8 |R11 |
+|   |   |   |   |   |   |   |   |   |    |
+*/
+
+Symbols are stored in memory end-to-end, like this
+[code field address]            2 bytes
+[flags/length]                  1 byte
+[name]                          length bytes
+[vocabid]                       0 or 1 bytes
+
+At the very end, CFA and length are three '00' null bytes.  This is symtail.
+A symbol will be appended at symtail when a new word is defined, then symtail
+is moved to point afterward
+
+This word completely rebuilds the symbol table, filtering out names located at
+or above the CFA input parameter.  Symbols are sorted in order of ascending
+length, and grouped by the lowest four bits of the first character.
+
+ The low four bits of the first character of each name index a list of addresses
+to the group of symbols
 
 
+
+
+    add to 'forgotten dups list'
+
+variable x \ 0..79
+variable y \ 0..49
+: me   x @ y @ 40* 2* +
+       buffer + >n4 c@ ;
+: nw <n4 81 - c@ ;  : n <n4 80 - c@ ;
+: nw <n4 79 - c@ ;  : w <n4 1-   c@ ;
+: sw <n4 79 + c@ ;  : e <n4 1+   c@ ;
+: se <n4 81 + c@ ;  : s <n4 80 + c@ ;
+: worry   ( invert displayed cell ) ;
+: cell.next ( -- )
+    nw n ne
+      +  +
+    w  me e
+      +  +
+    sw  s se
+    + + + +
+    3 =  me xor
+    dup  if  me worry  then ;
+
+\ put code in registers, jsr N2?
+N2  clc ldx_*#
+N3  81  adc_abs,x
+N4  _________
+N5  rts
+
+
+core dictionary
+            <--- fence                  always keep if CFA < fence
+user dictionary
+            <--- dictionary pointer (DP) after forget
+forgotten user dictionary
+soon to be overwritten
+            <--- DP before forget
+            free memory, filled with
+            C0 DE 65 02 C0 DE 65 02 ...
+
+            <--- vmbuf
+screens of source code
+blocks of data
+oodles of noodles
+abs of steel
+            <--- symtab
+            <--- symnew
+            <--- symtail
+            free memory
+
+studio
+            <--- limit
+
+feat:
+: goat 1 ;                              \ cfa1  S|4 goat
+        2 constant goal                 \ cfan  S|4 goal
+: goat 3 ;                              \ cfa2  S|4 goat
+: goat 4 ;                              \ cfa3  S|4 goat  sorted   b. this becomes "U"
+        5 constant goal                 \ cfao  S|4 goal
+rehash
+        6 constant goal                 \ cfap  S|4 goal      unsorted
+        7 constant goal                 \ cfaq  S|4 goal           a. this becomes "U"
+                                        \ <--- dp following `forget goal`
+        8 constant goal                 \ cfar  U|4 goal
+: goat 9 ;                              \ cfa4  S|4 goat
+: goat 10 ;                             \ cfa5  S|4 goat
+: goat 11 ;                             \ cfa6  S|4 goat
+: goat 12 ;                             \ cfa7  U|4 goat
+forget goal
+goat . goal . 4 7 ok
+
+-----------------------------
+
+
+
+
+FORGET { any member of studio } is the same as REHASH
+e.g. FORGET FORGET is a synonym
+
+
+    fence > cfa?                CAN'T FORGET BELOW FENCE
+    for each thread
+    for each length
+        flip back and forth between sorted threads and symnew
+        is this cfa < CFA or this cfa > studio?
+        code field is in range
+                copy to pad
 sym0
 for j = 0 to F                          \ thread
     for i = 1 to 31                     \ length
@@ -1350,11 +1437,21 @@ for j = 0 to F                          \ thread
         are we at the symtail?
     until
 
+most recent definition (highest address) is the only unsmudged one
+
 
 symtab @ 34 +
  0 symthread is pointer2sorted
 for j = 0 to F                          \ thread
     for length=1 to 31                  \ length
+        begin
+            len=i?
+            eligible?
+            copy it
+        different length until
+
+        copy_this_length_and_thread
+        copy_any_unsorted
         begin
             length(pointer2sorted) = i?
         while
@@ -1373,6 +1470,12 @@ for j = 0 to F                          \ thread
     next length
 next thread
 calculate size
+
+
+/* pronounced
+"paren forget"
+*/
+
 
 
 
@@ -1430,11 +1533,6 @@ address will be calculated at halftime.  After the second phase, the `symnew`
 ;    .word bloom                 ; cfa bloom )
 ;    .word eight                 ; cfa bloom 8 )
 ;    .word erase                 ; reset the Bloom filter
-;    .word passbits              ; cfa passbits )
-;    .word blit                  ; cfa passbits %1000_0000 )
-;    .byt $80
-;    .word _storeplus            ; cfa passbits+2 )
-;    .word off                   ; passbits = %1000 0000 0000 0000
 ;    .word dlit
 ;    .word $FFFF
 ;    .word _pforgetpass1         ; >r11
@@ -1447,12 +1545,10 @@ address will be calculated at halftime.  After the second phase, the `symnew`
 
     bloom 8 erase
 
-    passbits $80 !+ off
     (forget).pass1 (filter)!
     32 0  sym0 pad
     (forget).looper             \ does `ext-until` 32x, completing pass1
 
-    passbits on
     (forget).pass2 (filter)!
     16 0  pad 3+ (automem)
     (forget).looper             \ does `ext-until` 16x, completing pass2
@@ -1461,6 +1557,8 @@ address will be calculated at halftime.  After the second phase, the `symnew`
 #include "align.i65"
 _punremember
     jsr enter
+#include "page.i65"
+    .word xyzzy
 #include "page.i65"
     .word sym0
 #include "page.i65"
@@ -1471,10 +1569,6 @@ _punremember
     .word _pad
 #include "page.i65"
 ;    .word pforgetlooper         ; this is it. performs all of pass1
-#include "page.i65"
-    .word passbits
-#include "page.i65"
-    .word on                    ; passbits = %1111 1111 1111 1111
 #include "parm.i65"
     .word dlit
     .word 0                     ; pass2 flag
