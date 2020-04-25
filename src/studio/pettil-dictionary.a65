@@ -49,15 +49,17 @@ symbols must have a code field address
 ** a code field address must point to 6502 code
 
 ** although labels associate to a value which is usually an address, no similar constraint that the value must be a code field address exists with labels
-n3      nfa                             sym0 !symdex (seek) >name (unremember) word-list
-n4l     seek symlen
-n4h     sorted/unsorted flag
-n5l     seek vocabid
-n5h
-n6      vocab index
-n7      seek nfa
-n8l     symlen
-n8h
+
+|Dictionary Conspiracy |<|h
+|n3  |nfa                             sym0 !symdex (seek) >name (fnord) word-list
+|n4l |seek symlen
+|n4h |seek thread
+|n5l |seek vocabid
+|n5h |
+|n6  |vocab index
+|n7  |seek nfa
+|n8l |symlen
+|n8h |
 
 */
 
@@ -198,14 +200,24 @@ symtabset
 symtabset99
     jmp next
 
-;--------------------------------------------------------------
-#if 0
-name=SYM0
-stack=( -- nfa )
-tags=interpreter,ext,nosymbol
-Returns `nfa` of first symbol in the `symbol table`
+/* sym0
 
-#endif
+|       |in          |out    |<|h
+|symtab |addr        |len    |<|
+|y      |.           |0      |<|
+|c      |.           |vocab? |<|
+|z      |.           |tail?  |true when symtail is reached |
+|tos    |+           |len    |<|
+|n3     |nfa         |.      |<|
+|n8l    |.           |len    |<|
+
+```
+noname code sym0   ( -- nfa )
+    symtab 1+ ldy,  #34 # lda,
+    n3 1+ sty,  n3 sta,
+    symtabset99 bne, \ bra
+```
+*/
 sym0
     ldy usersymtab+1
     lda #34
@@ -213,8 +225,7 @@ sym0
     sta R0L+2*N3
     bne symtabset99             ; bra
 
-;--------------------------------------------------------------
-/* SYM.LEN
+/* sym.len
 
 |change  |in          |out    |<|h
 |a       |.           |len    |<|
@@ -226,15 +237,14 @@ sym0
 |n8l     |.           |len    |<|
 
 ```
-\ get a name's length information
-noname code sym.len   ( -- len )
+noname code sym.len   ( -- len )        \ nfa length (@n3)
   'pushya csplit
-  # lda, pha,  #lda, pha,  end-code
+  # lda, pha,  #lda, pha,
 noname code symlens
-  0 # ldy,  n3 1+ lda,  0= not if,
-                   n3 ,y lda,  then,
+  0 # ldy,  n3 1+ lda,
+  0= not if,  n3 )y lda,  then,         \ until reaching '00' at end of symtab
   pha,  asl, asl,  pla,  $1f # and,
-  n8 sta,  rts,  end-code
+  n8 sta,  rts,
 ```
 */
 symlen
@@ -256,11 +266,8 @@ symlens01
     sta R0L+2*N8        ;{3}    ; N8L = visible length (omit vocab +1)
     rts
 
-;--------------------------------------------------------------
-#if 0
-name=SYMCOPY
-stack=( -- )
-tags=ext,primitive,nfa,nosymbol
+/* sym.copy
+primitive
 
 * N3 (curr) symbol to N7 (targ) symbol
 * copy vocab byte
@@ -268,7 +275,20 @@ tags=ext,primitive,nfa,nosymbol
 * copy length/flags
 * does not move N7, does not move N3 either
 
-#endif
+|change  |in          |out    |<|h
+|a       |.           |len    |<|
+
+```
+noname code sym.copy   ( -- )
+  'pushya csplit
+  # lda, pha,  #lda, pha,
+noname code symlens
+  0 # ldy,  n3 1+ lda,
+  0= not if,  n3 )y lda,  then,         \ until reaching '00' at end of symtab
+  pha,  asl, asl,  pla,  $1f # and,
+  n8 sta,  rts,
+```
+*/
 symcopy
     lda #>(next-1)
     pha
@@ -1296,12 +1316,21 @@ automem01
 
 ;--------------------------------------------------------------
 #if 0
-name=(UNREMEMBER)
+name=(FNORD)
 stack=( cfa -- )
 tags=nosymbol
 Merge symnew into symtab and reallocate
 
-/* effect
+/* (FNORD)
+tiny
+    acc sub,  n4 st,
+    begin,
+        n4 inc,
+n4 off
+    begin
+        n4 1+!
+good    n4 c@  bl under =  or n4 c!
+tiny    n4 ldd,
 
 |sweet16|<|<|<|<|<|<|<|<|<|h
 |N0 |N1 |N2 |N3 |N4 |N5 |N6 |N7 |N8 |R11 |
@@ -1354,7 +1383,6 @@ N2  clc ldx_*#
 N3  81  adc_abs,x
 N4  _________
 N5  rts
-
 
 core dictionary
             <--- fence                  always keep if CFA < fence
@@ -1479,15 +1507,6 @@ calculate size
 
 
 
-: southerly ( cfa -- cfa )
-    sym0
-                                        ( cfa )
-    \ symbols are copied to pad, sort
-    \ by thread 0..F,  by length 1..31
-    16 0 do
-        31 1 do
-            i j ?gosouth?
-
             newdp @ studio @  <n3 name> between?  0=
 
 
@@ -1508,7 +1527,7 @@ calculate size
 ** thread key is the low four bits of the first character in the name.
 * Merge in newly created names from `symnew .. symtail`
 ** that have been defined since startup
-** or the last `(unremember)`.
+** or the last `(fnord)`.
 * `bloom` filter will be repopulated
 !!!!PASS1
 * initialize output pointer to `pad`
@@ -1540,7 +1559,7 @@ address will be calculated at halftime.  After the second phase, the `symnew`
 
 
 ```
-: (unremember)   ( cfa -- )
+: (fnord)   ( cfa -- )
     sym0 bl 0 pad
 
     bloom 8 erase
@@ -1555,7 +1574,7 @@ address will be calculated at halftime.  After the second phase, the `symnew`
 ```
 #endif
 #include "align.i65"
-_punremember
+_pfnord
     jsr enter
 #include "page.i65"
     .word xyzzy
@@ -1605,7 +1624,7 @@ _punremember
 
 ;--------------------------------------------------------------
 #if 0
-name=UNREMEMBER
+name=FORGET
 stack=( "name" -- )
 tags=interpreter,dictionary,forth-83,forth-79,fig
 checks FENCE, sorts symbol table, keeping only words below the CFA of the named word
@@ -1613,11 +1632,11 @@ checks FENCE, sorts symbol table, keeping only words below the CFA of the named 
 ```
 : forget   ( "name" -- )
     '  dup  fence @  u<  7 ?error
-    (unremember) ;
+    (fnord) ;
 ```
 #endif
 #include "align.i65"
-_unremember
+_forget
     jsr enter
 #include "page.i65"
     .word _tick
@@ -1633,7 +1652,7 @@ _unremember
     .word qerror
     .byt 7                      ; CAN'T FORGET BELOW FENCE
 #include "pad.i65"
-    .word _punremember
+    .word _pfnord
 #include "past.i65"
     .word exit
 
@@ -1656,11 +1675,11 @@ required.
 ** `rehash`
 ** `forget forget`
 ** `forget :` (or any word with a CFA in the `studio` region)
-** `here (unremember)`
+** `here (fnord)`
 
 ```
 : rehash  ( -- )
-    here (unremember) ;   \ effectively a `forget nothing` command
+    here (fnord) ;   \ effectively a `forget nothing` command
 ```
 #endif
 #include "align.i65"
@@ -1669,7 +1688,7 @@ _rehash
 #include "page.i65"
     .word here
 #include "page.i65"
-    .word _punremember
+    .word _pfnord
 #include "past.i65"
     .word exit
 
