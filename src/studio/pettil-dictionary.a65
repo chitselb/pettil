@@ -1,7 +1,7 @@
-; pettil-dictionary.a65
-;#echo .       pettil-dictionary.a65     Dictionary
+/* pettil-dictionary.a65
+tags: source
 
-/* dictionary conspiracy
+Dictionary
 
 ~todo
 
@@ -52,15 +52,14 @@ symbols must have a code field address
 
 |Dictionary Conspiracy |<|h
 |n3  |nfa                             sym0 !symdex (seek) >name (fnord) word-list
-|n4l |seek symlen
+|n4l |seek len
 |n4h |seek thread
 |n5l |seek vocabid
 |n5h |
 |n6  |vocab index
-|n7  |seek nfa
-|n8l |symlen
+|n7  |seek nfa                          ~~ ?
+|n8l |nfa.len
 |n8h |
-
 */
 
 ;--------------------------------------------------------------
@@ -68,7 +67,17 @@ symbols must have a code field address
 name=!SYMDEX
 stack=( start size -- )
 tags=system,startup,nosymbol
-\ set up a fresh symbols dictionary
+#endif
+#include "align.i65"
+_setsymdex
+/*
+Resize and rebuild symbol table
+
+Given a start address and size of a list of symbols, move them to a page
+boundary lower than `studio - size` and let this be the new `symtab`.
+
+~todo: preserve `vmbuf` contents during `(fnord)`
+~todo: add labels (%smudge on %vocab on vocabid 0)
 
 This word performs several tasks, all related to creating a symbol table for
 `interpret` to use for name lookups.  The symbol table connects the common,
@@ -136,9 +145,7 @@ get memory requirements                 symtab
     bloom 8 erase  sym0
     symtab @ bl
 ```
-#endif
-#include "align.i65"
-_setsymdex
+*/
     jsr enter
 #include "page.i65"
     .word bloom
@@ -200,7 +207,7 @@ symtabset
 symtabset99
     jmp next
 
-/* sym0
+/* SYM0
 
 |       |in          |out    |<|h
 |symtab |addr        |len    |<|
@@ -225,7 +232,7 @@ sym0
     sta R0L+2*N3
     bne symtabset99             ; bra
 
-/* sym.len
+/* SYMLEN
 
 |change  |in          |out    |<|h
 |a       |.           |len    |<|
@@ -1319,22 +1326,102 @@ automem01
 name=(FNORD)
 stack=( cfa -- )
 tags=nosymbol
+/* (FNORD)
+
 Merge symnew into symtab and reallocate
 
-/* (FNORD)
+|n4l |seek len
+|n4h |seek thread
+
+????
+
+
+good
+    n4 off
+    begin
+        n4 1+!
+        <n4 lsb
+        bl = if n4 dup 1+ 1+! coff then
+    until
+
 tiny
-    acc sub,  n4 st,
-    begin,
-        n4 inc,
+    brk,                                \ Sweet16 powers activated!
+    acc sub,  n4 st,                    \ rewind length/thread
+    :fnrd2
+        n4 inr,                         \ add 1 to length sought
+        'fnrd1 ext,
+    'fnrd2 bz,
+
+:fnrd1
+    rts,
+|sweet16|<|<|<|<|<|<|<|<|<|<|h
+|N0 |N1 |N2 |N3 |N4L |N4H |N5 |N6 |N7 |N8 |R11 |
+|   |   |   |   |00  |00  |   |   |   |   |    |
+
+
+|   |   |   |   |01  |00  |   |   |   |   |    |
+
+gather sorted
+gather unsorted
+    ( since N4H == 0, set length passbits on the pass through symnew )
+    (          for $01 - $0F, check passbits; $10 means we are done )
+
+|   |   |   |   |02  |00  |   |   |   |   |    |
+|   |   |   |   |03  |00  |   |   |   |   |    |
+|   |   |   |   |04  |00  |   |   |   |   |    |
+|   |   |   |   |05  |00  |   |   |   |   |    |
+|   |   |   |   |06  |00  |   |   |   |   |    |
+|   |   |   |   |07  |00  |   |   |   |   |    |
+|   |   |   |   |08  |00  |   |   |   |   |    |
+|   |   |   |   |09  |00  |   |   |   |   |    |
+|   |   |   |   |0A  |00  |   |   |   |   |    |
+|   |   |   |   |0B  |00  |   |   |   |   |    |
+|   |   |   |   |0C  |00  |   |   |   |   |    |
+|   |   |   |   |0D  |00  |   |   |   |   |    |
+|   |   |   |   |0E  |00  |   |   |   |   |    |
+|   |   |   |   |0F  |00  |   |   |   |   |    |
+|   |   |   |   |10  |00  |   |   |   |   |    |
+|   |   |   |   |11  |00  |   |   |   |   |    |
+|   |   |   |   |12  |00  |   |   |   |   |    |
+|   |   |   |   |13  |00  |   |   |   |   |    |
+|   |   |   |   |14  |00  |   |   |   |   |    |
+|   |   |   |   |15  |00  |   |   |   |   |    |
+|   |   |   |   |16  |00  |   |   |   |   |    |
+|   |   |   |   |17  |00  |   |   |   |   |    |
+|   |   |   |   |18  |00  |   |   |   |   |    |
+|   |   |   |   |19  |00  |   |   |   |   |    |
+|   |   |   |   |1A  |00  |   |   |   |   |    |
+|   |   |   |   |1B  |00  |   |   |   |   |    |
+|   |   |   |   |1C  |00  |   |   |   |   |    |
+|   |   |   |   |1D  |00  |   |   |   |   |    |
+|   |   |   |   |1E  |00  |   |   |   |   |    |
+|   |   |   |   |1F  |00  |   |   |   |   |    |
+|   |   |   |   |20  |00  |   |   |   |   |    |
+|   |   |   |   |00  |01  |   |   |   |   |    |
+|   |   |   |   |01  |01  |   |   |   |   |    |
+|   |   |   |   |02  |01  |   |   |   |   |    |
+|   |   |   |   |03  |01  |   |   |   |   |    |
+|   |   |   |   |04  |01  |   |   |   |   |    |
+|   |   |   |   |05  |01  |   |   |   |   |    |
+|   |   |   |   |06  |01  |   |   |   |   |    |
+|   |   |   |   |07  |01  |   |   |   |   |    |
+|   |   |   |   |08  |01  |   |   |   |   |    |
+|   |   |   |   |09  |01  |   |   |   |   |    |
+|   |   |   |   |0A  |01  |   |   |   |   |    |
+
+|sweet16|<|<|<|<|<|<|<|<|<|<|h
+|N0 |N1 |N2 |N3 |N4L |N4H |N5 |N6 |N7 |N8 |R11 |
+|   |   |   |   |    |    |   |   |   |   |    |
+
+
+
+
 n4 off
     begin
         n4 1+!
 good    n4 c@  bl under =  or n4 c!
 tiny    n4 ldd,
 
-|sweet16|<|<|<|<|<|<|<|<|<|h
-|N0 |N1 |N2 |N3 |N4 |N5 |N6 |N7 |N8 |R11 |
-|   |   |   |   |   |   |   |   |   |    |
 */
 
 Symbols are stored in memory end-to-end, like this
