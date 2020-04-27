@@ -3,11 +3,45 @@ tags: source
 
 Dictionary
 
-~todo
+```
+symbol table entry
++---------------+
+|    CFA[low]   |  -2
+|    CFA[high]  |  LFA     Code field address
++-+-+-+-+-+-+-+-+
+|     [   len   ]  NFA     Length bits
+[S]             |          Smudge bit
+| [V]           |          Vocabulary bit
+|   [I]         |          Immediate bit
++-+-+-+-+-+-+-+-+
+|   name[1]     |  +1      Name field
+|           ... |
+|   name[len]   |  +len
++---------------+
+?  vocab id     ?  +len+1  Vocabulary ID (if V bit set)
++---------------+
 
+~todo: implement labels
+label (all flags TRUE)
++---------------+
+|  Value[low]   |  -2       :label =create    'label =recall
+|  Value[high]  |  VFA     Value (AT returns VFA; IS writes Value)
++-+-+-+-+-+-+-+-+
+|     [   len   ]  NFA     Length bits (non-zero)
+[1]             |          Smudge bit
+| [1]           |          Vocabulary bit
+|   [1]         |          Immediate bit
++-+-+-+-+-+-+-+-+
+|  label[1]     |  +1      Name field
+|           ... |
+|  label[len]   |  +len
++---------------+
+?       00      ?  +len+1  vocabid is '00' to indicate this is a label
++---------------+
+```
 labels are a special temporary type of symbol.
 label redefinition overwrites value, is not a duplicate label
-all labels are dropped by rehash
+labels are dropped by `rehash`
 labels may have any arbitrary 2-byte value
 labels are immediate by default
 label %smudge bit ... what does it do?  always false
@@ -52,8 +86,8 @@ symbols must have a code field address
 
 |Dictionary Conspiracy |<|h
 |n3  |nfa                             sym0 !symdex (seek) >name (fnord) word-list
-|n4l |seek len
-|n4h |seek thread
+|n4l |seek len      1..31
+|n4h |seek thread   %0000..%1111
 |n5l |seek vocabid
 |n5h |
 |n6  |vocab index
@@ -185,7 +219,7 @@ noname code symtab!
 tiny
   1 harvests jsr,  brk,
 
-  2 plants ext,  nxt,
+  1 plants ext,  nxt,
 fast
   dex,  stackh 1+ ,x lda,
   clc,  tos 1+ sbc,  stackh ,x sta,
@@ -421,24 +455,6 @@ are initially balanced with the same number of words,
 to reduce searches to (on average) 1/16th of the
 dictionary.
 
-```
-symbol table entry
-+---------------+
-|    CFA[low]   |  -2      Code field address
-|    CFA[high]  |
-+-+-+-+-+-+-+-+-+
-|     [   len   ]  NFA     Length field
-[S]             |          Smudge bit
-| [V]           |          Vocabulary bit
-|   [I]         |          Immediate bit
-+-+-+-+-+-+-+-+-+
-|   name[1]     |  +1      Name field
-|           ... |
-|   name[len]   |  +len
-+---------------+
-?  vocab id     ?  +len+1  Vocabulary ID (if V bit set)
-+---------------+
-```
 
 2017-09-20 this is just AND #$0F, not Pearson hash anymore, so vestigial label.
 #endif
@@ -507,6 +523,7 @@ name=(>NAME)
 stack=( cfa -- nfa|0 )
 tags=compiler,nosymbol
 
+~todo: code is giant, and rarely called
 ~ deprecate
 #endif
 ptoname
@@ -558,65 +575,6 @@ _toname
     .word sym0
 #include "page.i65"
     .word ptoname
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=(FILTER).REWIND
-stack=( -- )
-tags=interpreter,nfa,nosymbol
-Rewinds to beginning of symbol table on each loop iteration
-
-```
-: (filter).rewind   ( -- )
-    <n6 >n3 drop ;
-    <n4 0=
-    if  <n5 <n7 2+ !+ >n5 drop
-    then ;
-```
-
-
-#endif
-pfilterrewind
-    brk
-    .byt ld | N6                ; get `sym0`
-    .byt st | N3                ; rewind the symbol list
-    .byt ld | N4                ; contains either `newdp`(pass1) or `0`(pass2)
-    .byt bnz , <(pfilterrewind02-*-2) ; check 'pass' flag
-    .byt ld | N7
-    .byt inr | ACC
-    .byt inr | ACC              ; thread points to 1st NFA of each thread
-    .byt std | N5               ; write thread start addresses on pass2
-pfilterrewind02
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=EXT-UNTIL
-stack=( -- )
-tags=ext,immediate,compiler,nosymbol
-This (poorly named) word wraps a BEGIN-UNTIL loop around a `cfa` called
-via the `r11` register, like PETTIL Sweet16's `ext` instruction.  The
-injected function needs a stack signature of ( -- flag ) that is
-`true` when finished.
-
-1. write your filter function to do what it needs to do to each of the things
-2. set up registers the filter function needs
-3. set R11 to point to your filter function
-4. `ext-until`
-5. profit!
-
-#endif
-#include "align.i65"
-_extuntil
-    jsr enter
-#include "page.i65"
-extuntil01                      ; begin
-    .word doextreg
-#include "parm.i65"             ;  ( flag )
-    .word qbranch               ; until
-    .byt <(extuntil01-*+1)
 #include "past.i65"
     .word exit
 
@@ -1345,15 +1303,26 @@ good
     until
 
 tiny
+    \ sort(thread.len) and copy symbols to pad
     brk,                                \ Sweet16 powers activated!
     acc sub,  n4 st,                    \ rewind length/thread
     :fnrd2
         n4 inr,                         \ add 1 to length sought
-        'fnrd1 ext,
+        'fnrd1 ext,                     \ check for len = 32, thread++ up to 16
     'fnrd2 bz,
+    nxt,                                \ we're done!
 
+\
+\
+\
+\ This one copies each symbol matching N4H=thread/N4L=len.
+\ first sorted matching proper...
+\     then until the length matches again,  unsorted symbols.  It never copies a
+\ symbol from vocabid=0 because that's a label!
 :fnrd1
-    rts,
+
+    rts
+
 |sweet16|<|<|<|<|<|<|<|<|<|<|h
 |N0 |N1 |N2 |N3 |N4L |N4H |N5 |N6 |N7 |N8 |R11 |
 |   |   |   |   |00  |00  |   |   |   |   |    |
@@ -1675,25 +1644,8 @@ _pfnord
     .word _pad
 #include "page.i65"
 ;    .word pforgetlooper         ; this is it. performs all of pass1
-#include "parm.i65"
-    .word dlit
-    .word 0                     ; pass2 flag
-;    .word _pforgetpass2         ; >r11
-;#include "pad.i65"
-;    .word init411
-#include "parm.i65"
-    .word blit
-    .byt 16
-;#include "pad.i65"
-;    .word zero
-#include "page.i65"
-    .word _pad                  ; the new sym0
-#include "page.i65"
-    .word twoplus
 #include "page.i65"
     .word _automem              ; does things, returns the new targ
-#include "page.i65"
-;    .word pforgetlooper         ;( do eet! again! )
 #include "page.i65"
     .word dp
 #include "page.i65"
