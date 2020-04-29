@@ -72,15 +72,27 @@ symbols must have a code field address
 |symbol |2 bytes|code field address |1 byte|%smudge %vocab %immed length |length bytes|
 
 !!label
-* a label will not survive `rehash`.
-* a label has no code
-* executing a label puts its value on the stack
+*
+*
+*
+*
+
+** a value field is 16 bits wide.
+** a code field is a value field
+***  also an address
+*** must point to 6502 code
+
+
+|             | compiled | execution |<|h
+|label alabel |          | (create)  |`( avalue ) label alabel` creates alabel     |
+|is alabel    | !        | !         |`( avalue ) is alabel` updates alabel     |
+|:alabel      | ?error   | (create)  |`:-prefix` with a value of `here`            |
+|'alabel      | constant | (seek)    |`'-prefix` 'alabel gives us alabel's address |
+|alabel       | constant | [']       |a label has no code. `alabel` has a value.   |
+
+* `rehash` causes all labels to vanish
 * labels may be reassigned with the syntax: ( value ) IS label
 !!symbol
-** symbol must have a code field address in the link field
-** label has a label field, which may or may not be an address
-** if label field is an address, then it need not point to 6502 code,
-** a code field address must point to 6502 code
 
 ** although labels associate to a value which is usually an address, no similar constraint that the value must be a code field address exists with labels
 
@@ -294,18 +306,23 @@ symlen
     lda #<(pushya-1)
     pha
 symlens
-    ldy #0              ;{2 {=23}}
-    lda R0L+2*N3+1              ; length = 0 if `n3` is 0
-    beq symlens01
-    lda (R0L+2*N3),y    ;{5}    ; length/flags
+    ldy #2
 symlens01
-    pha                 ;{3}    ; not using tay/tya preserves Y=0
+    dey
+    php
+    lda (R0L+2*N3),y
+    and symlendat,y
+    sta R0L+2*N8,y
+    plp
+    bne symlens01
+    eor (R0L+2*N3),y
     asl                 ;{2}
     asl                 ;{2}    ; Vocab bit to C flag
-    pla                 ;{4}
-    and #$1F            ;{2}    ; length
-    sta R0L+2*N8        ;{3}    ; N8L = visible length (omit vocab +1)
+    lda R0L+2*N8
     rts
+
+symlendat
+    .byt $1F,$0F
 
 /* sym.copy
 primitive
@@ -455,7 +472,6 @@ are initially balanced with the same number of words,
 to reduce searches to (on average) 1/16th of the
 dictionary.
 
-
 2017-09-20 this is just AND #$0F, not Pearson hash anymore, so vestigial label.
 #endif
 pearsonhash
@@ -575,6 +591,65 @@ _toname
     .word sym0
 #include "page.i65"
     .word ptoname
+#include "past.i65"
+    .word exit
+
+;--------------------------------------------------------------
+#if 0
+name=(FILTER).REWIND
+stack=( -- )
+tags=interpreter,nfa,nosymbol
+Rewinds to beginning of symbol table on each loop iteration
+
+```
+: (filter).rewind   ( -- )
+    <n6 >n3 drop ;
+    <n4 0=
+    if  <n5 <n7 2+ !+ >n5 drop
+    then ;
+```
+
+
+#endif
+pfilterrewind
+    brk
+    .byt ld | N6                ; get `sym0`
+    .byt st | N3                ; rewind the symbol list
+    .byt ld | N4                ; contains either `newdp`(pass1) or `0`(pass2)
+    .byt bnz , <(pfilterrewind02-*-2) ; check 'pass' flag
+    .byt ld | N7
+    .byt inr | ACC
+    .byt inr | ACC              ; thread points to 1st NFA of each thread
+    .byt std | N5               ; write thread start addresses on pass2
+pfilterrewind02
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=EXT-UNTIL
+stack=( -- )
+tags=ext,immediate,compiler,nosymbol
+This (poorly named) word wraps a BEGIN-UNTIL loop around a `cfa` called
+via the `r11` register, like PETTIL Sweet16's `ext` instruction.  The
+injected function needs a stack signature of ( -- flag ) that is
+`true` when finished.
+
+1. write your filter function to do what it needs to do to each of the things
+2. set up registers the filter function needs
+3. set R11 to point to your filter function
+4. `ext-until`
+5. profit!
+
+#endif
+#include "align.i65"
+_extuntil
+    jsr enter
+#include "page.i65"
+extuntil01                      ; begin
+    .word doextreg
+#include "parm.i65"             ;  ( flag )
+    .word qbranch               ; until
+    .byt <(extuntil01-*+1)
 #include "past.i65"
     .word exit
 
@@ -1644,8 +1719,25 @@ _pfnord
     .word _pad
 #include "page.i65"
 ;    .word pforgetlooper         ; this is it. performs all of pass1
+#include "parm.i65"
+    .word dlit
+    .word 0                     ; pass2 flag
+;    .word _pforgetpass2         ; >r11
+;#include "pad.i65"
+;    .word init411
+#include "parm.i65"
+    .word blit
+    .byt 16
+;#include "pad.i65"
+;    .word zero
+#include "page.i65"
+    .word _pad                  ; the new sym0
+#include "page.i65"
+    .word twoplus
 #include "page.i65"
     .word _automem              ; does things, returns the new targ
+#include "page.i65"
+;    .word pforgetlooper         ;( do eet! again! )
 #include "page.i65"
     .word dp
 #include "page.i65"
