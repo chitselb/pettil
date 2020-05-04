@@ -4,7 +4,8 @@ tags: source
 Dictionary
 
 ```
-symbol table entry
+Symbol table
+
 +---------------+
 |    CFA[low]   |  -2
 |    CFA[high]  |  LFA     Code field address
@@ -21,39 +22,31 @@ symbol table entry
 ?  vocab id     ?  +len+1  Vocabulary ID (if V bit set)
 +---------------+
 
-~todo: implement labels
-label (all flags TRUE)
-+---------------+
-|  Value[low]   |  -2       :label =create    'label =recall
-|  Value[high]  |  VFA     Value (AT returns VFA; IS writes Value)
-+-+-+-+-+-+-+-+-+
-|     [   len   ]  NFA     Length bits (non-zero)
-[1]             |          Smudge bit
-| [1]           |          Vocabulary bit
-|   [1]         |          Immediate bit
-+-+-+-+-+-+-+-+-+
-|  label[1]     |  +1      Name field
-|           ... |
-|  label[len]   |  +len
-+---------------+
-?       00      ?  +len+1  vocabid is '00' to indicate this is a label
-+---------------+
-```
-labels are a special temporary type of symbol.
-label redefinition overwrites value, is not a duplicate label
-labels are dropped by `rehash`
-labels may have any arbitrary 2-byte value
-labels are immediate by default
-label %smudge bit ... what does it do?  always false
-label %vocab bit is always true, vocabid is always 00
-labels belong to vocabulary 00 by default
-labels %immed bit is true by default, may be set false after label created
-    immediate -- turns on %immed bit of most recently added word
+~todo: implement labels, a temporary symbol
+symbols must have a code field address, pointing to executable 6502 code
+    labels are like symbols, but may have any arbitrary 2-byte value
+    labels do not survive `rehash` all are dropped
+    label redefinition overwrites the value, and is not a duplicate label
+    labels are immediate by default  (?what is a non-immediate label useful for?)
     dawdle -- antonym of immediate
 
-symbols must have a code field address
-    which must point to executable 6502 code
+!!!label %smudge, %vocab %immed bits are always true
+    * alabel has a value, stored in link field
+    * alabel is a member of vocabid '00' (?what would labels by vocabulary be useful for?)
+    * :alabel defines one
+    * 'alabel the address of alabel
+    * all flags TRUE
+    * `label` `is` and `at`
+    * (%smudge on %vocab on vocabid 0)
 
+|             | compiled | execution |<|h
+|alabel       | constant | [']       |a label has no code. `alabel` has a value.   |
+|label alabel |          | (create)  |`( avalue ) label alabel` creates alabel     |
+|is alabel    | !        | !         |`( avalue ) is alabel` updates alabel     |
+|:alabel      | ?error   | (create)  |`:-prefix` with a value of `here`            |
+|'alabel      | constant | (seek)    |`'-prefix` 'alabel gives us alabel's address |
+
+```
 |label  |2 bytes |value                    |
 |~      |1 byte  |%smudge                  |
 |~      |~       |%vocab        true       |
@@ -71,59 +64,25 @@ symbols must have a code field address
 
 |symbol |2 bytes|code field address |1 byte|%smudge %vocab %immed length |length bytes|
 
-!!label
-*
-*
-*
-*
-
-** a value field is 16 bits wide.
-** a code field is a value field
-***  also an address
-*** must point to 6502 code
-
-
-|             | compiled | execution |<|h
-|label alabel |          | (create)  |`( avalue ) label alabel` creates alabel     |
-|is alabel    | !        | !         |`( avalue ) is alabel` updates alabel     |
-|:alabel      | ?error   | (create)  |`:-prefix` with a value of `here`            |
-|'alabel      | constant | (seek)    |`'-prefix` 'alabel gives us alabel's address |
-|alabel       | constant | [']       |a label has no code. `alabel` has a value.   |
-
 * `rehash` causes all labels to vanish
 * labels may be reassigned with the syntax: ( value ) IS label
 !!symbol
 
 ** although labels associate to a value which is usually an address, no similar constraint that the value must be a code field address exists with labels
 
-|Dictionary Conspiracy |<|h
-|n3  |nfa                             sym0 !symdex (seek) >name (fnord) word-list
-|n4l |seek len      1..31
-|n4h |seek thread   %0000..%1111
-|n5l |seek vocabid
-|n5h |
-|n6  |vocab index
-|n7  |seek nfa                          ~~ ?
-|n8l |nfa.len
-|n8h |
 */
 
-;--------------------------------------------------------------
-#if 0
-name=!SYMDEX
-stack=( start size -- )
-tags=system,startup,nosymbol
-#endif
-#include "align.i65"
-_setsymdex
-/*
+/* !SYMDEX
+tags: secondary nosymbol
+
 Resize and rebuild symbol table
+
+* establish new location of `symtab`
+* establish `bloom` filter 64-bit
+* establish `symdex` 16 strand pointers
 
 Given a start address and size of a list of symbols, move them to a page
 boundary lower than `studio - size` and let this be the new `symtab`.
-
-~todo: preserve `vmbuf` contents during `(fnord)`
-~todo: add labels (%smudge on %vocab on vocabid 0)
 
 This word performs several tasks, all related to creating a symbol table for
 `interpret` to use for name lookups.  The symbol table connects the common,
@@ -170,7 +129,7 @@ get memory requirements                 symtab
 ( start size symtab+32 )
     swap cmove>                         \ copy names from start to symtab+32
 ( -- )
-    bloom 8 erase  sym0                 \ set bloom filter & threads
+    bloom 8 erase  sym0                 \ set bloom filter & strands
     symtab @  bl
 ( symtab 32 )
     begin
@@ -192,6 +151,8 @@ get memory requirements                 symtab
     symtab @ bl
 ```
 */
+#include "align.i65"
+_setsymdex
     jsr enter
 #include "page.i65"
     .word bloom
@@ -216,7 +177,7 @@ get memory requirements                 symtab
 Using the formula: (size + 2 pages + keep the change),
 reallocate memory during `rehash` or `(cold)`.
 
-|change  |in          |out       |<|h
+|        |in          |out       |<|h
 |symtab  |.           |symtab    |<|
 |tos     |size        |.         |<|
 |2os     |+           |symtab+32 |inserted value |
@@ -278,7 +239,7 @@ sym0
     sta R0L+2*N3
     bne symtabset99             ; bra
 
-/* SYMLEN
+/* SYM.LEN
 
 |change  |in          |out    |<|h
 |a       |.           |len    |<|
@@ -299,13 +260,13 @@ noname code symlens
   pha,  asl, asl,  pla,  $1f # and,
   n8 sta,  rts,
 ```
-*/
+
 symlen
     lda #>(pushya-1)
     pha
     lda #<(pushya-1)
     pha
-symlens
+sym.chain
     ldy #2
 symlens01
     dey
@@ -323,6 +284,27 @@ symlens01
 
 symlendat
     .byt $1F,$0F
+
+
+*/
+symlen
+    lda #>(pushya-1)
+    pha
+    lda #<(pushya-1)
+    pha
+symlens
+    ldy #0              ;{2 {=23}}
+    lda R0L+2*N3+1              ; length = 0 if `n3` is 0
+    beq symlens01
+    lda (R0L+2*N3),y    ;{5}    ; length/flags
+symlens01
+    pha                 ;{3}    ; not using tay/tya preserves Y=0
+    asl                 ;{2}
+    asl                 ;{2}    ; Vocab bit to C flag
+    pla                 ;{4}
+    and #$1F            ;{2}    ; length
+    sta R0L+2*N8        ;{3}    ; N8L = visible length (omit vocab +1)
+    rts
 
 /* sym.copy
 primitive
@@ -449,36 +431,6 @@ _bloomfilter
     .word tobit
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=PEARSON#
-stack=( -- pearsonhash )
-tags=ext,nfa,nosymbol
-Return the hash value for name field address at N3
-`pearson#` is the 4-bit thread index (0..F)
-
-This hash is used to divide the entire symbol table into
-16 roughly equal-sized lists called "threads".  The Ruby
-script `pearson.rb` is used to generate 8 initial values
-from the base dictionary, so if you feel a need to come
-up with your own numbers after adding to the common wordlist,
-there's the tool.
-
-the Pearson hash should return an evenly distributed
-value between $00-$0F based on the values generated from
-the core dictionary.  In other words, all 16 threads
-are initially balanced with the same number of words,
-to reduce searches to (on average) 1/16th of the
-dictionary.
-
-2017-09-20 this is just AND #$0F, not Pearson hash anymore, so vestigial label.
-#endif
-pearsonhash
-    ldy #1
-    lda (R0L+2*N3),y    ; [5]
-    and #$0F
-    jmp push0a
 
 ;--------------------------------------------------------------
 #if 0
@@ -1360,14 +1312,25 @@ name=(FNORD)
 stack=( cfa -- )
 tags=nosymbol
 /* (FNORD)
+tags: secondary nosymbol
 
-Merge symnew into symtab and reallocate
+Merge sorted symtab with symnew..symtail into 16 strands sorted by name length
+within strand id.  Set a new memory allocation.  Move the names into place and
+rebuild the index.
 
-|n4l |seek len
-|n4h |seek thread
+strategy:
+    Validate cutoff CFA
+    initialize N4 to F000, N3 to len=1/strand=0
+    walk through the sorted ones until the end
+    every time the
+handling duplicates:
+    if the cfa indicates we must discard this word, then walk through all
+        already-written names at pad, and unsmudge only the very last copy,
+        if found.
 
-????
-
+alternate:
+    when a smudged name is encountered, walk forward keeping track of most
+    recent (very last copy) until '000000' encountered
 
 good
     n4 off
@@ -1376,7 +1339,6 @@ good
         <n4 lsb
         bl = if n4 dup 1+ 1+! coff then
     until
-
 tiny
     \ sort(thread.len) and copy symbols to pad
     brk,                                \ Sweet16 powers activated!
@@ -1653,11 +1615,6 @@ calculate size
             <n3 name> newdp @ <
 * rebuild and reindex the entire dictionary
 * rebalance it into 16 roughly equal-sized threads
-** thread key is the low four bits of the first character in the name.
-* Merge in newly created names from `symnew .. symtail`
-** that have been defined since startup
-** or the last `(fnord)`.
-* `bloom` filter will be repopulated
 !!!!PASS1
 * initialize output pointer to `pad`
 * for each of 16 threads:
@@ -1689,19 +1646,27 @@ address will be calculated at halftime.  After the second phase, the `symnew`
 
 ```
 : (fnord)   ( cfa -- )
-    symtab @ @ >n3 pad
+    pad symtab ;code
+    brk,   harvests4 ext,
+    tos ldd,  n3 st,
+    $f000 n4 set,
+\ phase 1 in which doris gets her oats
+\ n4h for each strand...
+\ n4l ... for each length...
+\ bump length/strand
+\     until 16/32 --> done
+\ copy the sorted ones until (n8)strand/length <> (n4)strand/length --> merge_seq
+\     or until (n3 = symnew)? --> done
+\ :merge_seq
+\   <n8 n4 !              pick up where we left off
+\   scan symnew for all (n8)strand/length == (n4)strand/length
+\   ... until n4 = n6, that saved copy of (n8) from the break
+<---- repeat
 
-   sym0 bl 0 pad
+    (automem) symtab! ;
 
-    bloom 8 erase
+plover
 
-    (forget).pass1 (filter)!
-    32 0  sym0 pad
-    (forget).looper             \ does `ext-until` 32x, completing pass1
-
-    (forget).pass2 (filter)!
-    16 0  pad 3+ (automem)
-    (forget).looper             \ does `ext-until` 16x, completing pass2
 ```
 #endif
 #include "align.i65"
