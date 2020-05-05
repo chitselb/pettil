@@ -223,11 +223,11 @@ noname code sym0   ( -- nfa )
 ```
 */
 sym0
-    ldy usersymtab+1
     lda #34
-    sty R0L+2*N3+1
     sta R0L+2*N3
-    bne symtabset99             ; bra
+    lda usersymtab+1
+    sta R0L+2*N3+1
+    bne symtabset99             ; next
 
 /* SYM.LEN
 
@@ -251,31 +251,6 @@ noname code symlens
   n8 sta,  rts,
 ```
 
-symlen
-    lda #>(pushya-1)
-    pha
-    lda #<(pushya-1)
-    pha
-sym.chain
-    ldy #2
-symlens01
-    dey
-    php
-    lda (R0L+2*N3),y
-    and symlendat,y
-    sta R0L+2*N8,y
-    plp
-    bne symlens01
-    eor (R0L+2*N3),y
-    asl                 ;{2}
-    asl                 ;{2}    ; Vocab bit to C flag
-    lda R0L+2*N8
-    rts
-
-symlendat
-    .byt $1F,$0F
-
-
 */
 symlen
     lda #>(pushya-1)
@@ -284,17 +259,25 @@ symlen
     pha
 symlens
     ldy #0              ;{2 {=23}}
-    lda R0L+2*N3+1              ; length = 0 if `n3` is 0
+    lda R0L+2*N3+1                      ; length = 0 if `n3` is 0
     beq symlens01
-    lda (R0L+2*N3),y    ;{5}    ; length/flags
+    lda (R0L+2*N3),y    ;{5}            ; length/flags
 symlens01
-    pha                 ;{3}    ; not using tay/tya preserves Y=0
+    pha                 ;{3}            ; not using tay/tya preserves Y=0
     asl                 ;{2}
-    asl                 ;{2}    ; Vocab bit to C flag
+    asl                 ;{2}            ; Vocab bit to C flag
     pla                 ;{4}
-    and #$1F            ;{2}    ; length
-    sta R0L+2*N8        ;{3}    ; N8L = visible length (omit vocab +1)
+symlens02
+    and #$1F            ;{2}            ; length
+    sta R0L+2*N8,y      ;{5}            ; N8L = visible length (omit vocab +1)
     rts
+
+symstrand
+    jsr symlens
+    iny
+    lda (R0L+2*N3),y
+    asl 				; 2* symtab + --> strand
+    bne symlens02 			; bra
 
 /* SYM.COPY
 tags: primitive nosymbol
@@ -630,65 +613,6 @@ _toname
 
 ;--------------------------------------------------------------
 #if 0
-name=(FILTER).REWIND
-stack=( -- )
-tags=interpreter,nfa,nosymbol
-Rewinds to beginning of symbol table on each loop iteration
-
-```
-: (filter).rewind   ( -- )
-    <n6 >n3 drop ;
-    <n4 0=
-    if  <n5 <n7 2+ !+ >n5 drop
-    then ;
-```
-
-
-#endif
-pfilterrewind
-    brk
-    .byt ld | N6                ; get `sym0`
-    .byt st | N3                ; rewind the symbol list
-    .byt ld | N4                ; contains either `newdp`(pass1) or `0`(pass2)
-    .byt bnz , <(pfilterrewind02-*-2) ; check 'pass' flag
-    .byt ld | N7
-    .byt inr | ACC
-    .byt inr | ACC              ; thread points to 1st NFA of each thread
-    .byt std | N5               ; write thread start addresses on pass2
-pfilterrewind02
-    .byt nxt
-
-;--------------------------------------------------------------
-#if 0
-name=EXT-UNTIL
-stack=( -- )
-tags=immediate,compiler,nosymbol
-This (poorly named) word wraps a BEGIN-UNTIL loop around a `cfa` called
-via the `r11` register, like PETTIL Sweet16's `ext` instruction.  The
-injected function needs a stack signature of ( -- flag ) that is
-`true` when finished.
-
-1. write your filter function to do what it needs to do to each of the things
-2. set up registers the filter function needs
-3. set R11 to point to your filter function
-4. `ext-until`
-5. profit!
-
-#endif
-#include "align.i65"
-_extuntil
-    jsr enter
-#include "page.i65"
-extuntil01                      ; begin
-    .word doextreg
-#include "parm.i65"             ;  ( flag )
-    .word qbranch               ; until
-    .byt <(extuntil01-*+1)
-#include "past.i65"
-    .word exit
-
-;--------------------------------------------------------------
-#if 0
 name=(SEEK)
 stack=( thread -- flag )
 tags=interpreter,primitive,nosymbol
@@ -752,13 +676,17 @@ pseek09
     ;
     jmp putc
 
-;--------------------------------------------------------------
-#if 0
-name=>THREAD
-stack=( symtab -- thread )
-tags=interpreter,forth-83,nosymbol
-Returns `true` if there is a next vocabulary
-#endif
+/* name=>STRAND
+tags: nosymbol
+
+code >strand   ( -- thread )
+
+*/
+tostrand
+    lda R0L+2*N8+1
+    ldy usersymtab+1
+    jmp put
+
 tothread
     ldy #1
     lda (R0L+2*N7),y            ; use `nfa` in `n7`, get first character
@@ -767,14 +695,16 @@ tothread
     sta tos                     ; `symtab` always at a page boundary
     jmp next
 
-;--------------------------------------------------------------
-#if 0
-name=IMMEDORNOT
-stack=( true -- -1|+1 )
-tags=interpreter,forth-83,nosymbol
-Returns +1 if the immediate bit is set on current `nfa`
+
+/* IMMEDORNOT
+code immedornot   ( true -- -1|+1 )
+tags: nosymbol
+
+Return +1 if the immediate bit is set on current `nfa`
+
 Otherwise returns -1
-#endif
+
+*/
 immedornot
     ldy #0
     lda (R0L+2*N3),y            ; length/flags of curr `nfa`
@@ -785,14 +715,17 @@ immedornot
     lsr                         ; divide by 16, $02 when immediate
     jmp nplus                   ; add 0 or 2 to tos
 
-;--------------------------------------------------------------
-#if 0
-name=NEXTVOCAB?
-stack=( -- flag )
-tags=interpreter,forth-83,nosymbol
+/* NEXTVOCAB?
+tags: nosymbol
+
 Return `true` if there is a next vocabulary
 
-#endif
+```
+code next.vocab?   ( -- flag )
+    brk,  n5 ld,  push,
+    n6 ld@,  n5 st,  nxt,
+```
+*/
 nextvocabq
     brk
     .byt ld | N5
@@ -919,6 +852,8 @@ foundq01                        ;     begin (loop through vocabs)
     .word fetch
 #include "page.i65"
     .word tothread
+#include "page.i65"
+;    .word tostrand
 #include "page.i65"
     .word pseek
 #include "parm.i65"
@@ -1388,201 +1323,17 @@ automem01
 #include "past.i65"
     .word exit
 
-;--------------------------------------------------------------
-#if 0
-name=(FNORD)
-stack=( cfa -- )
-tags=nosymbol
 /* (FNORD)
 tags: secondary nosymbol
 
-Merge sorted symtab with symnew..symtail into 16 strands sorted by name length
-within strand id.  Set a new memory allocation.  Move the names into place and
-rebuild the index.
+code (fnord)   ( cfa -- )
 
-strategy:
-    Validate cutoff CFA
-    initialize N4 to F000, N3 to len=1/strand=0
-    walk through the sorted ones until the end
-    every time the
-handling duplicates:
-    if the cfa indicates we must discard this word, then walk through all
-        already-written names at pad, and unsmudge only the very last copy,
-        if found.
+Merge new symbols into 16 dictionary strands and set new memory allocation
 
-alternate:
-    when a smudged name is encountered, walk forward keeping track of most
-    recent (very last copy) until '000000' encountered
+`forget forget` is a synonym for `rehash`
 
-good
-    n4 off
-    begin
-        n4 1+!
-        <n4 lsb
-        bl = if n4 dup 1+ 1+! coff then
-    until
-tiny
-    \ sort(thread.len) and copy symbols to pad
-    brk,                                \ Sweet16 powers activated!
-    acc sub,  n4 st,                    \ rewind length/thread
-    :fnrd2
-        n4 inr,                         \ add 1 to length sought
-        'fnrd1 ext,                     \ check for len = 32, thread++ up to 16
-    'fnrd2 bz,
-    nxt,                                \ we're done!
+most recent definition (highest address) is the only unsmudged one
 
-\
-\
-\
-\ This one copies each symbol matching N4H=thread/N4L=len.
-\ first sorted matching proper...
-\     then until the length matches again,  unsorted symbols.  It never copies a
-\ symbol from vocabid=0 because that's a label!
-:fnrd1
-
-    rts
-
-|sweet16|<|<|<|<|<|<|<|<|<|<|h
-|N0 |N1 |N2 |N3 |N4L |N4H |N5 |N6 |N7 |N8 |R11 |
-|   |   |   |   |00  |00  |   |   |   |   |    |
-
-
-|   |   |   |   |01  |00  |   |   |   |   |    |
-
-gather sorted
-gather unsorted
-    ( since N4H == 0, set length passbits on the pass through symnew )
-    (          for $01 - $0F, check passbits; $10 means we are done )
-
-|   |   |   |   |02  |00  |   |   |   |   |    |
-|   |   |   |   |03  |00  |   |   |   |   |    |
-|   |   |   |   |04  |00  |   |   |   |   |    |
-|   |   |   |   |05  |00  |   |   |   |   |    |
-|   |   |   |   |06  |00  |   |   |   |   |    |
-|   |   |   |   |07  |00  |   |   |   |   |    |
-|   |   |   |   |08  |00  |   |   |   |   |    |
-|   |   |   |   |09  |00  |   |   |   |   |    |
-|   |   |   |   |0A  |00  |   |   |   |   |    |
-|   |   |   |   |0B  |00  |   |   |   |   |    |
-|   |   |   |   |0C  |00  |   |   |   |   |    |
-|   |   |   |   |0D  |00  |   |   |   |   |    |
-|   |   |   |   |0E  |00  |   |   |   |   |    |
-|   |   |   |   |0F  |00  |   |   |   |   |    |
-|   |   |   |   |10  |00  |   |   |   |   |    |
-|   |   |   |   |11  |00  |   |   |   |   |    |
-|   |   |   |   |12  |00  |   |   |   |   |    |
-|   |   |   |   |13  |00  |   |   |   |   |    |
-|   |   |   |   |14  |00  |   |   |   |   |    |
-|   |   |   |   |15  |00  |   |   |   |   |    |
-|   |   |   |   |16  |00  |   |   |   |   |    |
-|   |   |   |   |17  |00  |   |   |   |   |    |
-|   |   |   |   |18  |00  |   |   |   |   |    |
-|   |   |   |   |19  |00  |   |   |   |   |    |
-|   |   |   |   |1A  |00  |   |   |   |   |    |
-|   |   |   |   |1B  |00  |   |   |   |   |    |
-|   |   |   |   |1C  |00  |   |   |   |   |    |
-|   |   |   |   |1D  |00  |   |   |   |   |    |
-|   |   |   |   |1E  |00  |   |   |   |   |    |
-|   |   |   |   |1F  |00  |   |   |   |   |    |
-|   |   |   |   |20  |00  |   |   |   |   |    |
-|   |   |   |   |00  |01  |   |   |   |   |    |
-|   |   |   |   |01  |01  |   |   |   |   |    |
-|   |   |   |   |02  |01  |   |   |   |   |    |
-|   |   |   |   |03  |01  |   |   |   |   |    |
-|   |   |   |   |04  |01  |   |   |   |   |    |
-|   |   |   |   |05  |01  |   |   |   |   |    |
-|   |   |   |   |06  |01  |   |   |   |   |    |
-|   |   |   |   |07  |01  |   |   |   |   |    |
-|   |   |   |   |08  |01  |   |   |   |   |    |
-|   |   |   |   |09  |01  |   |   |   |   |    |
-|   |   |   |   |0A  |01  |   |   |   |   |    |
-
-|sweet16|<|<|<|<|<|<|<|<|<|<|h
-|N0 |N1 |N2 |N3 |N4L |N4H |N5 |N6 |N7 |N8 |R11 |
-|   |   |   |   |    |    |   |   |   |   |    |
-
-
-
-
-n4 off
-    begin
-        n4 1+!
-good    n4 c@  bl under =  or n4 c!
-tiny    n4 ldd,
-
-*/
-
-Symbols are stored in memory end-to-end, like this
-[code field address]            2 bytes
-[flags/length]                  1 byte
-[name]                          length bytes
-[vocabid]                       0 or 1 bytes
-
-At the very end, CFA and length are three '00' null bytes.  This is symtail.
-A symbol will be appended at symtail when a new word is defined, then symtail
-is moved to point afterward
-
-This word completely rebuilds the symbol table, filtering out names located at
-or above the CFA input parameter.  Symbols are sorted in order of ascending
-length, and grouped by the lowest four bits of the first character.
-
- The low four bits of the first character of each name index a list of addresses
-to the group of symbols
-
-
-
-
-    add to 'forgotten dups list'
-
-variable x \ 0..79
-variable y \ 0..49
-: me   x @ y @ 40* 2* +
-       buffer + >n4 c@ ;
-: nw <n4 81 - c@ ;  : n <n4 80 - c@ ;
-: nw <n4 79 - c@ ;  : w <n4 1-   c@ ;
-: sw <n4 79 + c@ ;  : e <n4 1+   c@ ;
-: se <n4 81 + c@ ;  : s <n4 80 + c@ ;
-: worry   ( invert displayed cell ) ;
-: cell.next ( -- )
-    nw n ne
-      +  +
-    w  me e
-      +  +
-    sw  s se
-    + + + +
-    3 =  me xor
-    dup  if  me worry  then ;
-
-\ put code in registers, jsr N2?
-N2  clc ldx_*#
-N3  81  adc_abs,x
-N4  _________
-N5  rts
-
-core dictionary
-            <--- fence                  always keep if CFA < fence
-user dictionary
-            <--- dictionary pointer (DP) after forget
-forgotten user dictionary
-soon to be overwritten
-            <--- DP before forget
-            free memory, filled with
-            C0 DE 65 02 C0 DE 65 02 ...
-
-            <--- vmbuf
-screens of source code
-blocks of data
-oodles of noodles
-abs of steel
-            <--- symtab
-            <--- symnew
-            <--- symtail
-            free memory
-
-studio
-            <--- limit
-
-feat:
 : goat 1 ;                              \ cfa1  S|4 goat
         2 constant goal                 \ cfan  S|4 goal
 : goat 3 ;                              \ cfa2  S|4 goat
@@ -1600,141 +1351,42 @@ rehash
 forget goal
 goat . goal . 4 7 ok
 
------------------------------
-
-
-
-
-FORGET { any member of studio } is the same as REHASH
-e.g. FORGET FORGET is a synonym
-
-
-    fence > cfa?                CAN'T FORGET BELOW FENCE
-    for each thread
-    for each length
-        flip back and forth between sorted threads and symnew
-        is this cfa < CFA or this cfa > studio?
-        code field is in range
-                copy to pad
-sym0
-for j = 0 to F                          \ thread
-    for i = 1 to 31                     \ length
-    begin                               \ copy all sorted symbols: thread,length
-        symlen i =                      \ get length @(n3)
-    while                               \ is (length = i) ?
-      ??? ???                   \ copy the symbol from @n3
-        sym+                            \ next sorted symbol
-    repeat
-    save n3
-    save what is the length now?
-    n3 = symnew
-    begin                               \ append unsorted symbols: thread,length
-        is the length the same?
-        if
-            is the thread the same?
-            if
-                copy the symbol
-            then
-        then
-        sym+
-        are we at the symtail?
-    until
-
-most recent definition (highest address) is the only unsmudged one
-
-
-symtab @ 34 +
- 0 symthread is pointer2sorted
-for j = 0 to F                          \ thread
-    for length=1 to 31                  \ length
-        begin
-            len=i?
-            eligible?
-            copy it
-        different length until
-
-        copy_this_length_and_thread
-        copy_any_unsorted
-        begin
-            length(pointer2sorted) = i?
-        while
-            check CFA and copy it
-            advance pointer2sorted
-        repeat
-        symnew is pointer2unsorted
-        begin
-            length(pointer2unsorted) = i?
-        while
-            thread(pointer2unsorted) = j?
-        while
-            check CFA and copy it
-            end of list?
-        until
-    next length
-next thread
-calculate size
-
-
-//"paren forget"//
-
-
-
-
-            newdp @ studio @  <n3 name> between?  0=
-
-
-            symnew @ =n3
-
-            check-symnew
-        loop
-    loop
-
-            if keepit then
-
-            \ cfa < studio?  no: keep it
-            <n3 name> studio @ <  0=
-            \ cfa < newdp?  yes: keep it
-            <n3 name> newdp @ <
-* rebuild and reindex the entire dictionary
-* rebalance it into 16 roughly equal-sized threads
-!!!!PASS1
-* initialize output pointer to `pad`
-* for each of 16 threads:
-*   for each of 31 lengths:
-*     copy from `j symthread` to output until `i <> symlen`
-*
-* scan & copy
-* for each word < `cfa` stack parameter
-* copy smudged words too
-* Words with a CFA >= `cfa` stack parameter are discarded
-** when a word is discarded, if a predecessor (with the smudge bit set) exists:
-** AND the CFA of the predecessor is < `cfa` stack parameter
-*** unsmudge it
-!!!!PASS2
-
-A new `symtab`
-address will be calculated at halftime.  After the second phase, the `symnew`
- list will be empty once again.
-
-
-;    .word bloom                 ; cfa bloom )
-;    .word eight                 ; cfa bloom 8 )
-;    .word erase                 ; reset the Bloom filter
-;    .word dlit
-;    .word $FFFF
-;    .word _pforgetpass1         ; >r11
-;    .word init411
-
-
 ```
 : (fnord)   ( cfa -- )
     pad symtab ;code
     brk,   harvests4 ext,
     tos ldd,  n3 st,
     $f000 n4 set,
-\ phase 1 in which doris gets her oats
 \ n4h for each strand...
 \ n4l ... for each length...
+
+
+
+    sym0
+    begin
+        n8 n4 =
+        if
+            ?keepacopy
+        else
+
+            <n3 <n8
+            symnew @ n3 !
+            begin
+                n8
+            while
+                sym.strand ( set both n8l, n8h )
+                n8 n4 =
+                if
+                    ?keepacopy
+                then
+                sym+
+            repeat
+            n8 ! n3 !
+        then
+        sym+
+        n3 symnew @ =   ( -- flag )
+    until
+
 \ bump length/strand
 \     until 16/32 --> done
 \ copy the sorted ones until (n8)strand/length <> (n4)strand/length --> merge_seq
@@ -1747,17 +1399,18 @@ address will be calculated at halftime.  After the second phase, the `symnew`
 
     (automem) symtab! ;
 
-plover
-
 ```
-#endif
+plover
+*/
 #include "align.i65"
 _pfnord
     jsr enter
 #include "page.i65"
-    .word xyzzy
-#include "page.i65"
     .word sym0
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word xyzzy
 #include "page.i65"
     .word robblerobble
 #include "past.i65"
@@ -1861,16 +1514,14 @@ _forth
 #include "past.i65"
     .word exit
 
-;--------------------------------------------------------------
 #if 0
 name=DEFINITIONS
 stack=( -- )
 tags=forth-83
-Sets the compilation vocabulary by copying the first vocabulary in
-the [[VOCABS]] search order to [[CURRENT]].
+
+Sets the `current` vocabulary of new definitions
 
 #endif
-#include "align.i65"
 definitions
     lda uservocabs+1
     sta usercurrent
