@@ -107,16 +107,6 @@ bloom                           helps PETTIL (hopefully) search less often for n
 [symtab..symtail]               symbols, terminated by three nulls
 
 ```
-get memory requirements                 symtab
-    1 harvests
-
-    symtab+32 >n0
-    1 plants                            from to howmany
-    <n0  2+ >n3
-
-
-
-
 : !symdex   ( start size -- )
     studio @  over -                    \ calculate memory requirements
     $ff00 and benjamin -                \ (studio - size) & $FF00  - $100
@@ -171,8 +161,8 @@ _setsymdex
 #include "past.i65"
     .word exit
 
-;--------------------------------------------------------------
 /* SYMTAB!
+tags: nosymbol
 
 Using the formula: (size + 2 pages + keep the change),
 reallocate memory during `rehash` or `(cold)`.
@@ -306,17 +296,10 @@ symlens01
     sta R0L+2*N8        ;{3}    ; N8L = visible length (omit vocab +1)
     rts
 
-/* sym.copy
-primitive
+/* SYM.COPY
+tags: primitive nosymbol
 
-* N3 (curr) symbol to N7 (targ) symbol
-* copy vocab byte
-* copy text
-* copy length/flags
-* does not move N7, does not move N3 either
-
-|change  |in          |out    |<|h
-|a       |.           |len    |<|
+Copy current LFA and name from (N3-2..N3+length+%vocab) source to (N5) target
 
 ```
 noname code sym.copy   ( -- )
@@ -349,7 +332,7 @@ symcopy01
 #if 0
 name=SYM+
 stack=( -- )
-tags=ext,primitive,nfa,nosymbol
+tags=primitive,nfa,nosymbol
 registers=Z:false
 * move N3 to the next symbol
 compiled with an inline value following the CFA
@@ -372,9 +355,108 @@ symplus01
 
 ;--------------------------------------------------------------
 #if 0
+name=(!SYMTAB)
+stack=( len addr -- )
+tags=system,startup,nosymbol
+nip nip
+set 'symnew' once per (rehash) to the third null
+set 'symtail' = symnew-2
+write '0000' word at symtail
+
+#endif
+psamtab
+    brk
+    .byt ld | N3
+    .byt std | TOS              ; set `symnew`
+    .byt popd | N3              ; 2-
+    .byt ld | N3
+    .byt std | TOS              ; set `symtail`
+    .byt sub | ACC
+    .byt std | N3               ; force cfa = 0
+    .byt nxt
+
+;--------------------------------------------------------------
+#if 0
+name=!SYMTAB
+stack=( start end -- size addr )
+tags=system,startup,nosymbol
+Scan `symtab`
+
+: !symtab   ( -- )
+    bloom 8 erase  sym.rewind
+    symtab @ bl
+    begin
+        sym.len <
+        if
+            n3> !+
+        then
+        bloomfilter cbit!
+        sym.len
+        3 sym+
+        sym.len 0=
+    until (!symtab) ;
+
+
+#endif
+#include "align.i65"
+_setsymtab
+    jsr enter
+#include "page.i65"
+    .word bloom
+#include "page.i65"
+    .word eight
+#include "page.i65"
+    .word erase                 ; reset the Bloom filter
+#include "page.i65"
+    .word sym0
+#include "page.i65"
+    .word symtab
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word bl
+#include "page.i65"
+samtab01
+    .word symlen
+#include "page.i65"
+    .word gt
+#include "page.i65"
+    .word qbranch
+    .byt <(samtab02-*+1)
+#include "parm.i65"
+    .word zpfrom
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word _storeplus
+#include "page.i65"
+samtab02
+    .word _bloomfilter
+#include "page.i65"
+    .word cbitstore
+#include "page.i65"
+    .word symlen
+#include "page.i65"
+    .word symplus
+#include "page.i65"
+    .word symlen
+#include "page.i65"
+    .word zeq
+#include "parm.i65"
+    .word qbranch
+    .byt <(samtab01-*+1)
+#include "pad.i65"
+    .word symnew
+#include "page.i65"
+    .word psamtab               ; handle `symtab` tail
+#include "page.i65"
+    .word threedrop
+#include "past.i65"
+    .word exit
+
+#if 0
 name=BLOOM#
 stack=( -- n )
-tags=ext,nosymbol
+tags=nosymbol
 The Bloom filter tries to answer the question, 'is this word a number?'
 
 The string under consideration is pointed to by (N3) with a length of N8.
@@ -580,7 +662,7 @@ pfilterrewind02
 #if 0
 name=EXT-UNTIL
 stack=( -- )
-tags=ext,immediate,compiler,nosymbol
+tags=immediate,compiler,nosymbol
 This (poorly named) word wraps a BEGIN-UNTIL loop around a `cfa` called
 via the `r11` register, like PETTIL Sweet16's `ext` instruction.  The
 injected function needs a stack signature of ( -- flag ) that is
@@ -1080,7 +1162,7 @@ ppcreate02
 #if 0
 name=?VMMOVE
 stack=( newsymtab -- )
-tags=ext,nosymbol
+tags=nosymbol
 * if `#blk` nonzero, move `vmbuf` area
 
 ```
@@ -1205,7 +1287,7 @@ _qvmmove
 #if 0
 name=(AUTOMEM)
 stack=( ~wut? )
-tags=ext,nosymbol
+tags=nosymbol
 Figure out where the new symbol table will be located, runs in between
 PASS1 and PASS2 of (FORGET)
 ( start actualsize -- start actualsize studio-newsize )
@@ -1677,46 +1759,12 @@ _pfnord
 #include "page.i65"
     .word sym0
 #include "page.i65"
-    .word bl                    ; 32 )
-#include "page.i65"
-    .word zero                 ; 32 0 ) \ factored into `(forget).looper`
-#include "page.i65"
-    .word _pad
-#include "page.i65"
-;    .word pforgetlooper         ; this is it. performs all of pass1
-#include "parm.i65"
-    .word dlit
-    .word 0                     ; pass2 flag
-;    .word _pforgetpass2         ; >r11
-;#include "pad.i65"
-;    .word init411
-#include "parm.i65"
-    .word blit
-    .byt 16
-;#include "pad.i65"
-;    .word zero
-#include "page.i65"
-    .word _pad                  ; the new sym0
-#include "page.i65"
-    .word twoplus
-#include "page.i65"
-    .word _automem              ; does things, returns the new targ
-#include "page.i65"
-;    .word pforgetlooper         ;( do eet! again! )
-#include "page.i65"
-    .word dp
-#include "page.i65"
-    .word store
-#include "page.i65"
-;    .word symtail
-#include "page.i65"
-;    .word symtailstore
-#include "page.i65"
-;    .word symnew
-#include "page.i65"
-;    .word symtailstore
+    .word robblerobble
 #include "past.i65"
     .word exit
+
+robblerobble
+    jmp next
 
 ;--------------------------------------------------------------
 #if 0
