@@ -553,7 +553,6 @@ foundq03                        ; found it
 #include "past.i65"
     .word exit
 
-
 ;--------------------------------------------------------------
 #if 0
 name=EXISTS?
@@ -721,12 +720,13 @@ _pfnord
 /* (FNORD)
 tags: nosymbol
 
+The business end of `forget` and `rehash`
+
 ```
 : (fnord)   ( cfa -- )
-    sym0 pad
+    sym0 pad studio fence               ( cfa pad 'studio 'fence )
     robblerobble
 ```
-plover
 */
     jsr enter
 #include "page.i65"
@@ -736,45 +736,87 @@ plover
 #include "page.i65"
     .word studio
 #include "page.i65"
-    .word fence
-#include "page.i65"
     .word xyzzy
 #include "page.i65"
     .word robblerobble
 #include "past.i65"
     .word exit
 
+get_symbol_len_strand
+    jsr plugh
+    rts
+
 robblerobble
+    brk
 /* robblerobble
+
+code robblerobble   ( cfa pad 'studio -- pad size )
+
+    tos     fence
     n0      cfa
     n1      pad
     n2      studio
-    n3      nfa
+
+    n3      nfa                         sym0
+
     n4      len/strand
     n5      output buffer (pad)
     n6      copy of n0 (cfa)
     n7
+
+        len/strand n4 off
+        begin
+            get_symbol_len_strand
+            same_strand?
+        while
+            in_bounds?
+            if
+                copy_symbol
+            then
+        repeat
+
 */
-
-                                        ; check that fence <= cfa < studio
-                                        ; ( n3=sym0 ; cfa pad studio fence )
-    jsr harvests6
-                                        ; ( n0=cfa n1=pad n2=studio ; fence )
-    brk
-    .byt ld  | N0
-    .byt st  | N6
+                                        ; it was `forget`'s job to qualify `cfa`
     .byt ldd | TOS
-    .byt dcr | ACC
-    .byt st  | TOS
-    .byt sub | N0                       ; fence-cfa-1
-    .byt bp, <(robblerobble-*-2)        ; out of bounds
-    .byt ldd | N2
-    .byt st  | N2
-    .byt sub | N0                       ; studio-cfa
-    .byt bm, <(robblerobble-*-2)        ; also out of bounds
-; if we get here, cfa is valid
+    .byt st  | N2                       ; N2=studio
+    .byt pull
+    .byt st  | N5                       ; N5=output buffer (pad)
+    .byt pull
+    .byt st  | N6                       ; N6=cfa copy
+    .byt sub | ACC
+    .byt st  | N4                       ; N4=current len/strand off
+// plover
+//    copy sorted things until change in len/strand
+/*
+*/
+//    begin
+robble01
+    .byt ext
+    .word get_symbol_len_strand         ; get len/strand of current symbol (n3)
+    .byt ld  | N8
+    .byt cpr | N4
+    .byt bnz , <(robble03-*-2)          ; len/strand has changed
+    .byt popd | N3
+    .byt cpr | N2                       ; CFA >= studio? keep it
+    .byt bz, <(robble02-*-2)
+    .byt 0
+robble02
 
-    jmp next
+    .byt br , <(robble01-*-2)
+//          n8=n4?
+//        copy a sorted thing
+/*
+    until
+    push n3
+    push n8 (len/strand of next adjacent sorted group)
+*/
+robble03
+/*
+    begin
+        get len/strand of next unsorted thing
+        n8=n4?
+            until n4=tos
+*/
 
 ;--------------------------------------------------------------
 #if 0
