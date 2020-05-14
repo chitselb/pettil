@@ -1,4 +1,6 @@
-/* pettil-dictionary.a65
+;------------------------------------------------------------------------------
+/*
+title: pettil-dictionary.a65
 tags: source nosymbol
 
 ```
@@ -20,8 +22,9 @@ symbol table entry
 +---------------+
 ```
 */
-
-/* SYMTAB!
+;------------------------------------------------------------------------------
+/*
+title: SYMTAB!
 tags: nosymbol
 
 */
@@ -36,8 +39,9 @@ symtabset
     sta stackl,x
 symtabset99
     jmp next
-
-/* SYM0
+;------------------------------------------------------------------------------
+/*
+title: SYM0
 tags: nosymbol
 
 ```
@@ -53,9 +57,12 @@ sym0
     lda usersymtab+1
     sta R0L+2*N3+1
     bne symtabset99             ; next
+;------------------------------------------------------------------------------
+/*
+title: SYM.LEN
+tags: primitive nosymbol
 
-/* SYM.LEN
-tags: nosymbol
+Calculate length of a name to N8, C flag
 
 ```
 code sym.len   ( -- )
@@ -90,8 +97,9 @@ symlen_s02
     and #$1F            ;{2}            ; length
     sta R0L+2*N8,y      ;{5}            ; N8L = visible length (omit vocab +1)
     rts
-
-/* SYM.STRAND
+;------------------------------------------------------------------------------
+/*
+title: SYM.STRAND
 tags: nosymbol
 
 ```
@@ -100,18 +108,19 @@ code sym.strand
     asl,  'symlen_s02 bne, \ bra
 ```
 */
-symstrand_s
+symstrand
     jsr symlen_s
     iny
     lda (R0L+2*N3),y
     asl
     bne symlen_s02 			; bra
-
-/* SYM.COPYS
+;------------------------------------------------------------------------------
+/*
+title: SYM.COPY
 tags: nosymbol subroutine
 
 */
-symcopy_s
+symcopy
     jsr symlen_s
     adc #0
     tay
@@ -121,12 +130,12 @@ symcopy01
     dey
     bpl symcopy01
     rts
-
+;------------------------------------------------------------------------------
 /* SYM+
 tags: nosymbol subroutine
 
 */
-symplus_s
+symplus
     jsr symlen_s
     adc #3
     adc R0L+2*N3
@@ -135,8 +144,9 @@ symplus_s
     inc R0L+2*N3+1
 symplus01
     rts
-
-/* (!SYMTAB)
+;------------------------------------------------------------------------------
+/*
+title: (!SYMTAB)
 tags: nosymbol
 
 */
@@ -150,11 +160,21 @@ psamtab
     .byt sub | ACC
     .byt std | N3               ; force cfa = 0
     .byt nxt
+;------------------------------------------------------------------------------
+/*
+title: !SYMTAB
+tags: nosymbol secondary
 
-/* !SYMTAB
-tags: nosymbol
 
-stack=( start end -- size addr )
+```
+: !symtab   ( start end -- size addr )
+    bloom 8 erase sym0 symtab @ bl
+    begin
+        sym.len >  if  <n3 !+ then
+        bloomfilter cbit!
+        sym.len  call sym+  sym.len 0=
+    until (!symtab) 3drop ;
+```
 */
 #include "align.i65"
 _setsymtab
@@ -195,7 +215,7 @@ samtab02
     .word symlen
 #include "parm.i65"
     .word callz                         ; ~todo tidy up here
-    .word symplus_s
+    .word symplus
 #include "pad.i65"
     .word symlen
 #include "page.i65"
@@ -211,7 +231,7 @@ samtab02
     .word threedrop
 #include "past.i65"
     .word exit
-
+;------------------------------------------------------------------------------
 /* BLOOM#
 tags: nosymbol
 
@@ -247,7 +267,7 @@ bloomhash02
     lda z
     and #$3F                    ; width of the filter is 64 bits
     jmp pushya
-
+;------------------------------------------------------------------------------
 /* BLOOMFILTER
 tags: nosymbol
 
@@ -264,7 +284,7 @@ _bloomfilter
     .word tobit
 #include "past.i65"
     .word exit
-
+;------------------------------------------------------------------------------
 /* UNSMUDGE
 tags: nosymbol
 
@@ -290,7 +310,7 @@ smudge
     ror
     sta (tos),y
     jmp drop
-
+;------------------------------------------------------------------------------
 /* (>NAME)
 tags: nosymbol
 
@@ -314,10 +334,9 @@ ptoname05
     ldy #0
     lda (R0L+2*N3),y
     beq ptoname04
-    jsr symplus_s               ; next!
+    jsr symplus                 ; next!
     bne ptoname                 ; bra
-
-;--------------------------------------------------------------
+;------------------------------------------------------------------------------
 #if 0
 name=>NAME
 tags=interpreter
@@ -351,7 +370,7 @@ tags: forth-83
     .word ptoname
 #include "past.i65"
     .word exit
-
+;------------------------------------------------------------------------------
 /* (SEEK)
 tags: nosymbol
 
@@ -380,7 +399,7 @@ pseek00
     cmp R0L+2*N4                ; length.current > length.seeking?
     bcs pseek08                 ; not found on sorted list!
 pseek01
-    jsr symplus_s               ; next!
+    jsr symplus               ; next!
     bne pseek00                 ; bra
 pseekok1
     ;ldy #0                     ; thanks, symlen
@@ -408,23 +427,28 @@ pseek08
 pseek09
     ;
     jmp putc
-
-tostrand
-/* name=>STRAND
+;------------------------------------------------------------------------------
+/*
+title: STRAND
 tags: nosymbol
 
+```
 code >strand   ( -- thread )
-
+  n8 1+ lda,  symtab 1+ ldy,  put jmp,
+```
 */
+tostrand
     lda R0L+2*N8+1
     ldy usersymtab+1
     jmp put
-
-/* name=>STRAND
+;------------------------------------------------------------------------------
+/*
+title: >STRAND
 tags: nosymbol
 
 code >strand   ( -- thread )
-
+  1 # ldy,  n7 )y lda,  $0F # and,  asl,
+  tos sta,  next jmp,
 */
 tothread
     ldy #1
@@ -433,10 +457,9 @@ tothread
     asl                         ; *2
     sta tos                     ; `symtab` always at a page boundary
     jmp next
-
-
-immedornot
-/* IMMEDORNOT
+;------------------------------------------------------------------------------
+/*
+title: IMMEDORNOT
 tags: nosymbol
 
 Return +1 if the immediate bit is set on current `nfa`, otherwise returns -1
@@ -444,6 +467,7 @@ Return +1 if the immediate bit is set on current `nfa`, otherwise returns -1
 code immedornot   ( true -- -1|+1 )
 
 */
+immedornot
     ldy #0
     lda (R0L+2*N3),y            ; length/flags of curr `nfa`
     and #$20                    ; immediate?
@@ -452,32 +476,38 @@ code immedornot   ( true -- -1|+1 )
     lsr
     lsr                         ; divide by 16, $02 when immediate
     jmp nplus                   ; add 0 or 2 to tos
-
-nextvocabq
-/* NEXTVOCAB?
+;------------------------------------------------------------------------------
+/*
+title: NEXTVOCAB?
 tags: nosymbol
 
 Return `true` if there is a next vocabulary
 
 ```
-code next.vocab?   ( -- flag )
-    brk,  n5 ld,  push,
-    n6 ld@,  n5 st,  nxt,
+code next.vocab?   ( -- flag )  brk,
+  n5 ld,  push,  n6 ld@,  n5 st,  nxt,
 ```
 */
+nextvocabq
     brk
     .byt ld | N5
     .byt push
     .byt ldi | N6
     .byt st | N5
     .byt nxt
-
-pfoundq
-/* (FOUND?)
+;------------------------------------------------------------------------------
+/*
+title: (FOUND?)
 tags: nosymbol
 
-stack=( name vocabs -- )
+```
+code (found?)   (  name vocabs -- ) brk,
+  n8 ld,  n4 st,  tos ld,  n6 st,
+  n6 inr,  n6 ldi,  n5 st,  pull,
+  n7 st,  n3 st,  pull,  nxt,
+```
 */
+pfoundq
     brk
     .byt ld | N8                ; `n4` `n8` len
     .byt st | N4
@@ -491,14 +521,23 @@ stack=( name vocabs -- )
     .byt st | N3                ; name
     .byt pull
     .byt nxt
+;------------------------------------------------------------------------------
+/*
+title: FOUND?
+tags: nosymbol secondary
 
+Search the dictionary for a name
+
+: found?   ( nfa -- xfa flag )
+  vocabs (found?)  bloomfilter cbit@
+  if
+    begin
+      symnew (seek)
+    while
+      symtab @ >thread
+*/
 #include "align.i65"
 _foundq
-/* FOUND?
-tags: nosymbol
-
-stack=( nfa -- xfa flag )
-*/
     jsr enter
 #include "page.i65"
     .word vocabs
@@ -560,15 +599,7 @@ foundq03                        ; found it
     .word immedornot            ; maybe add 2 if it's immediate
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=EXISTS?
-tags=vocabulary
-
-#endif
-#include "align.i65"
-_existsq
+;------------------------------------------------------------------------------
 /* EXISTS?
 tags: vocabulary
 
@@ -579,6 +610,13 @@ search the dictionary for a name
   bl name ?dup  ?: found? false  and ;
 ```
 */
+#if 0
+name=EXISTS?
+tags=vocabulary
+
+#endif
+#include "align.i65"
+_existsq
     jsr enter
 #include "page.i65"
     .word bl
@@ -594,8 +632,7 @@ search the dictionary for a name
     .word andx
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
+;------------------------------------------------------------------------------
 #if 0
 name='
 tags=forth-83
@@ -620,7 +657,7 @@ stack=( -- cfa )
     .byt 3                      ; NOT FOUND
 #include "past.i65"
     .word exit
-
+;------------------------------------------------------------------------------
 #include "align.i65"
 _pcreate
 /* (CREATE)
@@ -695,7 +732,7 @@ pcreate02
     .byt popd | TOS
     .byt st | N7
     .byt ext
-    .word symcopy_s             ; copy the symbol/length
+    .word symcopy               ; copy the symbol/length
     .byt ldi | N1
     .byt bz , <(ppcreate01-*-2)
     .byt set | ACC
@@ -722,81 +759,122 @@ ppcreate02
     .byt pull
     .byt rtn
     jmp exit
-
-#include "align.i65"
-_pfnord
-/* (FNORD)
+;------------------------------------------------------------------------------
+/*
+title: STRAND+
 tags: nosymbol
 
-The business end of `forget` and `rehash`
+increment the length byte (N4l) until it
+reaches 32, then increment thread (N4h)
 
-```
-: (fnord)   ( cfa -- )
-    sym0 pad studio fence               ( cfa pad 'studio 'fence )
-    fnorditude
-```
+code strand+   ( -- )
+  n4 inc,  32 # lda,  n4 eor,
+  0<> if,  n4 sta,  n4 1+ inc,  then,
+  rts,
 */
-    jsr enter
-#include "page.i65"
-    .word sym0
-#include "page.i65"
-    .word _pad
-#include "page.i65"
-    .word studio
-#include "page.i65"
-    .word xyzzy
-#include "page.i65"
-    .word fnorditude
-#include "past.i65"
-    .word exit
-
+strandplus
+    inc R0L+2*N4
+    lda #32
+    eor R0L+2*N4
+    bne straplu01
+    sta R0L+2*N4
+    inc R0L+2*N4+1
+straplu01
+    rts
+;------------------------------------------------------------------------------
 willitblendq
-/* WILLITBLEND?
-tags: nosymbol
+/*
+title: :WILLITBLEND?
+tags: nosymbol sweet16
+
+Evaluate (and maybe retain) a name
 
 :willitblend?
-    sym.strand_s ext,  n3 ld, n0 st,
-    n0 popd, n4 cpr,  'willitblend01 bp,
-    n2 cpr, 'willitblend01 bm,
-    n4 ld, n8 cpr, 'wiblend01 bnz,
-    'sym.copy ext,
+    'sym.strand ext,
+    n4 ld,  n8 cpr,  'wiblend02 bnz,
+    n3 ld,  n0 st,
+    n0 popd,  n6 cpr,  'wiblend01 bp,
+    n2 cpr,  'wiblend02 bp,
 :wiblend01
+    'sym.copy ext,
+:wiblend02
     'sym+ ext,  rs,
 */
     .byt ext
-    .word symstrand_s
-    .byt ld  | N3
-    .byt st  | N0
-    .byt popd | N0
-    .byt cpr | N4
+    .word symstrand
+    .byt ld  | N4
+    .byt cpr | N8                       ; shall I compare n4 to a summer's day?
+// plover
+    .byt bnz , <(wiblend02-*-2)
+    .byt popd | N3
+    .byt ldd  | N3                      ; get cfa without disturbing n3
+    .byt cpr | N2                       ; compare to studio
     .byt bp , <(wiblend01-*-2)
-    .byt cpr | N2
-    .byt bnz , <(wiblend01-*-2)
-    .byt ext
-    .word symcopy_s
+    .byt cpr | N6                       ; compare to cfa
+    .byt bp , <(wiblend02-*-2)
 wiblend01
     .byt ext
-    .word symplus_s
+    .word symcopy
+wiblend02
+    .byt ext
+    .word symplus
     .byt rs
-
-fnorditude
-    brk
-/* FNORDITUDE
-tags: nosymbol
+;------------------------------------------------------------------------------
+/*
+title: FNORDITUDE
+tags: nosymbol sweet16 tiny
 
 ```
 code fnorditude   ( cfa pad 'studio -- pad size )
     brk, tos ldd, n2 st,  pull, n5 st,
-    pull, n6 st,  acc sub, n4 st,
-    symnew tos set,  tos ldd,  tos st,
+    pull, n6 st,  acc sub, n4 st,       \ n2=studio n3=sym0 n4=0 n5=pad n6=cfa
+    symnew tos set,  tos ldd,  tos st,  \ unsorted symbols
+```
+*/
+fnorditude
+    brk
+    .byt ldd | TOS
+    .byt st  | N2                       ; n2=studio
+    .byt pull
+    .byt st  | N5                       ; n5=output buffer (pad)
+    .byt pull
+    .byt st  | N6                       ; n6=cfa copy
+    .byt sub | ACC
+    .byt st  | N4                       ; n4=current len/strand off
+    ; fall through
+;------------------------------------------------------------------------------
+/*
+title: :SOSORTED
+tags: nosymbol
+
+```
 :sosorted
     'willitblend? bs,
-    'firstpass bz,                      \ copy sorted names for len/strand=n4
+    'sosorted bz,                       \ copy sorted names for len/strand=n4
     n3 ld,  tos cpr,  'fnordout bp,     \ while  n3 < symnew
     tos ld,  n0 st,
     n3 ld, push,  n8 ld, push,          \ TOS is next sorted len/strand
+```
+*/
+sosorted
+    .byt bs , <(willitblendq-*-2)
+    .byt bz , <(sosorted-*-2)
+    .byt ld  | N3
+    .byt cpr | TOS
+    .byt bp , <(fnordout-*-2)
+    .byt ld  | TOS
+    .byt st  | N0
+    .byt ld  | N3
+    .byt push,
+    .byt ld  | N8
+    .byt push,
+;------------------------------------------------------------------------------
+/*
+title: :SOSCRAMBLED
+tags: nosymbol
+
 :soscrambled
-    n0 ld,  n3 st,                      \ symnew
+    n0 ld,  n3 st,                      \ n3=symnew
 :howaboutthis
     'willitblend? bs,
     n3 ldd, :howaboutthis bnz,
@@ -805,36 +883,14 @@ code fnorditude   ( cfa pad 'studio -- pad size )
     'soscrambled bnz,
     tos ld, n8 st, pull, n3 st,
     n0 ld, tos st,
-    'sosorted br,
+    'sosorted br,               \ repeat
 :fnordout
     nxt,
 ```
 */
-    .byt ldd | TOS
-    .byt st  | N2                       ; N2=studio
-    .byt pull
-    .byt st  | N5                       ; N5=output buffer (pad)
-    .byt pull
-    .byt st  | N6                       ; N6=cfa copy
-    .byt sub | ACC
-    .byt st  | N4                       ; N4=current len/strand off
-robble01
-    .byt ext
-    .word symstrand_s                   ; get len/strand of current symbol (n3)
-    .byt ld  | N8
-    .byt cpr | N4
-    .byt bnz , <(robble03-*-2)          ; len/strand has changed
-    .byt popd | N3
-    .byt cpr | N2                       ; CFA >= studio? keep it
-    .byt bz, <(robble02-*-2)
-    .byt 0
-robble02
-robble03
-// plover
-
-    .byt br , <(robble01-*-2)
 soscrambled
-sosorted
+    .byt ld | N0
+    .byt st | N3
 howaboutthis
     .byt bs , <(willitblendq-*-2)
     .byt ldd | N3
@@ -852,28 +908,42 @@ howaboutthis
     .byt st | TOS
     .byt br ,  <(sosorted-*-2)
 
-strandplus
-    inc R0L+2*N4
-    lda #32
-    eor R0L+2*N4
-    bne straplu01
-    sta R0L+2*N4
-    inc R0L+2*N4+1
-straplu01
-    rts
-
 fnordout
     .byt nxt
+;------------------------------------------------------------------------------
+/*
+title: (FNORD)
+tags: nosymbol secondary
 
-;--------------------------------------------------------------
-#if 0
-name=FORGET
-tags=interpreter,fig,forth-79,forth-83
+Internals of `forget` and `rehash`
 
-#endif
+```
+: (fnord)   ( cfa -- )
+    sym0  pad studio                    ( cfa pad 'studio )
+    fnorditude !symtab ;
+```
+*/
 #include "align.i65"
-_forget
-/* FORGET
+_pfnord
+    jsr enter
+#include "page.i65"
+    .word sym0
+#include "page.i65"
+    .word _pad
+#include "page.i65"
+    .word studio
+#include "page.i65"
+    .word xyzzy
+#include "page.i65"
+    .word fnorditude
+#include "page.i65"
+    .word _setsymtab
+#include "past.i65"
+    .word exit
+;------------------------------------------------------------------------------
+/*
+title: FORGET
+tags: secondary dictionary fig forth-79 forth-83
 
 ```
 : forget   ( "name" ; -- )  '           \ next token from input stream
@@ -881,6 +951,12 @@ _forget
   (fnord) ;
 ```
 */
+#if 0
+name=FORGET
+tags=fnord
+#endif
+#include "align.i65"
+_forget
     jsr enter
 #include "page.i65"
     .word _tick
@@ -899,18 +975,12 @@ _forget
     .word _pfnord
 #include "past.i65"
     .word exit
-
-;--------------------------------------------------------------
-#if 0
-name=DEFINITIONS
-tags=forth-83
-
-#endif
-definitions
-/* DEFINITIONS
+;------------------------------------------------------------------------------
+/*
+title: DEFINITIONS
 tags: forth-83
 
-Set `current` vocabulary for new words
+Set `current` vocabulary for `create`
 
 ```
 code definitions   ( -- )
@@ -918,26 +988,32 @@ code definitions   ( -- )
   next jmp,
 ```
 */
+#if 0
+name=DEFINITIONS
+tags=fnord
+#endif
+definitions
     lda uservocabs+1
     sta usercurrent
     jmp next
+;------------------------------------------------------------------------------
+/*
+title: REHASH
+tags: secondary pettil dictionary
 
-;--------------------------------------------------------------
-#if 0
-name=REHASH
-tags=interpreter
-
-#endif
-#include "align.i65"
-_rehash
-/* REHASH
-tags: pettil
+Sort/merge a fresh dictionary
 
 ```
 : rehash   ( -- )
   here (fnord) ;
 ```
 */
+#if 0
+name=REHASH
+tags=fnord
+#endif
+#include "align.i65"
+_rehash
     jsr enter
 #include "page.i65"
     .word here
@@ -945,26 +1021,24 @@ tags: pettil
     .word _pfnord
 #include "past.i65"
     .word exit
+;------------------------------------------------------------------------------
+/*
+title: FORTH
+tags: vocabulary forth-83
 
-;--------------------------------------------------------------
+Search only the main forth vocabulary
+
+```
+#voc on  vocabulary forth
+```
+~~~code golf~~~
+[-7 bytes] chitselb 2020-05-11
+*/
 #if 0
 name=FORTH
-tags=vocabulary,forth-83
-
+tags=fnord
 #endif
 #include "align.i65"
 _forth
-/* FORTH
-tags: vocabulary
-
-use only the core forth vocabulary
-
-```
-: forth   ( -- )
-  vocabs count erase ;
-```
-;~~~code golf~~~
-;[-7 bytes] chitselb 2020-05-11
-*/
     jsr dovocab
-    .byt 0                      ; vocabulary identifier
+    .byt 0                              ; vocabulary identifier
