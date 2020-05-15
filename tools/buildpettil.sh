@@ -40,6 +40,7 @@
 
     ruby ./tools/xap.rb
 
+    # kludge -- fix Dl"* symbol, requires bbe
     bbe -e "s/DL\x22\x2a/D\xcc\x22\x2a/" tmp/pettil.sym >tmp/pettil.fixed.sym
 
     cat ./tmp/pettil-core.obj    \
