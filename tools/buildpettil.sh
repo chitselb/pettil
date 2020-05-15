@@ -40,9 +40,11 @@
 
     ruby ./tools/xap.rb
 
+    bbe -e "s/DL\x22\x2a/D\xcc\x22\x2a/" tmp/pettil.sym >tmp/pettil.fixed.sym
+
     cat ./tmp/pettil-core.obj    \
         ./tmp/pettil-studio.obj    \
-        ./tmp/pettil.sym    \
+        ./tmp/pettil.fixed.sym    \
       > ./obj/pettil.prg${1}
     cp ./tmp/pettil-core.obj ./obj/pettil-core.obj${1}
 
