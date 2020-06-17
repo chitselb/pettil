@@ -3,6 +3,15 @@
 title: pettil-dictionary.a65
 tags: source nosymbol
 
+|^N3 |^nfa |^|
+|^N4L |^length |^|
+|^N4H |^strand |^|
+|^N5 |^vocabid |^|
+|^N6 |^vocabs |^|
+|^N7 |^seek nfa |^|
+|^N8L |^length |^|
+|^N8H |^strand |^|
+
 ```
 symbol table entry
 +---------------+
@@ -66,10 +75,10 @@ tags: primitive nosymbol
 Calculate length of a name to N8, C flag
 
 ```
-code sym.len   ( -- )
+code sym.len   ( ; n3=nfa -- len ; n8l=len )
   'pushya 1- csplit
   # lda, pha,  # lda, pha,
-:sym.len_s
+:sym.lens
   0 # ldy,  n3 1+ lda,
   0= not if,
     n3 )y lda,
@@ -84,7 +93,7 @@ symlen
     pha
     lda #<(pushya-1)
     pha
-symlen_s
+symlens
     ldy #0              ;{2 {=23}}
     lda R0L+2*N3+1                      ; length = 0 if `n3` is 0
     beq symlen_s01
@@ -92,7 +101,7 @@ symlen_s
 symlen_s01
     pha                 ;{3}            ; not using tay/tya preserves Y=0
     asl                 ;{2}
-    asl                 ;{2}            ; Vocab bit to C flag
+    asl                ;{2}            ; Vocab bit to C flag
     pla                 ;{4}
 symlen_s02
     and #$1F            ;{2}            ; length
@@ -105,12 +114,12 @@ tags: nosymbol
 
 ```
 code sym.strand
-    'symlen_s jsr,  iny,  n3 ,y lda,
+    'symlens jsr,  iny,  n3 ,y lda,
     asl,  'symlen_s02 bne, \ bra
 ```
 */
 symstrand
-    jsr symlen_s
+    jsr symlens
     iny
     lda (R0L+2*N3),y
     asl
@@ -122,7 +131,7 @@ tags: nosymbol subroutine
 
 */
 symcopy
-    jsr symlen_s
+    jsr symlens
     adc #0
     tay
 symcopy01
@@ -137,7 +146,7 @@ tags: nosymbol subroutine
 
 */
 symplus
-    jsr symlen_s
+    jsr symlens
     adc #3
     adc R0L+2*N3
     sta R0L+2*N3
@@ -375,9 +384,6 @@ tags: forth-83
 /* (SEEK)
 tags: nosymbol
 
-~todo: rewrite to no longer use N4 as sorted/unsorted so it may interoperate
-    better with `(fnord)`
-
 stack=( thread -- flag )
 */
 pseek
@@ -390,7 +396,7 @@ pseekb
     eor #$FF
     sta R0L+2*N4+1              ; sorted = 0; unsorted = $FF
 pseek00
-    jsr symlen_s
+    jsr symlens
     beq pseek08                 ; reached `symtail`? not found!
     eor R0L+2*N4
     beq pseekok1                ; same length? consider further...
@@ -400,7 +406,7 @@ pseek00
     cmp R0L+2*N4                ; length.current > length.seeking?
     bcs pseek08                 ; not found on sorted list!
 pseek01
-    jsr symplus               ; next!
+    jsr symplus                 ; next!
     bne pseek00                 ; bra
 pseekok1
     ;ldy #0                     ; thanks, symlen
@@ -433,6 +439,10 @@ pseek09
 title: STRAND
 tags: nosymbol
 
+|N8|||
+|symtab|||
+|tos|||
+
 ```
 code >strand   ( -- thread )
   n8 1+ lda,  symtab 1+ ldy,  put jmp,
@@ -444,7 +454,7 @@ tostrand
     jmp put
 ;------------------------------------------------------------------------------
 /*
-title: >STRAND
+title: >THREAD
 tags: nosymbol
 
 code >strand   ( -- thread )
@@ -501,7 +511,12 @@ nextvocabq
 title: (FOUND?)
 tags: nosymbol
 
+AFTER
+>C:0000  07 00 07 00  59 6b 80 04  aa 1a 3b 01  01 00 01 00   g@g@Yk.d.z;aa@a@
+>C:0010  b6 06 3b 01  01 00 a5 6b  00 01 01 00  0a 93 86 00   .f;aa@.k@aa@j..@
+
 ```
+\ set up for found?
 code (found?)   (  name vocabs -- ) brk,
   n8 ld,  n4 st,  tos ld,  n6 st,
   n6 inr,  n6 ldi,  n5 st,  pull,
@@ -529,13 +544,64 @@ tags: nosymbol secondary
 
 Search the dictionary for a name
 
+
+
+
 : found?   ( nfa -- xfa flag )
   vocabs (found?)  bloomfilter cbit@
   if
     begin
       symnew (seek)
     while
-      symtab @ >thread
+      >strand
+
+| flag | meaning | 2os |h
+| -1 | found | cfa |
+|  0 | not found | nfa |
+| +1 | immediate word | cfa |
+
+: found?   ( nfa -- xfa flag )
+  vocabs (found?)
+  bloomfilter cbit@
+  if
+#include "parm.i65"
+    .word qbranch               ; if
+    .byt <(found04-*+1)
+#include "pad.i65"
+foundq01                        ;     begin (loop through vocabs)
+vocabs n6 !
+begin
+    symnew (seek)
+    ?exit
+    >strand (seek)
+    ?exit
+    n6 ldi,
+0= until,
+
+    .word qbranch               ;     while (branches if found)
+    .byt <(foundq03-*+1)
+#include "pad.i65"
+    .word tostrand
+#include "page.i65"
+    .word pseek
+#include "parm.i65"
+    .word qbranch               ; inverted flag, so branch if found
+    .byt <(foundq03-*+1)
+#include "pad.i65"
+    .word nextvocabq
+#include "page.i65"
+    .word zeq
+#include "parm.i65"
+    .word qbranch               ; loop if more vocabs
+    .byt <(foundq01-*+1)
+#include "parm.i65"
+0= until
+found04                         ; then
+<n7 false ;
+
+foundq03                        ; found it
+<n3 name> true immedornot ;
+
 */
 #include "align.i65"
 _foundq
