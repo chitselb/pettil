@@ -3,42 +3,14 @@
 title: pettil-dictionary.a65
 tags: source nosymbol
 
-|^N3 |^nfa |^|
-|^N4L |^seek.length |^|
-|^N4H |^strand |^|
-|^N5 |^vocabid |^|
-|^N6 |^vocabs |^|
-|^N7 |^seek nfa |^ ???? ~probably mean TOS~ |
-|^N8L |^nfa.length |^|
-|^N8H |^strand |^|
+SYMTAB!     SYM0        SYM.LEN     SYM.STRANDS
+SYM.COPY    (!SYMTAB)   !SYMTAB     STRAND
+IMMEDORNOT  (FOUND?)    FOUND?      STRAND+
+(FNORD)     >STRAND     NEXTVOCAB?  :WILLITBLEND?
+FNORDITUDE  :SOSORTED   :SOSCRAMBLED
 
-    SYMTAB!
-    SYM0
-    SYM.LEN
-    SYM.STRANDS
-    SYM.COPY
-    (!SYMTAB)
-    !SYMTAB
-    STRAND
-    IMMEDORNOT
-    (FOUND?)
-    FOUND?
-    STRAND+
-    (FNORD)
-                title: >THREAD
-                title: NEXTVOCAB?
-                title: :WILLITBLEND?
-                title: FNORDITUDE
-                title: :SOSORTED
-                title: :SOSCRAMBLED
->NAME
-EXISTS?
-'
-FORGET
-DEFINITIONS
-REHASH
-FORTH
-
+>NAME       EXISTS?     '           FORGET
+DEFINITIONS REHASH      FORTH
 
 ```
 symbol table entry
@@ -64,7 +36,7 @@ symbol table entry
 title: SYMTAB!
 tags: nosymbol
 
-code symtab!   90
+code symtab!   ( -- )
 */
 symtabset
     lda stackh+1,x
@@ -100,7 +72,11 @@ sym0
 title: SYM.LEN
 tags: primitive nosymbol
 
-Calculate length of a name to N8, C flag
+Calculate length of a name
+
+|^N3  |^ |^length |
+|^N8l |^ |^length |
+|^C  |^ |^%vocab |
 
 ```
 code sym.len   ( ; n3=nfa -- len ; n8l=len )
@@ -122,49 +98,33 @@ symlen
     lda #<(pushya-1)
     pha
 symlens
-    ldy #0              ;{2 {=23}}
-    lda R0L+2*N3+1                      ; length = 0 if `n3` is 0
-    beq symlen_s01
-    lda (R0L+2*N3),y    ;{5}            ; length/flags
+    ldy #0
+    lda R0L+2*N3+1                      ; length = 0 if `n3` is 0   ; ~?
+    beq symlen_s01                                                  ; ~?
+    lda (R0L+2*N3),y                    ; length/flags
 symlen_s01
-    pha                 ;{3}            ; not using tay/tya preserves Y=0
-    asl                 ;{2}
-    asl                 ;{2}            ; Vocab bit to C flag
-    pla                 ;{4}
-symlen_s02
-    and #$1F            ;{2}            ; length
-    sta R0L+2*N8        ;{3}            ; N8L = visible length (omit vocab +1)
-    rts
-;------------------------------------------------------------------------------
-/*
-title: >STRAND
-tags: nosymbol
-
-read back
-    STRAND   ([1]&$0F)*2 symtab
-
-```
-code >strand   ( nfa -- nfa ; n3=strand )
-  1 # ldy,  tos )y lda,  $0f # and,  asl,
-  symtab 1+ ldy,  n3 1+ sty,  n3 sta,
-  rts,  end-code
-```
-*/
-tostrand
-    jsr symlens
-    sta R0L+2*N4                        ; seek.length
-    iny
-    lda (tos),y
-    and #$0F
+    pha                                 ; not using tay/tya preserves Y=0
     asl
-    ldy usersymtab+1
-    sty R0L+2*N3+1
-    sta R0L+2*N3                        ; sym0 (sorted)
+    asl                                 ; Vocab bit to C flag
+    pla
+symlen_s02
+    and #$1F                            ; length
+    sty R0L+2*N8+1
+    sta R0L+2*N8                        ; N8L = visible length (omit vocab +1)
     rts
 ;------------------------------------------------------------------------------
 /*
 title: SYM.COPY
 tags: nosymbol subroutine
+
+|^`sym.copy` |<|<|h
+|^stack |^( target -- target  )|<|
+|^N3 |^nfa.source |^ . |
+|^N8 |^source.length |^ . |
+|reg |entry |exit |f
+
+
+code symcopy   ( -- )
 
 */
 symcopy
@@ -295,9 +255,18 @@ A `false` bit means, this word is not present
 
 `create` turns on the `bloom` bit for each new name
 `forget` completely rebuilds the `bloom` filter
+
+|reg |entry |exit |h
+|^stack |^( nfa -- bloom# )|<|
+|^N3 |^ |^nfa |
+|^N8l |^ |^length |
+|^N8h |^ |^0 |
+
+code bloom#   ( nfa -- bloom# )
+
 */
 bloomhash
-    ldy R0L+2*N8                ; length
+    ldy R0L+2*N8                        ; length
     lda #0
     sta z
 bloomhash01
@@ -311,7 +280,7 @@ bloomhash02
     dey
     bne bloomhash01
     lda z
-    and #$3F                    ; width of the filter is 64 bits
+    and #$3F                            ; width of the filter is 64 bits
     jmp pushya
 ;------------------------------------------------------------------------------
 /* BLOOMFILTER
@@ -331,8 +300,9 @@ _bloomfilter
 #include "past.i65"
     .word exit
 ;------------------------------------------------------------------------------
-/* UNSMUDGE
-tags: nosymbol
+/*
+title: UNSMUDGE
+tags: primitive
 
 stack=( nfa -- )
 */
@@ -340,8 +310,9 @@ unsmudge
     clc
     .byt $29            ; AND #
     ; fall through
-/*  SMUDGE
-tags: nosymbol
+/*
+title: SMUDGE
+tags: primitive forth-79
 
 stack=( nfa -- )
 */
@@ -357,7 +328,8 @@ smudge
     sta (tos),y
     jmp drop
 ;------------------------------------------------------------------------------
-/* (>NAME)
+/*
+title: (>NAME)
 tags: nosymbol
 
 stack=( cfa -- nfa|0 )
@@ -390,7 +362,8 @@ tags=interpreter
 #endif
 #include "align.i65"
 _toname
-/* >NAME
+/*
+title: >NAME
 tags: forth-83
 
 * search the dictionary for a given `cfa` and
@@ -417,43 +390,50 @@ tags: forth-83
 #include "past.i65"
     .word exit
 ;------------------------------------------------------------------------------
-/* (SEEK)
+/*
+title: (SEEK)
 tags: nosymbol
 
-    jsr symlens
-    beq psee08                 ; reached `symtail`? not found!
-    eor R0L+2*N4
-    beq pseeok1                ; same length? consider further...
-    bit R0L+2*N4+1
-    bmi psee01                 ; unsorted list? next!
-    lda R0L+2*N8
-    cmp R0L+2*N4                ; length.current > length.sought?
-    bcs psee08                 ; not found on sorted list!
+|^stack |^( nfa.seek -- xfa flag )|<|h
+|^N3 |^sym0             |^nfa.result    |
+|^N4 |^seek.length      |^ .            |
+|^N5 |^                 |^vocabid       |
+|^N6 |^                 |^vocabs        |
+|^N7 |^nfa.strand[0]    |^ .            |
+|^N8 |^                 |^result.length |
+|reg |entry             |exit           |f
 
-*   sorted vs unsorted list - use N4h
-*
+0000  00 AA FF 01  60 6B B6 05  A6 17 D8 64  06 60 00 00
+0010  B7 06 20 00  03 00 6A 6C  00 01 0D D0  16 83 C1 6C
 
-|reg |entry |exit |h
-|^tos |^seek nfa |^. |
-|^n3 |^nfa |^. |
-|^n4l |^seek.length |^. |
-|^n4h |^sorted/unsorted |^. |
-|^n5 |^vocabid |^. |
-|^n6 |^vocabs |^. |
-|^n7 |^ |^. |
-|^n8 |^length |^. |
+0040  AA AA AA 08  88 6C 1E 90  7E 09 08 B6  00 80 FF 01
+0070  BB BB BB 00  06 06 00 06  06 00 00 06  00 00 01 10
 
-                                      nfa    seek  vocabid
-                                             length
-                   N0    N1     N2    N3     N4    N5
-0000  FF 01 FF 01  65 6B B6 05  00 65 D8 64  03 00 00 00
-0010  B7 06 20 00  03 00 A5 04  00 01 0D D0  16 83 60 6C
-      N6    N7     N8
-      vocabs       length
+0080  00 00 00 00  74 06 E6 8B  E6 8B 6C DE  6C
+                                                00 08 50
+0090  55 E4 55 06  FF B3 00 1B  00 06 01 FF  00 00 00 00
+00A0  00 03 00 14  03 00 1B 01  0A 20 00 00  00 00 00 00
+00B0  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00
+00C0  00 00 00 00  20 83 04 01  04 3C 45 00  00 00 00 00
+00D0  00 00 00 00  00 27 00 00  14 0D 00 00  00 00 00 00
+00E0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 82
+00F0  82 82 82 82  83 83 83 83  83 00 00 5D  46 FF FF 00
 
+0100  20 33 31 37  34 33 00 30  30 30 30 00  00 00 00 00
 
-stack=( nfa.seek -- flag )
-  n3=sym0 n4=seek.length ; n3=nfa.result
+01E0  FF FF FF FF  FF FF 35 75  34 03 09 57  03 4E 01 6C
+01F0  6C 4B 06 68  06 DE 2F FF  30 B5 6C 33  6E 5C 6E 03
+
+|^stack |^( nfa.seek -- xfa flag )|<|h
+|^N3 |^sym0             |^nfa.result    |
+|^N4 |^seek.length      |^ .            |
+|^N5 |^                 |^vocabid       |
+|^N6 |^                 |^vocabs        |
+|^N7 |^nfa.strand[0]    |^ .            |
+|^N8 |^                 |^result.length |
+|reg |entry             |exit           |f
+
+code pseek   ( nfa -- xfa flag )
 
 */
 pseek
@@ -525,27 +505,21 @@ immedornot
     jmp nplus                   ; add 0 or 2 to tos
 ;------------------------------------------------------------------------------
 /*
-title: NEXTVOCAB?
-tags: nosymbol
-
-Return `true` if there is a next vocabulary
-
-```
-code next.vocab?   ( -- flag )  brk,
-  n5 ld,  push,  n6 ld@,  n5 st,  nxt,
-```
-*/
-nextvocabq
-    brk
-    .byt ld | N5
-    .byt push
-    .byt ldi | N6
-    .byt st | N5
-    .byt nxt
-;------------------------------------------------------------------------------
-/*
 title: (FOUND?)
 tags: nosymbol
+
+
+~ use N4 to hold either:
+~    length.seek (as set by >strand )
+~    length.32 (to prevent ever reaching it)
+
+calculate n7=strand
+for each vocabulary
+	n3=symnew+2
+    check unsorted (symnew...)
+	n3=n7
+    check sorted (>strand...)
+
 
 ```
 code (found?)   ( nfa -- xfa flag )
@@ -557,76 +531,26 @@ code (found?)   ( nfa -- xfa flag )
     n3 st,  n3 ldd@,  '(seek) ext,
     '>strand ext,  '(seek) ext,
 ```
-~ use N4 to hold either:
-~    length.seek (as set by >strand )
-~    length.32 (to prevent ever reaching it)
 
-???
-code (found?)   ( nfa -- xfa flag )
-    brk,
-    vocabs 1+ n6 set,
-:flupe1
-    n6 ldd@, n5 st,
-    symnew tos set,
-    tos ldd@,
-    tos st,
-    tos ldd@,                           \ ( nfa symnew+2 )
-    (seek) ext,                         \ check unsorted
-    >strand ext,
-    (seek) ext,                         \ check unsorted
 
-    >strand tos set,
-    (seek) ext,                         \ check sorted
-    n6 ld@, 'flupe1 bz,
+#include "parm.i65"
+    .word tozp
+    .byt R0L+2*N3
+#include "pad.i65"
+    .word symlen
+#include "page.i65"
+    .word drop
 
-    ' strands ext,
-    n8 ld, n4 st,                       \ copy len/strand
 
-    vocabs 1+ n6 set,
-    n6 ldd@,  n5 st,                    \ for each vocab
 
-    symnew (seek)                       \ search unsorted list
-    >strand (seek)                      \ search sorted strand
-
-code (seek)   ( nfa addr -- flag )
-
-    .word qbranch               ;     while (branches if found)
-    .byt <(foundq03-*+1)
-    .word tostrand
-    .word pseek
-    .word qbranch               ; inverted flag, so branch if found
-    .byt <(foundq03-*+1)
-    .word nextvocabq
-    .word zeq
-    .word qbranch               ; loop if more vocabs
-    .byt <(foundq01-*+1)
-0= until
-found04                         ; then
-<n7 false ;
-
-foundq03                        ; found it
-<n3 name> true immedornot ;
-```
-: found?   ( nfa -- xfa flag )
-
-foundq
-    brk
-    .byt ld | TOS
-    .byt st | N7                        ; N7 = seek NFA
-    .byt set | N6
-    .word  uservocabs+1
-    .byt ldd | N6
-    .byt st  | N5                       ; N5 = current vocabid
-
-```
-code (found?)   (  name vocabs -- ) brk,
-  n8 ld,  n4 st,  tos ld,  n6 st, \ obsolete code
-  n6 inr,  n6 ldi,  n5 st,  pull, \ obsolete code
-  n7 st,  n3 st,  pull,  nxt, \ obsolete code
+code >strand   ( nfa -- nfa ; n3=strand )
+  'symlens jsr,  n4 sta,  iny,
+  tos )y lda,  $0f # and,  asl,  n7 sta,
+  symtab 1+ lda,  n7 1+ sta,
+  rts,  end-code
 
 code (found?)   ( nfa -- xfa flag )
-    brk,
-    vocabs 1+ n6 set,                   \ first vocab
+    brk,  vocabs 1+ n6 set,             \ first vocab
 :pfoundq01
     n6 ldd@, n5 st,                     \ get vocabid
     symnew tos set,
@@ -636,14 +560,26 @@ code (found?)   ( nfa -- xfa flag )
     n6 ld@, 'pfoundq01 bnz,
     nxt,
 ```
+code found00
+    'symlens jsr,  n4 sta,  iny,
+    n3 )y lda,  $0F # and,  asl,
+    n7 sta,  symtab 1+ lda,  n7 1+ sta,
+    next jmp,  end-code
 
-                        strand*2+symtab = sorted
-        ; ~may as well get the start address of seek.sym0 in.... n7?
-
-
-
+    n3 !  callz symlen
 */
 pfoundq
+    jsr symlens
+    sta R0L+2*N4                        ; seek.length
+    iny
+    lda (R0L+2*N3),y
+    and #$0F
+    asl
+    sta R0L+2*N7                        ; sym0 (sorted)
+    lda usersymtab+1
+    sta R0L+2*N7+1
+    rts
+
     brk
     .byt set | N6
     .word uservocabs+1                  ; first vocab
@@ -658,9 +594,9 @@ pfoundq01
 ;---
     .byt ext
     .word pseek
-    .byt ext            ; N3=symtab[strand] first of its kind and shortest in length
-    .word tostrand
-    .byt ext                            ; if we're still here, we haven't found and exited
+    .byt ld  | N7
+    .byt st  | N3
+    .byt ext                            ; if we're still here, we haven't exited
     .word pseek                         ; search sorted until 0= or len>seeklen(n4)
 ;---
     .byt ld  | N5                       ; get vocabid
@@ -682,7 +618,7 @@ Search the dictionary for a name
 
 ```
 : found?   ( nfa -- xfa flag )
-  >n3 symlen <n8 n4 !                   ( nfa ; n3=nfa n4=n8=seek.length )
+  >n3 found00                           ( nfa ; n3=nfa n4=n8=seek.length )
   bloomfilter cbit@                     ( nfa flag )
   ?: (found?) false ;
 ```
@@ -693,10 +629,9 @@ _foundq
 #include "parm.i65"
     .word tozp
     .byt R0L+2*N3
-#include "parm.i65"
-    .word callz
-    .word symstrand
 #include "pad.i65"
+    .word found00
+#include "page.i65"
     .word _bloomfilter          ; in sought name, sum of digits ['0-9'+1] modulo 64
 #include "page.i65"             ; e.g. `dup` = 0, and `3.1459` = 27
     .word cbitfetch
@@ -707,9 +642,20 @@ _foundq
 #include "past.i65"
     .word exit
 
+found00
+    jsr symlens
+    iny
+    lda (R0L+2*N3),y
+    asl
+    and #$1E
+    sta R0L+2*N7                        ; sym0 (sorted)
+    lda usersymtab+1
+    sta R0L+2*N7+1
+    rts
 ;------------------------------------------------------------------------------
-/* EXISTS?
-tags: vocabulary
+/*
+title: EXISTS?
+tags: secondary vocabulary
 
 search the dictionary for a name
 bill had a billboard he also had a board bill the board bill bored bill so bill sold
@@ -743,7 +689,8 @@ _existsq
 #include "past.i65"
     .word exit
 ;------------------------------------------------------------------------------
-/* '
+/*
+title: `'`
 tags: forth-83
 
 stack=( -- cfa )
@@ -768,7 +715,8 @@ _tick
 #include "past.i65"
     .word exit
 ;------------------------------------------------------------------------------
-/* (CREATE)
+/*
+title: (CREATE)
 tags: nosymbol
 
 stack=( cfa -- )
@@ -875,7 +823,7 @@ title: STRAND+
 tags: nosymbol
 
 increment the length byte (N4l) until it
-reaches 32, then increment thread (N4h)
+reaches 32, then increment strand (N4h)
 
 code strand+   ( -- )
   n4 inc,  32 # lda,  n4 eor,
@@ -1024,10 +972,8 @@ howaboutthis
     .byt ld | N0
     .byt st | TOS
     .byt br ,  <(sosorted-*-2)
-
 fnordout
     .byt nxt
-
 ;------------------------------------------------------------------------------
 /*
 title: FNORD
@@ -1042,42 +988,10 @@ code strand.len+
     lda n4+1
     and #15
     beq seeyabye
-
 seeyabye
     rts
-
 +
 end-code
-
-Internals of `forget` and `rehash`
-    acc sub,
-    n4 st,
-begin,
-    n4 inr,
-    ' strand.len+ ext,
-    inc n4
-    bne +
-
-
-    n3 = sym0
-    n4 = 0
-    begin
-        n4.len 1+!         \ ratchet up n4 by thread.len
-        32 =
-        if
-            n4.thread 1+!
-            16 = ?exit
-        then
-
-        n8 = symlen
-
-        n4 = n8?
-    while
-        n4 = n8?
-    while
-    repeat
-    push n3
-    push n8
 
 ```
 : fnord   ( cfa -- )
