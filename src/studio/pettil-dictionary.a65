@@ -21,7 +21,7 @@ symbol table entry
 [S]             |  NFA     Smudge bit
 | [V]           |          Vocabulary bit
 |   [I]         |          Immediate bit
-|     [   len   ]          Length field
+|     [  length ]          Length field
 +-+-+-+-+-+-+-+-+
 |   name[1]     |  +1      Name field
 |           ... |
@@ -29,6 +29,15 @@ symbol table entry
 +---------------+
 ?   vocabid     ?  +len+1  Vocabulary token (if Vocab bit set)
 +---------------+
+
+symbol
+    lfa     contains the
+    cfa     points to 6502 code
+ %smudge    is smudged
+ %vocab     has vocabid
+ %immed     is immediate
+ length     1..31, 0 = end of list
+vocabid     present if %vocab is true, 0 = is label
 ```
 */
 ;------------------------------------------------------------------------------
@@ -99,8 +108,8 @@ symlen
     pha
 symlens
     ldy #0
-    lda R0L+2*N3+1                      ; length = 0 if `n3` is 0   ; ~?
-    beq symlen_s01                                                  ; ~?
+;~?    lda R0L+2*N3+1                      ; length = 0 if `n3` is 0
+;~?    beq symlen_s01
     lda (R0L+2*N3),y                    ; length/flags
 symlen_s01
     pha                                 ; not using tay/tya preserves Y=0
@@ -141,6 +150,8 @@ symcopy01
 /* SYM+
 tags: nosymbol subroutine
 
+|Z | |false |
+
 */
 symplus
     jsr symlens
@@ -150,7 +161,7 @@ symplus
     bcc symplus01
     inc R0L+2*N3+1
 symplus01
-    rts
+    rts                                 ; Z flag is always nonzero
 ;------------------------------------------------------------------------------
 /*
 title: (!SYMTAB)
@@ -433,31 +444,67 @@ tags: nosymbol
 |^N8 |^                 |^result.length |
 |reg |entry             |exit           |f
 
+* n8 n4 > sorted and ?exit
+
 code pseek   ( nfa -- xfa flag )
 
+    1stchar  = (n3),1 $0F & 2*
+    %smudge = (n3),0 $80 & 0<>
+    %vocab  = (n3),0 $40 & 0<>
+    %immed  = (n3),0 $20 & 0<>
+    (n3),0 = 0                          symtail                     not found
+    %vocab &
+
 */
-pseek
+pseeko
     jsr plugh
-psee00
+    inc R0L+2*N8+1                      ; odd for unsorted, even for sorted
+                                        ; this toggles on subsequent (seek) calls
+    bne pseek
+pnext
+    jsr symplus
+pseek
     jsr symlens
-; A=nfa.length
-; end of list   A(len)=00?
-;   cmp R0L+2*N4
-; is A > or < N4?
-; cmp n4 vs n8
+    beq unfounded                       ; exit if we reach symtail
+    tay                                 ; length
+    lda R0L+2*N8+1
+    lsr
+    bcc unfounded
+
+    lda R0L+2*N5                        ; seek vocab
+    beq pseek0v
+    bcc nextsymbol              ;mismatch?
+    .byt $2C
+pseek0v
+    bcs nextsymbol              ; mismatch
+    ;
+    bcc pseechrplus
+    iny
+    iny
+pseechr                                 ; char.each
+    dey
+    beq goteem
+pseechrplus
+    lda (tos),y                         ; check next char
+    eor (R0L+2*N3),y                    ; vocabid
+    beq pseechr
+nextsymbol
+    jsr symplus
+    bne pseek                           ; bra
+
+goteem
+    inc R0L+2*R14+1                     ; sec
+unfounded
+    rts
+
+/*
+    bpl pseek
 
 
-    beq psee08                 ; reached `symtail`? not found!
-    eor R0L+2*N4
-    beq pseeok1                ; same length? consider further...
-    bit R0L+2*N4+1
-    bmi psee01                 ; unsorted list? next!
-    lda R0L+2*N8
-    cmp R0L+2*N4                ; length.current > length.sought?
-    bcs psee08                 ; not found on sorted list!
+
 psee01
     jsr symplus                 ; next!
-    bne psee00                  ; bra
+    bne pseek                   ; bra
 pseeok1
     ;ldy #0                     ; thanks, symlen
     lda (R0L+2*N3),y
@@ -467,23 +514,7 @@ pseeok1
     lda R0L+2*N5                ; compare vocabularies
     bcc psee04b
     .byt $2C
-pseeok2
-    lda (R0L+2*N7),y            ; `n7` name we are looking for
-psee04
-    eor (R0L+2*N3),y            ; `n3` current name under consideration
-psee04b
-    bne psee01                 ; different symbol? next!
-psee05
-    dey
-    bne pseeok2
-psee07
-    clc                         ; found, false (inverted flag)
-    .byt $29                    ; AND imm opcode
-psee08
-    sec                         ; not found, true
-psee09
-    ;
-    jmp putc
+*/
 ;------------------------------------------------------------------------------
 /*
 title: IMMEDORNOT
@@ -569,17 +600,6 @@ code found00
     n3 !  callz symlen
 */
 pfoundq
-    jsr symlens
-    sta R0L+2*N4                        ; seek.length
-    iny
-    lda (R0L+2*N3),y
-    and #$0F
-    asl
-    sta R0L+2*N7                        ; sym0 (sorted)
-    lda usersymtab+1
-    sta R0L+2*N7+1
-    rts
-
     brk
     .byt set | N6
     .word uservocabs+1                  ; first vocab
@@ -590,18 +610,20 @@ pfoundq01
     .word usersymnew
     .byt ldd | N3
     .byt st  | N3
-    .byt ldd | N3                       ; N3=symnew+2  search unsorted until 0= or symtail
-;---
     .byt ext
-    .word pseek
+    .word pseeko
+    .byt bc  , <(pfound99-*-2)
     .byt ld  | N7
     .byt st  | N3
     .byt ext                            ; if we're still here, we haven't exited
     .word pseek                         ; search sorted until 0= or len>seeklen(n4)
+    .byt bc  , <(pfound99-*-2)
 ;---
     .byt ld  | N5                       ; get vocabid
     .byt bnz  , <(pfoundq01-*-2)        ; until last vocab
-    .byt push                           ; nay! denied! Dave's not here man. not found.
+pfound99
+    .byt ld  | N3                       ; tell 'em what happened
+    .byt push                           ;
     .byt nxt                            ; ( nfa 0 )
 
 ;------------------------------------------------------------------------------
@@ -629,7 +651,7 @@ _foundq
 #include "parm.i65"
     .word tozp
     .byt R0L+2*N3
-#include "pad.i65"
+#include "page.i65"
     .word found00
 #include "page.i65"
     .word _bloomfilter          ; in sought name, sum of digits ['0-9'+1] modulo 64
@@ -641,17 +663,21 @@ _foundq
     .word false
 #include "past.i65"
     .word exit
-
 found00
     jsr symlens
     iny
-    lda (R0L+2*N3),y
-    asl
-    and #$1E
+    lda (R0L+2*N3),y                    ; 1st character of name
+    and #$0F                            ; low 4-bits only
+    asl                                 ; *2
     sta R0L+2*N7                        ; sym0 (sorted)
     lda usersymtab+1
     sta R0L+2*N7+1
-    rts
+    brk
+    .byt ldd | N7
+    .byt st  | N7                       ; j'adoube
+    .byt ld  | N8
+    .byt st  | N4                       ; seek.length
+    .byt nxt
 ;------------------------------------------------------------------------------
 /*
 title: EXISTS?
