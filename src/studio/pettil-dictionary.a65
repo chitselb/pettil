@@ -108,17 +108,12 @@ symlen
     pha
 symlens
     ldy #0
-;~?    lda R0L+2*N3+1                      ; length = 0 if `n3` is 0
-;~?    beq symlen_s01
     lda (R0L+2*N3),y                    ; length/flags
-symlen_s01
-    pha                                 ; not using tay/tya preserves Y=0
+    sta R0L+2*N2                        ; og copy also for `(seek)` later
     asl
     asl                                 ; Vocab bit to C flag
-    pla
-symlen_s02
+    lda R0L+2*N2                        ; length/flags
     and #$1F                            ; length
-    sty R0L+2*N8+1
     sta R0L+2*N8                        ; N8L = visible length (omit vocab +1)
     rts
 ;------------------------------------------------------------------------------
@@ -135,6 +130,8 @@ tags: nosymbol subroutine
 
 code symcopy   ( -- )
 
+~ use TOS not N7
+
 */
 symcopy
     jsr symlens
@@ -142,7 +139,7 @@ symcopy
     tay
 symcopy01
     lda (R0L+2*N3),y
-    sta (R0L+2*N7),y
+    sta (R0L+2*N7),y        ; ~~ change to TOS
     dey
     bpl symcopy01
     rts
@@ -150,7 +147,8 @@ symcopy01
 /* SYM+
 tags: nosymbol subroutine
 
-|Z | |false |
+|Z  |    |0    |
+|N3 |nfa |nfa+ |
 
 */
 symplus
@@ -366,13 +364,6 @@ ptoname05
     jsr symplus                 ; next!
     bne ptoname                 ; bra
 ;------------------------------------------------------------------------------
-#if 0
-name=>NAME
-tags=interpreter
-
-#endif
-#include "align.i65"
-_toname
 /*
 title: >NAME
 tags: forth-83
@@ -393,6 +384,13 @@ tags: forth-83
     name> nip ;
 ```
 */
+#if 0
+name=>NAME
+tags=interpreter
+
+#endif
+#include "align.i65"
+_toname
     jsr enter
 #include "page.i65"
     .word sym0
@@ -406,47 +404,20 @@ title: (SEEK)
 tags: nosymbol
 
 |^stack |^( nfa.seek -- xfa flag )|<|h
+|^N2 |^                 |^flags,len,og  |
 |^N3 |^sym0             |^nfa.result    |
 |^N4 |^seek.length      |^ .            |
 |^N5 |^                 |^vocabid       |
 |^N6 |^                 |^vocabs        |
 |^N7 |^nfa.strand[0]    |^ .            |
-|^N8 |^                 |^result.length |
+|^N8L|^                 |^result.length |
+|^N8H|^                 |^toggle sorted/unsorted |
 |reg |entry             |exit           |f
 
-0000  00 AA FF 01  60 6B B6 05  A6 17 D8 64  06 60 00 00
-0010  B7 06 20 00  03 00 6A 6C  00 01 0D D0  16 83 C1 6C
+(seek)
+start at the first
 
-0040  AA AA AA 08  88 6C 1E 90  7E 09 08 B6  00 80 FF 01
-0070  BB BB BB 00  06 06 00 06  06 00 00 06  00 00 01 10
-
-0080  00 00 00 00  74 06 E6 8B  E6 8B 6C DE  6C
-                                                00 08 50
-0090  55 E4 55 06  FF B3 00 1B  00 06 01 FF  00 00 00 00
-00A0  00 03 00 14  03 00 1B 01  0A 20 00 00  00 00 00 00
-00B0  03 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00
-00C0  00 00 00 00  20 83 04 01  04 3C 45 00  00 00 00 00
-00D0  00 00 00 00  00 27 00 00  14 0D 00 00  00 00 00 00
-00E0  80 80 80 80  80 80 80 81  81 81 81 81  81 82 82 82
-00F0  82 82 82 82  83 83 83 83  83 00 00 5D  46 FF FF 00
-
-0100  20 33 31 37  34 33 00 30  30 30 30 00  00 00 00 00
-
-01E0  FF FF FF FF  FF FF 35 75  34 03 09 57  03 4E 01 6C
-01F0  6C 4B 06 68  06 DE 2F FF  30 B5 6C 33  6E 5C 6E 03
-
-|^stack |^( nfa.seek -- xfa flag )|<|h
-|^N3 |^sym0             |^nfa.result    |
-|^N4 |^seek.length      |^ .            |
-|^N5 |^                 |^vocabid       |
-|^N6 |^                 |^vocabs        |
-|^N7 |^nfa.strand[0]    |^ .            |
-|^N8 |^                 |^result.length |
-|reg |entry             |exit           |f
-
-* n8 n4 > sorted and ?exit
-
-code pseek   ( nfa -- xfa flag )
+code  (seek)   ( nfa -- xfa flag )
 
     1stchar  = (n3),1 $0F & 2*
     %smudge = (n3),0 $80 & 0<>
@@ -456,65 +427,62 @@ code pseek   ( nfa -- xfa flag )
     %vocab &
 
 */
-pseeko
-    jsr plugh
-    inc R0L+2*N8+1                      ; odd for unsorted, even for sorted
-                                        ; this toggles on subsequent (seek) calls
-    bne pseek
-pnext
-    jsr symplus
 pseek
-    jsr symlens
-    beq unfounded                       ; exit if we reach symtail
-    tay                                 ; length
-    lda R0L+2*N8+1
-    lsr
-    bcc unfounded
-
-    lda R0L+2*N5                        ; seek vocab
-    beq pseek0v
-    bcc nextsymbol              ;mismatch?
-    .byt $2C
-pseek0v
-    bcs nextsymbol              ; mismatch
-    ;
-    bcc pseechrplus
-    iny
-    iny
-pseechr                                 ; char.each
+    jsr plugh
+    asl R0L+2*R14+1                     ; presume not found
+    inc R0L+2*N8+1                      ; toggle sorted/unsorted flag
+    bne pseek100                        ; bra, do first symbol
+pseek10                                 ; "next symbol"
+    lda R0L+2*N8+1                      ; sorted vs unsorted bit
+    lsr                                 ; 0 = unsorted; 1 = sorted
+    bcc pseek20                         ; unsorted? next sym+
+    lda R0L+2*N8                        ; list is sorted; get nfa.length
+    cmp R0L+2*N4                        ;                 vs seek.length
+    bcc pseek20                         ; are we there yet? next sym+
+    bne pseek86                         ; we passed the length
+pseek200
     dey
-    beq goteem
-pseechrplus
+    beq pseek42
+pseek300                                ;
     lda (tos),y                         ; check next char
     eor (R0L+2*N3),y                    ; vocabid
-    beq pseechr
-nextsymbol
-    jsr symplus
-    bne pseek                           ; bra
+    beq pseek300
 
-goteem
-    inc R0L+2*R14+1                     ; sec
-unfounded
+                                        ; length is a match, so string compare
+                                        ;        len > seek len      C set
+                                        ;        len = seek len      C set
+                                        ;        len < seek len      C clear
+pseek20
+    jsr symplus                         ; move to the next symbol
+pseek100                                ;
+    jsr symlens
+    beq pseek86                         ; exit if we reach symtail
+    bit R0L+2*N2                        ; N=smudge; V=vocab from symlen.og copy
+    bmi pseek10                         ; %smudged? next!
+    tay                                 ; length 1..31; Z=false; N=false
+    bvs pseek190
+                                        ;"is core"
+    bvc pseek180                        ; !(%vocab)?  "is core"
+
+
+
+pseek190
+    ; expect C to be set here also, mirroring V
+    lda R0L+2*N5                        ; seek vocabid
+    beq pseek10                         ; if this word is in core, ignore. next!
+    iny
+    iny
+    bne pseek10
+pseek42
+    inc R0L+2*R14+1                     ; goteem!
+pseek86
     rts
 
-/*
-    bpl pseek
+pseek180                                ; "is core"
+                                        ; knowns:
+                                        ; unknowns:
+    bne pseek10                         ; next!
 
-
-
-psee01
-    jsr symplus                 ; next!
-    bne pseek                   ; bra
-pseeok1
-    ;ldy #0                     ; thanks, symlen
-    lda (R0L+2*N3),y
-    bmi psee01                 ; smudged? next!
-    ldy R0L+2*N4
-    iny
-    lda R0L+2*N5                ; compare vocabularies
-    bcc psee04b
-    .byt $2C
-*/
 ;------------------------------------------------------------------------------
 /*
 title: IMMEDORNOT
@@ -546,9 +514,9 @@ tags: nosymbol
 
 calculate n7=strand
 for each vocabulary
-	n3=symnew+2
+    n3=symnew+2
     check unsorted (symnew...)
-	n3=n7
+    n3=n7
     check sorted (>strand...)
 
 
@@ -611,7 +579,7 @@ pfoundq01
     .byt ldd | N3
     .byt st  | N3
     .byt ext
-    .word pseeko
+    .word pseek
     .byt bc  , <(pfound99-*-2)
     .byt ld  | N7
     .byt st  | N3
@@ -665,6 +633,7 @@ _foundq
     .word exit
 found00
     jsr symlens
+    sty R0L+2*N8+1                      ; reset the sorted/unsorted toggle
     iny
     lda (R0L+2*N3),y                    ; 1st character of name
     and #$0F                            ; low 4-bits only
@@ -675,8 +644,8 @@ found00
     brk
     .byt ldd | N7
     .byt st  | N7                       ; j'adoube
-    .byt ld  | N8
-    .byt st  | N4                       ; seek.length
+    .byt ld  | N8                       ; seek.length
+    .byt st  | N4                       ; N4H = even/odd sorted/unsorted flag
     .byt nxt
 ;------------------------------------------------------------------------------
 /*
