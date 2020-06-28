@@ -85,6 +85,7 @@ Calculate length of a name
 
 |^N3  |^ |^length |
 |^N8l |^ |^length |
+|^N8h |^ |^`(seek)` toggle sorted/unsorted |
 |^C  |^ |^%vocab |
 
 ```
@@ -110,7 +111,7 @@ symlens
     ldy #0
     lda (R0L+2*N3),y                    ; length/flags
     sta R0L+2*N2                        ; og copy also for `(seek)` later
-    asl
+    asl                                 ; ~golf ?  -asl  -asl  -lda n2
     asl                                 ; Vocab bit to C flag
     lda R0L+2*N2                        ; length/flags
     and #$1F                            ; length
@@ -414,75 +415,70 @@ tags: nosymbol
 |^N8H|^                 |^toggle sorted/unsorted |
 |reg |entry             |exit           |f
 
-(seek)
-start at the first
-
 code  (seek)   ( nfa -- xfa flag )
-
-    1stchar  = (n3),1 $0F & 2*
-    %smudge = (n3),0 $80 & 0<>
-    %vocab  = (n3),0 $40 & 0<>
-    %immed  = (n3),0 $20 & 0<>
-    (n3),0 = 0                          symtail                     not found
-    %vocab &
-
+  r14 1+ asl,  n8 1+ inc,
+  '(seek100) bne,
+:(seek10)
+  n8 1+ lda,  lsr,  '(seek20) bcc,
+  '(seek86) bne,  iny,
+:(seek200)
+  dey,  '(seek42) beq,  tos )y lda,
+  n3 )y eor,  '(seek200) beq,
+:(seek20)
+  'sym+ jsr,
+:(seek100)
+  'sym.lens jsr,  '(seek86) beq,
+  n2 bit,  '(seek10) bmi,  tay,
+  '(seek10) bvc,
+  n5 lda,  '(seek10) beq,
+  iny,  iny,  '(seek10) bne,
+:(seek42)
+  r14 1+ inc,
+:(seek86)
+  rts,  end-code
 */
 pseek
-    jsr plugh
     asl R0L+2*R14+1                     ; presume not found
     inc R0L+2*N8+1                      ; toggle sorted/unsorted flag
     bne pseek100                        ; bra, do first symbol
 pseek10                                 ; "next symbol"
     lda R0L+2*N8+1                      ; sorted vs unsorted bit
     lsr                                 ; 0 = unsorted; 1 = sorted
-    bcc pseek20                         ; unsorted? next sym+
+    bcs pseek20                         ; unsorted? next sym+
     lda R0L+2*N8                        ; list is sorted; get nfa.length
     cmp R0L+2*N4                        ;                 vs seek.length
     bcc pseek20                         ; are we there yet? next sym+
     bne pseek86                         ; we passed the length
+    iny
 pseek200
     dey
     beq pseek42
-pseek300                                ;
     lda (tos),y                         ; check next char
     eor (R0L+2*N3),y                    ; vocabid
-    beq pseek300
-
+    beq pseek200
                                         ; length is a match, so string compare
                                         ;        len > seek len      C set
                                         ;        len = seek len      C set
                                         ;        len < seek len      C clear
 pseek20
     jsr symplus                         ; move to the next symbol
-pseek100                                ;
+pseek100
     jsr symlens
     beq pseek86                         ; exit if we reach symtail
     bit R0L+2*N2                        ; N=smudge; V=vocab from symlen.og copy
     bmi pseek10                         ; %smudged? next!
     tay                                 ; length 1..31; Z=false; N=false
-    bvs pseek190
-                                        ;"is core"
-    bvc pseek180                        ; !(%vocab)?  "is core"
-
-
-
-pseek190
+    bvc pseek10                         ; !(%vocab)?  "is core"
     ; expect C to be set here also, mirroring V
     lda R0L+2*N5                        ; seek vocabid
     beq pseek10                         ; if this word is in core, ignore. next!
     iny
     iny
-    bne pseek10
+    bne pseek10                         ; bra
 pseek42
     inc R0L+2*R14+1                     ; goteem!
 pseek86
     rts
-
-pseek180                                ; "is core"
-                                        ; knowns:
-                                        ; unknowns:
-    bne pseek10                         ; next!
-
 ;------------------------------------------------------------------------------
 /*
 title: IMMEDORNOT
@@ -580,8 +576,8 @@ pfoundq01
     .byt st  | N3
     .byt ext
     .word pseek
-    .byt bc  , <(pfound99-*-2)
-    .byt ld  | N7
+    .byt bc  , <(pfound99-*-2)          ; early exit if it was found
+    .byt ld  | N7                       ; let's have a look at the sorted list then
     .byt st  | N3
     .byt ext                            ; if we're still here, we haven't exited
     .word pseek                         ; search sorted until 0= or len>seeklen(n4)
@@ -590,10 +586,15 @@ pfoundq01
     .byt ld  | N5                       ; get vocabid
     .byt bnz  , <(pfoundq01-*-2)        ; until last vocab
 pfound99
-    .byt ld  | N3                       ; tell 'em what happened
-    .byt push                           ;
-    .byt nxt                            ; ( nfa 0 )
-
+    .byt popd | N3                       ; tell 'em what happened
+    .byt st   | TOS
+    .byt rtn
+    lda #$20
+    bit R0L+2*N2
+    beq pfoundnormal
+    jmp one
+pfoundnormal
+    jmp minusone
 ;------------------------------------------------------------------------------
 /*
 title: FOUND?
