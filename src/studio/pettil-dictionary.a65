@@ -19,8 +19,8 @@ symbol table entry
 |   CFA[high]   |
 +-+-+-+-+-+-+-+-+
 [S]             |  NFA     Smudge bit
-| [V]           |          Vocabulary bit
-|   [I]         |          Immediate bit
+| [I]           |          Immediate bit
+|   [V]         |          Vocabulary bit
 |     [  length ]          Length field
 +-+-+-+-+-+-+-+-+
 |   name[1]     |  +1      Name field
@@ -93,14 +93,29 @@ code sym.len   ( ; n3=nfa -- len ; n8l=len )
   'pushya 1- csplit
   # lda, pha,  # lda, pha,
 :sym.lens
-  0 # ldy,  n3 1+ lda,
-  0= not if,
-    n3 )y lda,
-  then,
-  pha, asl, asl, pla,
-:symlen_s02
-  $1F # and,  n8 ,y sta,  rts,
+  0 # ldy,  n3 )y lda,  $1F # and,
+  n8 sta,  n2 bit,
+  clc,  vs not if,  sec,  then,
+  rts
 ```
+
+plan A:
+    N %smudge
+    V %vocab
+    C %vocab
+ &$20 %immed
+
+plan B:
+    N %smudge
+    V %immed
+ &$20 %vocab
+    C %vocab
+
+
+
+
+    bit R0L+2*N2
+    rts
 */
 symlen
     lda #>(pushya-1)
@@ -109,14 +124,18 @@ symlen
     pha
 symlens
     ldy #0
-    lda (R0L+2*N3),y                    ; length/flags
-    sta R0L+2*N2                        ; og copy also for `(seek)` later
-    asl                                 ; ~golf ?  -asl  -asl  -lda n2
-    asl                                 ; Vocab bit to C flag
-    lda R0L+2*N2                        ; length/flags
-    and #$1F                            ; length
-    sta R0L+2*N8                        ; N8L = visible length (omit vocab +1)
+    lda (R0L+2*N3),y
+    clc
+    bit symplus                 ; any Tubman will do
+    beq symlens99
+    sec                         ; C %vocab
+symlens99
+    sta R0L+2*N2
+    and #$1F
+    sta R0L+2*N8
+    bit R0L+2*N2                ; N %smudge  V %immed
     rts
+
 ;------------------------------------------------------------------------------
 /*
 title: SYM.COPY
@@ -131,7 +150,15 @@ tags: nosymbol subroutine
 
 code symcopy   ( -- )
 
-~ use TOS not N7
+>C:64c0  72 26 3f 4c  45 41 56 45  3b 0a 09 3f  54 45 52 4d   r&?LEAVE;ji?TERM
+>C:64d0  49 4e 41 4c  a5 1a 00 aa  aa aa aa aa  aa aa aa aa   INAL.z@.........
+>C:64e0  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................
+>C:64f0  aa aa aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa   ................
+
+>C:1a80  a9 39 48 4c  86 00 4e e0  06 ee e0 06  b0 16 20 43   .9HL.@N f. f.v C
+>C:1a90  1a 86 ff a2  8d b5 ff bc  0f 04 94 ff  9d 0f 04 ca   z.......od...odJ
+>C:1aa0  d0 f3 a6 ff  60 20 06 11  02 de 65 02  c0 de 65 02   P...` fqb.eb..eb
+>C:1ab0  c0 de 65 02  c0 de 65 02  c0 de 65 02  c0 de 65 02   ..eb..eb..eb..eb
 
 */
 symcopy
@@ -153,7 +180,7 @@ tags: nosymbol subroutine
 
 */
 symplus
-    jsr symlens
+    jsr symlens                         ; this $20 opcode is used by `symlens`
     adc #3
     adc R0L+2*N3
     sta R0L+2*N3
@@ -718,6 +745,67 @@ tags: nosymbol
 
 stack=( cfa -- )
 Create a new symbol in the symbol table
+
+
+
+* check for "MISSING NAME"
+* look up the name
+* found?
+** ( NFA ) redefined !
+** "[RVS] " nfa $. "[OFF] EXISTS"
+* bloom  symtail+2 current  rot
+* ?align cfa,  here 3-  newest
+** enclose nop byte, if needed
+** enclose jsr cfa,
+** 3 dp +!
+** set newest to jsr opcode's address
+
+|tos|^          |^ |^ |
+|n0 |^symtail   |^ |^ |
+|n1 |^          |^ |^ |
+|n2 |^cfa       |^ |^ |
+|n3 |^symtail   |^ |^ |
+
+* create00
+code create00
+  brk,  harvests6 ext,  n0 popd@,
+  n3 st,  n2 ld,  n3 std@,  n3 ld,
+  tos std@,  n7 ld ,  n3 st,  tos popd@,
+  tos st,  symcopy ext,  n1 ld@,
+  'create01 bz,  $40 acc set,
+:create01
+  tos st,  n7 inr,  n7 pop,  n5 st,
+  tos add,  n7 st@,  n7 ld,  n5 add,
+  n7 st,  n1 pop, 'create02 bz,
+  n7 st@,
+:create02
+  n7 ld,  n0 std@,  acc sub,  n7 st@,
+  n7 std@,  pull,  rtn,  exit jmp,
+
+|^N2 |^                 |^flags,len,og  |
+|^N4 |^seek.length      |^ .            |
+|^N5 |^                 |^vocabid       |
+|^N6 |^                 |^vocabs        |
+|^N7 |^nfa.strand[0]    |^ .            |
+|^N8L|^                 |^result.length |
+|^N8H|^                 |^toggle sorted/unsorted |
+
+|^stack |^( cfa -- )|<|h
+|^N0 |^                 |^              |
+|^N1 |^                 |^              |
+|^N2 |^                 |^nfa.flags.length |
+|^N3 |^ .               |^nfa.result    |
+|^N4 |^ .               |^seek.length |
+|^N5 |^ .               |^              |
+|^N6 |^ .               |^              |
+|^N7 |^ .               |^              |
+|^N8 |^                 |^nfa.length    |
+|^N9 |^                 |^              |
+|^redefined |^          |^true iff name already existed |
+|reg |entry             |exit           |f
+
+
+
 */
 #include "align.i65"
 _pcreate
@@ -733,11 +821,13 @@ _pcreate
     .word off
 #include "page.i65"
     .word _existsq
+#include "page.i65"
+    .word xyzzy
 #include "parm.i65"
     .word qbranch
     .byt <(pcreate02-*+1)
 #include "parm.i65"
-    .word zpfrom
+    .word zpfrom                        ; ~~ code path appears broken
     .byt R0L+2*N3
 #include "pad.i65"
     .word redefined
@@ -745,7 +835,7 @@ _pcreate
     .word store
 #include "parm.i65"
     .word zpfrom
-    .byt R0L+2*N7
+    .byt R0L+2*N7                       ; ~~ eschew n7
 #include "pad.i65"
     .word dotrvs
 #include "page.i65"
@@ -772,6 +862,8 @@ pcreate02
     .word threeminus
 #include "page.i65"
     .word newest
+#include "page.i65"
+    .word xyzzy
 #include "past.i65"
     .word *+2
     jsr harvests6
@@ -779,13 +871,13 @@ pcreate02
     .byt popd | N0               ; symtail @
     .byt st | N3
     .byt ld | N2                ; cfa'
-    .byt std | N3               ; write CFA to symtab, +2 N5 pointer
+    .byt std | N3               ; write CFA to symtab
     .byt ld | N3
     .byt std | TOS              ; populate `newest`
     .byt ld | N7
     .byt st | N3
     .byt popd | TOS
-    .byt st | N7
+    .byt st | TOS
     .byt ext
     .word symcopy               ; copy the symbol/length
     .byt ldi | N1

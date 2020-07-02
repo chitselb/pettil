@@ -319,8 +319,8 @@ puts @label   if @label == "STUDIO"
         end
 
         # 0x80 = Smudge bit
-        # 0x40 = Vocabulary bit
-        # 0x20 = Immediate bit
+        # 0x40 = Immediate bit
+        # 0x20 = Vocabulary bit
         def symbol_table_entry
             if @addr.nil?
                 return nil
@@ -329,10 +329,10 @@ puts @label   if @label == "STUDIO"
                 symlen = @name.length
                 if !@vocab.nil?
                     @symbol = @name+ [@vocab.to_i].pack("C")
-                    symlen |= 0x40
+                    symlen |= 0x20
                 end
-                symlen |= 0x20   if @flags.index("immediate")  unless @flags.nil?
-                # length |= 0x40   if ....  add vocabulary support ~
+                symlen |= 0x40   if @flags.index("immediate")  unless @flags.nil?
+                # length |= 0x20   if ....  add vocabulary support ~
 
                 # a String,
                 # - 2 byte address
