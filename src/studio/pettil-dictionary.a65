@@ -123,7 +123,7 @@ symlens
     sec                         ; C %vocab $20
 symlens99
     lda #$1F
-    bit R0L+2*N2                ; N %smudge $80  V %immed $40
+    bit R0L+2*N2                ; N %smudge $80  V %immed $40  Z %end
     php
     and R0L+2*N2
     plp
@@ -467,11 +467,9 @@ pseek20
 pseek100
     jsr symlens
     beq pseek86                         ; exit if we reach symtail
-    bit R0L+2*N2                        ; N=smudge; V=vocab from symlen.og copy
     bmi pseek10                         ; %smudged? next!
     tay                                 ; length 1..31; Z=false; N=false
-    bvc pseek10                         ; !(%vocab)?  "is core"
-    ; expect C to be set here also, mirroring V
+    bcc pseek10                         ; !(%vocab)?  "is core"
     lda R0L+2*N5                        ; seek vocabid
     beq pseek10                         ; if this word is in core, ignore. next!
     iny
@@ -483,28 +481,8 @@ pseek86
     rts
 ;------------------------------------------------------------------------------
 /*
-title: IMMEDORNOT
-tags: nosymbol
-
-Return +1 if the immediate bit is set on current `nfa`, otherwise returns -1
-
-code immedornot   ( true -- -1|+1 )
-
-*/
-immedornot
-    ldy #0
-    lda (R0L+2*N3),y            ; length/flags of curr `nfa`
-    and #$20                    ; immediate?
-    lsr
-    lsr
-    lsr
-    lsr                         ; divide by 16, $02 when immediate
-    jmp nplus                   ; add 0 or 2 to tos
-;------------------------------------------------------------------------------
-/*
 title: (FOUND?)
 tags: nosymbol
-
 
 ~ use N4 to hold either:
 ~    length.seek (as set by >strand )
@@ -516,7 +494,6 @@ for each vocabulary
     check unsorted (symnew...)
     n3=n7
     check sorted (>strand...)
-
 
 ```
 code (found?)   ( nfa -- xfa flag )
@@ -592,9 +569,8 @@ pfound99
     .byt popd | N3                       ; tell 'em what happened
     .byt st   | TOS
     .byt rtn
-    lda #$20
-    bit R0L+2*N2
-    beq pfoundnormal
+    bit R0L+2*N2                        ; check immediate bit
+    bvc pfoundnormal
     jmp one
 pfoundnormal
     jmp minusone
@@ -721,30 +697,44 @@ tags: nosymbol
 stack=( cfa -- )
 Create a new symbol in the symbol table
 
-
 |^ |^pass |^exit |h
-|^redefined |^ |^ |
-|^redefined |^ |^here ~+3 |
+|^redefined |^ |^here ~+/-3 |
 |^dp        |^ |^enclose `JSR cfa`<br/>page crossing<br/>dp += 2 |
 |^symtail   |^points to `0` |^enclose `dp` +3 ~ -3<br/>set `flags/length` byte<br/>append `vocabid` if needed<br/>`cmove`  symbol name |
+|^newest |^ |^ |
+|^symbol.flags.length |^ |^ |
+|^symbol.txt |^ |^ |
+|^symbol.vocabid |^ |^ |
+|^%smudge |^ |^ |
+|^current |^ |^ |
+|^ |^ |^ |
 
 * check for "MISSING NAME"
 * look up the name
 * found?
-** ( NFA ) redefined !
+** ( NFA ) redefined !   ( smudge ya later! )
 ** "[RVS] " nfa $. "[OFF] EXISTS"
+** enclose cfa jsr,
+** set bloom filter bit true
+** store created word's CFA at symtail++
+** set newest where symtail is now
+
+** store length/vocab at symtail+
+** sym+s calculatesss new symtail?
+** turn off byte at new symtail
+
+
+
+** immediate bit? always 0 here.
+** if current != 0 then ORA $20 that length(N8)
+** (`from` = n3; `to`=symtail, `howmany`=length+vocab bit)
+** jsr plants8
 * bloom  symtail+2 current  rot
 * ?align cfa,  here 3-  newest
 ** enclose nop byte, if needed
-** enclose jsr cfa,
 ** 3 dp +!
 ** set newest to jsr opcode's address
 
-|tos|^          |^ |^ |
-|n0 |^symtail   |^ |^ |
-|n1 |^          |^ |^ |
-|n2 |^cfa       |^ |^ |
-|n3 |^symtail   |^ |^ |
 
 * create00
 code create00
@@ -796,6 +786,16 @@ _pcreate
     .word qerror
     .byt 4                      ; MISSING NAME
 #include "pad.i65"
+    .word _lbuf
+#include "page.i65"
+    .word in
+#include "page.i65"
+    .word fetch
+#include "page.i65"
+    .word plus
+#include "pad.i65"
+    .word swap
+#include "page.i65"
     .word redefined
 #include "page.i65"
     .word off
@@ -827,6 +827,14 @@ pcreate01
 pcreate02
     .word _cfacomma
 #include "page.i65"
+    .word _bloomfilter
+#include "page.i65"
+    .word cbitstore
+#include "page.i65"
+    .word bloom                 ; `symtail 2+`
+#include "page.i65"
+    .word newest
+#include "page.i65"
     .word here
 #include "page.i65"
     .word threeminus
@@ -838,89 +846,58 @@ pcreate02
     .word exit
 
 /*
->C:0000  00 00 a5 1a  7e 07 b6 05  05 17 11 62  04 00 00 00
->C:0010  b7 06 4d 61  05 02 a5 04  00 01 0d d0  04 34 45 6b
->C:0040  aa aa aa 08  88 6c 1e 90  7e 09 08 00  80 01 02 01
->C:0070  bb bb bb 00  06 06 00 06  06 00 00 00  00 00 00 10
->C:0080  00 00 00 00  74 06 e6 8b  e6 8b 6c 3b  6b 00 02 90
 
->C:01e0  00 ed cd 4c  31 9f 30 6e  57 03 00 ef  2e 00 05 68
->C:01f0  06 1a 2f a5  31 43 6b 7c  6d 19 6c 3b  6c 5c 6c 06
+usernewest      = uendcore+18   ;1  field ordering optimization
+usercurrent     = uendcore+20   ;2
 
->C:0660  01 88 84 1f  85 1e 20 c5  04 4c 66 06  0a 00 5c 17
->C:0670  00 00 00 00  31 00 fe 01  00 00 78 d4  00 00 32 66
->C:0680  f5 6b a8 1a  a5 1a 00 55  0a 00 5c 17  00 00 00 00
->C:0690  fe 50 00 00  00 00 ff ff  00 00 0c 00  0b 00 01 00
->C:06a0  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 65
->C:06b0  a6 7b 02 00  09 00 00 00  00 00 00 00  00 00 00 00
->C:06c0  00 00 00 00  00 00 00 00  00 00 00 00  00 00 d1 62
->C:06d0  cf 62 ff 80  00 00 00 00  00 00 cc cc  cc cc cc cc
->C:06e0  01 a0 0a 2c  a0 08 2c a0  06 2c a0 04  2c a0 02 b5
-
->C:1a80  a9 39 48 4c  86 00 4e e0  06 ee e0 06  b0 16 20 43
->C:1a90  1a 86 ff a2  8d b5 ff bc  0f 04 94 ff  9d 0f 04 ca
->C:1aa0  d0 f3 a6 ff  60 20 d4 0d  02 de 65 02  c0 de 65 02
-
->C:6280  4d 4f 44 81  09 04 3f 44  55 50 93 18  04 3f 4b 45
->C:6290  59 3f 09 04  4f 56 45 52  3d 76 24 4f  52 41 2c 01
->C:62a0  7e 10 05 3f  45 58 49 54  3a 0e 06 3f  50 41 55 53
->C:62b0  45 99 10 06  3f 53 54 41  43 4b 8a 70  46 3f 4c 45
->C:62c0  41 56 45 3b  0a 09 3f 54  45 52 4d 49  4e 41 4c 00
->C:62d0  00 00 aa aa  aa aa aa aa  aa aa aa aa  aa aa aa aa
-
->C:0200  43 52 45 41  54 45 04 4e  4f 4f 42 42  2d 56 2e 30   CREATEdNOOBB-V.0
-
-.C:064c  8A          TXA            - A:2F X:2F Y:01 SP:ee ..-B.... 4156707450
+```
+code create00
+  brk  'harvests4 ext,
+  n0 popd,  n2 st,  tos ld,  n2 std,
+  n2 ld,  n1 std,  acc inr,  n4 add,
+  tos st,  n4 ld,  n5 st,  n1 ldi,
+  0= not if,
+    $20 acc set,  n5 add,  n5 st,
+  then,
+  tos ld,  n0 std,  n5 ld,  n2 sti,
+  n2 ld,  tos st,  n4 ld,  push,  nxt,
+```
 */
 create00
     brk
     .byt ext
-    .word plugh
-    .byt ld   | N0
-    .byt popd | N0               ; symtail @
-    .byt st | N3
-    .byt ld | N2                ; cfa'
-    .byt std | N3               ; write CFA to symtab
-    .byt ld | N3
-    .byt std | TOS              ; populate `newest`
-    .byt ld | N7
-    .byt st | N3
-    .byt popd | TOS
-    .byt st | TOS
-;    .byt ext
-;    .word symcopy               ; copy the symbol/length
-    .byt ldi | N1
-    .byt bz , <(ppcreate01-*-2)
-    .byt set | ACC
-    .word $40
-ppcreate01
-    .byt st | TOS               ; TOS = $00 or $40 if vocab
-    .byt inr | N7
-    .byt pop | N7
-    .byt st | N5
-    .byt add | TOS
-    .byt sti | N7                       ; symbol length with a proper vocab bit
-    .byt ld | N7
-    .byt add | N5
-    .byt st | N7
-    .byt pop | N1
-    .byt bz , <(ppcreate02-*-2)
-    .byt sti | N7
-ppcreate02
-    .byt ld | N7
-    .byt std | N0                       ; update symtail
-    .byt sub | ACC
-    .byt sti | N7
-    .byt std | N7
-    .byt pull
+    .word harvests4
+    .byt popd | N0              ; symtail
+    .byt st   | N2              ; LFA
+    .byt ld   | TOS             ; cfa
+    .byt std  | N2              ; lfa !+
+    .byt ld   | N2              ; nfa
+    .byt std  | N1              ; newest !+
+    .byt inr  | ACC             ;
+    .byt add  | N4              ;
+    .byt st   | TOS
+    .byt ld   | N4
+    .byt st   | N5
+    .byt ldi  | N1             ; current c@
+    .byt bz , <(create00c-*-2)
+    .byt sti  | TOS
+    .byt set  | ACC
+    .word $20
+    .byt add  | N5
+    .byt st   | N5
+create00c
+    .byt ld   | TOS
+    .byt std  | N0              ; update symtail
+    .byt sub  | ACC
+    .byt std  | TOS             ; write three nulls to mark tail
+    .byt sti  | TOS
+    .byt ld   | N5              ; len/flags
+    .byt sti  | N2
+    .byt ld   | N2
+    .byt st   | TOS
+    .byt ld   | N4
+    .byt push
     .byt nxt
-
-    .word bloom                         ; aka `symtail` +2
-#include "page.i65"
-    .word current
-#include "page.i65"
-    .word rot
-#include "page.i65"
 
 ;------------------------------------------------------------------------------
 /*
