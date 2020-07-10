@@ -438,7 +438,9 @@ code  (seek)   ( nfa -- xfa flag )
   r14 1+ inc,
 :(seek86)
   rts,  end-code
-*/
+
+old dog chow:
+
 pseek
     asl R0L+2*R14+1                     ; presume not found
     inc R0L+2*N8+1                      ; toggle sorted/unsorted flag
@@ -456,6 +458,7 @@ pseek200
     dey
     beq pseek42
     lda (tos),y                         ; check next char
+pseek222
     eor (R0L+2*N3),y                    ; vocabid
     beq pseek200
                                         ; length is a match, so string compare
@@ -469,12 +472,55 @@ pseek100
     beq pseek86                         ; exit if we reach symtail
     bmi pseek10                         ; %smudged? next!
     tay                                 ; length 1..31; Z=false; N=false
-    bcc pseek10                         ; !(%vocab)?  "is core"
+        bcc pseek10                         ; !(%vocab)?  "is core"
     lda R0L+2*N5                        ; seek vocabid
     beq pseek10                         ; if this word is in core, ignore. next!
     iny
+    bne pseek222                        ; bra
+pseek42
+    inc R0L+2*R14+1                     ; goteem!
+pseek86
+    rts
+
+
+
+*/
+pseek
+    asl R0L+2*R14+1                     ; presume not found
+    inc R0L+2*N8+1                      ; toggle sorted/unsorted flag
+    bne pseek100                        ; bra, do first symbol
+pseek10                                 ; "next symbol"
+    lda R0L+2*N8+1                      ; sorted vs unsorted bit
+    lsr                                 ; 0 = unsorted; 1 = sorted
+    bcs pseek20                         ; unsorted? next sym+
+    lda R0L+2*N8                        ; list is sorted; get nfa.length
+    cmp R0L+2*N4                        ;                 vs seek.length
+    bcc pseek20                         ; are we there yet? next sym+
+    bne pseek86                         ; we passed the length
     iny
-    bne pseek10                         ; bra
+pseek200
+    dey
+    beq pseek42
+pseek202
+    lda (tos),y                         ; check next char
+pseek222
+    eor (R0L+2*N3),y                    ; vocabid
+    beq pseek200
+pseek20
+    jsr symplus                         ; move to the next symbol
+pseek100
+    jsr symlens
+    beq pseek86                         ; exit if we reach symtail
+    bmi pseek10                         ; %smudged? next!
+    tay                                 ; length 1..31; Z=false; N=false
+    lda R0L+2*N5                        ; seek vocabid
+    bcs pseek111                         ; %vocab ?
+    beq pseek202
+    lda #$00                            ; next
+pseek111
+    beq pseek10
+    iny
+    bne pseek222                        ; bra
 pseek42
     inc R0L+2*R14+1                     ; goteem!
 pseek86
