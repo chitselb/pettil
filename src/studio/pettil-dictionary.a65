@@ -16,20 +16,20 @@ DEFINITIONS REHASH      FORTH
  SYMBOL
 +---------------+
 |   CFA[low]    | <-- LFA      Link Field Address
-+---------------+              (2 bytes)
-|   CFA[high]   |
+|   CFA[high]   |              (2 bytes)
 +-+-+-+-+-+-+-+-+
-[S]     %smudge | <-- NFA      Name Field Address
-| [I]   %immed  |              (1 byte)
-|   [V] %vocab  |
-|     [  length ]
+|8 4 2          |
+|0 0 0          |
+|               |
+[S]      %smudge|              Name Field Address
+| [V]     %vocab|
+|   [I]   %immed|              (1 byte)
+|     [length   ] <-- NFA
 +-+-+-+-+-+-+-+-+
 |   name[1]     |     NFA+1    text of the name
-|               |              (`length` bytes)
+|   name[2]     |              (`length` bytes)
 |      .        |
-|               |
 |      .        |
-|               |
 |      .        |
 |   name[len]   |
 ?---?---?---?---?
@@ -95,6 +95,21 @@ Calculate length of a name
 |^N8h |^ |^`(seek)` toggle sorted/unsorted |
 |^C  |^ |^%vocab |
 
+%smudge             $80
+%vocab              $40
+%immed              $20
+
+
+    ;v = %smudge
+    ;n = %immed
+    ;z = %done
+    ;c = %vocab
+
+    ;n = %smudge
+    ;v = %immed
+    ;z = %done
+    ;c = %vocab
+
 ```
 code sym.len   ( ; n3=nfa -- len ; n8l=len )
   'pushya 1- csplit
@@ -117,35 +132,14 @@ symlens
     ldy #0
     lda (R0L+2*N3),y
     sta R0L+2*N2
-    bit symplus                 ; any Tubman will do
-    clc
-    beq symlens99
-    sec                         ; C %vocab $20
-symlens99
-    lda #$1F
-    bit R0L+2*N2                ; N %smudge $80  V %immed $40  Z %end
-    php
-    and R0L+2*N2
-    plp
+    asl
+    asl
+    asl
+    lda R0L+2*N2
+    and #$1F
     sta R0L+2*N8
+    bit R0L+2*N2
     rts
-;------------------------------------------------------------------------------
-/*
-title: SYM.COPY
-tags: nosymbol subroutine
-
-symcopy
-    jsr symzzens
-    adc #0
-    tay
-symcopy01
-    lda (R0L+2*N3),y
-    sta (R0L+2*N7),y        ; ~~ change to TOS
-    dey
-    bpl symcopy01
-    rts
-
-*/
 ;------------------------------------------------------------------------------
 /* SYM+
 tags: nosymbol subroutine
@@ -439,106 +433,12 @@ code  (seek)   ( nfa -- xfa flag )
 :(seek86)
   rts,  end-code
 
-old dog chow:
-
-pseek
-    asl R0L+2*R14+1                     ; presume not found
-    inc R0L+2*N8+1                      ; toggle sorted/unsorted flag
-    bne pseek100                        ; bra, do first symbol
-pseek10                                 ; "next symbol"
-    lda R0L+2*N8+1                      ; sorted vs unsorted bit
-    lsr                                 ; 0 = unsorted; 1 = sorted
-    bcs pseek20                         ; unsorted? next sym+
-    lda R0L+2*N8                        ; list is sorted; get nfa.length
-    cmp R0L+2*N4                        ;                 vs seek.length
-    bcc pseek20                         ; are we there yet? next sym+
-    bne pseek86                         ; we passed the length
-    iny
-pseek200
-    dey
-    beq pseek42
-    lda (tos),y                         ; check next char
-pseek222
-    eor (R0L+2*N3),y                    ; vocabid
-    beq pseek200
-                                        ; length is a match, so string compare
-                                        ;        len > seek len      C set
-                                        ;        len = seek len      C set
-                                        ;        len < seek len      C clear
-pseek20
-    jsr symplus                         ; move to the next symbol
-pseek100
-    jsr symlens
-    beq pseek86                         ; exit if we reach symtail
-    bmi pseek10                         ; %smudged? next!
-    tay                                 ; length 1..31; Z=false; N=false
-        bcc pseek10                         ; !(%vocab)?  "is core"
-    lda R0L+2*N5                        ; seek vocabid
-    beq pseek10                         ; if this word is in core, ignore. next!
-    iny
-    bne pseek222                        ; bra
-pseek42
-    inc R0L+2*R14+1                     ; goteem!
-pseek86
-    rts
-
-
-
-
-
-
-pseek
-    asl R0L+2*R14+1                     ; presume not found
-    inc R0L+2*N8+1                      ; toggle sorted/unsorted flag
-    bne pseek100                        ; bra, do first symbol
-pseek10                                 ; "next symbol"
-    lda R0L+2*N8+1                      ; sorted vs unsorted bit
-    lsr                                 ; 0 = unsorted; 1 = sorted
-    bcs pseek20                         ; unsorted? next sym+
-    lda R0L+2*N8                        ; list is sorted; get nfa.length
-    cmp R0L+2*N4                        ;                 vs seek.length
-    bcc pseek20                         ; are we there yet? next sym+
-    bne pseek86                         ; we passed the length
-    iny
-pseek200
-    dey
-    beq pseek42
-pseek202
-    lda (tos),y                         ; check next char
-pseek222
-    eor (R0L+2*N3),y                    ; vocabid
-    beq pseek200
-pseek20
-    jsr symplus                         ; move to the next symbol
-pseek100
-    jsr symlens
-    beq pseek86                         ; exit if we reach symtail
-    bmi pseek10                         ; %smudge? next!
-    tay                                 ; length 1..31; Z=false; N=false
-    lda R0L+2*N5                        ; seek vocabid
-    bcs pseek111                         ; %vocab ?
-    beq pseek202
-    lda #$00                            ; next
-pseek111
-    beq pseek10
-    iny
-    bne pseek222                        ; bra
-pseek42
-    inc R0L+2*R14+1                     ; goteem!
-pseek86
-    rts
-
-
 */
 pseek
     asl R0L+2*R14+1             ; not found
     inc R0L+2*N8+1              ; toggle sort
 pseek10
-    jsr symlens
-    ;n = %smudge
-    ;v = %immed
-    ;z = %done
-    ;c = %vocab
+    jsr symlens                 ; pass N3=NFA of first symbol on list
     beq pseek86                 ; %done ?
     bmi pseek100                ; %smudge ?
     tay
@@ -553,7 +453,6 @@ pseek200
     lda (tos),y
 pseek222
     bcs pseek86                 ; %sorted early exit
-
     eor (R0L+2*N3),y
     bne pseek100
     dey
@@ -569,9 +468,9 @@ pseek100
     dey
     cpy R0L+2*N4
     bcs pseek86                 ; %sorted early exit
-
 pseek199
     jsr symplus
+    ; check for sorted early exit after sym+ ??~
     bne pseek10                 ; bra
 ;------------------------------------------------------------------------------
 /*
