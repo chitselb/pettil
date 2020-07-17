@@ -95,32 +95,21 @@ Calculate length of a name
 |^N8h |^ |^`(seek)` toggle sorted/unsorted |
 |^C  |^ |^%vocab |
 
-%smudge             $80
-%vocab              $40
+%vocab              $80
+%smudge             $40
 %immed              $20
 
-
-    ;v = %smudge
-    ;n = %immed
-    ;z = %done
-    ;c = %vocab
-
-    ;n = %smudge
-    ;v = %immed
-    ;z = %done
-    ;c = %vocab
+This gets called often and should run fast.
 
 ```
 code sym.len   ( ; n3=nfa -- len ; n8l=len )
   'pushya 1- csplit
   # lda, pha,  # lda, pha,
+\ %vocab %smudge %immed length(0..31)
 :sym.lens
-  0 # ldy,  n3 )y lda,  n2 sta,
-  'sym+ bit, \ check the $20 bit %vocab
-  clc,  0= not if,  sec,  then,
-  $1f # lda,  n2 bit, \ %smudge %immed
-  php,  n2 and,  plp,
-  n8 sta,  rts,
+  0 # ldy,  n3 )y lda,  n2 sta,  clc,
+  $80 # adc,  $1f # and,  n8 sta,
+  n2 bit,  rts,  end-code
 ```
 */
 symlen
@@ -129,17 +118,16 @@ symlen
     lda #<(pushya-1)
     pha
 symlens
-    ldy #0
+    ldy #0      ; %vocab %smudge %immed
     lda (R0L+2*N3),y
     sta R0L+2*N2
-    asl
-    asl
-    asl
-    lda R0L+2*N2
+    clc
+    adc #$80
     and #$1F
     sta R0L+2*N8
     bit R0L+2*N2
     rts
+;[28]
 ;------------------------------------------------------------------------------
 /* SYM+
 tags: nosymbol subroutine
@@ -149,7 +137,7 @@ tags: nosymbol subroutine
 
 */
 symplus
-    jsr symlens                         ; this $20 opcode is used by `symlens`
+    jsr symlens
     adc #3
     adc R0L+2*N3
     sta R0L+2*N3
@@ -433,26 +421,92 @@ code  (seek)   ( nfa -- xfa flag )
 :(seek86)
   rts,  end-code
 
-*/
+
+
+
+r14h 2*!    \ assume not found
+n8h 1+!     \ toggle unsorted/sorted
+begin
+    symlen  %done not
+while
+    %smudge not
+while
+    y=len+1 a=vocabid
+    %vocab
+    if
+        0= not
+        if
+            yabba
+
+:yabba
+    dey 0=
+until  goteem
+
 pseek
     asl R0L+2*R14+1             ; not found
-    inc R0L+2*N8+1              ; toggle sort
+    inc R0L+2*N8+1              ; toggle odd=unsorted; even=sorted
 pseek10
     jsr symlens                 ; pass N3=NFA of first symbol on list
     beq pseek86                 ; %done ?
-    bmi pseek100                ; %smudge ?
+    bvs pseek1999               ; Beavis, is it %smudged? next
+pseek30
+    tay
+    iny
+    lda R0L+2*N5
+                    ; n5\c    true              false
+                    ;  = 0     mismatch         match (core)
+                    ;  <> 0    match(vocabid)   mismatch
+    bcc smore
+    bne doob
+    .byt $2C
+smore
+    bne pseek66
+yabba
+    dey
+    beq pseek42
+dabba
+    lda (tos),y
+doob
+    eor (N3),y
+    beq yabba
+    ; bne pseek66
+pseek66
+    lda R0L+2*N8
+    cmp R0L+2*N4                ; length
+    bcc pseek20
+    lda R0L+2*N8+1
+    lsr
+    bcs pseek86
+pseek1999
+    jsr symplus                 ; party on
+    bne pseek10                 ; bra
+pseek42
+    inc R0L+2*R14+1             ; found it
+pseek86
+    rts
+
+
+
+*/
+pseek
+    asl R0L+2*R14+1             ; not found
+    inc R0L+2*N8+1              ; toggle odd=unsorted; even=sorted
+pseek10
+    jsr symlens                 ; pass N3=NFA of first symbol on list
+    beq pseek86                 ; %done ?
+    bvs pseek100                ; is it %smudged, Beavis?
     tay
     eor R0L+2*N4                ; length
+    sbc #$FF
+
     bne pseek100                ; diff length ?
     lda R0L+2*N5                ; vocabid
-    bcc pseek200                ; %core ?
-    beq pseek100  ; found %core but seeking %vocab ?
-    iny
-    .byt $2C
+    bcs pseek150                ; %vocab ?
+    bne pseek100
 pseek200
     lda (tos),y
-pseek222
-    bcs pseek86                 ; %sorted early exit
+    ;
+pseek300
     eor (R0L+2*N3),y
     bne pseek100
     dey
@@ -461,17 +515,31 @@ pseek42
     inc R0L+2*R14+1             ; found it
 pseek86
     rts
+
 pseek100
+    cpy R0L+2*N4                ; length
+    bcc pseek199
+
+    lda R0L+2*N8+1
+    lsr
+    bcs pseek86
+pseek199
+    jsr symplus
+    bne pseek10                 ; bra
+
+pseek150
+
+
+    beq pseek100                ; vocabid must be nonzero
+    iny
+    .byt $2C
     lda R0L+2*N8+1
     lsr                         ; %unsorted
     bcs pseek199
     dey
     cpy R0L+2*N4
     bcs pseek86                 ; %sorted early exit
-pseek199
-    jsr symplus
-    ; check for sorted early exit after sym+ ??~
-    bne pseek10                 ; bra
+
 ;------------------------------------------------------------------------------
 /*
 title: (FOUND?)

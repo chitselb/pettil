@@ -329,9 +329,11 @@ puts @label   if @label == "STUDIO"
                 symlen = @name.length
                 if !@vocab.nil?
                     @symbol = @name+ [@vocab.to_i].pack("C")
-                    symlen |= 0x20
+# ~ rearrange the bits of symbol table header bytes here
+                    symlen |= 0x80
                 end
-                symlen |= 0x40   if @flags.index("immediate")  unless @flags.nil?
+# ~ rearrange the bits of symbol table header bytes here
+                symlen |= 0x20   if @flags.index("immediate")  unless @flags.nil?
                 # length |= 0x20   if ....  add vocabulary support ~
 
                 # a String,
