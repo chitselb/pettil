@@ -18,25 +18,27 @@ DEFINITIONS REHASH      FORTH
 |   CFA[low]    | <-- LFA      Link Field Address
 |   CFA[high]   |              (2 bytes)
 +-+-+-+-+-+-+-+-+
-|8 4 2          |
-|0 0 0          |
-|               |
-[S]      %smudge|              Name Field Address
-| [V]     %vocab|
+[V]       %vocab|              Name Field Address
+| [S]    %smudge|
 |   [I]   %immed|              (1 byte)
 |     [length   ] <-- NFA
 +-+-+-+-+-+-+-+-+
-|   name[1]     |     NFA+1    text of the name
-|   name[2]     |              (`length` bytes)
-|      .        |
-|      .        |
-|      .        |
-|   name[len]   |
+|   "H"         |     NFA+1    text of the name
+|   "E"         |              (`length` bytes)
+|   "R"         |
+|   "E"         |
 ?---?---?---?---?
 ?   vocabid     ?     NFA+length+1
 ?---?---?---?---?         01 = assembler; 02 = editor; 03 = user's first vocab
                                (1 byte, present iff %vocab is true)
+                          00 = labels.  Labels are temporary, may be loaded in
+                               from tape.  They exist only in `symnew`..`symtail`
+                               region of memory and are removed by invoking
+                               `forget` or `rehash` which empties this region.
 
+                               Meanwhile, use labels for whatever you wish. They
+                               are created only once, and the value may be replaced
+                               as often as you like with `:setmylabel` syntax
 symbol
     lfa     contains the
     cfa     points to 6502 code
@@ -90,19 +92,25 @@ tags: primitive nosymbol
 
 Calculate length of a name
 
-|^N3  |^ |^length |
-|^N8l |^ |^length |
-|^N8h |^ |^`(seek)` toggle sorted/unsorted |
-|^C  |^ |^%vocab |
-
 %vocab              $80
 %smudge             $40
 %immed              $20
+length              [4..0]
 
 This gets called often and should run fast.
 
+|register |before |after |notes |h
+|N2L |     |length |     |
+|N3  |nfa  | -     |     |
+|N8L |     |length |     |
+|Y   |     |00     |     |
+|N   |     |%vocab |also in C |
+|V   |     |%smudge|     |
+|Z   |     |%done  |(N8 & N2) |
+|C   |     |%vocab |also in N |
+
 ```
-code sym.len   ( ; n3=nfa -- len ; n8l=len )
+code sym.len   ( -- len )
   'pushya 1- csplit
   # lda, pha,  # lda, pha,
 \ %vocab %smudge %immed length(0..31)
@@ -118,22 +126,27 @@ symlen
     lda #<(pushya-1)
     pha
 symlens
-    ldy #0      ; %vocab %smudge %immed
+    ldy #0                              ; %vocab %smudge %immed
     lda (R0L+2*N3),y
     sta R0L+2*N2
-    clc
-    adc #$80
+    cmp #$80                            ; copy N flag to C flag
     and #$1F
     sta R0L+2*N8
     bit R0L+2*N2
-    rts
-;[28]
+    rts                                 ;[26]
 ;------------------------------------------------------------------------------
 /* SYM+
 tags: nosymbol subroutine
 
-|Z  |    |0    |
-|N3 |nfa |nfa+ |
+This gets called often and should run fast.
+
+|N2 |      |orig- |     |
+|N3 |nfa   |nfa+  |     |
+|N8 |      |len-  |     |
+|A  |      |nfa.l |     |
+|Y  |      |00    |     |
+|C  |      |?     |pagewrapped? might be a good cue for entertainment |
+|Z  |      |false |     |
 
 */
 symplus
@@ -934,8 +947,8 @@ create00
     .byt std  | N2              ; lfa !+
     .byt ld   | N2              ; nfa
     .byt std  | N1              ; newest !+
-    .byt inr  | ACC             ;
-    .byt add  | N4              ;
+    .byt inr  | ACC
+    .byt add  | N4 
     .byt st   | TOS
     .byt ld   | N4
     .byt st   | N5
@@ -943,7 +956,7 @@ create00
     .byt bz , <(create00c-*-2)
     .byt sti  | TOS
     .byt set  | ACC
-    .word $20
+    .word $80
     .byt add  | N5
     .byt st   | N5
 create00c
