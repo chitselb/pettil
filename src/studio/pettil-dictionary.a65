@@ -16,12 +16,13 @@ DEFINITIONS REHASH      FORTH
  SYMBOL
 +---------------+
 |   CFA[low]    | <-- LFA      Link Field Address
+|---------------|
 |   CFA[high]   |              (2 bytes)
 +-+-+-+-+-+-+-+-+
 [V]       %vocab|              Name Field Address
 | [S]    %smudge|
 |   [I]   %immed|              (1 byte)
-|     [length   ] <-- NFA
+|     [length  4] <-- NFA
 +-+-+-+-+-+-+-+-+
 |   "H"         |     NFA+1    text of the name
 |   "E"         |              (`length` bytes)
@@ -130,9 +131,9 @@ symlens
     lda (R0L+2*N3),y
     sta R0L+2*N2
     cmp #$80                            ; copy N flag to C flag
-    and #$1F
+    and #$1F                            ; Z %done;
     sta R0L+2*N8
-    bit R0L+2*N2
+    bit R0L+2*N2                        ; N %vocab; V %smudge;
     rts                                 ;[26]
 ;------------------------------------------------------------------------------
 /* SYM+
@@ -500,6 +501,40 @@ pseek86
 
 
 
+
+
+
+new
+
+sortednextword      lda N5+1            ; check mode
+                    lsr
+                    bcc pseekexit       ; %sorted?
+nextword            jsr symplus
+                    ; N3  = NFA
+                    ; N4  = seek len
+                    ; N5L = seek vocabid   00 >0  FF
+                    ; N5H = seek mode      00 00  FF
+pseek               jsr symlens         ; N3 -> N2, N8
+                    beq pseek86         ; not found!
+                    cmp N4              ; check len
+mismatchname        bcc nextword
+                    bne sortednextword
+                    tay
+                    bit N2              ; N is %vocab
+                    bpl pseekchkchar    ; is core?
+                    iny
+                    lda N5              ; seek vocabid
+                    bcs pseekchkvoc     ; bra
+pseekchknext        dey
+                    beq pseek42
+pseekchkchar        lda (tos),y
+pseekchkvoc         eor (R0L+2*N3),y
+                    beq pseekchknext
+
+pseek42             inc R0L+2*R14+1     ; found it!
+pseek86             inc N5+1            ; toggle sort
+                    ; beq labelexit      'special
+                    rts   
 */
 pseek
     asl R0L+2*R14+1             ; not found
@@ -948,7 +983,7 @@ create00
     .byt ld   | N2              ; nfa
     .byt std  | N1              ; newest !+
     .byt inr  | ACC
-    .byt add  | N4 
+    .byt add  | N4
     .byt st   | TOS
     .byt ld   | N4
     .byt st   | N5
