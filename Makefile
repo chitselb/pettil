@@ -8,8 +8,8 @@ SHELL = /bin/bash
 #all: pristine perturb pet
 
 # perform test feats on samosa
-#all: pristine disturb pet
-all: pristine pettil0 perturb0 mkd64perturb pet
+all: pristine disturb pet
+#all: pristine pettil0 perturb0 mkd64perturb pet
 #all: pristine pettil0 pettil4 perturb0 mkd64perturb vic20
 
 remote:
