@@ -12,6 +12,9 @@ all: pristine disturb pet
 #all: pristine pettil0 perturb0 mkd64perturb pet
 #all: pristine pettil0 pettil4 perturb0 mkd64perturb vic20
 
+fast: pristine pettil0 mkd64fast pet
+
+
 remote:
 	at now < ./tools/remote.disturb.at
 
@@ -91,6 +94,12 @@ petpic:
 		-warp -8 chitselb.d64 -9 pettil.d64" &
 
 # build PETTIL disk images
+mkd64fast:
+	# first program is PETTIL.PRG for reference machine
+	# and also include PETTILPACKETS
+	c1541 pettil0.d64                                                    \
+		-write obj/pettil.prg0 pettil.prg
+
 mkd64:
 	# first program is PETTIL.PRG for reference machine
 	# and also include PETTILPACKETS
