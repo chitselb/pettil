@@ -46,10 +46,7 @@
 			}
 		},
 		{
-			"contents": ";------------------------------------------------------------------------------\n/*\ntitle: pettil-dictionary.a65\ntags: source nosymbol\n\n```\nSYMTAB!     SYM0        SYM.LEN     SYM.STRANDS\nSYM.COPY    (!SYMTAB)   !SYMTAB     STRAND\nIMMEDORNOT  (FOUND?)    FOUND?      STRAND+\n(FNORD)     >STRAND     NEXTVOCAB?  :WILLITBLEND?\nFNORDITUDE  :SOSORTED   :SOSCRAMBLED\n\n>NAME       EXISTS?     '           FORGET\nDEFINITIONS REHASH      FORTH\n\n SYMBOL\n+---------------+\n|   CFA[low]    | <-- LFA      Link Field Address\n|---------------|\n|   CFA[high]   |              (2 bytes)\n+-+-+-+-+-+-+-+-+\n[V]       %vocab|              Name Field Address\n| [S]    %smudge|\n|   [I]   %immed|              (1 byte)\n|     [length  4] <-- NFA\n+-+-+-+-+-+-+-+-+\n|   \"H\"         |     NFA+1    text of the name\n|   \"E\"         |              (`length` bytes)\n|   \"R\"         |\n|   \"E\"         |\n?---?---?---?---?\n?   vocabid     ?     NFA+length+1\n?---?---?---?---?         01 = assembler; 02 = editor; 03 = user's first vocab\n                               (1 byte, present iff %vocab is true)\n                          00 = labels.  Labels are temporary, may be loaded in\n                               from tape.  They exist only in `symnew`..`symtail`\n                               region of memory and are removed by invoking\n                               `forget` or `rehash` which empties this region.\n\n                               Meanwhile, use labels for whatever you wish. They\n                               are created only once, and the value may be replaced\n                               as often as you like with `:setmylabel` syntax\nsymbol\n    lfa     contains the\n    cfa     points to 6502 code\n %smudge    is smudged\n %vocab     has vocabid\n %immed     is immediate\n length     1..31, 0 = end of list\nvocabid     present if %vocab is true, 0 = is label\n```\n*/\n;------------------------------------------------------------------------------\n/*\ntitle: SYMTAB!\ntags: nosymbol\n\ncode symtab!   ( -- )\n*/\nsymtabset\n    lda stackh+1,x\n    clc\n    sbc tos+1\n    dex\n    sta stackh,x\n    sta usersymtab+1\n    lda #32\n    sta stackl,x\nsymtabset99\n    jmp next\n;------------------------------------------------------------------------------\n/*\ntitle: SYM0\ntags: nosymbol\n\n```\ncode sym0   ( -- )\n  symtab 1+ lda,  n3 1+ sta,\n  #34  # lda,  n3 sta,\n  'symtabset99 bne,  \\ next\n```\n*/\nsym0\n    lda usersymtab+1\n    sta R0L+2*N3+1\n    lda #34\n    sta R0L+2*N3\n    bne symtabset99                     ; bra next\n;------------------------------------------------------------------------------\n/*\ntitle: SYM.LEN\ntags: primitive nosymbol\n\nCalculate length of a name\n\n%vocab              $80\n%smudge             $40\n%immed              $20\nlength              [4..0]\n\nThis gets called often and should run fast.\n\n|register |before |after |notes |h\n|N2L |     |length |     |\n|N3  |nfa  | -     |     |\n|N8L |     |length |     |\n|Y   |     |00     |     |\n|N   |     |%vocab |also in C |\n|V   |     |%smudge|     |\n|Z   |     |%done  |(N8 & N2) |\n|C   |     |%vocab |also in N |\n\n```\ncode sym.len   ( -- len )\n  'pushya 1- csplit\n  # lda, pha,  # lda, pha,\n\\ %vocab %smudge %immed length(0..31)\n:sym.lens\n  0 # ldy,  n3 )y lda,  n2 sta,  clc,\n  $80 # adc,  $1f # and,  n8 sta,\n  n2 bit,  rts,  end-code\n```\n*/\nsymlen\n    lda #>(pushya-1)\n    pha\n    lda #<(pushya-1)\n    pha\nsymlens\n    ldy #0                              ; %vocab %smudge %immed\n    lda (R0L+2*N3),y\n    sta R0L+2*N2\n    cmp #$80                            ; copy N flag to C flag\n    and #$1F                            ; Z %done;\n    sta R0L+2*N8\n    bit R0L+2*N2                        ; N %vocab; V %smudge;\n    rts                                 ;[26]\n;------------------------------------------------------------------------------\n/* SYM+\ntags: nosymbol subroutine\n\nThis gets called often and should run fast.\n\n|N2 |      |orig- |     |\n|N3 |nfa   |nfa+  |     |\n|N8 |      |len-  |     |\n|A  |      |nfa.l |     |\n|Y  |      |00    |     |\n|C  |      |?     |pagewrapped? might be a good cue for entertainment |\n|Z  |      |false |     |\n\n*/\nsymplus\n    jsr symlens\n    adc #3\n    adc R0L+2*N3\n    sta R0L+2*N3\n    bcc symplus01\n    inc R0L+2*N3+1\nsymplus01\n    rts                                 ; Z flag is always nonzero\n;------------------------------------------------------------------------------\n/*\ntitle: (!SYMTAB)\ntags: nosymbol\n\n*/\npsamtab\n    brk\n    .byt ld | N3\n    .byt std | TOS              ; set `symnew`\n    .byt popd | N3              ; 2-\n    .byt ld | N3\n    .byt std | TOS              ; set `symtail`\n    .byt sub | ACC\n    .byt std | N3               ; force cfa = 0\n    .byt nxt\n;------------------------------------------------------------------------------\n/*\ntitle: !SYMTAB\ntags: nosymbol secondary\n\n```\n: !symtab   ( start end -- size addr )\n    bloom 8 erase sym0 symtab @ bl\n    begin\n        sym.len >  if  <n3 !+ then\n        bloomfilter cbit!\n        sym.len  call sym+  sym.len 0=\n    until (!symtab) 3drop ;\n```\n*/\n#include \"align.i65\"\n_setsymtab\n    jsr enter\n#include \"page.i65\"\n    .word bloom\n#include \"page.i65\"\n    .word eight\n#include \"page.i65\"\n    .word erase                 ; reset the Bloom filter\n#include \"page.i65\"\n    .word sym0\n#include \"page.i65\"\n    .word symtab\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word bl\n#include \"page.i65\"\nsamtab01\n    .word symlen\n#include \"page.i65\"\n    .word gt\n#include \"page.i65\"\n    .word qbranch\n    .byt <(samtab02-*+1)\n#include \"parm.i65\"\n    .word zpfrom\n    .byt R0L+2*N3\n#include \"pad.i65\"\n    .word _storeplus\n#include \"page.i65\"\nsamtab02\n    .word _bloomfilter\n#include \"page.i65\"\n    .word cbitstore\n#include \"page.i65\"\n    .word symlen\n#include \"parm.i65\"\n    .word callz                         ; ~todo tidy up here\n    .word symplus\n#include \"pad.i65\"\n    .word symlen\n#include \"page.i65\"\n    .word zeq\n#include \"parm.i65\"\n    .word qbranch\n    .byt <(samtab01-*+1)\n#include \"pad.i65\"\n    .word symnew\n#include \"page.i65\"\n    .word psamtab               ; handle `symtab` tail\n#include \"page.i65\"\n    .word threedrop\n#include \"past.i65\"\n    .word exit\n;------------------------------------------------------------------------------\n/* BLOOM#\ntags: nosymbol\n\nstack=( -- n )\n\nThe Bloom filter tries to answer the question, 'is this word a number?'\n\nThe string under consideration is pointed to by (N3) with a length of N8.\n\nGenerate a hash of a string, in the range 0..63, used as an index into the\nsparsely populated `bloom` 8-byte bitfield.\n\nA `true` bloom filter bit means, this word might be in the dictionary\nA `false` bit means, this word is not present\n\n`create` turns on the `bloom` bit for each new name\n`forget` completely rebuilds the `bloom` filter\n\n|reg |entry |exit |h\n|^stack |^( nfa -- bloom# )|<|\n|^N3 |^ |^nfa |\n|^N8l |^ |^length |\n|^N8h |^ |^0 |\n\ncode bloom#   ( nfa -- bloom# )\n\n*/\nbloomhash\n    ldy R0L+2*N8                        ; length\n    lda #0\n    sta z\nbloomhash01\n    lda (R0L+2*N3),y\n    eor #$30\n    cmp #9\n    bcs bloomhash02\n    adc z\n    sta z\nbloomhash02\n    dey\n    bne bloomhash01\n    lda z\n    and #$3F                            ; width of the filter is 64 bits\n    jmp pushya\n;------------------------------------------------------------------------------\n/* BLOOMFILTER\ntags: nosymbol\n\nstack=( -- mask addr )\n*/\n#include \"align.i65\"\n_bloomfilter\n    jsr enter\n#include \"page.i65\"\n    .word bloomhash\n#include \"page.i65\"\n    .word bloom\n#include \"page.i65\"\n    .word tobit\n#include \"past.i65\"\n    .word exit\n;------------------------------------------------------------------------------\n/*\ntitle: UNSMUDGE\ntags: primitive\n\nstack=( nfa -- )\n*/\nunsmudge\n    clc\n    .byt $29            ; AND #\n    ; fall through\n/*\ntitle: SMUDGE\ntags: primitive forth-79\n\nstack=( nfa -- )\n*/\nsmudge\n    sec\n    ;\n    php\n    ldy #0\n    lda (tos),y\n    asl\n    plp\n    ror\n    sta (tos),y\n    jmp drop\n;------------------------------------------------------------------------------\n/*\ntitle: (>NAME)\ntags: nosymbol\n\nstack=( cfa -- nfa|0 )\n*/\nptoname\n    ldy #$FE\nptoname02\n    dec R0L+2*N3+1\n    lda (R0L+2*N3),y\n    inc R0L+2*N3+1\n    eor tos-$FE,y\n    bne ptoname05\n    iny\n    bne ptoname02\n    lda R0L+2*N3\n    ldy R0L+2*N3+1\nptoname04\n    jmp put\nptoname05\n    ldy #0\n    lda (R0L+2*N3),y\n    beq ptoname04\n    jsr symplus                 ; next!\n    bne ptoname                 ; bra\n;------------------------------------------------------------------------------\n/*\ntitle: >NAME\ntags: forth-83\n\n* search the dictionary for a given `cfa` and\n* return the `nfa` if found, else `0`\n* honors the smudge bit\n\n```\n: >name   ( cfa -- nfa|0 )\n    sym0\n    begin\n        name> over <>\n        sym.len and\n    while\n        3 sym+\n    repeat\n    name> nip ;\n```\n*/\n#if 0\nname=>NAME\ntags=interpreter\n\n#endif\n#include \"align.i65\"\n_toname\n    jsr enter\n#include \"page.i65\"\n    .word sym0\n#include \"page.i65\"\n    .word ptoname\n#include \"past.i65\"\n    .word exit\n;------------------------------------------------------------------------------\n/*\ntitle: (SEEK)\ntags: nosymbol\n\ncode (seek)   ( n5=mode; nfa -- xfa flag )\n  brk,  tos ld,  n5 st,  pull,\n\n\n: (seek)   ( nfa mode -- xfa flag )\n    N5 !\n    ;code\n\nA       X       Y       S       NV-BDIZC\nlen     -       00      -       vs-...dv        v %vocab    s %smudge      d %done\n\nACC     TOS     N0      N1      N2      N3      N4      N5      N6      N7      N8\nR0      R1      R2      R3      R4      R5      R6      R7      R8      R9      R10\n        seeknfa                 this.og thisnfa seeklen FFFF    vocabs/         len.n3         'label\n                                                                context\n                                                                                        don't store this.vocabid\n                                                        H current/\n                                                        L index\n\n        nfa.s                   nfa.og  symnew  len.tos 0000    vocabs          len.n3         core\n        nfa.s                   nfa.og  symnew  len.tos 0100    vocabs          len.n3         assembler\n        nfa.s                   nfa.og  symnew  len.tos 0000    context         len.n3         (create)\n\n\\ ACC\n\\\n\\ TOS   seek.nfa\n\\\n\\ N0\n\\\n\\ N1\n\\\n\\ N2                nfa header byte\n\\\n\\ N3    this.nfa    sorted < symnew >= unsorted\n\\\n\\ N4    seek.len\n\\\n\\ N5L   vocabid     00 = core\n\\                   01 = assembler\n\\                   02 = editor\n\\                   03+  user-created\n\\\n\\ N5H   mode        00 = fetch until 00\n\\                   01 = offset for vocabs\n\\                   FF = ( N5 ON ) used by 'label in `number`\n\\\n\\ N6    vocabs++\n\\\n\\ N7    strand\n\\\n\\ N8    this.len\n\\\n\\ strategy:\n\\ * begin with N5L is 'don't care'\n\\ * N5 = vocabid\n\\ ** is vocabid zero?  then this will be the final pass\n\\ * run symnew..symtail\n\\ N5H = FF?  we are entirely done\n\\ N5L = 00?  we are entirely done\n\\ * run strand\n\nFFFF\n\n\n'foo\nE3 46 4F 4F FF\n%vocab FF\n%smudge\n%immed\nlen 3 'FOO'\n\ncontext 5\n34 21 E3 46 4F 4F FF\n\n: foo\n\n\n    ldy #1\n    lda (tos),y\n    and #$0F\n    asl\n    tay\n    lda symtab+1,y\n    sta n3+1\n    lda symtab,y\n    sta n3\n\n\nR0      R1      R2      R3      R4      R5      R6      R7      R8      R9      R10\n                                        vocabid\n                                        mode\ncode (seek)   ( nfa -- )\n\n\nA       X       Y       S       NV-BDIZC\nlen     -       00      -       vs-...dv        v %vocab    s %smudge      d %done\n\nACC     TOS     N0      N1      N2      N3      N4      N5      N6      N7      N8\nR0      R1      R2      R3      R4      R5      R6      R7      R8      R9      R10\n        nfa.s                   nfa.og  symnew  len.tos FFFF    vocabs          len.n3         'label\n        nfa.s                   nfa.og  symnew  len.tos 0000    vocabs          len.n3         core\n        nfa.s                   nfa.og  symnew  len.tos 0100    vocabs          len.n3         assembler\n        nfa.s                   nfa.og  symnew  len.tos 0000    context         len.n3         (create)\n\n\nACC     TOS     N0      N1      N2      N3      N4      N5      N6      N7      N8\n        01FF                                            0000\n\nACC     TOS     N0      N1      N2      N3      N4      N5      N6      N7      N8\n        01FF                                            0000\n*/\npseeque\n    asl R0L+2*R14+1             ;  Sweet16 carry clear, default to 'not found'\n    inc R0L+2*N8+1              ; toggle odd=unsorted; even=sorted\npseek10\n    jsr symlens                 ; pass N3=NFA of first symbol on list\n    beq pseek86                 ; %done ?\n    bvs pseek100                ; is it %smudged, Beavis?\n    tay\n    eor R0L+2*N4                ; length\n    sbc #$FF\n\n    bne pseek100                ; diff length ?\n    lda R0L+2*N5                ; vocabid\n    bcs pseek150                ; %vocab ?\n    bne pseek100\npseek200\n    lda (tos),y\n    ;\npseek300\n    eor (R0L+2*N3),y\n    bne pseek100\n    dey\n    bne pseek200\npseek42\n    inc R0L+2*R14+1             ; found it\npseek86\n    rts\n\npseek100\n    cpy R0L+2*N4                ; length\n    bcc pseek199\n\n    lda R0L+2*N8+1\n    lsr\n    bcs pseek86\npseek199\n    jsr symplus\n    bne pseek10                 ; bra\n\npseek150\n\n\n    beq pseek100                ; vocabid must be nonzero\n    iny\n    .byt $2C\n    lda R0L+2*N8+1\n    lsr                         ; %unsorted\n    bcs pseek199\n    dey\n    cpy R0L+2*N4\n    bcs pseek86                 ; %sorted early exit\n\n;------------------------------------------------------------------------------\n/*\ntitle: (FOUND?)\ntags: nosymbol\n\n~ use N4 to hold either:\n~    length.seek (as set by >strand )\n~    length.32 (to prevent ever reaching it)\n\ncalculate n7=strand\nfor each vocabulary\n    n3=symnew+2\n    check unsorted (symnew...)\n    n3=n7\n    check sorted (>strand...)\n\n```\ncode (found?)   ( nfa -- xfa flag )\n    brk,  vocabs 1+ n6 set,             \\ first vocab\n:found1\n    n6 ldd@,  n5 st,                    \\ get vocabid\n:found2\n    symnew n3 set,  n3 ldd@,\n    n3 st,  n3 ldd@,  '(seek) ext,\n    '>strand ext,  '(seek) ext,\n```\n\n\n#include \"parm.i65\"\n    .word tozp\n    .byt R0L+2*N3\n#include \"pad.i65\"\n    .word symlen\n#include \"page.i65\"\n    .word drop\n\n\n\ncode >strand   ( nfa -- nfa ; n3=strand )\n  'symlens jsr,  n4 sta,  iny,\n  tos )y lda,  $0f # and,  asl,  n7 sta,\n  symtab 1+ lda,  n7 1+ sta,\n  rts,  end-code\n\ncode (found?)   ( nfa -- xfa flag )\n    brk,  vocabs 1+ n6 set,             \\ first vocab\n:pfoundq01\n    n6 ldd@, n5 st,                     \\ get vocabid\n    symnew tos set,\n    (seek) ext,                         \\ check unsorted\n    >strand tos set,\n    (seek) ext,                         \\ check sorted\n    n6 ld@, 'pfoundq01 bnz,\n    nxt,\n```\ncode found00\n    'symlens jsr,  n4 sta,  iny,\n    n3 )y lda,  $0F # and,  asl,\n    n7 sta,  symtab 1+ lda,  n7 1+ sta,\n    next jmp,  end-code\n\n    n3 !  callz symlen\n*/\npfoundq\n    brk\n    .byt set | N6\n    .word uservocabs+1                  ; first vocab\npfoundq01\n    .byt ldd | N6\n    .byt st  | N5                       ; get vocabid\n    .byt set | N3\n    .word usersymnew\n    .byt ldd | N3\n    .byt st  | N3\n    .byt ext\n    .word pseeque\n    .byt bc  , <(pfound99-*-2)          ; early exit if it was found\n    .byt ld  | N7                       ; let's have a look at the sorted list then\n    .byt st  | N3\n    .byt ext                            ; if we're still here, we haven't exited\n    .word pseeque                       ; search sorted until 0= or len>seeklen(n4)\n    .byt bc  , <(pfound99-*-2)\n    .byt ld  | N5                       ; get vocabid\n    .byt bnz  , <(pfoundq01-*-2)        ; until last vocab\n    .byt rtn\n    jmp false\npfound99\n    .byt popd | N3                       ; tell 'em what happened\n    .byt st   | TOS\n    .byt rtn\n    bit R0L+2*N2                        ; check immediate bit\n    bvc pfoundnormal\n    jmp one\npfoundnormal\n    jmp minusone\n;------------------------------------------------------------------------------\n/*\ntitle: FOUND?\ntags: nosymbol secondary\n\nSearch the dictionary for a name\n\n| flag | meaning | 2os |h\n| -1 | found | cfa |\n|  0 | not found | nfa |\n| +1 | immediate word | cfa |\n\n```\n: found?   ( nfa -- xfa flag )\n  >n3 found00                           ( nfa ; n3=nfa n4=n8=seek.length )\n  bloomfilter cbit@                     ( nfa flag )\n  ?: (found?) false ;\n```\n*/\n#include \"align.i65\"\n_foundq\n    jsr enter\n#include \"parm.i65\"\n    .word tozp\n    .byt R0L+2*N3\n#include \"page.i65\"\n    .word found00\n#include \"page.i65\"\n    .word _bloomfilter          ; in sought name, sum of digits ['0-9'+1] modulo 64\n#include \"page.i65\"             ; e.g. `dup` = 0, and `3.1459` = 27\n    .word cbitfetch\n#include \"parm.i65\"\n    .word pquerycolon\n    .word pfoundq\n    .word false\n#include \"past.i65\"\n    .word exit\nfound00\n    jsr symlens\n    sty R0L+2*N8+1                      ; reset the sorted/unsorted toggle\n    iny\n    lda (R0L+2*N3),y                    ; 1st character of name\n    and #$0F                            ; low 4-bits only\n    asl                                 ; *2\n    sta R0L+2*N7                        ; sym0 (sorted)\n    lda usersymtab+1\n    sta R0L+2*N7+1\n    brk\n    .byt ldd | N7\n    .byt st  | N7                       ; j'adoube\n    .byt ld  | N8                       ; seek.length\n    .byt st  | N4                       ; N4H = even/odd sorted/unsorted flag\n    .byt nxt\n;------------------------------------------------------------------------------\n/*\ntitle: EXISTS?\ntags: secondary vocabulary\n\nsearch the dictionary for a name\n\n```\n: exists?   ( \"name\" ; -- cfa|0 )\n  bl name ?dup  ?: found? false  and ;\n```\n*/\n#if 0\nname=EXISTS?\ntags=vocabulary\n\n```\n: exists?   (\"name\" -- cfa|0 )\n    bl name ?dup  ?: found? false ;\n```\n#endif\n#include \"align.i65\"\n_existsq\n    jsr enter\n#include \"page.i65\"\n    .word bl\n#include \"page.i65\"\n    .word _name\n#include \"page.i65\"\n    .word qdup\n#include \"parm.i65\"\n    .word pquerycolon\n    .word _foundq\n    .word false\n#include \"pad.i65\"\n    .word andx\n#include \"past.i65\"\n    .word exit\n;------------------------------------------------------------------------------\n/*\ntitle: `'`\ntags: forth-83\n\nstack=( -- cfa )\n*/\n#if 0\nname='\ntags=forth-83\n\n#endif\n#include \"align.i65\"\n_tick\n    jsr enter\n#include \"page.i65\"\n    .word _existsq\n#include \"page.i65\"\n    .word dup\n#include \"page.i65\"\n    .word zeq\n#include \"parm.i65\"\n    .word qerror\n    .byt 3                      ; NOT FOUND\n#include \"past.i65\"\n    .word exit\n;------------------------------------------------------------------------------\n/*\ntitle: (CREATE)\ntags: nosymbol\n\nstack=( cfa -- )\nCreate a new symbol in the symbol table\n\n|^ |^pass |^exit |h\n|^redefined |^ |^here ~+/-3 |\n|^dp        |^ |^enclose `JSR cfa`<br/>page crossing<br/>dp += 2 |\n|^symtail   |^points to `0` |^enclose `dp` +3 ~ -3<br/>set `flags/length` byte<br/>append `vocabid` if needed<br/>`cmove`  symbol name |\n|^newest |^ |^ |\n|^symbol.flags.length |^ |^ |\n|^symbol.txt |^ |^ |\n|^symbol.vocabid |^ |^ |\n|^%smudge |^ |^ |\n|^current |^ |^ |\n|^ |^ |^ |\n\n* check for \"MISSING NAME\"\n* look up the name\n* found?\n** ( NFA ) redefined !   ( smudge ya later! )\n** \"[RVS] \" nfa $. \"[OFF] EXISTS\"\n** enclose cfa jsr,\n** set bloom filter bit true\n** store created word's CFA at symtail++\n** set newest where symtail is now\n\n** store length/vocab at symtail+\n** sym+s calculatesss new symtail?\n** turn off byte at new symtail\n\n\n\n** immediate bit? always 0 here.\n** if current != 0 then ORA $20 that length(N8)\n** (`from` = n3; `to`=symtail, `howmany`=length+vocab bit)\n** jsr plants8\n* bloom  symtail+2 current  rot\n* ?align cfa,  here 3-  newest\n** enclose nop byte, if needed\n** 3 dp +!\n** set newest to jsr opcode's address\n\n\n* create00\ncode create00\n  brk,  harvests6 ext,  n0 popd@,\n  n3 st,  n2 ld,  n3 std@,  n3 ld,\n  tos std@,  n7 ld ,  n3 st,  tos popd@,\n  tos st,  symcopy ext,  n1 ld@,\n  'create01 bz,  $40 acc set,\n:create01\n  tos st,  n7 inr,  n7 pop,  n5 st,\n  tos add,  n7 st@,  n7 ld,  n5 add,\n  n7 st,  n1 pop, 'create02 bz,\n  n7 st@,\n:create02\n  n7 ld,  n0 std@,  acc sub,  n7 st@,\n  n7 std@,  pull,  rtn,  exit jmp,\n\n|^N2 |^                 |^flags,len,og  |\n|^N4 |^seek.length      |^ .            |\n|^N5 |^                 |^vocabid       |\n|^N6 |^                 |^vocabs        |\n|^N7 |^nfa.strand[0]    |^ .            |\n|^N8L|^                 |^result.length |\n|^N8H|^                 |^toggle sorted/unsorted |\n\n|^stack |^( cfa -- )|<|h\n|^N0 |^                 |^              |\n|^N1 |^                 |^              |\n|^N2 |^                 |^nfa.flags.length |\n|^N3 |^ .               |^nfa.result    |\n|^N4 |^ .               |^seek.length |\n|^N5 |^ .               |^              |\n|^N6 |^ .               |^              |\n|^N7 |^ .               |^              |\n|^N8 |^                 |^nfa.length    |\n|^N9 |^                 |^              |\n|^redefined |^          |^true iff name already existed |\n|reg |entry             |exit           |f\n\n\n\n*/\n#include \"align.i65\"\n_pcreate\n    jsr enter\n#include \"page.i65\"\n    .word eolq\n#include \"parm.i65\"\n    .word qerror\n    .byt 4                      ; MISSING NAME\n#include \"pad.i65\"\n    .word _lbuf\n#include \"page.i65\"\n    .word in\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word plus\n#include \"pad.i65\"\n    .word swap\n#include \"page.i65\"\n    .word redefined\n#include \"page.i65\"\n    .word off\n#include \"page.i65\"\n    .word _existsq\n#include \"parm.i65\"\n    .word qbranch\n    .byt <(pcreate02-*+1)\n#include \"parm.i65\"\n    .word zpfrom                        ; ~~ code path appears broken\n    .byt R0L+2*N3\n#include \"pad.i65\"\n    .word redefined\n#include \"page.i65\"\n    .word store\n#include \"parm.i65\"\n    .word zpfrom\n    .byt R0L+2*N7                       ; ~~ eschew n7\n#include \"pad.i65\"\n    .word dotrvs\n#include \"page.i65\"\n    .word _stringdot\n#include \"parm.i65\"\n    .word _pdq\n    .byt <(pcreate01-*-1)\n    .asc RVSOFF,\" EXISTS\"\npcreate01\n#include \"pad.i65\"\npcreate02\n    .word _cfacomma\n#include \"page.i65\"\n    .word _bloomfilter\n#include \"page.i65\"\n    .word cbitstore\n#include \"page.i65\"\n    .word bloom                 ; `symtail 2+`\n#include \"page.i65\"\n    .word newest\n#include \"page.i65\"\n    .word here\n#include \"page.i65\"\n    .word threeminus\n#include \"page.i65\"\n    .word create00                      ; ( from to howmany )\n#include \"page.i65\"\n    .word cmove                         ; drop the text into place\n#include \"past.i65\"\n    .word exit\n\n/*\n\nusernewest      = uendcore+18   ;1  field ordering optimization\nusercurrent     = uendcore+20   ;2\n\n```\ncode create00\n  brk  'harvests4 ext,\n  n0 popd,  n2 st,  tos ld,  n2 std,\n  n2 ld,  n1 std,  acc inr,  n4 add,\n  tos st,  n4 ld,  n5 st,  n1 ldi,\n  0= not if,\n    $20 acc set,  n5 add,  n5 st,\n  then,\n  tos ld,  n0 std,  n5 ld,  n2 sti,\n  n2 ld,  tos st,  n4 ld,  push,  nxt,\n```\n*/\ncreate00\n    brk\n    .byt ext\n    .word harvests4\n    .byt popd | N0              ; symtail\n    .byt st   | N2              ; LFA\n    .byt ld   | TOS             ; cfa\n    .byt std  | N2              ; lfa !+\n    .byt ld   | N2              ; nfa\n    .byt std  | N1              ; newest !+\n    .byt inr  | ACC\n    .byt add  | N4\n    .byt st   | TOS\n    .byt ld   | N4\n    .byt st   | N5\n    .byt ldi  | N1             ; current c@\n    .byt bz , <(create00c-*-2)\n    .byt sti  | TOS\n    .byt set  | ACC\n    .word $80\n    .byt add  | N5\n    .byt st   | N5\ncreate00c\n    .byt ld   | TOS\n    .byt std  | N0              ; update symtail\n    .byt sub  | ACC\n    .byt std  | TOS             ; write three nulls to mark tail\n    .byt sti  | TOS\n    .byt ld   | N5              ; len/flags\n    .byt sti  | N2\n    .byt ld   | N2\n    .byt st   | TOS\n    .byt ld   | N4\n    .byt push\n    .byt nxt\n\n;------------------------------------------------------------------------------\n/*\ntitle: STRAND+\ntags: nosymbol\n\nincrement the length byte (N4l) until it\nreaches 32, then increment strand (N4h)\n\ncode strand+   ( -- )\n  n4 inc,  32 # lda,  n4 eor,\n  0<> if,  n4 sta,  n4 1+ inc,  then,\n  rts,\n*/\nstrandplus\n    inc R0L+2*N4\n    lda #32\n    eor R0L+2*N4\n    bne straplu01\n    sta R0L+2*N4\n    inc R0L+2*N4+1\nstraplu01\n    rts\n\n;------------------------------------------------------------------------------\n/*\ntitle: :WILLITBLEND?\ntags: nosymbol sweet16\n\nEvaluate (and maybe retain) a name\n|tos|symnew             |symnew             |\n|n0 |cfa(n3)            |cfa(n3)            |\n|n2 |studio             |studio             |\n|n3 |nfa                |nfa+               |\n|n4 |                   |stepper len/strand |\n|n5 |                   |output to pad      |\n|n6 |                   |cutoff             |\n\n:willitblend?\n    'sym.strand ext,\n    n4 ld,  n8 cpr,  'wiblend02 bnz,    \\ len/strand must match exactly\n    n3 ld,  n0 st,\n    n0 popd,  n6 cpr,  'wiblend01 bp,   \\ and cfa must be in bounds\n    n2 cpr,  'wiblend02 bp,\n:wiblend01\n    'sym.copy ext,\n:wiblend02\n    'sym+ ext,  rs,\n*/\nwillitblendq\n    .byt ext\n    .byt ld  | N4\n    .byt cpr | N8                       ; shall I compare n4 to a summer's day?\n    .byt bnz , <(wiblend02-*-2)         ; move over to unsorted list if they differ\n    .byt popd | N3\n    .byt ldd  | N3                      ; get cfa without disturbing n3\n    .byt cpr | N2                       ; compare to studio\n    .byt bp , <(wiblend01-*-2)\n    .byt cpr | N6                       ; compare to cfa\n    .byt bp , <(wiblend02-*-2)\nwiblend01\n;    .byt ext\n;    .word symcopy\nwiblend02\n    .byt ext\n    .word symplus\n    .byt rs\n\n;------------------------------------------------------------------------------\n/*\ntitle: (FNORD)\ntags: nosymbol sweet16 tiny\n\n```\ncode fnorditude   ( cfa pad 'studio -- pad size )\n    brk, tos ldd, n2 st,  pull, n5 st,\n    pull, n6 st,  acc sub, n4 st,       \\ n2=studio n3=sym0 n4=0 n5=pad n6=cfa\n    symnew tos set,  tos ldd,  tos st,  \\ unsorted symbols\n```\n*/\npfnord\n    brk\n    .byt ldd | TOS\n    .byt st  | N2                       ; n2=studio\n    .byt pull\n    .byt st  | N5                       ; n5=output buffer (pad)\n    .byt pull\n    .byt st  | N6                       ; n6=cfa copy\n    .byt sub | ACC\n    .byt st  | N4                       ; n4=current len/strand off\n    ; fall through\n;------------------------------------------------------------------------------\n/*\ntitle: :SOSORTED\ntags: nosymbol\n\n```\n:sosorted\n    'willitblend? bs, 'sosorted bz,     \\ copy sorted names for len/strand=n4\n    n3 ld,  tos cpr,  'fnordout bp,     \\ while  n3 < symnew\n    tos ld,  n0 st,\n    n3 ld, push,  n8 ld, push,          \\ TOS is next sorted len/strand\n```\n*/\nsosorted\n    .byt bs , <(willitblendq-*-2)\n    .byt bz , <(sosorted-*-2)\n    .byt ld  | N3\n    .byt cpr | TOS\n    .byt bp , <(fnordout-*-2)\n    .byt ld  | TOS\n    .byt st  | N0\n    .byt ld  | N3\n    .byt push,\n    .byt ld  | N8\n    .byt push,\n    ; fall through\n;------------------------------------------------------------------------------\n/*\ntitle: :SOSCRAMBLED\ntags: nosymbol\n\n:soscrambled\n    n0 ld,  n3 st,                      \\ n3=symnew\n:howaboutthis\n    'willitblend? bs,\n    n3 ldd, :howaboutthis bnz,\n    'strand+ ext,\n       <n4 tos =\n    'soscrambled bnz,\n    tos ld, n8 st, pull, n3 st,\n    n0 ld, tos st,\n    'sosorted br,               \\ repeat\n:fnordout\n    nxt,\n```\n*/\nsoscrambled\n    .byt ld | N0\n    .byt st | N3\nhowaboutthis\n    .byt bs , <(willitblendq-*-2)\n    .byt ldd | N3\n    .byt bnz , <(howaboutthis-*-2)\n    .byt ext\n    .word strandplus\n    .byt ld | N4\n    .byt cpr | TOS\n    .byt bnz , <(soscrambled-*-2)\n    .byt ld | TOS\n    .byt st | N8\n    .byt pull,\n    .byt st | N3\n    .byt ld | N0\n    .byt st | TOS\n    .byt br ,  <(sosorted-*-2)\nfnordout\n    .byt nxt\n;------------------------------------------------------------------------------\n/*\ntitle: FNORD\ntags: nosymbol secondary\n\ncode strand.len+\n    lda n4\n    and #31\n    bne +\n    sta n4\n    inc n4+1\n    lda n4+1\n    and #15\n    beq seeyabye\nseeyabye\n    rts\n+\nend-code\n\n```\n: fnord   ( cfa -- )\n    sym0  pad studio                    ( cfa pad 'studio )\n    fnorditude !symtab ;\n```\n*/\n#include \"align.i65\"\n_fnord\n    jsr enter\n#include \"page.i65\"\n    .word sym0\n#include \"page.i65\"\n    .word _pad\n#include \"page.i65\"\n    .word studio\n#include \"page.i65\"                     ; ~goto symtab! to end (fnord)\n    .word pfnord\n#include \"page.i65\"\n    .word _setsymtab\n#include \"past.i65\"\n    .word exit\n;------------------------------------------------------------------------------\n/*\ntitle: FORGET\ntags: secondary dictionary fig forth-79 forth-83\n\n```\n: forget   ( \"name\" ; -- )  '           \\ next token from input stream\n  dup fence @ u<  7 ?error              \\ can't forget below fence\n  (fnord) ;\n```\n*/\n#if 0\nname=FORGET\ntags=fnord\n#endif\n#include \"align.i65\"\n_forget\n    jsr enter\n#include \"page.i65\"\n    .word _tick\n#include \"page.i65\"\n    .word fence\n#include \"page.i65\"\n    .word fetch\n#include \"page.i65\"\n    .word under\n#include \"page.i65\"\n    .word ult\n#include \"parm.i65\"\n    .word qerror\n    .byt 7                      ; CAN'T FORGET BELOW FENCE\n#include \"pad.i65\"\n    .word _fnord\n#include \"past.i65\"\n    .word exit\n;------------------------------------------------------------------------------\n/*\ntitle: DEFINITIONS\ntags: forth-83\n\nSet `current` vocabulary for `create`\n\n```\ncode definitions   ( -- )\n  vocabs 1+ lda,  current sta,\n  next jmp,\n```\n*/\n#if 0\nname=DEFINITIONS\ntags=fnord\n#endif\ndefinitions\n    lda uservocabs+1\n    sta usercurrent\n    jmp next\n;------------------------------------------------------------------------------\n/*\ntitle: REHASH\ntags: secondary pettil dictionary\n\nSort/merge a fresh dictionary\n\n```\n: rehash   ( -- )\n  here (fnord) ;\n```\n*/\n#if 0\nname=REHASH\ntags=fnord\n#endif\n#include \"align.i65\"\n_rehash\n    jsr enter\n#include \"page.i65\"\n    .word here\n#include \"page.i65\"\n    .word _fnord\n#include \"past.i65\"\n    .word exit\n;------------------------------------------------------------------------------\n/*\ntitle: FORTH\ntags: vocabulary forth-83\n\nSearch only the main forth vocabulary\n\n```\n\\ must be first vocabulary defined\n#voc on  vocabulary forth\n```\n~~~code golf~~~\n[-7 bytes] chitselb 2020-05-11\n*/\n#if 0\nname=FORTH\ntags=fnord\n#endif\n#include \"align.i65\"\n_forth\n    jsr dovocab\n    .byt 0                              ; vocabulary identifier\n",
 			"file": "/home/chitselb/pettil/src/studio/pettil-dictionary.a65",
-			"file_size": 30288,
-			"file_write_time": 132516038564229201,
 			"settings":
 			{
 				"buffer_size": 30292,
@@ -58,10 +55,20 @@
 			}
 		},
 		{
-			"file": "tools/mkpet",
+			"contents": "Searching 38 files for \"pseeque\" (regex)\n\n/home/chitselb/pettil/src/studio/pettil-dictionary.a65:\n  514          01FF                                            0000\n  515  */\n  516: pseeque\n  517      asl R0L+2*R14+1             ;  Sweet16 carry clear, default to 'not found'\n  518      inc R0L+2*N8+1              ; toggle odd=unsorted; even=sorted\n  ...\n  641      .byt st  | N3\n  642      .byt ext\n  643:     .word pseeque\n  644      .byt bc  , <(pfound99-*-2)          ; early exit if it was found\n  645      .byt ld  | N7                       ; let's have a look at the sorted list then\n  646      .byt st  | N3\n  647      .byt ext                            ; if we're still here, we haven't exited\n  648:     .word pseeque                       ; search sorted until 0= or len>seeklen(n4)\n  649      .byt bc  , <(pfound99-*-2)\n  650      .byt ld  | N5                       ; get vocabid\n\n/home/chitselb/pettil/src/studio/pettil-tdd.a65:\n   28      .word xyzzy\n   29  #include \"page.i65\"\n   30:     .word pseequewrapper\n   31  #include \"parm.i65\"\n   32      .word _pdq\n   ..\n   95  ;--------------------------------------------------------------\n   96  \n   97: pseequewrapper\n   98      jsr plugh\n   99      jmp next\n  ...\n  104      .byt set | N6\n  105      .word uservocabs+1                  ; first vocab\n  106: pseequewrap01\n  107      .byt ldd | N6\n  108      .byt st  | N5                       ; get vocabid\n  ...\n  112      .byt st  | N3\n  113      .byt ext\n  114:     .word pseeque\n  115:     .byt bc  , <(pseequewrap86-*-2)          ; early exit if it was found\n  116      .byt ld  | N7                       ; let's have a look at the sorted list then\n  117      .byt st  | N3\n  118  \n  119  \n  120: pseequewrap86\n\n9 matches across 2 files\n",
 			"settings":
 			{
-				"buffer_size": 7298,
+				"buffer_size": 1761,
+				"line_ending": "Unix",
+				"name": "Find Results",
+				"scratch": true
+			}
+		},
+		{
+			"file": "/home/chitselb/pettil/src/studio/pettil-tdd.a65",
+			"settings":
+			{
+				"buffer_size": 2529,
 				"encoding": "UTF-8",
 				"line_ending": "Unix"
 			}
@@ -70,7 +77,16 @@
 			"file": "data/perturb/pettdd.mon",
 			"settings":
 			{
-				"buffer_size": 65,
+				"buffer_size": 109,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "data/dootdd.mon",
+			"settings":
+			{
+				"buffer_size": 50,
 				"encoding": "UTF-8",
 				"line_ending": "Unix"
 			}
@@ -87,7 +103,7 @@
 			"file": "src/studio/pettil-tdd.a65",
 			"settings":
 			{
-				"buffer_size": 647,
+				"buffer_size": 2529,
 				"encoding": "UTF-8",
 				"line_ending": "Unix"
 			}
@@ -97,6 +113,7 @@
 			"settings":
 			{
 				"buffer_size": 8398,
+				"encoding": "UTF-8",
 				"line_ending": "Unix"
 			}
 		}
@@ -207,7 +224,11 @@
 	],
 	"file_history":
 	[
+		"/mnt/data/home/chitselb/Documents/dev/commodore/pettil/tools/vice/pettil.dbg0",
 		"/mnt/data/home/chitselb/Documents/dev/commodore/pettil/tools/mkpet",
+		"/mnt/data/home/chitselb/Documents/dev/commodore/pettil/data/sdl2_samosa.vice",
+		"/home/chitselb/pettil/src/common/cbm_all.i65",
+		"/mnt/data/home/chitselb/Documents/dev/commodore/pettil/data/sdl2_samosa.vkm",
 		"/mnt/data/home/chitselb/Documents/dev/commodore/pettil/data/perturb/pettdd.mon",
 		"/mnt/data/home/chitselb/Documents/dev/commodore/pettil/data/dootdd.mon",
 		"/mnt/data/home/chitselb/Documents/dev/commodore/pettil/Makefile",
@@ -238,7 +259,6 @@
 		"/home/chitselb/inventory.txt",
 		"/mnt/data/home/chitselb/Documents/dev/commodore/pettil/data/sdl2_chitselb.vicerc",
 		"/mnt/data/home/chitselb/Documents/dev/commodore/pettil/0",
-		"/mnt/data/home/chitselb/Documents/dev/commodore/pettil/data/sdl2_samosa.vice",
 		"/home/chitselb/.ssh/config",
 		"/home/chitselb/.profile",
 		"/mnt/sdb1/chitselb/Documents/dev/commodore/moshpit.txt",
@@ -331,10 +351,7 @@
 		"/home/chitselb/Documents/pettilmobile/resources/history/end.vsf",
 		"/home/chitselb/Documents/pettilmobile/resources/history/start.vsf",
 		"/home/chitselb/.config/sublime-text-3/Packages/DA UI/DA Color.sublime-settings",
-		"/home/chitselb/.config/sublime-text-3/Packages/DA UI/DA Dark.tmTheme",
-		"/home/chitselb/Documents/dev/commodore/pettil/studio/src/; pettil-editor.old2",
-		"/home/chitselb/Documents/dev/commodore/pettil/src/pettil-editor.a65",
-		"/home/chitselb/Documents/dev/commodore/pettil/src/core-vm.a65"
+		"/home/chitselb/.config/sublime-text-3/Packages/DA UI/DA Dark.tmTheme"
 	],
 	"find":
 	{
@@ -345,6 +362,7 @@
 		"height": 241.0,
 		"where_history":
 		[
+			"/home/chitselb/pettil/src/studio,/home/chitselb/pettil/src/core,/home/chitselb/pettil/src/common",
 			"/home/chitselb/pettil/src/studio,/home/chitselb/pettil/src/core",
 			"/home/chitselb/pettil/src/studio,/home/chitselb/pettil/src/core,/home/chitselb/pettil/",
 			"/home/chitselb/pettil/src/studio,/home/chitselb/pettil/src/core",
@@ -371,6 +389,20 @@
 		"case_sensitive": false,
 		"find_history":
 		[
+			"pseeque",
+			"_forth",
+			"_forth$",
+			"plits",
+			"plit",
+			"lit",
+			"blit",
+			"plit",
+			"tlit",
+			"BACKDIAG",
+			"diag",
+			"pseeque",
+			"xpet",
+			"^assembler$",
 			"^_foundq$",
 			"pseeque$",
 			"pseek$",
@@ -484,21 +516,7 @@
 			"CTRL",
 			"CTRLuuu",
 			"CTRLuu",
-			"CTRLu",
-			"CTL",
-			"expect",
-			"refill",
-			"_qrefill",
-			"_name",
-			"expect",
-			"_query",
-			"_interpret",
-			"linesize",
-			"n6",
-			"qloading",
-			"linesize",
-			"_query",
-			"expect"
+			"CTRLu"
 		],
 		"highlight": true,
 		"in_selection": false,
@@ -543,7 +561,7 @@
 	"groups":
 	[
 		{
-			"selected": 8,
+			"selected": 7,
 			"sheets":
 			[
 				{
@@ -574,7 +592,7 @@
 						"translation.y": 0.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 7,
+					"stack_index": 8,
 					"type": "text"
 				},
 				{
@@ -603,7 +621,7 @@
 						"translation.y": 0.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 8,
+					"stack_index": 10,
 					"type": "text"
 				},
 				{
@@ -631,7 +649,7 @@
 						"translation.y": 0.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 9,
+					"stack_index": 11,
 					"type": "text"
 				},
 				{
@@ -658,10 +676,10 @@
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 12402.0,
+						"translation.y": 827.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 6,
+					"stack_index": 9,
 					"type": "text"
 				},
 				{
@@ -677,8 +695,8 @@
 						"selection":
 						[
 							[
-								9068,
-								9068
+								3093,
+								3093
 							]
 						],
 						"settings":
@@ -688,57 +706,136 @@
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 10075.0,
-						"zoom_level": 1.0
-					},
-					"stack_index": 1,
-					"type": "text"
-				},
-				{
-					"buffer": 5,
-					"file": "tools/mkpet",
-					"semi_transient": false,
-					"settings":
-					{
-						"buffer_size": 7298,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								2773,
-								2773
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/ShellScript/Bash.sublime-syntax",
-							"tab_size": 4,
-							"translate_tabs_to_spaces": true
-						},
-						"translation.x": 0.0,
-						"translation.y": 1628.0,
+						"translation.y": 2850.0,
 						"zoom_level": 1.0
 					},
 					"stack_index": 3,
 					"type": "text"
 				},
 				{
-					"buffer": 6,
-					"file": "data/perturb/pettdd.mon",
+					"buffer": 5,
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 65,
+						"buffer_size": 1761,
+						"regions":
+						{
+							"match":
+							{
+								"flags": 112,
+								"regions":
+								[
+									[
+										183,
+										190
+									],
+									[
+										419,
+										426
+									],
+									[
+										724,
+										731
+									],
+									[
+										1014,
+										1021
+									],
+									[
+										1170,
+										1177
+									],
+									[
+										1325,
+										1332
+									],
+									[
+										1493,
+										1500
+									],
+									[
+										1525,
+										1532
+									],
+									[
+										1721,
+										1728
+									]
+								],
+								"scope": ""
+							}
+						},
+						"selection":
+						[
+							[
+								1021,
+								1021
+							]
+						],
+						"settings":
+						{
+							"color_scheme": "Packages/BetterFindBuffer/FindResults.hidden-tmTheme",
+							"detect_indentation": false,
+							"line_numbers": false,
+							"output_tag": 1,
+							"result_base_dir": "",
+							"result_file_regex": "^([^ \t].*):$",
+							"result_line_regex": "^ +([0-9]+):",
+							"scroll_past_end": true,
+							"syntax": "Packages/Default/Find Results.hidden-tmLanguage"
+						},
+						"translation.x": 0.0,
+						"translation.y": 475.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 2,
+					"type": "text"
+				},
+				{
+					"buffer": 6,
+					"file": "/home/chitselb/pettil/src/studio/pettil-tdd.a65",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 2529,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								40,
-								40
+								600,
+								600
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 200.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"type": "text"
+				},
+				{
+					"buffer": 7,
+					"file": "data/perturb/pettdd.mon",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 109,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								109,
+								109
 							]
 						],
 						"settings":
@@ -749,11 +846,39 @@
 						"translation.y": 0.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 2,
+					"stack_index": 0,
 					"type": "text"
 				},
 				{
-					"buffer": 7,
+					"buffer": 8,
+					"file": "data/dootdd.mon",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 50,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								50,
+								50
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Text/Plain text.tmLanguage"
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 4,
+					"type": "text"
+				},
+				{
+					"buffer": 9,
 					"file": "src/studio/pettil-cold.a65",
 					"semi_transient": false,
 					"settings":
@@ -765,8 +890,8 @@
 						"selection":
 						[
 							[
-								6006,
-								6006
+								21415,
+								21415
 							]
 						],
 						"settings":
@@ -776,27 +901,27 @@
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 5290.0,
+						"translation.y": 19245.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 5,
+					"stack_index": 7,
 					"type": "text"
 				},
 				{
-					"buffer": 8,
+					"buffer": 10,
 					"file": "src/studio/pettil-tdd.a65",
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 647,
+						"buffer_size": 2529,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								356,
-								356
+								1598,
+								1598
 							]
 						],
 						"settings":
@@ -806,14 +931,14 @@
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 0.0,
+						"translation.y": 1615.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 0,
+					"stack_index": 5,
 					"type": "text"
 				},
 				{
-					"buffer": 9,
+					"buffer": 11,
 					"file": "/home/chitselb/pettil/src/studio/pettil-interpreter.a65",
 					"semi_transient": false,
 					"settings":
@@ -825,8 +950,8 @@
 						"selection":
 						[
 							[
-								746,
-								746
+								5829,
+								5829
 							]
 						],
 						"settings":
@@ -836,10 +961,10 @@
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 0.0,
+						"translation.y": 5381.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 4,
+					"stack_index": 6,
 					"type": "text"
 				}
 			]
@@ -902,12 +1027,28 @@
 		"selected_items":
 		[
 			[
-				"pettdd.mon",
+				"dootdd",
+				"data/dootdd.mon"
+			],
+			[
+				"tdd",
 				"data/perturb/pettdd.mon"
+			],
+			[
+				"sdl2_sa",
+				"data/sdl2_samosa.vice"
+			],
+			[
+				"sdl2_sma",
+				"data/sdl2_samosa.vkm"
 			],
 			[
 				"mkpet",
 				"tools/mkpet"
+			],
+			[
+				"pettdd.mon",
+				"data/perturb/pettdd.mon"
 			],
 			[
 				"Make",
