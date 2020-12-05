@@ -595,7 +595,8 @@ end
         "pettil-compiler.a65 "\
         "pettil-utils.a65 "\
         "pettil-editor.a65 "\
-        "pettil-assembler.a65 "
+        "pettil-assembler.a65 "\
+        "pettil-tdd.a65 "\
 
     studio_files = files.split(" ").collect { |filename| "./src/studio/"+filename }
 
