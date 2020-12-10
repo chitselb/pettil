@@ -140,12 +140,12 @@ clean:
 	c1541 -format pettil,09 d81 pettil.d64
 	for t in 0 1 2 3 4 5 6 7;do  \
 		echo $${t}; \
-		c1541 -format pettil$${t},09 d81 pettil$${t}.d64; \
+		c1541 -format pettil$${t},09 d64 pettil$${t}.d64; \
 	done
 
 # clear build ouput and staging areas
 pristine: clean
-	rm -rf ./obj/ && mkdir -p ./obj/perturb
+	rm -rvf ./obj/ && mkdir -pv ./obj/perturb
 
 # build and perform all feats of testing
 perturb: pettil
