@@ -13,7 +13,7 @@ all: fast
 #all: pristine pettil0 perturb0 mkd64perturb pet
 #all: pristine pettil0 pettil4 perturb0 mkd64perturb vic20
 
-fast: pristine pettil0 mkd64fast pettdd
+fast: clean pettil0 mkd64fast pettdd
 
 
 remote:
@@ -136,7 +136,7 @@ mkd64perturb: mkd64pettil
 
 # clear build output area
 clean:
-	rm -rf ./tmp/ && mkdir -p ./tmp/perturb
+	rm -rf ./tmp/* && mkdir -p ./tmp/perturb
 	c1541 -format pettil,09 d81 pettil.d64
 	for t in 0 1 2 3 4 5 6 7;do  \
 		echo $${t}; \
@@ -145,7 +145,7 @@ clean:
 
 # clear build ouput and staging areas
 pristine: clean
-	rm -rvf ./obj/ && mkdir -pv ./obj/perturb
+	rm -rf ./obj/* && mkdir -pv ./obj/perturb
 
 # build and perform all feats of testing
 perturb: pettil
