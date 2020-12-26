@@ -413,7 +413,8 @@ code (seek)   ( n5=mode; nfa -- xfa flag )
 A       X       Y       S       NV-BDIZC
 len     -       00      -       vs-...dv        v %vocab    s %smudge      d %done
 
-ACC     TOS     N0      N1      N2      N3      N4      N5      N6      N7      N8
+ACC     TOS     N0      N1      N2      N3      N4      N5
+N6      N7      N8
 R0      R1      R2      R3      R4      R5      R6      R7      R8      R9      R10
         seeknfa                 this.og thisnfa seeklen FFFF    vocabs/         len.n3         'label
                                                                 context
@@ -715,8 +716,46 @@ found00
     .byt nxt
 ;------------------------------------------------------------------------------
 /*
+title: LEXER
+tags: secondary
+
+Return the blank-delimited name in the input stream.  If no name is
+available, an error condition exists.
+
+```
+: lexer   ( "name " ; -- nfa )
+    bl name ?dup ?exit 4 fail ;  \ MISSING NAME
+    -2 allot \ exit after fail was unnecessary
+```
+*/
+#if 0
+name=LEXER
+tags=vocabulary
+
+#endif
+#include "align.i65"
+_lexer
+    jsr enter
+#include "page.i65"
+    .word bl
+#include "page.i65"
+    .word _name
+#include "page.i65"
+    .word qdup
+#include "page.i65"
+    .word _qexit
+#include "page.i65"
+    .word four
+#include "past.i65"
+    .word fail
+
+;------------------------------------------------------------------------------
+/*
 title: EXISTS?
 tags: secondary vocabulary
+
+: exists?   ( "name" ; -- cfa|0 )
+    lexer found? ;
 
 search the dictionary for a name
 
@@ -730,7 +769,7 @@ name=EXISTS?
 tags=vocabulary
 
 ```
-: exists?   ("name" -- cfa|0 )
+: exists?   ( "name" ; -- cfa|0 )
     bl name ?dup  ?: found? false ;
 ```
 #endif
@@ -738,17 +777,9 @@ tags=vocabulary
 _existsq
     jsr enter
 #include "page.i65"
-    .word bl
+    .word _lexer
 #include "page.i65"
-    .word _name
-#include "page.i65"
-    .word qdup
-#include "parm.i65"
-    .word pquerycolon
     .word _foundq
-    .word false
-#include "pad.i65"
-    .word andx
 #include "past.i65"
     .word exit
 ;------------------------------------------------------------------------------
@@ -782,8 +813,14 @@ _tick
 title: (CREATE)
 tags: nosymbol
 
-stack=( cfa -- )
-Create a new symbol in the symbol table
+Create a new symbol in the symbol table. Set `redefined` true when `"name"` is
+found in the `current` dictionary. Enclose `JSR CFA` at `here` and move `here`
+to the address after CFA.
+
+```
+code (create)   ( "name" ; cfa -- )
+```
+
 
 |^ |^pass |^exit |h
 |^redefined |^ |^here ~+/-3 |
