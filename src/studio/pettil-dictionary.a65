@@ -52,24 +52,6 @@ vocabid     present if %vocab is true, 0 = is label
 */
 ;------------------------------------------------------------------------------
 /*
-title: SYMTAB!
-tags: nosymbol
-
-code symtab!   ( -- )
-*/
-symtabset
-    lda stackh+1,x
-    clc
-    sbc tos+1
-    dex
-    sta stackh,x
-    sta usersymtab+1
-    lda #32
-    sta stackl,x
-symtabset99
-    jmp next
-;------------------------------------------------------------------------------
-/*
 title: SYM0
 tags: nosymbol
 
@@ -85,7 +67,8 @@ sym0
     sta R0L+2*N3+1
     lda #34
     sta R0L+2*N3
-    bne symtabset99                     ; bra next
+    jmp next
+    ;bne symtabset99                     ; bra next
 ;------------------------------------------------------------------------------
 /*
 title: SYM.LEN
@@ -402,13 +385,7 @@ _toname
 title: (SEEK)
 tags: nosymbol
 
-code (seek)   ( n5=mode; nfa -- xfa flag )
-  brk,  tos ld,  n5 st,  pull,
-
-
-: (seek)   ( nfa mode -- xfa flag )
-    N5 !
-    ;code
+code (seek)   ( nfa -- xfa flag )
 
 A       X       Y       S       NV-BDIZC
 len     -       00      -       vs-...dv        v %vocab    s %smudge      d %done
@@ -506,7 +483,11 @@ R0      R1      R2      R3      R4      R5      R6      R7      R8      R9      
         nfa.s                   nfa.og  symnew  len.tos 0000    vocabs          len.n3         core
         nfa.s                   nfa.og  symnew  len.tos 0100    vocabs          len.n3         assembler
         nfa.s                   nfa.og  symnew  len.tos 0000    context         len.n3         (create)
-
+state st
+packard
+ashley
+kalamazoo(portage) 1423 romence rd
+grand rapids
 
 ACC     TOS     N0      N1      N2      N3      N4      N5      N6      N7      N8
         01FF                                            0000
@@ -722,6 +703,19 @@ tags: secondary
 Return the blank-delimited name in the input stream.  If no name is
 available, an error condition exists.
 
+Design error alert.  I'm still trying this, though.
+
+`lexer` is invoked by `(create)` while `interpret` does not pass
+through here.
+We will take advantage of this and use `lexer` to also make some
+Sweet16 register changes that will subtly alter how `(seek)` behaves.
+
+|client    |bloom filter        |
+|lexer     |set the bloom filter|
+|interpret |check bloom filter  |
+|'label    |ignore bloom filter |
+|found?    |check bloom filter  |
+
 ```
 : lexer   ( "name " ; -- nfa )
     bl name ?dup ?exit 4 fail ;  \ MISSING NAME
@@ -788,6 +782,11 @@ title: `'`
 tags: forth-83
 
 stack=( -- cfa )
+
+: '   ( -- cfa )
+    exists? ?dup ?exit
+    3 fail [    \ one byte shorter
+
 */
 #if 0
 name='
@@ -813,14 +812,24 @@ _tick
 title: (CREATE)
 tags: nosymbol
 
-Create a new symbol in the symbol table. Set `redefined` true when `"name"` is
-found in the `current` dictionary. Enclose `JSR CFA` at `here` and move `here`
-to the address after CFA.
+\ create a new symbol in the symbol table
+code (create)   ( "name" ; cfa -- )
+
+* Page-align?  if `here` is xxFC now, then enclose a NOP so PFA is not xxFF.
+* enclose JSR CFA
+* Advance `here` three bytes to PFA, the address after JSR CFA.
+* Set bloom filter bit true before trying to `(seek)` it
+* Set up `(seek)` context as `current`
+* Call `(seek)`
+* if `name` exists in `current` vocabulary, then...
+** Set `redefined` to nfa
+** if verbose error messages, then display .rvs , output `name`,  ." EXISTS " warning message
+** Set `%smudge` of redefined name true
+*
 
 ```
 code (create)   ( "name" ; cfa -- )
 ```
-
 
 |^ |^pass |^exit |h
 |^redefined |^ |^here ~+/-3 |
@@ -934,13 +943,16 @@ code create00
     cfa, bloomfilter cbit!
     bloom newest here 3-
     create00  cmove ;
+
+code (create) brk,
+
 ```
 */
 #include "align.i65"
 _pcreate
     jsr enter
 #include "page.i65"
-    .word eolq
+    .word eolq                  ;~~~ will be handled by `lexer`
 #include "parm.i65"
     .word qerror
     .byt 4                      ; MISSING NAME
@@ -951,15 +963,15 @@ _pcreate
 #include "page.i65"
     .word fetch
 #include "page.i65"
-    .word plus
+    .word plus                  ; ~~~ sweet16
 #include "pad.i65"
     .word swap
 #include "page.i65"
     .word redefined
 #include "page.i65"
-    .word off
+    .word off                   ; ~~~ sweet16
 #include "page.i65"
-    .word _existsq
+    .word _existsq              ; invoke `lexer` locally
 #include "parm.i65"
     .word qbranch
     .byt <(pcreate02-*+1)
