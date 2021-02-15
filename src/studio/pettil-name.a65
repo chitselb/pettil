@@ -10,15 +10,13 @@ skip to non-match of char in `n7`, in line buffer
 
 ```
 code skip   ( -- offset )
-    $f0 #       lda,
-    $2c c,  \ bit abs opcode
-    \ fall through
-end-code
+    $f0 # lda,  $2c c,  \ bit abs opcode
+end-code                \ fall through
 ```
 #endif
 skip
-    lda #$F0                    ; BEQ opcode
-    .byt $2C                    ; BIT abs
+    lda #$F0                            ; BEQ opcode
+    .byt $2C                            ; BIT abs
     ;fall through
 ;--------------------------------------------------------------
 #if 0
@@ -27,24 +25,22 @@ stack=( -- offset )
 tags=self-modifying,nosymbol
 scan to next match of char in `n7`, in line buffer pointed to by `(n6)`
 
-N6 line buffer
-N7 char delimiter
+
+                            N6      line buffer
+                            N7      char delimiter
+position in line buffer     in      new position
+width of current line       span    -
+
 
 ```
 code scan   ( -- offset )
-    $d0 #           lda,
-    \ entry from skip
-    '+              sta,
-    in              ldy,
-                    dey,
-here            &-
-                    iny,
-    span            cpy,
-                '++ bcs,
-    n6 )y           lda,
-    n7              eor,
-here &+     \ self-modifying
-    '-              bvc,
+    $d0 # lda,  'skipscan03 sta,
+    in ldy,  dey,
+&skipscan01
+    iny,  span cpy,  'skipscan05 bcs,
+    n6 )y lda,  n7 eor,
+&skipscan03          'skipscan01 bvc,
+    in sty,  tya,  'push0a jmp,
 here            &++
     in              sty,
                     tya,
@@ -68,6 +64,7 @@ skipscan03
     bvc skipscan01              ; dummy opcode, BEQ(skip) BNE(scan)             UNTIL
 skipscan05
     sty userin                  ; found char !, move `in`
+;push0y
     tya
     jmp push0a                  ;( offset )
 
@@ -504,12 +501,13 @@ _qnomnom
 name=LBUF
 stack=( -- addr )
 tags=extra
-Return the calculated address of the system linebuffer
+Return the address of the system linebuffer
 
 ```
 : lbuf   ( -- addr )
     blk@ ?: sib tib ;
 ```
+
 //el-buff//
 #endif
 #include "align.i65"
@@ -529,6 +527,7 @@ _lbuf
 name=NAME
 stack=( char -- nfa|false )
 tags=outer,extra
+
 `name` is the name of the word formerly known as `word`, which is not
 present.  Absence of `word` is a variance from the Forth-83 standard, and
 the new and improved `name` fulfills all the original purposes of `word`.
@@ -538,15 +537,14 @@ return FALSE when the input stream is exhausted.
 
 ```
 : name   ( char -- nfa|false )
-    lbuf  n6 2!
+    lbuf  n6 2!    \ n7 1+ coff \ mailbox
     begin
         eol?
     while
         hungry? ?nomnom
         eoi?
     until
-    eoi? ?: false parse
-    n0 coff ;
+    eoi? ?: false parse ;
 
 
 ```
